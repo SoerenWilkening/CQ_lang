@@ -1,830 +1,830 @@
 label	dir	verdict	source	detail
 _Exit	exit	SKIP	-	does not return (exit-like)
 abort	exit	SKIP	-	does not return (exit-like)
-abs	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-acos	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-acosf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-acosh	math	PASS	8c3b8d5 targeted run	
-acoshf	math	PASS	8c3b8d5 targeted run	
-acoshl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-acosl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+abs	stdlib	PASS	834d317c	
+acos	math	PASS	834d317c	
+acosf	math	PASS	834d317c	
+acosh	math	PASS	834d317c	
+acoshf	math	PASS	834d317c	
+acoshl	math	PASS	834d317c	
+acosl	math	PASS	834d317c	
 aligned_alloc@0	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 aligned_alloc@01	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 aligned_alloc@1	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-asctime	time	DEFERRED	33f4804	check stage over 2400 s
-asin	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-asinf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-asinh	math	PASS	8c3b8d5 targeted run	
-asinhf	math	PASS	8c3b8d5 targeted run	
-asinhl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-asinl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-at_quick_exit	exit	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2f@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2f@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2f@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2l@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2l@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atan2l@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atanf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atanh	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atanhf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atanhl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atanl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atexit	exit	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atof	stdlib	PASS	8c3b8d5 targeted run	
-atoi	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atol	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-atoll	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-bsearch@0	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-bsearch@01	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-bsearch@1	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-btowc	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@0	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@01	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@012	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@02	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@1	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@12	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c16rtomb@2	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@0	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@01	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@012	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@02	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@1	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@12	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-c32rtomb@2	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cabs	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cabsf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cabsl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cacos	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cacosf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cacosh	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cacoshf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cacoshl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cacosl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-call_once	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-calloc@0	malloc	PASS	8c3b8d5 targeted run	
-calloc@01	malloc	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-calloc@1	malloc	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-carg	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cargf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cargl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-casin	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-casinf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-casinh	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-casinhf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-casinhl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-casinl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-catan	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-catanf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-catanh	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-catanhf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-catanhl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-catanl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cbrt	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cbrtf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cbrtl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ccos	complex	PASS	8c3b8d5 targeted run	
-ccosf	complex	PASS	8c3b8d5 targeted run	
-ccosh	complex	PASS	8c3b8d5 targeted run	
-ccoshf	complex	PASS	8c3b8d5 targeted run	
-ccoshl	complex	PASS	8c3b8d5 targeted run	
-ccosl	complex	PASS	8c3b8d5 targeted run	
-ceil	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ceilf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ceill	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cexp	complex	PASS	8c3b8d5 targeted run	
-cexpf	complex	PASS	8c3b8d5 targeted run	
-cexpl	complex	PASS	8c3b8d5 targeted run	
-cimag	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cimagf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cimagl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-clearerr	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-clock	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-clog	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-clogf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-clogl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_broadcast	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_destroy	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_init	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_signal	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@012	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@02	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@12	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_timedwait@2	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_wait@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_wait@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cnd_wait@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-conj	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-conjf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-conjl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysign@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysign@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysign@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysignf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysignf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysignf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysignl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysignl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-copysignl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cos	math	PASS	8c3b8d5 targeted run	
-cosf	math	PASS	8c3b8d5 targeted run	
-cosh	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-coshf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-coshl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cosl	math	PASS	8c3b8d5 targeted run	
-cpow@0	complex	PASS	8c3b8d5 targeted run	
-cpow@01	complex	PASS	8c3b8d5 targeted run	
-cpow@1	complex	PASS	8c3b8d5 targeted run	
-cpowf@0	complex	PASS	8c3b8d5 targeted run	
-cpowf@01	complex	PASS	8c3b8d5 targeted run	
-cpowf@1	complex	PASS	8c3b8d5 targeted run	
-cpowl@0	complex	PASS	8c3b8d5 targeted run	
-cpowl@01	complex	PASS	8c3b8d5 targeted run	
-cpowl@1	complex	PASS	8c3b8d5 targeted run	
-cproj	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-cprojf	complex	PASS	8c3b8d5 targeted run	
-cprojl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-creal	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-crealf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-creall	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-csin	complex	PASS	8c3b8d5 targeted run	
-csinf	complex	PASS	8c3b8d5 targeted run	
-csinh	complex	PASS	8c3b8d5 targeted run	
-csinhf	complex	PASS	8c3b8d5 targeted run	
-csinhl	complex	PASS	8c3b8d5 targeted run	
-csinl	complex	PASS	8c3b8d5 targeted run	
-csqrt	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-csqrtf	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-csqrtl	complex	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ctan	complex	PASS	8c3b8d5 targeted run	
-ctanf	complex	PASS	8c3b8d5 targeted run	
-ctanh	complex	PASS	8c3b8d5 targeted run	
-ctanhf	complex	PASS	8c3b8d5 targeted run	
-ctanhl	complex	PASS	8c3b8d5 targeted run	
-ctanl	complex	PASS	8c3b8d5 targeted run	
-ctime	time	ERROR	33f4804	cqcheck user: entry sweep_ctime: no sample inside the C program's domain; reasons: no scalar argument of this call flows into a cq_theta_* register; every cq_theta_* register is computed inside the program; substituted cq_theta sites: no floating-point register among the substituted
-difftime@0	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-difftime@01	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-difftime@1	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-div@0	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-div@01	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-div@1	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-erf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-erfc	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-erfcf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-erfcl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-erff	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-erfl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+asctime	time	PASS	10feac5e	run singly: 120 s per sample, 2400 s, 7 GB
+asin	math	PASS	834d317c	
+asinf	math	PASS	834d317c	
+asinh	math	PASS	834d317c	
+asinhf	math	PASS	834d317c	
+asinhl	math	PASS	834d317c	
+asinl	math	PASS	834d317c	
+at_quick_exit	exit	PASS	834d317c	
+atan	math	PASS	834d317c	
+atan2@0	math	PASS	834d317c	
+atan2@01	math	PASS	834d317c	
+atan2@1	math	PASS	834d317c	
+atan2f@0	math	PASS	834d317c	
+atan2f@01	math	PASS	834d317c	
+atan2f@1	math	PASS	834d317c	
+atan2l@0	math	PASS	834d317c	
+atan2l@01	math	PASS	834d317c	
+atan2l@1	math	PASS	834d317c	
+atanf	math	PASS	834d317c	
+atanh	math	PASS	834d317c	
+atanhf	math	PASS	834d317c	
+atanhl	math	PASS	834d317c	
+atanl	math	PASS	834d317c	
+atexit	exit	PASS	834d317c	
+atof	stdlib	PASS	834d317c	
+atoi	stdlib	PASS	834d317c	
+atol	stdlib	PASS	834d317c	
+atoll	stdlib	PASS	834d317c	
+bsearch@0	stdlib	PASS	834d317c	
+bsearch@01	stdlib	PASS	834d317c	
+bsearch@1	stdlib	PASS	834d317c	
+btowc	multibyte	PASS	834d317c	
+c16rtomb@0	multibyte	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+c16rtomb@01	multibyte	PASS	834d317c	
+c16rtomb@012	multibyte	PASS	834d317c	
+c16rtomb@02	multibyte	PASS	834d317c	
+c16rtomb@1	multibyte	PASS	834d317c	
+c16rtomb@12	multibyte	PASS	834d317c	
+c16rtomb@2	multibyte	PASS	834d317c	
+c32rtomb@0	multibyte	PASS	834d317c	
+c32rtomb@01	multibyte	PASS	834d317c	
+c32rtomb@012	multibyte	PASS	834d317c	
+c32rtomb@02	multibyte	PASS	834d317c	
+c32rtomb@1	multibyte	PASS	834d317c	
+c32rtomb@12	multibyte	PASS	834d317c	
+c32rtomb@2	multibyte	PASS	834d317c	
+cabs	complex	PASS	834d317c	
+cabsf	complex	PASS	834d317c	
+cabsl	complex	PASS	834d317c	
+cacos	complex	PASS	834d317c	
+cacosf	complex	PASS	834d317c	
+cacosh	complex	PASS	834d317c	
+cacoshf	complex	PASS	834d317c	
+cacoshl	complex	PASS	834d317c	
+cacosl	complex	PASS	834d317c	
+call_once	thread	PASS	834d317c	
+calloc@0	malloc	PASS	834d317c	
+calloc@01	malloc	PASS	834d317c	
+calloc@1	malloc	PASS	834d317c	
+carg	complex	PASS	834d317c	
+cargf	complex	PASS	834d317c	
+cargl	complex	PASS	834d317c	
+casin	complex	PASS	834d317c	
+casinf	complex	PASS	834d317c	
+casinh	complex	PASS	834d317c	
+casinhf	complex	PASS	834d317c	
+casinhl	complex	PASS	834d317c	
+casinl	complex	PASS	834d317c	
+catan	complex	PASS	834d317c	
+catanf	complex	PASS	834d317c	
+catanh	complex	PASS	834d317c	
+catanhf	complex	PASS	834d317c	
+catanhl	complex	PASS	834d317c	
+catanl	complex	PASS	834d317c	
+cbrt	math	PASS	834d317c	
+cbrtf	math	PASS	834d317c	
+cbrtl	math	PASS	834d317c	
+ccos	complex	PASS	834d317c	
+ccosf	complex	PASS	834d317c	
+ccosh	complex	PASS	834d317c	
+ccoshf	complex	PASS	834d317c	
+ccoshl	complex	PASS	834d317c	
+ccosl	complex	PASS	834d317c	
+ceil	math	PASS	834d317c	
+ceilf	math	PASS	834d317c	
+ceill	math	PASS	834d317c	
+cexp	complex	PASS	834d317c	
+cexpf	complex	PASS	834d317c	
+cexpl	complex	PASS	834d317c	
+cimag	complex	PASS	834d317c	
+cimagf	complex	PASS	834d317c	
+cimagl	complex	PASS	834d317c	
+clearerr	stdio	PASS	834d317c	
+clock	time	PASS	834d317c	
+clog	complex	PASS	834d317c	
+clogf	complex	PASS	834d317c	
+clogl	complex	PASS	834d317c	
+cnd_broadcast	thread	PASS	834d317c	
+cnd_destroy	thread	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+cnd_init	thread	PASS	834d317c	
+cnd_signal	thread	PASS	834d317c	
+cnd_timedwait@0	thread	PASS	834d317c	
+cnd_timedwait@01	thread	PASS	834d317c	
+cnd_timedwait@012	thread	PASS	834d317c	
+cnd_timedwait@02	thread	PASS	834d317c	
+cnd_timedwait@1	thread	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+cnd_timedwait@12	thread	PASS	834d317c	
+cnd_timedwait@2	thread	PASS	834d317c	
+cnd_wait@0	thread	PASS	834d317c	
+cnd_wait@01	thread	PASS	834d317c	
+cnd_wait@1	thread	PASS	834d317c	
+conj	complex	PASS	834d317c	
+conjf	complex	PASS	834d317c	
+conjl	complex	PASS	834d317c	
+copysign@0	math	PASS	834d317c	
+copysign@01	math	PASS	834d317c	
+copysign@1	math	PASS	834d317c	
+copysignf@0	math	PASS	834d317c	
+copysignf@01	math	PASS	834d317c	
+copysignf@1	math	PASS	834d317c	
+copysignl@0	math	PASS	834d317c	
+copysignl@01	math	PASS	834d317c	
+copysignl@1	math	PASS	834d317c	
+cos	math	PASS	834d317c	
+cosf	math	PASS	834d317c	
+cosh	math	PASS	834d317c	
+coshf	math	PASS	834d317c	
+coshl	math	PASS	834d317c	
+cosl	math	PASS	834d317c	
+cpow@0	complex	PASS	834d317c	
+cpow@01	complex	PASS	834d317c	
+cpow@1	complex	PASS	834d317c	
+cpowf@0	complex	PASS	834d317c	
+cpowf@01	complex	PASS	834d317c	
+cpowf@1	complex	PASS	834d317c	
+cpowl@0	complex	PASS	834d317c	
+cpowl@01	complex	PASS	834d317c	
+cpowl@1	complex	PASS	834d317c	
+cproj	complex	PASS	834d317c	
+cprojf	complex	PASS	834d317c	
+cprojl	complex	PASS	834d317c	
+creal	complex	PASS	834d317c	
+crealf	complex	PASS	834d317c	
+creall	complex	PASS	834d317c	
+csin	complex	PASS	834d317c	
+csinf	complex	PASS	834d317c	
+csinh	complex	PASS	834d317c	
+csinhf	complex	PASS	834d317c	
+csinhl	complex	PASS	834d317c	
+csinl	complex	PASS	834d317c	
+csqrt	complex	PASS	834d317c	
+csqrtf	complex	PASS	834d317c	
+csqrtl	complex	PASS	834d317c	
+ctan	complex	PASS	834d317c	
+ctanf	complex	PASS	834d317c	
+ctanh	complex	PASS	834d317c	
+ctanhf	complex	PASS	834d317c	
+ctanhl	complex	PASS	834d317c	
+ctanl	complex	PASS	834d317c	
+ctime	time	PASS	834d317c	
+difftime@0	time	PASS	834d317c	
+difftime@01	time	PASS	834d317c	
+difftime@1	time	PASS	834d317c	
+div@0	stdlib	PASS	834d317c	
+div@01	stdlib	PASS	834d317c	
+div@1	stdlib	PASS	834d317c	
+erf	math	PASS	834d317c	
+erfc	math	PASS	834d317c	
+erfcf	math	PASS	834d317c	
+erfcl	math	PASS	834d317c	
+erff	math	PASS	834d317c	
+erfl	math	PASS	834d317c	
 exit	exit	SKIP	-	does not return (exit-like)
-exp	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-exp2	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-exp2f	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-exp2l	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-expf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-expl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-expm1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-expm1f	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-expm1l	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fabs	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fabsf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fabsl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fclose	stdio	PASS	8c3b8d5 targeted run	
-fdim@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdim@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdim@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdimf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdimf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdimf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdiml@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdiml@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fdiml@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-feclearexcept	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fegetenv	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fegetexceptflag@0	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fegetexceptflag@01	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fegetexceptflag@1	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fegetround	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-feholdexcept	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-feof	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-feraiseexcept	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ferror	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fesetenv	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fesetexceptflag@0	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fesetexceptflag@01	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fesetexceptflag@1	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fesetround	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fetestexcept	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-feupdateenv	fenv	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fflush	stdio	PASS	8c3b8d5 targeted run	
-fgetc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fgetpos	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fgets	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fgetwc	stdio	PASS	8c3b8d5 targeted run	
-fgetws	stdio	PASS	8c3b8d5 targeted run	
-floor	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-floorf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-floorl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@012	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@02	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@12	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fma@2	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@012	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@02	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@12	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaf@2	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmal@0	math	PASS	8c3b8d5 targeted run	
-fmal@01	math	PASS	8c3b8d5 targeted run	
-fmal@012	math	PASS	8c3b8d5 targeted run	
-fmal@02	math	PASS	8c3b8d5 targeted run	
-fmal@1	math	PASS	8c3b8d5 targeted run	
-fmal@12	math	PASS	8c3b8d5 targeted run	
-fmal@2	math	PASS	8c3b8d5 targeted run	
-fmax@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmax@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmax@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaxf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaxf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaxf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaxl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaxl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmaxl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmin@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmin@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmin@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fminf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fminf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fminf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fminl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fminl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fminl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmod@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmod@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmod@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmodf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmodf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmodf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmodl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmodl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fmodl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fopen	stdio	PASS	8c3b8d5 targeted run	
-fprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7481 MB > 7168 MB cap) (2 rows at a time)
-fputc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fputs	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fputwc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fputws	stdio	PASS	8c3b8d5 targeted run	
-fread	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-free	malloc	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-freopen	stdio	PASS	8c3b8d5 targeted run	
-frexp@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-frexp@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-frexp@1	math	PASS	8c3b8d5 targeted run	
-frexpf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-frexpf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-frexpf@1	math	PASS	8c3b8d5 targeted run	
-frexpl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-frexpl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-frexpl@1	math	PASS	8c3b8d5 targeted run	
-fscanf	stdio	PASS	8c3b8d5 targeted run	
-fseek@0	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fseek@01	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fseek@1	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fsetpos	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ftell	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fwide	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fwprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7773 MB > 7168 MB cap) (2 rows at a time)
-fwrite	stdio	PASS	8c3b8d5 targeted run	
-fwscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7225 MB > 7168 MB cap) (2 rows at a time)
-getc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-getchar	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-getenv	env	PASS	8c3b8d5 targeted run	
-getwc	stdio	PASS	8c3b8d5 targeted run	
-getwchar	stdio	PASS	8c3b8d5 targeted run	
-gmtime	time	PASS	8c3b8d5 targeted run	
-hypot@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypot@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypot@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypotf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypotf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypotf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypotl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypotl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-hypotl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ilogb	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ilogbf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ilogbl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-imaxabs	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-imaxdiv@0	stdlib	PASS	8c3b8d5 targeted run	
-imaxdiv@01	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-imaxdiv@1	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isalnum	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isalpha	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isblank	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iscntrl	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isdigit	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isgraph	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-islower	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isprint	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ispunct	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isspace	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isupper	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswalnum	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswalpha	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswblank	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswcntrl	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswctype	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswdigit	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswgraph	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswlower	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswprint	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswpunct	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswspace	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswupper	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-iswxdigit	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-isxdigit	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-labs	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexp@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexp@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexp@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexpf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexpf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexpf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexpl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexpl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldexpl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldiv@0	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldiv@01	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ldiv@1	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lgamma	math	PASS	8c3b8d5 targeted run	
-lgammaf	math	PASS	8c3b8d5 targeted run	
-lgammal	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llabs	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lldiv@0	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lldiv@01	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lldiv@1	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llrint	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llrintf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llrintl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llround	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llroundf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-llroundl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-localeconv	locale	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-localtime	time	ERROR	8c3b8d5 targeted run	cqcheck user: entry sweep_localtime: no sample inside the C program's domain; reasons: no scalar argument of this call flows into a cq_theta_* register; every cq_theta_* register is computed inside the program; substituted cq_theta sites: no floating-point register among the substituted
-log	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log10	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log10f	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log10l	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log1p	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log1pf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log1pl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log2	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log2f	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-log2l	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-logb	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-logbf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-logbl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-logf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-logl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+exp	math	PASS	834d317c	
+exp2	math	PASS	834d317c	
+exp2f	math	PASS	834d317c	
+exp2l	math	PASS	834d317c	
+expf	math	PASS	834d317c	
+expl	math	PASS	834d317c	
+expm1	math	PASS	834d317c	
+expm1f	math	PASS	834d317c	
+expm1l	math	PASS	834d317c	
+fabs	math	PASS	834d317c	
+fabsf	math	PASS	834d317c	
+fabsl	math	PASS	834d317c	
+fclose	stdio	PASS	834d317c	
+fdim@0	math	PASS	834d317c	
+fdim@01	math	PASS	834d317c	
+fdim@1	math	PASS	834d317c	
+fdimf@0	math	PASS	834d317c	
+fdimf@01	math	PASS	834d317c	
+fdimf@1	math	PASS	834d317c	
+fdiml@0	math	PASS	834d317c	
+fdiml@01	math	PASS	834d317c	
+fdiml@1	math	PASS	834d317c	
+feclearexcept	fenv	PASS	834d317c	
+fegetenv	fenv	PASS	834d317c	
+fegetexceptflag@0	fenv	PASS	834d317c	
+fegetexceptflag@01	fenv	PASS	834d317c	
+fegetexceptflag@1	fenv	PASS	834d317c	
+fegetround	fenv	PASS	834d317c	
+feholdexcept	fenv	PASS	834d317c	
+feof	stdio	PASS	834d317c	
+feraiseexcept	fenv	PASS	834d317c	
+ferror	stdio	PASS	834d317c	
+fesetenv	fenv	PASS	834d317c	
+fesetexceptflag@0	fenv	PASS	834d317c	
+fesetexceptflag@01	fenv	PASS	834d317c	
+fesetexceptflag@1	fenv	PASS	834d317c	
+fesetround	fenv	PASS	834d317c	
+fetestexcept	fenv	PASS	834d317c	
+feupdateenv	fenv	PASS	834d317c	
+fflush	stdio	PASS	834d317c	
+fgetc	stdio	PASS	834d317c	
+fgetpos	stdio	PASS	834d317c	
+fgets	stdio	PASS	834d317c	
+fgetwc	stdio	PASS	834d317c	
+fgetws	stdio	PASS	834d317c	
+floor	math	PASS	834d317c	
+floorf	math	PASS	834d317c	
+floorl	math	PASS	834d317c	
+fma@0	math	PASS	834d317c	
+fma@01	math	PASS	834d317c	
+fma@012	math	PASS	834d317c	
+fma@02	math	PASS	834d317c	
+fma@1	math	PASS	834d317c	
+fma@12	math	PASS	834d317c	
+fma@2	math	PASS	834d317c	
+fmaf@0	math	PASS	834d317c	
+fmaf@01	math	PASS	834d317c	
+fmaf@012	math	PASS	834d317c	
+fmaf@02	math	PASS	834d317c	
+fmaf@1	math	PASS	834d317c	
+fmaf@12	math	PASS	834d317c	
+fmaf@2	math	PASS	834d317c	
+fmal@0	math	PASS	834d317c	
+fmal@01	math	PASS	834d317c	
+fmal@012	math	PASS	834d317c	
+fmal@02	math	PASS	834d317c	
+fmal@1	math	PASS	834d317c	
+fmal@12	math	PASS	834d317c	
+fmal@2	math	PASS	834d317c	
+fmax@0	math	PASS	834d317c	
+fmax@01	math	PASS	834d317c	
+fmax@1	math	PASS	834d317c	
+fmaxf@0	math	PASS	834d317c	
+fmaxf@01	math	PASS	834d317c	
+fmaxf@1	math	PASS	834d317c	
+fmaxl@0	math	PASS	834d317c	
+fmaxl@01	math	PASS	834d317c	
+fmaxl@1	math	PASS	834d317c	
+fmin@0	math	PASS	834d317c	
+fmin@01	math	PASS	834d317c	
+fmin@1	math	PASS	834d317c	
+fminf@0	math	PASS	834d317c	
+fminf@01	math	PASS	834d317c	
+fminf@1	math	PASS	834d317c	
+fminl@0	math	PASS	834d317c	
+fminl@01	math	PASS	834d317c	
+fminl@1	math	PASS	834d317c	
+fmod@0	math	PASS	834d317c	
+fmod@01	math	PASS	834d317c	
+fmod@1	math	PASS	834d317c	
+fmodf@0	math	PASS	834d317c	
+fmodf@01	math	PASS	834d317c	
+fmodf@1	math	PASS	834d317c	
+fmodl@0	math	PASS	834d317c	
+fmodl@01	math	PASS	834d317c	
+fmodl@1	math	PASS	834d317c	
+fopen	stdio	PASS	834d317c	
+fprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+fputc	stdio	PASS	834d317c	
+fputs	stdio	PASS	834d317c	
+fputwc	stdio	PASS	834d317c	
+fputws	stdio	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+fread	stdio	PASS	834d317c	
+free	malloc	PASS	834d317c	
+freopen	stdio	PASS	834d317c	
+frexp@0	math	PASS	834d317c	
+frexp@01	math	PASS	834d317c	
+frexp@1	math	PASS	834d317c	
+frexpf@0	math	PASS	834d317c	
+frexpf@01	math	PASS	834d317c	
+frexpf@1	math	PASS	834d317c	
+frexpl@0	math	PASS	834d317c	
+frexpl@01	math	PASS	834d317c	
+frexpl@1	math	PASS	834d317c	
+fscanf	stdio	PASS	834d317c	
+fseek@0	stdio	PASS	834d317c	
+fseek@01	stdio	PASS	834d317c	
+fseek@1	stdio	PASS	834d317c	
+fsetpos	stdio	PASS	834d317c	
+ftell	stdio	PASS	834d317c	
+fwide	stdio	PASS	834d317c	
+fwprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+fwrite	stdio	PASS	834d317c	
+fwscanf	stdio	PASS	834d317c	
+getc	stdio	PASS	834d317c	
+getchar	stdio	PASS	834d317c	
+getenv	env	PASS	834d317c	
+getwc	stdio	PASS	834d317c	
+getwchar	stdio	PASS	834d317c	
+gmtime	time	PASS	834d317c	
+hypot@0	math	PASS	834d317c	
+hypot@01	math	PASS	834d317c	
+hypot@1	math	PASS	834d317c	
+hypotf@0	math	PASS	834d317c	
+hypotf@01	math	PASS	834d317c	
+hypotf@1	math	PASS	834d317c	
+hypotl@0	math	PASS	834d317c	
+hypotl@01	math	PASS	834d317c	
+hypotl@1	math	PASS	834d317c	
+ilogb	math	PASS	834d317c	
+ilogbf	math	PASS	834d317c	
+ilogbl	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+imaxabs	stdlib	PASS	834d317c	
+imaxdiv@0	stdlib	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+imaxdiv@01	stdlib	PASS	834d317c	
+imaxdiv@1	stdlib	PASS	834d317c	
+isalnum	ctype	PASS	834d317c	
+isalpha	ctype	PASS	834d317c	
+isblank	ctype	PASS	834d317c	
+iscntrl	ctype	PASS	834d317c	
+isdigit	ctype	PASS	834d317c	
+isgraph	ctype	PASS	834d317c	
+islower	ctype	PASS	834d317c	
+isprint	ctype	PASS	834d317c	
+ispunct	ctype	PASS	834d317c	
+isspace	ctype	PASS	834d317c	
+isupper	ctype	PASS	834d317c	
+iswalnum	ctype	PASS	834d317c	
+iswalpha	ctype	PASS	834d317c	
+iswblank	ctype	PASS	834d317c	
+iswcntrl	ctype	PASS	834d317c	
+iswctype	ctype	PASS	834d317c	
+iswdigit	ctype	PASS	834d317c	
+iswgraph	ctype	PASS	834d317c	
+iswlower	ctype	PASS	834d317c	
+iswprint	ctype	PASS	834d317c	
+iswpunct	ctype	PASS	834d317c	
+iswspace	ctype	PASS	834d317c	
+iswupper	ctype	PASS	834d317c	
+iswxdigit	ctype	PASS	834d317c	
+isxdigit	ctype	PASS	834d317c	
+labs	stdlib	PASS	834d317c	
+ldexp@0	math	PASS	834d317c	
+ldexp@01	math	PASS	834d317c	
+ldexp@1	math	PASS	834d317c	
+ldexpf@0	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+ldexpf@01	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+ldexpf@1	math	PASS	834d317c	
+ldexpl@0	math	PASS	834d317c	
+ldexpl@01	math	PASS	834d317c	
+ldexpl@1	math	PASS	834d317c	
+ldiv@0	stdlib	PASS	834d317c	
+ldiv@01	stdlib	PASS	834d317c	
+ldiv@1	stdlib	PASS	834d317c	
+lgamma	math	PASS	834d317c	
+lgammaf	math	PASS	834d317c	
+lgammal	math	PASS	834d317c	
+llabs	stdlib	PASS	834d317c	
+lldiv@0	stdlib	PASS	834d317c	
+lldiv@01	stdlib	PASS	834d317c	
+lldiv@1	stdlib	PASS	834d317c	
+llrint	math	PASS	834d317c	
+llrintf	math	PASS	834d317c	
+llrintl	math	PASS	834d317c	
+llround	math	PASS	834d317c	
+llroundf	math	PASS	834d317c	
+llroundl	math	PASS	834d317c	
+localeconv	locale	PASS	834d317c	
+localtime	time	PASS	834d317c	
+log	math	PASS	834d317c	
+log10	math	PASS	834d317c	
+log10f	math	PASS	834d317c	
+log10l	math	PASS	834d317c	
+log1p	math	PASS	834d317c	
+log1pf	math	PASS	834d317c	
+log1pl	math	PASS	834d317c	
+log2	math	PASS	834d317c	
+log2f	math	PASS	834d317c	
+log2l	math	PASS	834d317c	
+logb	math	PASS	834d317c	
+logbf	math	PASS	834d317c	
+logbl	math	PASS	834d317c	
+logf	math	PASS	834d317c	
+logl	math	PASS	834d317c	
 longjmp	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-lrint	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lrintf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lrintl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lround	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lroundf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-lroundl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-malloc	malloc	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mblen	multibyte	PASS	8c3b8d5 targeted run	
-mbrlen@0	multibyte	PASS	8c3b8d5 targeted run	
-mbrlen@01	multibyte	PASS	8c3b8d5 targeted run	
-mbrlen@1	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@0	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@01	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@012	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@02	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@1	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@12	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc16@2	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@0	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@01	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@012	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@02	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@1	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@12	multibyte	PASS	8c3b8d5 targeted run	
-mbrtoc32@2	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@0	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@01	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@012	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@02	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@1	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@12	multibyte	PASS	8c3b8d5 targeted run	
-mbrtowc@2	multibyte	PASS	8c3b8d5 targeted run	
-mbsinit	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mbsrtowcs@0	multibyte	PASS	8c3b8d5 targeted run	
-mbsrtowcs@01	multibyte	PASS	8c3b8d5 targeted run	
-mbsrtowcs@1	multibyte	PASS	8c3b8d5 targeted run	
-mbstowcs@0	multibyte	PASS	8c3b8d5 targeted run	
-mbstowcs@01	multibyte	PASS	8c3b8d5 targeted run	
-mbstowcs@1	multibyte	PASS	8c3b8d5 targeted run	
-mbtowc@0	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mbtowc@01	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mbtowc@1	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memchr@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memchr@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memchr@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memcmp@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memcmp@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memcmp@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memcpy@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memcpy@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memcpy@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memmove@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memmove@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memmove@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memset@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memset@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-memset@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mktime	time	ERROR	8c3b8d5 targeted run	cqcheck user: entry sweep_mktime: no sample inside the C program's domain; reasons: no scalar argument of this call flows into a cq_theta_* register; every cq_theta_* register is computed inside the program; substituted cq_theta sites: no floating-point register among the substituted
-modf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-modf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-modf@1	math	PASS	8c3b8d5 targeted run	
-modff@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-modff@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-modff@1	math	PASS	8c3b8d5 targeted run	
-modfl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-modfl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-modfl@1	math	PASS	8c3b8d5 targeted run	
-mtx_destroy	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_init@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_init@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_init@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_lock	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_timedlock@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_timedlock@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_timedlock@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_trylock	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-mtx_unlock	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nan	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nanf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nanl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nearbyint	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nearbyintf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nearbyintl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafter@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafter@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafter@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafterf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafterf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafterf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafterl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafterl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nextafterl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttoward@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttoward@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttoward@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttowardf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttowardf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttowardf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttowardl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttowardl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-nexttowardl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-perror	stdio	PASS	8c3b8d5 targeted run	
-pow@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-pow@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-pow@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-powf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-powf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-powf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-powl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-powl@01	math	PASS	8c3b8d5 targeted run	
-powl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-printf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7200 MB > 7168 MB cap) (2 rows at a time)
-putc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-putchar	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-puts	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-putwc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-putwchar	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-qsort	stdlib	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+lrint	math	PASS	834d317c	
+lrintf	math	PASS	834d317c	
+lrintl	math	PASS	834d317c	
+lround	math	PASS	834d317c	
+lroundf	math	PASS	834d317c	
+lroundl	math	PASS	834d317c	
+malloc	malloc	PASS	834d317c	
+mblen	multibyte	PASS	834d317c	
+mbrlen@0	multibyte	PASS	834d317c	
+mbrlen@01	multibyte	PASS	834d317c	
+mbrlen@1	multibyte	PASS	834d317c	
+mbrtoc16@0	multibyte	PASS	834d317c	
+mbrtoc16@01	multibyte	PASS	834d317c	
+mbrtoc16@012	multibyte	PASS	834d317c	
+mbrtoc16@02	multibyte	PASS	834d317c	
+mbrtoc16@1	multibyte	PASS	834d317c	
+mbrtoc16@12	multibyte	PASS	834d317c	
+mbrtoc16@2	multibyte	PASS	834d317c	
+mbrtoc32@0	multibyte	PASS	834d317c	
+mbrtoc32@01	multibyte	PASS	834d317c	
+mbrtoc32@012	multibyte	PASS	834d317c	
+mbrtoc32@02	multibyte	PASS	834d317c	
+mbrtoc32@1	multibyte	PASS	834d317c	
+mbrtoc32@12	multibyte	PASS	834d317c	
+mbrtoc32@2	multibyte	PASS	834d317c	
+mbrtowc@0	multibyte	PASS	834d317c	
+mbrtowc@01	multibyte	PASS	834d317c	
+mbrtowc@012	multibyte	PASS	834d317c	
+mbrtowc@02	multibyte	PASS	834d317c	
+mbrtowc@1	multibyte	PASS	834d317c	
+mbrtowc@12	multibyte	PASS	834d317c	
+mbrtowc@2	multibyte	PASS	834d317c	
+mbsinit	multibyte	PASS	834d317c	
+mbsrtowcs@0	multibyte	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+mbsrtowcs@01	multibyte	PASS	834d317c	
+mbsrtowcs@1	multibyte	PASS	834d317c	
+mbstowcs@0	multibyte	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+mbstowcs@01	multibyte	PASS	834d317c	
+mbstowcs@1	multibyte	PASS	834d317c	
+mbtowc@0	multibyte	PASS	834d317c	
+mbtowc@01	multibyte	PASS	834d317c	
+mbtowc@1	multibyte	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+memchr@0	string	PASS	834d317c	
+memchr@01	string	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+memchr@1	string	PASS	834d317c	
+memcmp@0	string	PASS	834d317c	
+memcmp@01	string	PASS	834d317c	
+memcmp@1	string	PASS	834d317c	
+memcpy@0	string	PASS	834d317c	
+memcpy@01	string	PASS	834d317c	
+memcpy@1	string	PASS	834d317c	
+memmove@0	string	PASS	834d317c	
+memmove@01	string	PASS	834d317c	
+memmove@1	string	PASS	834d317c	
+memset@0	string	PASS	834d317c	
+memset@01	string	PASS	834d317c	
+memset@1	string	PASS	834d317c	
+mktime	time	PASS	834d317c	
+modf@0	math	PASS	834d317c	
+modf@01	math	PASS	834d317c	
+modf@1	math	PASS	834d317c	
+modff@0	math	PASS	834d317c	
+modff@01	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+modff@1	math	PASS	834d317c	
+modfl@0	math	PASS	834d317c	
+modfl@01	math	PASS	834d317c	
+modfl@1	math	PASS	834d317c	
+mtx_destroy	thread	PASS	834d317c	
+mtx_init@0	thread	PASS	834d317c	
+mtx_init@01	thread	PASS	834d317c	
+mtx_init@1	thread	PASS	834d317c	
+mtx_lock	thread	PASS	834d317c	
+mtx_timedlock@0	thread	PASS	834d317c	
+mtx_timedlock@01	thread	PASS	834d317c	
+mtx_timedlock@1	thread	PASS	834d317c	
+mtx_trylock	thread	PASS	834d317c	
+mtx_unlock	thread	PASS	834d317c	
+nan	math	PASS	834d317c	
+nanf	math	PASS	834d317c	
+nanl	math	PASS	834d317c	
+nearbyint	math	PASS	834d317c	
+nearbyintf	math	PASS	834d317c	
+nearbyintl	math	PASS	834d317c	
+nextafter@0	math	PASS	834d317c	
+nextafter@01	math	PASS	834d317c	
+nextafter@1	math	PASS	834d317c	
+nextafterf@0	math	PASS	834d317c	
+nextafterf@01	math	PASS	834d317c	
+nextafterf@1	math	PASS	834d317c	
+nextafterl@0	math	PASS	834d317c	
+nextafterl@01	math	PASS	834d317c	
+nextafterl@1	math	PASS	834d317c	
+nexttoward@0	math	PASS	834d317c	
+nexttoward@01	math	PASS	834d317c	
+nexttoward@1	math	PASS	834d317c	
+nexttowardf@0	math	PASS	834d317c	
+nexttowardf@01	math	PASS	834d317c	
+nexttowardf@1	math	PASS	834d317c	
+nexttowardl@0	math	PASS	834d317c	
+nexttowardl@01	math	PASS	834d317c	
+nexttowardl@1	math	PASS	834d317c	
+perror	stdio	PASS	6e4b744c	run singly after the fix
+pow@0	math	PASS	834d317c	
+pow@01	math	PASS	834d317c	
+pow@1	math	PASS	834d317c	
+powf@0	math	PASS	834d317c	
+powf@01	math	PASS	834d317c	
+powf@1	math	PASS	834d317c	
+powl@0	math	PASS	834d317c	
+powl@01	math	PASS	834d317c	
+powl@1	math	PASS	834d317c	
+printf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+putc	stdio	PASS	834d317c	
+putchar	stdio	PASS	834d317c	
+puts	stdio	PASS	834d317c	
+putwc	stdio	PASS	834d317c	
+putwchar	stdio	PASS	834d317c	
+qsort	stdlib	PASS	834d317c	
 quick_exit	exit	SKIP	-	does not return (exit-like)
-raise	signal	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rand	prng	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-realloc	malloc	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainder@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainder@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainder@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainderf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainderf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainderf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainderl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainderl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remainderl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remove	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@012	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@02	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@12	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquo@2	math	PASS	8c3b8d5 targeted run	
-remquof@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquof@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquof@012	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquof@02	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquof@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquof@12	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquof@2	math	PASS	8c3b8d5 targeted run	
-remquol@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquol@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquol@012	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquol@02	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquol@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquol@12	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-remquol@2	math	PASS	8c3b8d5 targeted run	
-rename@0	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rename@01	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rename@1	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rewind	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rint	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rintf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-rintl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-round	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-roundf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-roundl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbln@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbln@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbln@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalblnf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalblnf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalblnf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalblnl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalblnl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalblnl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbn@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbn@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbn@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbnf@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbnf@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbnf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbnl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbnl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scalbnl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-scanf	stdio	PASS	8c3b8d5 targeted run	
-setbuf	stdio	PASS	8c3b8d5 targeted run	
+raise	signal	PASS	834d317c	
+rand	prng	PASS	834d317c	
+realloc	malloc	PASS	834d317c	
+remainder@0	math	PASS	834d317c	
+remainder@01	math	PASS	834d317c	
+remainder@1	math	PASS	834d317c	
+remainderf@0	math	PASS	834d317c	
+remainderf@01	math	PASS	834d317c	
+remainderf@1	math	PASS	834d317c	
+remainderl@0	math	PASS	834d317c	
+remainderl@01	math	PASS	834d317c	
+remainderl@1	math	PASS	834d317c	
+remove	stdio	PASS	834d317c	
+remquo@0	math	PASS	834d317c	
+remquo@01	math	PASS	834d317c	
+remquo@012	math	PASS	834d317c	
+remquo@02	math	PASS	834d317c	
+remquo@1	math	PASS	834d317c	
+remquo@12	math	PASS	834d317c	
+remquo@2	math	PASS	834d317c	
+remquof@0	math	PASS	834d317c	
+remquof@01	math	PASS	834d317c	
+remquof@012	math	PASS	834d317c	
+remquof@02	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+remquof@1	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+remquof@12	math	PASS	834d317c	
+remquof@2	math	PASS	834d317c	
+remquol@0	math	PASS	834d317c	
+remquol@01	math	PASS	834d317c	
+remquol@012	math	PASS	834d317c	
+remquol@02	math	PASS	834d317c	
+remquol@1	math	PASS	834d317c	
+remquol@12	math	PASS	834d317c	
+remquol@2	math	PASS	834d317c	
+rename@0	stdio	PASS	834d317c	
+rename@01	stdio	PASS	834d317c	
+rename@1	stdio	PASS	834d317c	
+rewind	stdio	PASS	834d317c	
+rint	math	PASS	834d317c	
+rintf	math	PASS	834d317c	
+rintl	math	PASS	834d317c	
+round	math	PASS	834d317c	
+roundf	math	PASS	834d317c	
+roundl	math	PASS	834d317c	
+scalbln@0	math	PASS	834d317c	
+scalbln@01	math	PASS	834d317c	
+scalbln@1	math	PASS	834d317c	
+scalblnf@0	math	PASS	834d317c	
+scalblnf@01	math	PASS	834d317c	
+scalblnf@1	math	PASS	834d317c	
+scalblnl@0	math	PASS	834d317c	
+scalblnl@01	math	PASS	834d317c	
+scalblnl@1	math	PASS	834d317c	
+scalbn@0	math	PASS	834d317c	
+scalbn@01	math	PASS	834d317c	
+scalbn@1	math	PASS	834d317c	
+scalbnf@0	math	PASS	834d317c	
+scalbnf@01	math	PASS	834d317c	
+scalbnf@1	math	PASS	834d317c	
+scalbnl@0	math	PASS	834d317c	
+scalbnl@01	math	PASS	834d317c	
+scalbnl@1	math	PASS	834d317c	
+scanf	stdio	PASS	834d317c	
+setbuf	stdio	PASS	834d317c	
 setjmp	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-setlocale@0	locale	PASS	8c3b8d5 targeted run	
-setlocale@01	locale	PASS	8c3b8d5 targeted run	
-setlocale@1	locale	PASS	8c3b8d5 targeted run	
-setvbuf	stdio	ERROR	8c3b8d5 targeted run	cqcheck user: entry sweep_setvbuf: no sample inside the C program's domain; reasons: every one of its 1 samples is outside the C program's domain: 1 access outside an object (cq-nqna); the quantum arguments (0 bits) and the substituted cq_theta reaches (32 bits: {'sweep_setvbuf:0': 1} | no scalar ar
-signal	signal	PASS	8c3b8d5 targeted run	
-sin	math	PASS	8c3b8d5 targeted run	
-sinf	math	PASS	8c3b8d5 targeted run	
-sinh	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-sinhf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-sinhl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-sinl	math	PASS	8c3b8d5 targeted run	
-snprintf@0	stdio	PASS	33f4804	
-snprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
-snprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
-sprintf@0	stdio	PASS	33f4804	
-sprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
-sprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
-sqrt	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-sqrtf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-sqrtl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-srand	prng	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-sscanf	stdio	PASS	8c3b8d5 targeted run	
-strcat@0	string	PASS	8c3b8d5 targeted run	
-strcat@01	string	PASS	8c3b8d5 targeted run	
-strcat@1	string	PASS	8c3b8d5 targeted run	
-strchr@0	string	PASS	8c3b8d5 targeted run	
-strchr@01	string	PASS	8c3b8d5 targeted run	
-strchr@1	string	PASS	8c3b8d5 targeted run	
-strcmp@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strcmp@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strcmp@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strcoll@0	locale	PASS	8c3b8d5 targeted run	
-strcoll@01	locale	PASS	8c3b8d5 targeted run	
-strcoll@1	locale	PASS	8c3b8d5 targeted run	
-strcpy@0	string	PASS	8c3b8d5 targeted run	
-strcpy@01	string	PASS	8c3b8d5 targeted run	
-strcpy@1	string	PASS	8c3b8d5 targeted run	
-strcspn@0	string	PASS	8c3b8d5 targeted run	
-strcspn@01	string	PASS	8c3b8d5 targeted run	
-strcspn@1	string	PASS	8c3b8d5 targeted run	
-strerror	errno	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strftime@0	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7188 MB > 7168 MB cap) (2 rows at a time)
-strftime@01	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7251 MB > 7168 MB cap) (2 rows at a time)
-strftime@1	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7236 MB > 7168 MB cap) (2 rows at a time)
-strlen	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncat@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncat@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncat@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncmp@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncmp@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncmp@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncpy@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncpy@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strncpy@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strpbrk@0	string	PASS	8c3b8d5 targeted run	
-strpbrk@01	string	PASS	8c3b8d5 targeted run	
-strpbrk@1	string	PASS	8c3b8d5 targeted run	
-strrchr@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strrchr@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strrchr@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strspn@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strspn@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strspn@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strstr@0	string	PASS	8c3b8d5 targeted run	
-strstr@01	string	PASS	8c3b8d5 targeted run	
-strstr@1	string	PASS	8c3b8d5 targeted run	
-strtod	stdlib	PASS	8c3b8d5 targeted run	
-strtof	stdlib	PASS	8c3b8d5 targeted run	
-strtoimax	stdlib	PASS	8c3b8d5 targeted run	
-strtok@0	string	PASS	8c3b8d5 targeted run	
-strtok@01	string	PASS	8c3b8d5 targeted run	
-strtok@1	string	PASS	8c3b8d5 targeted run	
-strtol	stdlib	PASS	8c3b8d5 targeted run	
-strtold	stdlib	PASS	8c3b8d5 targeted run	
-strtoll	stdlib	PASS	8c3b8d5 targeted run	
-strtoul	stdlib	PASS	8c3b8d5 targeted run	
-strtoull	stdlib	PASS	8c3b8d5 targeted run	
-strtoumax	stdlib	PASS	8c3b8d5 targeted run	
-strxfrm@0	locale	PASS	8c3b8d5 targeted run	
-strxfrm@01	locale	PASS	8c3b8d5 targeted run	
-strxfrm@1	locale	PASS	8c3b8d5 targeted run	
-swprintf@0	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7188 MB > 7168 MB cap) (2 rows at a time)
-swprintf@01	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7188 MB > 7168 MB cap) (2 rows at a time)
-swprintf@1	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7183 MB > 7168 MB cap) (2 rows at a time)
-swscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7184 MB > 7168 MB cap) (2 rows at a time)
+setlocale@0	locale	PASS	834d317c	
+setlocale@01	locale	PASS	834d317c	
+setlocale@1	locale	PASS	834d317c	
+setvbuf	stdio	PASS	834d317c	
+signal	signal	PASS	834d317c	
+sin	math	PASS	834d317c	
+sinf	math	PASS	834d317c	
+sinh	math	PASS	834d317c	
+sinhf	math	PASS	834d317c	
+sinhl	math	PASS	834d317c	
+sinl	math	PASS	834d317c	
+snprintf@0	stdio	PASS	834d317c	
+snprintf@01	stdio	PASS	834d317c	
+snprintf@1	stdio	PASS	834d317c	
+sprintf@0	stdio	PASS	834d317c	
+sprintf@01	stdio	PASS	834d317c	
+sprintf@1	stdio	PASS	834d317c	
+sqrt	math	PASS	834d317c	
+sqrtf	math	PASS	834d317c	
+sqrtl	math	PASS	834d317c	
+srand	prng	PASS	834d317c	
+sscanf	stdio	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+strcat@0	string	PASS	834d317c	
+strcat@01	string	PASS	834d317c	
+strcat@1	string	PASS	834d317c	
+strchr@0	string	PASS	834d317c	
+strchr@01	string	PASS	834d317c	
+strchr@1	string	PASS	834d317c	
+strcmp@0	string	PASS	834d317c	
+strcmp@01	string	PASS	834d317c	
+strcmp@1	string	PASS	834d317c	
+strcoll@0	locale	PASS	834d317c	
+strcoll@01	locale	PASS	834d317c	
+strcoll@1	locale	PASS	834d317c	
+strcpy@0	string	PASS	834d317c	
+strcpy@01	string	PASS	834d317c	
+strcpy@1	string	PASS	834d317c	
+strcspn@0	string	PASS	834d317c	
+strcspn@01	string	PASS	834d317c	
+strcspn@1	string	PASS	834d317c	
+strerror	errno	PASS	834d317c	
+strftime@0	time	PASS	10feac5e	CQ_K(__strftime_fmt_1, 1) on both sides (owner, cq-1dds4); run singly: 120 s per sample, 2400 s, 7 GB
+strftime@01	time	PASS	10feac5e	CQ_K(__strftime_fmt_1, 1) on both sides (owner, cq-1dds4); run singly: 120 s per sample, 2400 s, 7 GB
+strftime@1	time	PASS	10feac5e	CQ_K(__strftime_fmt_1, 1) on both sides (owner, cq-1dds4); run singly: 120 s per sample, 2400 s, 7 GB
+strlen	string	PASS	834d317c	
+strncat@0	string	PASS	834d317c	
+strncat@01	string	PASS	834d317c	
+strncat@1	string	PASS	834d317c	
+strncmp@0	string	PASS	834d317c	
+strncmp@01	string	PASS	834d317c	
+strncmp@1	string	PASS	834d317c	
+strncpy@0	string	PASS	834d317c	
+strncpy@01	string	PASS	834d317c	
+strncpy@1	string	PASS	834d317c	
+strpbrk@0	string	PASS	834d317c	
+strpbrk@01	string	PASS	834d317c	
+strpbrk@1	string	PASS	834d317c	
+strrchr@0	string	PASS	834d317c	
+strrchr@01	string	PASS	834d317c	
+strrchr@1	string	PASS	834d317c	
+strspn@0	string	PASS	834d317c	
+strspn@01	string	PASS	834d317c	
+strspn@1	string	PASS	834d317c	
+strstr@0	string	PASS	834d317c	
+strstr@01	string	PASS	834d317c	
+strstr@1	string	PASS	834d317c	
+strtod	stdlib	PASS	834d317c	
+strtof	stdlib	PASS	834d317c	
+strtoimax	stdlib	PASS	834d317c	
+strtok@0	string	PASS	834d317c	
+strtok@01	string	PASS	834d317c	
+strtok@1	string	PASS	834d317c	
+strtol	stdlib	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+strtold	stdlib	PASS	834d317c	
+strtoll	stdlib	PASS	834d317c	
+strtoul	stdlib	PASS	834d317c	
+strtoull	stdlib	PASS	834d317c	
+strtoumax	stdlib	PASS	834d317c	
+strxfrm@0	locale	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+strxfrm@01	locale	PASS	834d317c	
+strxfrm@1	locale	PASS	834d317c	
+swprintf@0	stdio	PASS	7f750793	run singly: 120 s per sample, 2400 s, 7 GB
+swprintf@01	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
+swprintf@1	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
+swscanf	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
 system	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-tan	math	PASS	8c3b8d5 targeted run	
-tanf	math	PASS	8c3b8d5 targeted run	
-tanh	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tanhf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tanhl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tanl	math	PASS	8c3b8d5 targeted run	
-tgamma	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tgammaf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tgammal	math	PASS	8c3b8d5 targeted run	
-thrd_create@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-thrd_create@01	thread	PASS	8c3b8d5 targeted run	
-thrd_create@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+tan	math	PASS	834d317c	
+tanf	math	PASS	834d317c	
+tanh	math	PASS	834d317c	
+tanhf	math	PASS	834d317c	
+tanhl	math	PASS	834d317c	
+tanl	math	PASS	834d317c	
+tgamma	math	PASS	834d317c	
+tgammaf	math	PASS	834d317c	
+tgammal	math	PASS	834d317c	
+thrd_create@0	thread	PASS	834d317c	
+thrd_create@01	thread	PASS	834d317c	
+thrd_create@1	thread	PASS	834d317c	
 thrd_current	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 thrd_detach	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 thrd_equal	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 thrd_exit	thread	SKIP	-	does not return (exit-like)
-thrd_join	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-thrd_sleep@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-thrd_sleep@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-thrd_sleep@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+thrd_join	thread	PASS	834d317c	
+thrd_sleep@0	thread	PASS	834d317c	
+thrd_sleep@01	thread	PASS	834d317c	
+thrd_sleep@1	thread	PASS	834d317c	
 thrd_yield	thread	SKIP	-	no input to make quantum and no observable result
-time	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-timespec_get@0	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-timespec_get@01	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-timespec_get@1	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tmpfile	stdio	PASS	8c3b8d5 targeted run	
-tmpnam	stdio	PASS	8c3b8d5 targeted run	
-tolower	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-toupper	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-towctrans	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-towlower	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-towupper	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-trunc	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-truncf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-truncl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tss_create	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tss_delete	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
+time	time	PASS	834d317c	
+timespec_get@0	time	PASS	834d317c	
+timespec_get@01	time	PASS	834d317c	
+timespec_get@1	time	PASS	834d317c	
+tmpfile	stdio	PASS	834d317c	
+tmpnam	stdio	PASS	834d317c	
+tolower	ctype	PASS	834d317c	
+toupper	ctype	PASS	834d317c	
+towctrans	ctype	PASS	834d317c	
+towlower	ctype	PASS	834d317c	
+towupper	ctype	PASS	834d317c	
+trunc	math	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+truncf	math	PASS	834d317c	
+truncl	math	PASS	834d317c	
+tss_create	thread	PASS	834d317c	
+tss_delete	thread	PASS	834d317c	
 tss_get	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-tss_set@0	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tss_set@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-tss_set@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-ungetc	stdio	PASS	8c3b8d5 targeted run	
-ungetwc	stdio	PASS	8c3b8d5 targeted run	
-vfprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7306 MB > 7168 MB cap) (2 rows at a time)
-vfscanf	stdio	PASS	8c3b8d5 targeted run	
-vfwprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7412 MB > 7168 MB cap) (2 rows at a time)
-vfwscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7204 MB > 7168 MB cap) (2 rows at a time)
-vprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7277 MB > 7168 MB cap) (2 rows at a time)
-vscanf	stdio	PASS	8c3b8d5 targeted run	
-vsnprintf@0	stdio	PASS	33f4804	
-vsnprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
-vsnprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
-vsprintf@0	stdio	PASS	33f4804	
-vsprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
-vsprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
-vsscanf	stdio	PASS	8c3b8d5 targeted run	
-vswprintf@0	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7169 MB > 7168 MB cap) (2 rows at a time)
-vswprintf@01	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7180 MB > 7168 MB cap) (2 rows at a time)
-vswprintf@1	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7184 MB > 7168 MB cap) (2 rows at a time)
-vswscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7201 MB > 7168 MB cap) (2 rows at a time)
-vwprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7752 MB > 7168 MB cap) (2 rows at a time)
-vwscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7195 MB > 7168 MB cap) (2 rows at a time)
-wcrtomb@0	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcrtomb@01	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcrtomb@012	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcrtomb@02	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcrtomb@1	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcrtomb@12	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcrtomb@2	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscat@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscat@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscat@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcschr@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcschr@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcschr@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscmp@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscmp@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscmp@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscoll@0	locale	PASS	8c3b8d5 targeted run	
-wcscoll@01	locale	PASS	8c3b8d5 targeted run	
-wcscoll@1	locale	PASS	8c3b8d5 targeted run	
-wcscpy@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscpy@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscpy@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscspn@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscspn@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcscspn@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsftime@0	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7232 MB > 7168 MB cap) (2 rows at a time)
-wcsftime@01	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7204 MB > 7168 MB cap) (2 rows at a time)
-wcsftime@1	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7179 MB > 7168 MB cap) (2 rows at a time)
-wcslen	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncat@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncat@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncat@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncmp@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncmp@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncmp@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncpy@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncpy@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsncpy@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcspbrk@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcspbrk@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcspbrk@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsrchr@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsrchr@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsrchr@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsrtombs@0	multibyte	PASS	8c3b8d5 targeted run	
-wcsrtombs@01	multibyte	PASS	8c3b8d5 targeted run	
-wcsrtombs@1	multibyte	PASS	8c3b8d5 targeted run	
-wcsspn@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsspn@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsspn@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsstr@0	string	PASS	8c3b8d5 targeted run	
-wcsstr@01	string	PASS	8c3b8d5 targeted run	
-wcsstr@1	string	PASS	8c3b8d5 targeted run	
-wcstod	stdlib	PASS	8c3b8d5 targeted run	
-wcstof	stdlib	PASS	8c3b8d5 targeted run	
-wcstoimax	stdlib	PASS	8c3b8d5 targeted run	
-wcstok@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcstok@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcstok@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcstol	stdlib	PASS	8c3b8d5 targeted run	
-wcstold	stdlib	PASS	8c3b8d5 targeted run	
-wcstoll	stdlib	PASS	8c3b8d5 targeted run	
-wcstombs@0	multibyte	PASS	8c3b8d5 targeted run	
-wcstombs@01	multibyte	PASS	8c3b8d5 targeted run	
-wcstombs@1	multibyte	PASS	8c3b8d5 targeted run	
-wcstoul	stdlib	PASS	8c3b8d5 targeted run	
-wcstoull	stdlib	PASS	8c3b8d5 targeted run	
-wcstoumax	stdlib	PASS	8c3b8d5 targeted run	
-wcswcs@0	string	PASS	8c3b8d5 targeted run	
-wcswcs@01	string	PASS	8c3b8d5 targeted run	
-wcswcs@1	string	PASS	8c3b8d5 targeted run	
-wcsxfrm@0	locale	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsxfrm@01	locale	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsxfrm@1	locale	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wctob	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wctomb@0	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wctomb@01	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wctomb@1	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wctrans	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wctype	ctype	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemchr@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemchr@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemchr@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemcmp@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemcmp@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemcmp@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemcpy@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemcpy@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemcpy@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemmove@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemmove@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemmove@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemset@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemset@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wmemset@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7739 MB > 7168 MB cap) (2 rows at a time)
-wscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7232 MB > 7168 MB cap) (2 rows at a time)
+tss_set@0	thread	PASS	834d317c	
+tss_set@01	thread	PASS	834d317c	
+tss_set@1	thread	PASS	834d317c	
+ungetc	stdio	PASS	834d317c	
+ungetwc	stdio	PASS	834d317c	
+vfprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+vfscanf	stdio	PASS	834d317c	
+vfwprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+vfwscanf	stdio	PASS	834d317c	
+vprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+vscanf	stdio	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+vsnprintf@0	stdio	PASS	7f750793	run singly: 120 s per sample, 2400 s, 7 GB
+vsnprintf@01	stdio	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+vsnprintf@1	stdio	PASS	834d317c	
+vsprintf@0	stdio	PASS	834d317c	
+vsprintf@01	stdio	PASS	834d317c	
+vsprintf@1	stdio	PASS	834d317c	
+vsscanf	stdio	PASS	834d317c	
+vswprintf@0	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
+vswprintf@01	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
+vswprintf@1	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
+vswscanf	stdio	PASS	c0829a4e	run singly: 120 s per sample, 2400 s, 7 GB
+vwprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+vwscanf	stdio	PASS	834d317c	
+wcrtomb@0	multibyte	PASS	834d317c	
+wcrtomb@01	multibyte	PASS	834d317c	
+wcrtomb@012	multibyte	PASS	834d317c	
+wcrtomb@02	multibyte	PASS	834d317c	
+wcrtomb@1	multibyte	PASS	834d317c	
+wcrtomb@12	multibyte	PASS	834d317c	
+wcrtomb@2	multibyte	PASS	834d317c	
+wcscat@0	string	PASS	834d317c	
+wcscat@01	string	PASS	834d317c	
+wcscat@1	string	PASS	834d317c	
+wcschr@0	string	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+wcschr@01	string	PASS	834d317c	
+wcschr@1	string	PASS	834d317c	
+wcscmp@0	string	PASS	834d317c	
+wcscmp@01	string	PASS	834d317c	
+wcscmp@1	string	PASS	834d317c	
+wcscoll@0	locale	PASS	834d317c	
+wcscoll@01	locale	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+wcscoll@1	locale	PASS	834d317c	run singly (its sweep chunk was killed at 800 s)
+wcscpy@0	string	PASS	834d317c	
+wcscpy@01	string	PASS	834d317c	
+wcscpy@1	string	PASS	834d317c	
+wcscspn@0	string	PASS	834d317c	
+wcscspn@01	string	PASS	834d317c	
+wcscspn@1	string	PASS	834d317c	
+wcsftime@0	time	PASS	10feac5e	CQ_K(__strftime_fmt_1, 1) on both sides (owner, cq-1dds4); run singly: 120 s per sample, 2400 s, 7 GB
+wcsftime@01	time	PASS	10feac5e	CQ_K(__strftime_fmt_1, 1) on both sides (owner, cq-1dds4); run singly: 120 s per sample, 2400 s, 7 GB
+wcsftime@1	time	PASS	10feac5e	CQ_K(__strftime_fmt_1, 1) on both sides (owner, cq-1dds4); run singly: 120 s per sample, 2400 s, 7 GB
+wcslen	string	PASS	834d317c	
+wcsncat@0	string	PASS	834d317c	
+wcsncat@01	string	PASS	834d317c	
+wcsncat@1	string	PASS	834d317c	
+wcsncmp@0	string	PASS	834d317c	
+wcsncmp@01	string	PASS	834d317c	
+wcsncmp@1	string	PASS	834d317c	
+wcsncpy@0	string	PASS	834d317c	
+wcsncpy@01	string	PASS	834d317c	
+wcsncpy@1	string	PASS	834d317c	
+wcspbrk@0	string	PASS	834d317c	
+wcspbrk@01	string	PASS	834d317c	
+wcspbrk@1	string	PASS	834d317c	
+wcsrchr@0	string	PASS	834d317c	
+wcsrchr@01	string	PASS	834d317c	
+wcsrchr@1	string	PASS	834d317c	
+wcsrtombs@0	multibyte	PASS	6e4b744c	run singly after the fix
+wcsrtombs@01	multibyte	PASS	6e4b744c	run singly after the fix
+wcsrtombs@1	multibyte	PASS	6e4b744c	run singly after the fix
+wcsspn@0	string	PASS	834d317c	
+wcsspn@01	string	PASS	834d317c	
+wcsspn@1	string	PASS	834d317c	
+wcsstr@0	string	PASS	834d317c	
+wcsstr@01	string	PASS	834d317c	
+wcsstr@1	string	PASS	834d317c	
+wcstod	stdlib	PASS	834d317c	
+wcstof	stdlib	PASS	834d317c	
+wcstoimax	stdlib	PASS	834d317c	
+wcstok@0	string	PASS	834d317c	
+wcstok@01	string	PASS	834d317c	
+wcstok@1	string	PASS	834d317c	
+wcstol	stdlib	PASS	834d317c	
+wcstold	stdlib	PASS	834d317c	
+wcstoll	stdlib	PASS	834d317c	
+wcstombs@0	multibyte	PASS	6e4b744c	run singly after the fix
+wcstombs@01	multibyte	PASS	6e4b744c	run singly after the fix
+wcstombs@1	multibyte	PASS	6e4b744c	run singly after the fix
+wcstoul	stdlib	PASS	834d317c	
+wcstoull	stdlib	PASS	834d317c	
+wcstoumax	stdlib	PASS	834d317c	
+wcswcs@0	string	PASS	834d317c	
+wcswcs@01	string	PASS	834d317c	
+wcswcs@1	string	PASS	834d317c	
+wcsxfrm@0	locale	PASS	834d317c	
+wcsxfrm@01	locale	PASS	834d317c	
+wcsxfrm@1	locale	PASS	834d317c	
+wctob	multibyte	PASS	834d317c	
+wctomb@0	multibyte	PASS	834d317c	
+wctomb@01	multibyte	PASS	834d317c	
+wctomb@1	multibyte	PASS	834d317c	
+wctrans	ctype	PASS	834d317c	
+wctype	ctype	PASS	834d317c	
+wmemchr@0	string	PASS	834d317c	
+wmemchr@01	string	PASS	834d317c	
+wmemchr@1	string	PASS	834d317c	
+wmemcmp@0	string	PASS	834d317c	
+wmemcmp@01	string	PASS	834d317c	
+wmemcmp@1	string	PASS	834d317c	
+wmemcpy@0	string	PASS	834d317c	
+wmemcpy@01	string	PASS	834d317c	
+wmemcpy@1	string	PASS	834d317c	
+wmemmove@0	string	PASS	834d317c	
+wmemmove@01	string	PASS	834d317c	
+wmemmove@1	string	PASS	834d317c	
+wmemset@0	string	PASS	834d317c	
+wmemset@01	string	PASS	834d317c	
+wmemset@1	string	PASS	834d317c	
+wprintf	stdio	PASS	834d317c	nothing compared: every sample is excluded as rule 16's stated deviation
+wscanf	stdio	PASS	834d317c	

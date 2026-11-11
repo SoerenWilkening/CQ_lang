@@ -3,7 +3,30 @@
 Branch `flat-memory` at 8c3b8d5, CQ_spec 4d08ffa, LLVM 19.1.7, K = 4. Per-row results: [`libc_results.tsv`](libc_results.tsv).
 A row is one libc function, or one function@mask when the mask names which inputs are quantum. The check is `cqcheck user --light` (16 samples): a smoke test, not a proof, and once it hid a miscompile.
 
-## Numbers (813 comparable rows)
+## Update 2026-11-11: 813 of 813 comparable rows PASS
+
+`libc_results.tsv` now holds the state at `flat-memory` 6e4b744c (CQ_spec 96c7bc5). The sections below describe 8c3b8d5 and are kept as history.
+
+| of 813 | 8c3b8d5 | 6e4b744c |
+|---|---|---|
+| PASS | 774 | **813** |
+| FAIL | 8 | 0 |
+| ERROR | 4 | 0 |
+| DEFERRED | 27 | 0 |
+
+How it was made. All 813 rows were swept once on 834d317c in three shards, except 16 heavy rows that were run singly before it. 24 rows whose sweep chunk was killed at 800 s were rerun singly on the same build. Seven rows were rerun on 6e4b744c after their fixes. The `source` column names the commit of each row's verdict.
+
+What to keep in mind when reading the PASS column:
+- The check is still the light one (16 samples from one classical group).
+- The 16 heavy rows (strftime and wcsftime at three masks, asctime, swprintf and vswprintf at three masks, swscanf, vswscanf, vsnprintf@0) ran with 120 s of CPU per sample instead of 30 s (owner 2026-11-10), 2400 s for the check and a 7 GB cap. The 24 single reruns used the same 120 s allowance.
+- The six strftime and wcsftime rows ran with `CQ_K(__strftime_fmt_1, 1)` in the caller, so the pass and the C oracle both cut that recursion at 1 (owner ruling cq-1dds4).
+- Eight rows compare nothing: printf, fprintf, vprintf, vfprintf, wprintf, fwprintf, vwprintf, vfwprintf. Every sample is excluded as rule 16's stated deviation, so their PASS says only that the row builds, lowers and runs.
+- The scanf family reads an empty input on both sides; CR does not define stdin under the checker.
+- The checker changed heavily since its last complete selftest. On the state just before the stream fixes all 42 mutants were rejected and 28 controls passed; 181 of the 213 empty-output checks had not been run when this was written.
+
+What changed the verdicts: rule 8 inside K-loop trips (cq-jws5r), stream calls by name as host calls on both sides (cq-pt57w, cq-xkmrm, cq-tgl3i, cq-xdscs), the evaluator and its kept lists (about 10 times faster per runtime call, cq-v0u99), lowering time (cq-g3h1i, cq-4tkb4), measurement sites identified per register and per classical group (cq-v8cn7, cq-1ye9c), and a carried switch case atom's type (cq-7jd1z).
+
+## Numbers at 8c3b8d5 (813 comparable rows)
 
 There are 829 rows. The 16 SKIP rows can get no verdict whatever the pass does (listed below), so they are left out of the comparison; they are the same 16 before and after.
 
