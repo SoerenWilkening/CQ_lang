@@ -235,6 +235,13 @@ CASES = [
       r"call i32 @cqrt_tape_effect_i32_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vscanf, i32 2\)"]),
     ("stream_scanf", "stream_scanf", [], "wrong: stream_scanf.wrongptr.ll", []),
     ("stream_scanf", "stream_scanf", [], "wrong: stream_scanf.noscan.ll", []),
+    # cq-xdscs (rule 16, BACKEND_ABI §1.11): perror and puts read a string whose first byte is quantum, results unread (no
+    # stated deviation): deferred entries performed on the measured string, read up to its first 0 (on x0 = 0: ""), as the
+    # C program's call reads it. The mutant passes perror the string's second byte.
+    ("stream_reads_string", "stream_reads_string", [], "pass",
+     [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.perror, i32 1\)",
+      r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.puts, i32 1\)"]),
+    ("stream_reads_string", "stream_reads_string", [], "wrong: stream_reads_string.wrongptr.ll", []),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
