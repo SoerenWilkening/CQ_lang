@@ -3630,7 +3630,8 @@ namespace outres {
 
 // Sel3: 0 when the int argument `first` is 0, 1 or 2, else -1 (owner ruling 2026-11-12 cq-dbtpi: fseek's whence, musl
 // fseek.c __fseeko_unlocked; setvbuf's type, musl setvbuf.c, _IOFBF 0, _IOLBF 1, _IONBF 2).
-enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3 };
+// Length: the count argument `first` (write.c: the syscall's count when it succeeds).
+enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3, Length };
 struct Fn {
   Kind kind;
   unsigned first;
@@ -3658,6 +3659,9 @@ std::optional<Fn> outputFunction(const Function &F) {
       {"fclose", {Kind::Zero, 0}},    {"remove", {Kind::Zero, 0}},    {"rename", {Kind::Zero, 0}},
       {"fsetpos", {Kind::Zero, 0}},   {"close", {Kind::Zero, 0}},
       {"fseek", {Kind::Sel3, 2}},     {"setvbuf", {Kind::Sel3, 2}},
+      // CR rule 16 names these two too (K1's pass, eff/tape/Tape.cpp): fseeko is __fseeko (fseek.c weak_alias), as
+      // fseek; write's result is its count (unistd/write.c, the syscall when it succeeds)
+      {"fseeko", {Kind::Sel3, 2}},    {"write", {Kind::Length, 2}},
       {"fputc", {Kind::UChar, 0}},    {"putc", {Kind::UChar, 0}},     {"putchar", {Kind::UChar, 0}},
       {"fwrite", {Kind::Fwrite, 0}},
       {"fputwc", {Kind::Wc, 0}},      {"putwc", {Kind::Wc, 0}},       {"putwchar", {Kind::Wc, 0}},
@@ -3691,6 +3695,9 @@ std::optional<Fn> outputFunction(const Function &F) {
   case Kind::Sel3:
     return !ft->isVarArg() && ft->getNumParams() == o.first + (n == "setvbuf" ? 2 : 1) && argIs(0, true) &&
                    argIs(o.first, false)
+               ? std::optional(o) : std::nullopt;
+  case Kind::Length:
+    return !ft->isVarArg() && ft->getNumParams() == 3 && argIs(0, false) && argIs(1, true) && argIs(2, false)
                ? std::optional(o) : std::nullopt;
   }
   return std::nullopt;
@@ -3895,6 +3902,9 @@ struct Pass : PassInfoMixin<Pass> {
                            ConstantInt::get(rt, 0));
         break;
       }
+      case Kind::Length:
+        v = B.CreateZExtOrTrunc(CB->getArgOperand(o.first), rt);
+        break;
       case Kind::Sel3: {
         Value *a = CB->getArgOperand(o.first);
         v = B.CreateSelect(B.CreateICmpULT(a, ConstantInt::get(a->getType(), 3)), ConstantInt::get(rt, 0),

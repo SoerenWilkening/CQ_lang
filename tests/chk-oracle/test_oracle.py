@@ -646,6 +646,22 @@ int effvals(int w, int t, int s) {
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(1), i32(2), i32(40)]},
                                        {"call": 0, "args": [i32(0), i32(0), i32(0)]}]), ["0x31a80", "0x31a80"])
 
+    def test_write_fseeko(self):
+        # CR rule 16 (K1's list): write's result is its count (musl write.c), fseeko's is fseek's (fseek.c __fseeko)
+        o1 = compile_c("wrfso", """
+#include <stdio.h>
+#include <unistd.h>
+int wrfso(int w, int n) {
+    char buf[64];
+    FILE *f = (FILE *)buf;
+    long c = write(-5, "abcdefgh", (size_t)n);
+    return (int)c | fseeko(f, 3, w) << 8 | fseeko(f, 3, w + 3) << 16;
+}
+""")
+        sp = spec("wrfso", "int wrfso(int, int)", [("wrfso", ["int", "int"])])
+        # count 7, fseeko 0 for a whence of 1, -1 for 4
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(1), i32(7)]}]), [i32(7 | 0xffff0000)])
+
     def test_signal_validity(self):
         o1 = compile_c("sigvalid", """
 #include <signal.h>

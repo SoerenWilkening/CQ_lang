@@ -126,7 +126,7 @@ static uint64_t fxc_masked(int i) {
  * call) takes it here, the same values: puts, fputs, fflush, putw 0; fputc, putc, putchar (unsigned char)c; fwrite
  * size ? nmemb : 0; fputwc, putwc, putwchar c, or WEOF where musl's wctomb fails in the C locale the bundle runs in
  * (musl wcrtomb.c: c < 0x80, or a byte code unit 0xdf80..0xdfff, else EILSEQ); and (ruling cq-dbtpi) fclose, remove,
- * rename, fsetpos, close 0, fseek, setvbuf 0 or -1, raise (its complement branch, cqo_rt.c __cqo_raise) 0 or -1. An
+ * rename, fsetpos, close 0, fseek, fseeko, setvbuf 0 or -1, write its count, raise (its complement branch, cqo_rt.c __cqo_raise) 0 or -1. An
  * _unlocked form is its locked form.
  * 1 and the value when fxc_name is one of them. */
 static int fxc_output_value(uint64_t *out) {
@@ -144,7 +144,8 @@ static int fxc_output_value(uint64_t *out) {
    * which refuses a sig outside 0..64: -1) */
   if (!strcmp(b, "fclose") || !strcmp(b, "remove") || !strcmp(b, "rename") || !strcmp(b, "fsetpos") || !strcmp(b, "close"))
     return *out = 0, 1;
-  if ((!strcmp(b, "fseek") || !strcmp(b, "setvbuf")) && fxc_n >= 3)
+  if (!strcmp(b, "write") && fxc_n == 3) return *out = fxc_args[2].w[0], 1;   /* write.c: its count */
+  if ((!strcmp(b, "fseek") || !strcmp(b, "fseeko") || !strcmp(b, "setvbuf")) && fxc_n >= 3)
     return *out = (uint32_t)fxc_args[2].w[0] < 3 ? 0 : UINT64_MAX, 1;
   if (!strcmp(b, "raise") && fxc_n == 1) return *out = (uint32_t)a0 <= 64 ? 0 : UINT64_MAX, 1;
   if (!strcmp(b, "fputc") || !strcmp(b, "putc") || !strcmp(b, "putchar")) return *out = a0 & 0xff, 1;
