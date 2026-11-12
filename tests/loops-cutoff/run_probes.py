@@ -50,9 +50,18 @@ MUTANTS = {
          r"  ret i32 %[\w.]+\n\n[\w.]+:[^\n]*\n)((?:  [^\n]*\n)*?  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)",
          r"\2\1"),
     ],
+    # rulings Q3 (2026-11-11): the measurement behind the classical branch on an earlier outcome (m & 1), hoisted above
+    # that branch, so it collapses y also where m is even and C keeps y coherent: the C run leaves the site by a classical
+    # condition (a statically collapsed outcome), a failure.
+    "me_outcome": [
+        ("meas_behind_outcome", "hoist_outcome",
+         r"(?s)(  br i1 %[\w.]+, label %[\w.]+, label %[\w.]+\n.*?\n[\w.]+:[^\n]*\n)"
+         r"(  %[\w.]+ = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32[^\n]*\n"
+         r"  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)", r"\2\1"),
+    ],
 }
 _ALL = ("wrong_value", "hoist_trips")      # mutants applied at every match, not the first only
-NAMED = ("me_cbr",)                        # probes whose lowered module is mutated after opt -passes=instnamer
+NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer
 
 
 def mutants(a, probe: Path, mod: str, out: Path) -> int:
