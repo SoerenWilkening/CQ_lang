@@ -3251,6 +3251,166 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
   }
 };
 
+// Owner ruling 2026-11-12 (item 4; rule 16, CR 821-825): the result of a C library output call is the value musl's body
+// returns when every write succeeds; the C reference takes it from the same musl source the circuit lifts, run natively,
+// and performs only the write on the host (the host library's own return values differ: macOS puts 10, fputs 3,
+// fputwc(0xe9) 233 against musl's 0, 0, WEOF). -passes=cq-oracle-output-results replaces every read of such a call's
+// result by that value, computed as pass/lib/eff/tape/Tape.cpp rewriteDeferredResults computes it (the same table, the
+// same bundle result entries, bundle/recipe.json "entries", whose bodies the C program's link pulls from the bundle,
+// oracle.py program), at EVERY call of such a function, not only the ones the circuit defers: the C program has no
+// deferral model and the value does not depend on it (the ruling's criterion). The call itself stays: it is the write
+// (a stand-in effect, drivers.effect_callees, or the host's printing). oracle.py output_results runs it after host_streams.
+namespace outres {
+
+enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws };
+struct Fn {
+  Kind kind;
+  unsigned first;
+};
+
+// Tape.cpp outputFunction, by C name and prototype (a Mach-O asm label "\01_n" names n; an _unlocked form is its
+// locked form).
+std::optional<Fn> outputFunction(const Function &F) {
+  StringRef n = F.getName();
+  if (n.starts_with("\01_"))
+    n = n.drop_front(2);
+  if (n.ends_with("_unlocked"))
+    n = n.drop_back(strlen("_unlocked"));
+  static const std::map<std::string, Fn, std::less<>> table = {
+      {"printf", {Kind::Fmt, 0}},     {"fprintf", {Kind::Fmt, 1}},    {"dprintf", {Kind::Fmt, 1}},
+      {"vprintf", {Kind::VFmt, 0}},   {"vfprintf", {Kind::VFmt, 1}},  {"vdprintf", {Kind::VFmt, 1}},
+      {"wprintf", {Kind::WFmt, 0}},   {"fwprintf", {Kind::WFmt, 1}},
+      {"vwprintf", {Kind::VWFmt, 0}}, {"vfwprintf", {Kind::VWFmt, 1}},
+      {"puts", {Kind::Zero, 0}},      {"fputs", {Kind::Zero, 0}},     {"fflush", {Kind::Zero, 0}},
+      {"putw", {Kind::Zero, 0}},
+      {"fputc", {Kind::UChar, 0}},    {"putc", {Kind::UChar, 0}},     {"putchar", {Kind::UChar, 0}},
+      {"fwrite", {Kind::Fwrite, 0}},
+      {"fputwc", {Kind::Wc, 0}},      {"putwc", {Kind::Wc, 0}},       {"putwchar", {Kind::Wc, 0}},
+      {"fputws", {Kind::Ws, 0}},
+  };
+  auto it = table.find(n);
+  if (it == table.end())
+    return std::nullopt;
+  FunctionType *ft = F.getFunctionType();
+  Fn o = it->second;
+  auto argIs = [&](unsigned i, bool ptr) {
+    return i < ft->getNumParams() && (ptr ? ft->getParamType(i)->isPointerTy() : ft->getParamType(i)->isIntegerTy());
+  };
+  if (!ft->getReturnType()->isIntegerTy())
+    return std::nullopt;
+  switch (o.kind) {
+  case Kind::Fmt: case Kind::WFmt:
+    return ft->isVarArg() && ft->getNumParams() == o.first + 1 && argIs(o.first, true) ? std::optional(o) : std::nullopt;
+  case Kind::VFmt: case Kind::VWFmt:
+    return !ft->isVarArg() && ft->getNumParams() == o.first + 2 && argIs(o.first, true) && argIs(o.first + 1, true)
+               ? std::optional(o) : std::nullopt;
+  case Kind::Zero:
+    return !ft->isVarArg() ? std::optional(o) : std::nullopt;
+  case Kind::UChar: case Kind::Wc:
+    return !ft->isVarArg() && argIs(0, false) ? std::optional(o) : std::nullopt;
+  case Kind::Fwrite:
+    return !ft->isVarArg() && ft->getNumParams() == 4 && argIs(0, true) && argIs(1, false) && argIs(2, false)
+               ? std::optional(o) : std::nullopt;
+  case Kind::Ws:
+    return !ft->isVarArg() && argIs(0, true) ? std::optional(o) : std::nullopt;
+  }
+  return std::nullopt;
+}
+
+struct Pass : PassInfoMixin<Pass> {
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    SmallVector<CallBase *, 16> sites;
+    for (Function &G : M)
+      for (Instruction &I : instructions(G)) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
+        if (!F || !F->isDeclaration() || CB->use_empty() || CB->getFunctionType() != F->getFunctionType())
+          continue;
+        if (outputFunction(*F))
+          sites.push_back(CB);
+      }
+    if (sites.empty())
+      return PreservedAnalyses::all();
+    LLVMContext &C = M.getContext();
+    PointerType *ptr = PointerType::get(C, 0);
+    Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);
+    Type *sizeT = M.getDataLayout().getIntPtrType(C);
+    Constant *null = ConstantPointerNull::get(ptr);
+    auto entryAlloca = [](Function &F, Type *ty, uint64_t n) {
+      IRBuilder<> B(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+      return B.CreateAlloca(ty, n == 1 ? nullptr : ConstantInt::get(Type::getInt64Ty(F.getContext()), n));
+    };
+    for (CallBase *CB : sites) {
+      Fn o = *outputFunction(*cast<Function>(CB->getCalledOperand()->stripPointerCasts()));
+      Function &fn = *CB->getFunction();
+      IRBuilder<> B(CB);
+      Type *rt = CB->getType();
+      Value *v = nullptr;
+      SmallVector<Value *, 8> args;
+      auto forward = [&](unsigned from) {
+        for (unsigned a = from; a < CB->arg_size(); ++a)
+          args.push_back(CB->getArgOperand(a));
+      };
+      switch (o.kind) {
+      case Kind::Fmt: case Kind::VFmt: {
+        bool va = o.kind == Kind::VFmt;
+        FunctionCallee e = va ? M.getOrInsertFunction("__cq_count_vsnprintf", FunctionType::get(i32, {ptr, sizeT, ptr, ptr}, false))
+                              : M.getOrInsertFunction("__cq_count_snprintf", FunctionType::get(i32, {ptr, sizeT, ptr}, true));
+        args = {null, ConstantInt::get(sizeT, 0)};
+        forward(o.first);
+        v = B.CreateCall(e, args);
+        break;
+      }
+      case Kind::WFmt: case Kind::VWFmt: {
+        bool va = o.kind == Kind::VWFmt;
+        FunctionCallee e = va ? M.getOrInsertFunction("__cq_count_vwprintf", FunctionType::get(i32, {ptr, ptr}, false))
+                              : M.getOrInsertFunction("__cq_count_wprintf", FunctionType::get(i32, {ptr}, true));
+        forward(o.first);
+        v = B.CreateCall(e, args);
+        break;
+      }
+      case Kind::Zero:
+        v = ConstantInt::get(rt, 0);
+        break;
+      case Kind::UChar:
+        v = B.CreateZExt(B.CreateTrunc(CB->getArgOperand(0), i8), rt);
+        break;
+      case Kind::Fwrite: {
+        Value *size = CB->getArgOperand(1), *nmemb = CB->getArgOperand(2);
+        v = B.CreateSelect(B.CreateICmpEQ(size, ConstantInt::get(size->getType(), 0)), ConstantInt::get(rt, 0),
+                           B.CreateZExtOrTrunc(nmemb, rt));
+        break;
+      }
+      case Kind::Wc: {
+        Value *c = CB->getArgOperand(0);
+        AllocaInst *buf = entryAlloca(fn, i8, 4);
+        FunctionCallee e = M.getOrInsertFunction("__cq_count_wctomb", FunctionType::get(i32, {ptr, i32}, false));
+        Value *r = B.CreateCall(e, {buf, B.CreateSExtOrTrunc(c, i32)});
+        v = B.CreateSelect(B.CreateICmpSLT(r, ConstantInt::get(i32, 0)), ConstantInt::get(rt, -1, true),
+                           B.CreateZExtOrTrunc(c, rt));
+        break;
+      }
+      case Kind::Ws: {
+        AllocaInst *slot = entryAlloca(fn, ptr, 1);
+        B.CreateStore(CB->getArgOperand(0), slot);
+        FunctionCallee e = M.getOrInsertFunction("__cq_count_wcsrtombs", FunctionType::get(sizeT, {ptr, ptr, sizeT, ptr}, false));
+        Value *r = B.CreateCall(e, {null, slot, ConstantInt::get(sizeT, 0), null});
+        v = B.CreateSelect(B.CreateICmpEQ(r, ConstantInt::getAllOnesValue(sizeT)), ConstantInt::get(rt, -1, true),
+                           ConstantInt::get(rt, 0));
+        break;
+      }
+      }
+      if (v->getType() == rt)
+        CB->replaceAllUsesWith(v);
+      else
+        report_fatal_error("cq-oracle: unimplemented: an output call's result of another type than its musl value");
+    }
+    return PreservedAnalyses::none();
+  }
+};
+
+}  // namespace outres
+
 }  // namespace
 
 void cqRegisterTripFacts(PassBuilder &PB);   // TripFacts.cpp: -passes=cq-trip-facts (cq-97oj)
@@ -3262,6 +3422,10 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                 [](StringRef name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
                   if (name == "cq-oracle-host-streams") {
                     MPM.addPass(HostStreamsPass());
+                    return true;
+                  }
+                  if (name == "cq-oracle-output-results") {
+                    MPM.addPass(outres::Pass());
                     return true;
                   }
                   if (name != "cq-oracle")

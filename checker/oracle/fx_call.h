@@ -30,6 +30,9 @@ void cqd_fxc_int(uint64_t lo, uint64_t hi, unsigned bits, const char *token) {
   if (fxc_n < FXC_MAX) fxc_args[fxc_n++] = (fxc_arg){{lo, hi}, bits, token, 0};
 }
 void cqd_fxc_ptr(const void *p) {
+#ifdef FX_PTR_HOOK
+  FX_PTR_HOOK(fxc_name, p); /* the lowered side: rulings Q2 (fx_lowered.c) */
+#endif
   if (fxc_n < FXC_MAX) fxc_args[fxc_n++] = (fxc_arg){{(uint64_t)(uintptr_t)p, 0}, 64, "i64", 1};
 }
 
@@ -100,9 +103,37 @@ static uint64_t fxc_log(const cq_fx_ent *e) {
   return h;
 }
 
+/* Owner ruling 2026-11-12: the result of a C library output call is musl's when every write succeeds, never the
+ * stand-in's hash. The C program's calls take it from cq-oracle-output-results (OracleInstr.cpp, the bundle's entries
+ * run natively); a direct call the lowered program makes (putchar, putwchar with classical arguments: an ordinary host
+ * call) takes it here, the same values: puts, fputs, fflush, putw 0; fputc, putc, putchar (unsigned char)c; fwrite
+ * size ? nmemb : 0; fputwc, putwc, putwchar c, or WEOF where musl's wctomb fails in the C locale the bundle runs in
+ * (musl wcrtomb.c: c < 0x80, or a byte code unit 0xdf80..0xdfff, else EILSEQ). An _unlocked form is its locked form.
+ * 1 and the value when fxc_name is one of them. */
+static int fxc_output_value(uint64_t *out) {
+  const char *n = fxc_name;
+  if (!n) return 0;
+  size_t l = strlen(n);
+  char b[32];
+  if (l >= sizeof b) return 0;
+  memcpy(b, n, l + 1);
+  if (l > 9 && !strcmp(b + l - 9, "_unlocked")) b[l - 9] = 0;
+  uint64_t a0 = fxc_n > 0 ? fxc_args[0].w[0] : 0;
+  if (!strcmp(b, "puts") || !strcmp(b, "fputs") || !strcmp(b, "fflush") || !strcmp(b, "putw")) return *out = 0, 1;
+  if (!strcmp(b, "fputc") || !strcmp(b, "putc") || !strcmp(b, "putchar")) return *out = a0 & 0xff, 1;
+  if (!strcmp(b, "fwrite") && fxc_n == 4) return *out = fxc_args[1].w[0] ? fxc_args[2].w[0] : 0, 1;
+  if (!strcmp(b, "fputwc") || !strcmp(b, "putwc") || !strcmp(b, "putwchar")) {
+    uint32_t c = (uint32_t)a0;
+    return *out = (c < 0x80 || c - 0xdf80u < 0x80) ? c : 0xffffffffu, 1;
+  }
+  return 0;
+}
+
 uint64_t cqd_fxc_done(unsigned rbits) {
   const cq_fx_ent *e = cq_fx_find(fxc_name);
   uint64_t h = fxc_log(e);
+  uint64_t ov;
+  if (fxc_output_value(&ov)) return rbits < 64 && rbits ? ov & ((UINT64_C(1) << rbits) - 1) : ov;
   if (!e || e->cls != 'I') return cq_fx_result(h, rbits);
   int bi = -1, li = -1;
   for (int i = 0; e->roles[i]; i++) {

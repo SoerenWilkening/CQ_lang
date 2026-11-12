@@ -398,6 +398,47 @@ def host_streams(text: str) -> str:
         return dst.read_text()
 
 
+# Owner ruling 2026-11-12 (item 4): the C library output calls whose result the C program reads take musl's value
+# (OracleInstr.cpp cq-oracle-output-results; the names of pass/lib/eff/tape/Tape.cpp outputFunction).
+_OUTPUT_NAMES = frozenset((
+    "printf fprintf dprintf vprintf vfprintf vdprintf wprintf fwprintf vwprintf vfwprintf puts fputs fflush putw fputc putc "
+    "putchar fwrite fputwc putwc putwchar fputws").split())
+_DECLARED_ANY = re.compile(r'(?m)^declare\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
+
+
+def _entries_mod():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cq_entries", ROOT / "driver" / "cq_entries.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def output_results(text: str) -> str:
+    """The C program with every read result of a C library output call replaced by musl's value when every write
+    succeeds (owner ruling 2026-11-12 item 4): the closed forms inline, the counts by the bundle's result entries
+    (bundle/recipe.json "entries"), which program() links from the bundle and runs natively. The call stays: it is the
+    write. A module that declares no such function is text as it stands."""
+    from . import drivers
+    names = {drivers._c_name(n) for n in _DECLARED_ANY.findall(text)}
+    if not {n[:-len("_unlocked")] if n.endswith("_unlocked") else n for n in names} & _OUTPUT_NAMES:
+        return text
+    plugin, _ = toolchain()
+    with tempfile.TemporaryDirectory(prefix="cqo-outres.") as d:
+        src, dst = Path(d) / "in.ll", Path(d) / "out.ll"
+        src.write_text(text)
+        _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle-output-results", "-S", str(src), "-o", str(dst)],
+             "the output calls' results (cq-oracle-output-results)")
+        return dst.read_text()
+
+
+def entries_bundle(text: str) -> List[Path]:
+    """The bundle files to link for the result entries text needs and does not define (cq_entries.needed)."""
+    need = _entries_mod().needed(text)
+    defined = set(_DEFINED.findall(text))
+    return _bundle_files() if [n for n in need if n not in defined and f'"{n}"' not in defined] else []
+
+
 def bundle_key(files: Sequence[Path]) -> str:
     """A cache-key part for the bundle files actually linked: their paths and contents."""
     return "\0".join(f"{b}:{_bundle_info(Path(b))[1]}" for b in files)
@@ -548,7 +589,7 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         return _PROGRAMS[memo]
     plugin, rt = toolchain()
     text = o1.read_text()
-    bundle = bundle_for(text)
+    bundle = bundle_for(text) or entries_bundle(text)
     kf = _k_flags(k, k_default)
     from . import drivers as _drv
     key = hashlib.sha256("\0".join([text, SRC_KEY, *kf, *sorted(defined), *sorted(_drv.corpus_roots()),
@@ -560,6 +601,7 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         # no direct host call runs for real (rulings Q8)
         from . import drivers
         host = host_streams(text)    # cq-8bq66: a stream call by name is the host's, whatever the module defines
+        host = output_results(host)  # owner ruling 2026-11-12: an output call's result is musl's, the call the write
         host = drivers.route_scans(host)   # cq-tgl3i: the scanf family, the host's on the checker's empty input
         callees = drivers.effect_callees(host, frozenset(defined) | drivers.corpus_roots())
         renamed = _k2_sites(drivers.rename_effects(host, callees), host)
