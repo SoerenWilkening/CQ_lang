@@ -3781,8 +3781,35 @@ bool copyHostVaLists(Module &M) {
   return true;
 }
 
+// Owner ruling 2026-11-12 cq-dbtpi: musl's internal __pthread_mutex_* names are rule 24's no-op mutex calls returning
+// 0, as pthread_mutex_* are (CR rule 24): no host call, no effect. The names are the pass's own list (cq::rule24Mutex,
+// pass/lib/Common.cpp, linked into this plugin), so the two cannot drift; the pass lowers them so in eff/conc/Conc.cpp.
+// Every call of a declared one is replaced by 0 and removed. Returns whether it changed M.
+bool noopMutexes(Module &M) {
+  SmallVector<CallBase *, 8> calls;
+  for (Function &G : M)
+    for (Instruction &I : instructions(G)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
+      if (!F || !F->isDeclaration() || isa<InvokeInst>(CB))
+        continue;
+      StringRef n = F->getName();
+      if (n.starts_with("\01_"))
+        n = n.drop_front(2);
+      if (cq::rule24Mutex(n) && (CB->getType()->isVoidTy() || CB->getType()->isIntegerTy()))
+        calls.push_back(CB);
+    }
+  for (CallBase *CB : calls) {
+    if (!CB->getType()->isVoidTy())
+      CB->replaceAllUsesWith(ConstantInt::get(CB->getType(), 0));
+    CB->eraseFromParent();
+  }
+  return !calls.empty();
+}
+
 struct Pass : PassInfoMixin<Pass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    bool mutexes = noopMutexes(M);
     SmallVector<CallBase *, 16> sites;
     for (Function &G : M)
       for (Instruction &I : instructions(G)) {
@@ -3796,7 +3823,7 @@ struct Pass : PassInfoMixin<Pass> {
       }
     // after the counts, which read the caller's own va_list (musl copies it)
     if (sites.empty())
-      return copyHostVaLists(M) ? PreservedAnalyses::none() : PreservedAnalyses::all();
+      return copyHostVaLists(M) || mutexes ? PreservedAnalyses::none() : PreservedAnalyses::all();
     LLVMContext &C = M.getContext();
     PointerType *ptr = PointerType::get(C, 0);
     Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);

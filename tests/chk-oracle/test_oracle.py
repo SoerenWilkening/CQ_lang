@@ -709,6 +709,25 @@ define i32 @sigerrno(i32 %s) {
         self.assertEqual(got, [("0x1", [("err_cell", 22)]), ("0x1", [("err_cell", 22)]), ("0x0", [("err_cell", 0)])])
 
 
+    def test_mutex_noops(self):
+        # cq-dbtpi: rule 24's mutex calls, musl's internal __pthread_mutex_* among them, are no-ops returning 0, no effect
+        o1 = compile_c("mtxnoop", """
+#include <pthread.h>
+int __pthread_mutex_lock(void *), __pthread_mutex_trylock(void *), __pthread_mutex_timedlock(void *, const void *),
+    __pthread_mutex_unlock(void *);
+int mtxnoop(int k) {
+    char m[64] = {0};                 /* no mutex the host made */
+    int r = __pthread_mutex_lock(m) | __pthread_mutex_trylock(m) << 1 | __pthread_mutex_timedlock(m, 0) << 2
+            | __pthread_mutex_unlock(m) << 3;
+    r |= (pthread_mutex_lock((pthread_mutex_t *)m) != 0) << 4 | (pthread_mutex_unlock((pthread_mutex_t *)m) != 0) << 5;
+    return r + k;
+}
+""")
+        sp = spec("mtxnoop", "int mtxnoop(int)", [("mtxnoop", ["int"])])
+        rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(0)]})
+        self.assertEqual((rr.outputs["ret"][0]["v"]["v"], rr.outputs["effects"]), ("0x0", []))
+
+
 class Cutoff(unittest.TestCase):
     """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
     recursion stops after K trips; the cq-arch T2 records in outputs["loops"]."""

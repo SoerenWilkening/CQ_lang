@@ -442,7 +442,10 @@ def output_results(text: str) -> str:
     write. A module that declares no such function is text as it stands."""
     from . import drivers
     names = {drivers._c_name(n) for n in _DECLARED_ANY.findall(text)}
-    if not {n[:-len("_unlocked")] if n.endswith("_unlocked") else n for n in names} & _OUTPUT_NAMES:
+    # ruling cq-dbtpi: rule 24's mutex calls, musl's internal __pthread_mutex_* names among them, are no-ops returning 0
+    # (OracleInstr.cpp noopMutexes, the pass's cq::rule24Mutex)
+    if not ({n[:-len("_unlocked")] if n.endswith("_unlocked") else n for n in names} & _OUTPUT_NAMES
+            or any(n.startswith(("pthread_mutex_", "__pthread_mutex_")) for n in names)):
         return text
     plugin, _ = toolchain()
     with tempfile.TemporaryDirectory(prefix="cqo-outres.") as d:
