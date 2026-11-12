@@ -291,6 +291,12 @@ CASES = [
     ("sig_valid", "sv_runtime", [], "pass", [r"@cqrt_qram_load_i64_hl_controlled\("]),
     ("sig_valid", "sv_rail", [], "pass", [r"@cq_template_lshr_i64_lh\(", r"@cq_template_select_i64_hl\("]),
     ("sig_valid", "sv_rail_pred", [], "pass", [r"@cqrt_and_i1\("]),
+    # Owner 2026-11-12 (clarifies cq-silnj): EINVAL through the errno accessor the module reads errno through, here a
+    # Darwin module's __error (macOS SDK <errno.h>); a module with neither accessor stores nothing.
+    ("sig_error", "se_const", [], "pass", [r"call ptr @__error\(\)\n\s*%\d+ = ptrtoint", r"@cqrt_alloc_i32\(i32 22\)"]),
+    ("sig_error", "se_rail", [], "pass", [r"call void @cqrt_qram_store_i32_hl_controlled\("]),
+    ("sig_noerrno", "sn_const", [], "pass", []),
+    ("sig_noerrno", "sn_rail", [], "pass", []),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
     ("mint2", "mint2", [], "pass", [r"call void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, double %\d+, i32 %\d+\)"]),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).
