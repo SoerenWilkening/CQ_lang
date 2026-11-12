@@ -3127,6 +3127,76 @@ public:
     }
   }
 
+  // ---------------------------------------------------------------- reads of a host call's result (ruling cq-dbtpi)
+  // Owner ruling 2026-11-12 cq-dbtpi (BACKEND_ABI 1.11; "as in Q2"): a host-state result (fwide, fopen, tmpfile, ftell,
+  // fileno, open, lseek) or a non-library bodiless callee's keeps the entry's result rail, |0> when the backend defers the
+  // call; an input on which the program READS such a deferred rail is not compared. Whether the program reads the result
+  // is a fact about the C program, decided here, so no lowering can widen it (the lesson of cq-auqs3 for Q2); the lowered
+  // run says which calls it deferred (run.py outputs["deferred_r"]) and only narrows it (compare.py). A direct call of a
+  // bodiless callee (drivers.effect_callees: the stand-in `cqd_fx_<name>`) is a site; its result is read when, on the
+  // sample, the call ran and then an instruction its result reaches by data flow (through every value-computing
+  // instruction: casts, arithmetic, compares, selects, phis, address arithmetic, pure intrinsics) ran that stores,
+  // branches, returns, loads or passes it to a call (a measurement, an output, a store or a branch reached; a return or a
+  // call argument counted as reaching one). Over-approximations, all on the C side: a phi or select that took another
+  // value on the sample, and a value returned or passed to a call that ignores it.
+  DenseSet<const Instruction *> Pristine;  // the program as clang wrote it, before shadows() (hostReads)
+  void notePristine() {
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          Pristine.insert(&I);
+  }
+  static bool readSink(const Instruction *I) {
+    if (auto *CB = dyn_cast<CallBase>(I)) {
+      auto *II = dyn_cast<IntrinsicInst>(CB);
+      return !(II && !CB->getType()->isVoidTy() && CB->doesNotAccessMemory());
+    }
+    return I->getType()->isVoidTy() || isa<LoadInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I) ||
+           I->isTerminator();
+  }
+  void hostReads() {
+    std::vector<CallBase *> sites;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && Pristine.count(CB) && !CB->getType()->isVoidTy() && !CB->use_empty())
+            if (const Function *G = CB->getCalledFunction(); G && G->getName().starts_with("cqd_fx_"))
+              sites.push_back(CB);
+    if (sites.empty())
+      return;
+    MDNode *tag = MDNode::get(C, {});   // as shadows(): not the program's, for trips' exit regions
+    FunctionCallee callH = hook("__cqo_hscall", Void, {I32});
+    FunctionCallee readH = hook("__cqo_hsread", Void, {I32, Ptr});
+    MapVector<Instruction *, SmallVector<unsigned, 2>> sinks;
+    for (unsigned id = 0; id < sites.size(); ++id) {
+      SmallPtrSet<const Value *, 32> seen;
+      SmallVector<Value *, 16> work{sites[id]};
+      while (!work.empty()) {
+        Value *V = work.pop_back_val();
+        for (User *U : V->users()) {
+          auto *I = dyn_cast<Instruction>(U);
+          if (!I || !Pristine.count(I))
+            continue;
+          if (readSink(I)) {
+            auto &v = sinks[I];
+            if (std::find(v.begin(), v.end(), id) == v.end())
+              v.push_back(id);
+          } else if (seen.insert(I).second) {
+            work.push_back(I);
+          }
+        }
+      }
+      IRBuilder<> B(sites[id]->getNextNode());
+      B.CreateCall(callH, {B.getInt32(id)})->setMetadata("cqo.sh", tag);
+    }
+    for (auto &[I, ids] : sinks) {
+      IRBuilder<> B(I);
+      for (unsigned id : ids)
+        B.CreateCall(readH, {B.getInt32(id), str(sites[id]->getCalledFunction()->getName().drop_front(strlen("cqd_fx_")))})
+            ->setMetadata("cqo.sh", tag);
+    }
+  }
+
   // ---------------------------------------------------------------- termination notes
   void notes(Function &F) {
     static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
@@ -3302,7 +3372,9 @@ public:
     }
     measureSites();
     phaseReach();
+    notePristine();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
+    hostReads();       // ruling cq-dbtpi: after shadows(), which never sees its hooks
     instrumentRule24();
     if (KI.on) {
       SpecNext = M.getGlobalVariable("__cqo_spec_next");

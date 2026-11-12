@@ -49,8 +49,9 @@ Exit status: 0 when the lowered program is §6-equal to the C program on every c
 it differs (the reasons are printed), 2 when the check could not be decided (bad arguments, an
 internal error of the checker, no sample in the C program's domain, or a gate matching out of the
 comparison's search budget with no other difference: undecided, never 'differs', cq-sujz decision 6):
-never green. 3 when no sample was compared after every exclusion (NOT COMPARED: rulings Q2, the guard of the owner
-rulings 2026-11-11 Q1 and 2026-11-12 item 4): never green either.
+never green. 3 when no sample was compared after every exclusion (NOT COMPARED: rulings Q2 and cq-dbtpi, the guard of
+the owner rulings 2026-11-11 Q1 and 2026-11-12 item 4): never green either. A run that compared some is judged on those
+and states how many it did not compare, with the reason (owner ruling 2026-11-12, Q2 partial exclusion).
 """
 from __future__ import annotations
 
@@ -73,6 +74,11 @@ Q2_LIMIT = ("rulings Q2: an input on which a bodiless callee receives a pointer 
             "the call is not compared (decided on the C program: the object is the real one, a cell holds a rail; the "
             "lowered run may only narrow it); reach through a global or a stored pointer is not detected, nor a cell "
             "made QUANTUM only by a store under a quantum condition")
+# owner ruling 2026-11-12 cq-dbtpi ("as in Q2"), the reason stated with the count
+DEFERRED_READ = ("ruling cq-dbtpi: an input on which the program reads the result rail of a deferred host call (a "
+                 "host-state result or a non-library bodiless callee's, deferred by ABI 1.11) is not compared (the read "
+                 "decided on the C program: the call ran and its result reached a store, branch, load, return or call; "
+                 "the lowered run may only narrow it to the calls it deferred)")
 MAIN_RENAMED = "__cqu_main"
 OBJ_BYTES = 4096
 FILL_ELEMENTS = 64    # the quantum inputs behind a pointer parameter (module docstring)
@@ -584,12 +590,15 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
                      f"group(s) compared, where a measurement was unidentified (cq-pdstc; now {len(chosen)} samples)")
     status = verdict(reasons, stats.get("compared"))
     nq2 = len(stats.get("q2") or [])
+    ndr = len(stats.get("deferred") or [])
     lines.append(f"cqcheck user: compared {stats.get('compared')} of {len(chosen)} samples")
     if nq2:
         lines.append(f"cqcheck user: {nq2} of {len(chosen)} samples not compared ({Q2_LIMIT})")
+    if ndr:
+        lines.append(f"cqcheck user: {ndr} of {len(chosen)} samples not compared ({DEFERRED_READ})")
     if status == NOT_COMPARED_STATUS:
-        lines.append(f"cqcheck user: NOT COMPARED: no sample was compared ({len(chosen)} run, {nq2} excluded by rulings Q2); "
-                     f"never a PASS")
+        lines.append(f"cqcheck user: NOT COMPARED: no sample was compared ({len(chosen)} run, {nq2} excluded by rulings Q2, "
+                     f"{ndr} by ruling cq-dbtpi); never a PASS")
         lines += [f"  c: {r}" for r in reasons]
         return NOT_COMPARED_STATUS, lines
     if status == ERROR_STATUS:

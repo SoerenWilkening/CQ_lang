@@ -1418,6 +1418,30 @@ static void __cqo_q2_check(const char *name, uintptr_t a) {
                      name ? name : "", (unsigned long long)a, (unsigned long long)o->lo, (unsigned long long)o->hi);
     out_long(b, (size_t)m);
 }
+/* Owner ruling 2026-11-12 cq-dbtpi: the reads of a host call's result (OracleInstr.cpp hostReads). __cqo_hscall(id) at
+ * the call of site id, __cqo_hsread(id, name) before an instruction its result reaches: the first such read of the
+ * sample after the call logs {"ev":"hsread","name"} (oracle.py: outputs["hsread"]). The table holds the sample's
+ * generation (sh_genp, one per sample) per site; it is mapped before the setup, outside __DATA. A site beyond the
+ * table counts as called. */
+#define HS_MAX 65536
+static uint32_t *hs_tab; /* [HS_MAX] the generation of the site's last call, [HS_MAX + id] of its last logged read */
+__attribute__((constructor(103))) static void hs_init(void) {
+    hs_tab = mmap(0, 2 * HS_MAX * sizeof *hs_tab, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (hs_tab == MAP_FAILED) { fprintf(stderr, "cqo: mmap\n"); raise(SIGKILL); }
+}
+void __cqo_hscall(int32_t id) {
+    if (sample_running() && (uint32_t)id < HS_MAX) hs_tab[id] = *sh_genp;
+}
+void __cqo_hsread(int32_t id, const char *name) {
+    if (trips_only || !sample_running()) return;
+    if ((uint32_t)id < HS_MAX) {
+        if (hs_tab[id] != *sh_genp || hs_tab[HS_MAX + id] == *sh_genp) return;
+        hs_tab[HS_MAX + id] = *sh_genp;
+    }
+    char b[200];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"hsread\",\"name\":\"%.120s\"}", name ? name : "");
+    out_long(b, (size_t)m);
+}
 #define FX_PTR_HOOK(name, p) __cqo_q2_check((name), (uintptr_t)(p))
 /* A direct host call: the stand-in, one source with the evaluator (fx_call.h; rulings Q8). */
 #define FX_LOG(line, n) do { if (sample_running()) out_long(line, n); } while (0)

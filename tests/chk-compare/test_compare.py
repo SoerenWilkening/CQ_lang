@@ -1728,6 +1728,29 @@ class HostOutput(unittest.TestCase):
         self.assertNotEqual(cmp.compare(ours, cq2, "c", classical_key=QKEY, stats=st), [])
         self.assertEqual(st["compared"], len(ours))
 
+    def test_deferred_read_not_compared_against_c_only(self):
+        # owner rulings 2026-11-12 cq-dbtpi and Q2 partial exclusion: a sample on which the C program reads a callee's
+        # result (outputs["hsread"]) whose entry ours deferred with a result rail (outputs["deferred_r"]) is not compared;
+        # either record alone, or for different callees, excludes nothing; none left is not equal (the guard)
+        import cqcheck.compare as cmp
+        ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
+        dr = [dataclasses.replace(r, outputs=dict(r.outputs, deferred_r=["ftell"])) for r in ours]
+        cr = [dataclasses.replace(r, outputs=dict(r.outputs, hsread=["ftell"])) for r in self.c()]
+        st = {}
+        reasons = cmp.compare(dr, cr, "c", classical_key=QKEY, stats=st)
+        self.assertEqual((st["compared"], len(st["deferred"])), (0, len(dr)))
+        self.assertTrue(any("no sample compared" in x and "cq-dbtpi" in x for x in reasons), reasons)
+        one = [dr[0]] + list(self.ours()[1:])
+        st = {}
+        self.assertEqual(cmp.compare(one, cr, "c", classical_key=QKEY, stats=st), [])
+        self.assertEqual((st["compared"], len(st["deferred"])), (len(one) - 1, 1))
+        for o, c in ((dr, self.c()), (ours, cr),
+                     (dr, [dataclasses.replace(r, outputs=dict(r.outputs, hsread=["fwide"])) for r in self.c()])):
+            st = {}
+            self.assertNotEqual(cmp.compare(o, c, "c", classical_key=QKEY, stats=st), [])
+            self.assertEqual((st["compared"], st["deferred"]), (len(o), []))
+        self.check(dr, self.ours(side="r"), "ref", False)
+
     def test_pointer_field_relational(self):
         # CR §6: host addresses differ per run; a pointer into one object reads as (object, offset)
         def fx(base):
