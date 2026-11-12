@@ -610,6 +610,26 @@ static void noteGateAt(Shared &sh, CallInst *call) {
     at.push_back(sh.cur);
 }
 
+// A gate on a rail through a phi of the output (a loop-carried or merged handle, the same rail as its incoming values): the
+// incoming rails' records no longer give its basis value (invert_seed p_seedin: rotated through the loop header's phi), so
+// they are opaque.
+static void opaqueThroughPhi(Shared &sh, Value *t) {
+  SmallVector<Value *, 4> work{t};
+  SmallPtrSet<Value *, 8> seen{t};
+  while (!work.empty()) {
+    auto *phi = dyn_cast<PHINode>(work.pop_back_val());
+    if (!phi)
+      continue;
+    for (Value *in : phi->incoming_values()) {
+      if (!seen.insert(in).second)
+        continue;
+      if (auto it = sh.hist.find(in); it != sh.hist.end())
+        it->second.opaque = true;
+      work.push_back(in);
+    }
+  }
+}
+
 void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Value *> args) {
   if (spec.op == abi::Core::Alloc) {
     if (args.size() != 1)
@@ -626,6 +646,7 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
       noteGateAt(sh, call);
       if (auto it = sh.hist.find(args[t]); it != sh.hist.end())
         it->second.opaque = true;
+      opaqueThroughPhi(sh, args[t]);
     }
     return;
   }
@@ -635,6 +656,8 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
   if (auto it = sh.hist.find(args[t]); it != sh.hist.end()) {
     it->second.writes.push_back(RailHist::Write{spec, SmallVector<Value *, 3>(args.begin(), args.end()), call});
     noteGateAt(sh, call);
+  } else {
+    opaqueThroughPhi(sh, args[t]);
   }
 }
 
