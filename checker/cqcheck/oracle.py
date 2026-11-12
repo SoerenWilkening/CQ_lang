@@ -485,8 +485,9 @@ def _k2_sites(text: str, o1_text: str) -> str:
     """Rulings Q16, CR §6: a rail-sized allocation is made at K2 bytes, and an access at or beyond byte K2 is
     outside the block (cqo_rt.c totalizes it). Each allocation whose size derives, by SSA or through a defined
     callee's parameter, from a cq_theta result, a load (rule 3: every load is a rail) or a call result, goes to
-    the runtime's _k2 entry with K2 as a last argument. A size no such value reaches is classical. An allocator
-    with a body in the module is no such allocation (the pass lowers its body: bus hostAllocKind)."""
+    the runtime's _k2 entry with K2 as a last argument. A size no such value reaches is classical. The four are rule
+    16's by name: a body the module has for one was made a declaration before (host_streams, cq-du1gw), so the guard
+    below only sees a module that bypassed it."""
     import tempfile
     from . import drivers
     with tempfile.NamedTemporaryFile("w", suffix=".ll") as t:
