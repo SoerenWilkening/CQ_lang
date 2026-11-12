@@ -406,23 +406,18 @@ static void capture_at(event *e, capture *cap, uint64_t addr, int known, int64_t
 /* Reads the extent into f->cap under the event's predicate. len < 0: a NUL-terminated string. */
 static void capture_field(event *e, field *f, int64_t len) { capture_at(e, &f->cap, field_low64(f), f->known, len); }
 
-/* The product of the length fields from field i on, capped at K2 when one of them is a rail. */
+/* The product of the length fields from field i on, its value on this basis input (fx_standin.h cq_fx_len_mul, the rule
+ * fx_call.h fxc_length follows; cq-dsnrs: no K2 cap here, an INPUT call consumes for the value, ruling Q5). *lknown: all
+ * of them classical. */
 static int64_t length_of(const event *e, const char *roles, int i, int *lknown) {
   uint64_t v = 1;
   int known = 1;
   for (int j = i; roles[j] == 'n' && j < e->nfields; j++) {
     const field *f = &e->fields[j];
-    uint64_t x = field_low64(f);
-    if (f->v.bits < 64) {
-      x &= (UINT64_C(1) << f->v.bits) - 1;
-      if ((x >> (f->v.bits - 1)) & 1) x = 0;    /* a negative int length: nothing */
-    }
-    if (x && v > UINT64_MAX / x) v = UINT64_MAX;
-    else v *= x;
+    v = cq_fx_len_mul(v, field_low64(f), f->v.bits);
     known &= f->known;
   }
   if (lknown) *lknown = known;
-  if (!known && v > CQ_FX_K2) v = CQ_FX_K2;
   return v > (uint64_t)INT64_MAX ? INT64_MAX : (int64_t)v;
 }
 
@@ -567,7 +562,11 @@ static void capture_event(event *e) {
   for (int i = 0; ent->roles[i] && i < e->nfields; i++) {
     char role = ent->roles[i];
     if (role == 's' || role == 'p') capture_field(e, &e->fields[i], -1);
-    else if (role == 'B') capture_field(e, &e->fields[i], length_of(e, ent->roles, i + 1, NULL));
+    else if (role == 'B') {
+      int lk = 1;
+      int64_t len = length_of(e, ent->roles, i + 1, &lk);
+      capture_field(e, &e->fields[i], (int64_t)cq_fx_len_capture((uint64_t)len, lk));
+    }
     else if ((role == 'F' || role == 'G') && cq_fx_scan(ent)) {   /* a scanf format: its arguments are destinations */
       field *f = &e->fields[i];
       capture_at_u(e, &f->cap, field_low64(f), f->known, -1, role == 'G' ? 4 : 1);

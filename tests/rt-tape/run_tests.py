@@ -508,7 +508,8 @@ def scenarios(clang, work):
             return "classes %s" % classes(shot)
         q = tap(trace, "qstore")
         # v = 3: 2 bytes and the NUL, of the cells a quantum length can reach from any position of the stream (ruling Q5)
-        reach = min(4096 - 1, len(STREAM) + 1) + 1   # a pushed-back byte too (cq-wjysl)
+        # the pushed-back bytes too (cq-wjysl; cq-dsnrs: musl's UNGET, 8); a rail length bounds nothing (ruling Q5)
+        reach = len(STREAM) + 8 + 1
         if [(e["write"]) for e in q] != [1, 1, 1] + [0] * (reach - 3):
             return "qstores %s" % q
         want = [STREAM[0], STREAM[1], 0] + [0] * (reach - 3)

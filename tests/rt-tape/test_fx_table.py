@@ -10,9 +10,12 @@ a hash (getc_unlocked and getchar_unlocked were, cq-d4n0n). This test fails when
   3. an _unlocked alias musl defines (bodiless under ruling Q6, so an effect entry of its name) of a function the table
      has has no row, or a row whose class or roles differ from its locked form's (owner ruling 2026-11-12: an _unlocked
      variant follows its locked form).
-Usage: test_fx_table.py (no arguments; reads the repository)."""
+Also builds and runs fx_stream_test.c (cq-dsnrs: the stream model against musl's ungetc, ungetwc, getdelim).
+Usage: test_fx_table.py [--clang CLANG] (reads the repository)."""
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,6 +71,19 @@ def main():
             errs.append(f"{u}: row {tab.get(u)} differs from its locked form {base}'s {tab[base]}")
         if base in INPUT and u not in tab:
             errs.append(f"{u}: the _unlocked form of an input call has no row")
+    clang = sys.argv[sys.argv.index("--clang") + 1] if "--clang" in sys.argv else "/usr/local/opt/llvm@19/bin/clang"
+    with tempfile.TemporaryDirectory(prefix="cq-fxs.") as d:
+        exe = Path(d) / "fxs"
+        here = Path(__file__).resolve().parent
+        b = subprocess.run([clang, "-std=c17", "-O1", "-I", str(ROOT / "checker/rt"), str(here / "fx_stream_test.c"),
+                            "-o", str(exe)], capture_output=True, text=True)
+        if b.returncode:
+            errs.append("fx_stream_test.c does not build: " + b.stderr.strip())
+        else:
+            r = subprocess.run([str(exe)], capture_output=True, text=True)
+            print(r.stdout.strip())
+            if r.returncode:
+                errs.append("fx_stream_test failed")
     for e in errs:
         print("FAIL", e)
     print(f"{len(errs)} failures" if errs else f"fx table: {len(sn)} stream names, {len(tab)} rows, all classified")
