@@ -49,7 +49,8 @@ Exit status: 0 when the lowered program is §6-equal to the C program on every c
 it differs (the reasons are printed), 2 when the check could not be decided (bad arguments, an
 internal error of the checker, no sample in the C program's domain, or a gate matching out of the
 comparison's search budget with no other difference: undecided, never 'differs', cq-sujz decision 6):
-never green.
+never green. 3 when no sample was compared after every exclusion (NOT COMPARED: rulings Q2, the guard of the owner
+rulings 2026-11-11 Q1 and 2026-11-12 item 4): never green either.
 """
 from __future__ import annotations
 
@@ -66,7 +67,11 @@ from typing import Dict, List, Optional, Tuple
 
 from cqcheck.contracts import DriverSpec
 
-PASS_STATUS, FAIL_STATUS, ERROR_STATUS = 0, 1, 2
+PASS_STATUS, FAIL_STATUS, ERROR_STATUS, NOT_COMPARED_STATUS = 0, 1, 2, 3
+# rulings Q2 (owner 2026-11-11): the checker's detection is an approximation, and the report says so
+Q2_LIMIT = ("rulings Q2: an input on which a bodiless callee receives a pointer into an object holding a QUANTUM cell at "
+            "the call is not compared (the object: its __cq_alloc block, else the 8 cells at the pointer); reach through "
+            "a global or a stored pointer is not detected")
 MAIN_RENAMED = "__cqu_main"
 OBJ_BYTES = 4096
 FILL_ELEMENTS = 64    # the quantum inputs behind a pointer parameter (module docstring)
@@ -455,10 +460,13 @@ def _unidentified_extras(reasons: List[str], chosen: List[dict], samples: List[d
 # The check
 
 
-def verdict(reasons: List[str]) -> int:
-    """The status of a comparison's reasons: pass with none; undecided (2) when every one is a gate
-    matching out of its search budget (no difference found, none ruled out: cq-sujz decision 6);
+def verdict(reasons: List[str], compared: Optional[int] = None) -> int:
+    """The status of a comparison's reasons: not compared (3) when `compared` (compare's stats) is 0, whatever the
+    reasons (the guard: a verdict with zero compared samples is never PASS); pass with none; undecided (2) when every
+    one is a gate matching out of its search budget (no difference found, none ruled out: cq-sujz decision 6);
     differs (1) otherwise."""
+    if compared == 0:
+        return NOT_COMPARED_STATUS
     if not reasons:
         return PASS_STATUS
     if all(_OUT_OF_BUDGET.search(r) for r in reasons):
@@ -537,7 +545,8 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
                              f"for {len(chosen)} samples")
     from cqcheck import drivers as D
     regs = D.theta_registers(D.read_module(c_module))
-    reasons = list(compare.compare(ours, cres, "c", classical_key=ckey, registers=regs))
+    stats: Dict[str, object] = {}
+    reasons = list(compare.compare(ours, cres, "c", classical_key=ckey, registers=regs, stats=stats))
     # cq-pdstc: a measurement of ours is identified only from samples of its classical arguments (cq-1ye9c). A
     # subset (--samples, --light) may hold too few of a group to show C taking the quantum arm: the group's other
     # samples of the set (domain-filtered like every sample) are compared too, at most EXTRA_PER_GROUP per group, in a
@@ -547,10 +556,19 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         chosen = chosen + extra
         ours += run.run_samples(low, spec, extra, "ours", jobs, c_module=c_module)
         cres += [oracle.run_result(r, spec, c_module) for r in oracle.run_samples(c_module, spec, extra)]
-        reasons = list(compare.compare(ours, cres, "c", classical_key=ckey, registers=regs))
+        stats = {}
+        reasons = list(compare.compare(ours, cres, "c", classical_key=ckey, registers=regs, stats=stats))
         lines.append(f"cqcheck user: {len(extra)} more samples of {len({ckey(s) for s in extra})} classical "
                      f"group(s) compared, where a measurement was unidentified (cq-pdstc; now {len(chosen)} samples)")
-    status = verdict(reasons)
+    status = verdict(reasons, stats.get("compared"))
+    nq2 = len(stats.get("q2") or [])
+    if nq2:
+        lines.append(f"cqcheck user: {nq2} of {len(chosen)} samples not compared ({Q2_LIMIT})")
+    if status == NOT_COMPARED_STATUS:
+        lines.append(f"cqcheck user: NOT COMPARED: no sample was compared ({len(chosen)} run, {nq2} excluded by rulings Q2); "
+                     f"never a PASS")
+        lines += [f"  c: {r}" for r in reasons]
+        return NOT_COMPARED_STATUS, lines
     if status == ERROR_STATUS:
         lines.append(f"cqcheck user: UNDECIDED: the gate matching against the C program ran out of its "
                      f"search budget on {len(reasons)} classical group(s) and found no difference "
@@ -562,7 +580,7 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
                      f"({len(reasons)} reasons)")
         lines += [f"  c: {r}" for r in reasons]
         return FAIL_STATUS, lines
-    lines.append("cqcheck user: PASS: §6-equal to the C program on every sample")
+    lines.append(f"cqcheck user: PASS: §6-equal to the C program on every compared sample ({stats.get('compared')} compared)")
     return PASS_STATUS, lines
 
 
