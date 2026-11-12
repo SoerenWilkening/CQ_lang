@@ -5,7 +5,9 @@ cq_lowering_viewer.html  the viewer page (published at https://claude.ai/artifac
 traces/NN_name.txt       reference trace per example; first line "# driver: calls", "# call: fn(args)" before each call
 drivers.txt              (the one home of driver lines; there is no per-example drivers.d/) per example: "NN_name|prototypes|call;call[|extra]" used to build the trace driver; the optional
                          4th field is C run in main before the calls (e.g. defining the host array a pointer argument addresses); the optional 5th field
-                         roots=f[,g] is the CR rule 27 root list the example links (161, 190; the 4th may be empty)
+                         roots=f[,g] is the CR rule 27 root list the example links (161, 190; the 4th may be empty); an optional trailing field
+                         stdin="..." (a C string literal, after roots= or in its place) is the standard input both sides read under §6
+                         (one finite stream with state; absent: the checker's default)
 trace_stubs.c            stub runtime for symbols the trace stub runtime archives lack (push/pop, not/and/xor_i1, select_*, abort,
                          tape_fmt/_lit); with -DCQ_BUS the bus forms, always the effect entries and the injection bundle (MEMORY MODEL below)
 trace_check.py           allocation check + uncompute pairing (every _unc matches an earlier forward call with the same

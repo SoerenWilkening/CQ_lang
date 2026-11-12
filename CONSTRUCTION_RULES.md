@@ -45,6 +45,8 @@ example §7 lists as regeneration owed is not normative for the construction it 
   value, lines tagged `[K]`). A lowered library ships a header of `CQ_K` lines with its defaults,
   included like `CQ.h`; its declared clones (rule 27) receive K as a classical run-time argument.
   A loop whose exit reads a value loaded from the bus is a K-loop like any other (rule 14).
+  The function of a loop is the one that holds it in the `-O1` IR: a loop clang inlined into
+  `g` resolves its K as a loop of `g` (K2 likewise).
 - **Allocation bound K2.** An allocation whose size is a rail (`malloc`, `calloc`, `aligned_alloc`,
   `realloc`, a VLA) is made at **K2** bytes (rule 16), and a memory intrinsic whose length is a
   rail copies at most K2 bytes (rule 22). K2 resolves as K does, with `CQ_K2(f, k)`
@@ -245,7 +247,7 @@ in-place target is never one of its own controls.
 ### 1.4 Clone naming
 
 ```
-clone := "__cq_q_" fn "_" mask [ "_b" bound { "_" bound } ] [ "_t" ] [ "_ctl" ] [ "_pure" ] [ "_unc" ]
+clone := "__cq_q_" fn "_" mask [ "_b" bound { "_" bound } ] [ "_rm" | "_rmq" ] [ "_t" ] [ "_ctl" ] [ "_pure" ] [ "_unc" ]
 mask  := one digit per SCALAR formal of the function, LEFT TO RIGHT, after aggregate flattening,
          1 = quantum (a handle), 0 = classical (159 `shift_110`). A pointer is one scalar: 1 = a
          handle to a 64-bit address rail, 0 = the classical `ptr`; nothing about the pointee
@@ -268,6 +270,17 @@ _pure  := the clone without its phase effects (what the twins recompute through)
 _bN..  := one upper bound per quantum integer argument whose range facts at the call site bound it
           (`memcmp(.., x & 3)` -> `_b3`); a clone's loop cutoffs use only these bounds and its own range
           facts (rule 14), never a bound of one particular call site that is not in its name.
+_rm    := the clone of a body of `round.dynamic` ops with no strict op and no fenv call, reached
+          from a caller that holds the fenv state with a mode other than the literal 0 (rule 23):
+          it takes the mode as ONE classical `i32` after its formals (no mask digit), its
+          `round.dynamic` ops are the `_rm` templates in that mode, and its calls of such bodies
+          pass the mode on. No flags parameter, no `_exc`; results as the plain clone's.
+_rmq   := the same clone when the mode is a rail: the trailing parameter is its handle, the ops
+          are the `_rmq` templates and every result is a rail. A clone with 82's ABI (a strict op
+          or a fenv call in its body: mode and flags as its last two parameters) keeps its plain
+          name for a classical mode and takes `_rmq` when the mode is a handle.
+          With `_rm` or `_rmq` the all-zero mask names a clone, not the own symbol
+          (`__cq_q_nx_0_rmq(double x, i32 mode)`).
 ```
 A clone name is read right to left: the suffix words, then the `_b` bounds, then the mask (`v` or
 the rightmost token of binary digits), and `fn` is whatever remains. A name with bounds is internal
@@ -330,7 +343,12 @@ IEEE/x87 at that width wherever native raises none. A value C fixes exactly is n
 miscompile: `uitofp` from more than 128 bits to f80 (LLVM 19's `ExpandLargeFpConvert` goes
 negative when the top bit is set) is the non-negative value rounded to nearest even at f80's
 64-bit significand (`_rm` when present), and the C oracle of §6 is overridden there as for the NaN
-row. IR that clang 19 emits and LLVM 19's parser rejects (`fpext`/`fptrunc` between `half` and
+row. Every other `sitofp`/`uitofp` from more than 128 bits has `ExpandLargeFpConvert`'s value, its
+exponent wrap for a magnitude beyond the format's range included (`i200 2^150` to f32 is
+`0x8a800000`), in the plain and in the `_rm`/`_rmq` form alike: above 128 bits the mode is ignored
+and the value is rounded to nearest even (no strict native code exists), and only the second step
+to f16/bf16 rounds in the template's mode. This is a stated exception to the `_rm`/`_rmq` contract
+of §1.2; the flags stay IEEE in the mode. IR that clang 19 emits and LLVM 19's parser rejects (`fpext`/`fptrunc` between `half` and
 `bfloat`) is out of scope.
 
 | operation | out-of-domain input | result |
@@ -560,7 +578,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      The old value is kept only when no such point exists: it escapes (`ret`, a call argument
      the callee keeps), it is the value or control rail of a kept store (rule 5), it is
      measured (rule 2 instead), it is operand 1 of an update whose operands are both dead
-     (`sum = s + t`: `s` is cleaned against the sum, `t` kept; below), or a reader of it follows a non-diagonal gate on its image.
+     (`%sum = add %s, %t`, the IR operand order whatever the C source wrote: `%s` is cleaned
+     against the sum, `%t` kept; below, 109), or a reader of it follows a non-diagonal gate on its image.
      A kept old value is a which-path record of the rail that replaced it: a later
      non-diagonal gate on `y'` or on an operand of `f` acts on a dephased register (162).
    - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
@@ -573,7 +592,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      complement arm is a classical value rather than `y` itself (123: the old `y` is rule-5
      garbage, uncomputed as usual).
    - *In a rolled loop (rule 14):* a carried value whose trip update is such a bijection and whose
-     trip predicate does not read it (a counter, an accumulator) is cleaned in the body of the
+     trip predicate does not read it (a counter, an accumulator), and whose final value is live
+     after the loop as something that is never uncomputed (measured, returned, stored, rotated,
+     an operand of a kept rail), is cleaned in the body of the
      same trip, with the composite update's inverse (e.g. `a ? y' - 1 : y'`), after the arm's
      garbage whose `_unc` reads the old value. The cleaned rail is not pushed and the reverse
      loop never sees it; the final carried rail is the loop's result and is measured directly
@@ -581,8 +602,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      seed, a rotated user register: 203), cleaned and freed by the same clean-up, a bus load copy
      excepted: rule 5 sentence 1 decides that one (un-copied after trip 0's update), and the
      register's handle is the carried rail from then on. Trip 0's own treatment runs under a
-     classical branch on the trip index (the loop is not peeled). A final carried rail that
-     nothing reads after the loop stays allocated (kept, §6). A loop-invariant rail read by such
+     classical branch on the trip index (the loop is not peeled). A carried value whose
+     final rail nothing reads after the loop, or only rails that are themselves uncomputed read,
+     is not cleaned per trip: its chain is garbage like any other, pushed per trip and undone by
+     the reverse loop after its last reader (the straight-line rule: the clean-up point lies
+     after the image is gone, so no clean-up exists). Regeneration owed: 95, 109 (§7). A loop-invariant rail read by such
      an update in every trip is cleaned from the last trip's image on the exit edge, and kept
      on a zero-trip path (75). 05, 09, 150 (the counter), 149 (s), 27 (acc).
    - *A memory cell.* `y = load p; y' = f(y, …); store y', p` (`g++`, `*p += x`, `s->n ^= k`) is
@@ -693,9 +717,21 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       the bus included (the user raises K, §0). The loop is re-rolled so the pre-header guard is
       trip 0 of the latch test (equality by SCEV: the same expression over SCEV-equal
       operands, a load equal to a load of the same type at a SCEV-equal address when no
-      memory version change lies between the guard and the loop header, 203); it runs exactly K trips under the predicate
+      memory version change lies between the guard and the loop header, 203); it runs exactly K trips (fewer only where a classical conjunct ends the chain, below) under the predicate
       chain `a_j = a_{j−1} & cond_j`, seeded `|1⟩` (or the arm flag when the loop sits in an
       arm); every carried value advances by a `select` on `a_j`; the reverse loop pops K trips.
+      A `cq_measure` in the body is one call in the rolled body and runs in every one of the K
+      trips, unconditionally (rule 2), on that trip's carried rail; in a trip the C program does
+      not reach, that rail holds the value its `select` kept. A `cq_measure` in an exit arm runs
+      once, after the K trips, on the arm's value merged across the trips. A loop-carried value
+      with a rail among its incoming values is a rail in every trip; the loop is never peeled.
+      The code after the loop runs once, after the K trips: its values are the `select` chain
+      over the exit flags, and an exit block that makes a call or a bus store is never emitted
+      per trip (an exit block that keeps nothing may be: 121).
+      A classical conjunct `C` of the exit test (`while (c && q)`) is a classical branch AT EACH
+      TEST (rule 8): where `C` is false the chain ends there, `a_j` is a `|0⟩` seed through a
+      classical `phi` of handles and no later trip is emitted; where it is true
+      `a_j = a_{j−1} & Q_j`. `do … while (c && q)` runs trip 0 whatever `c` is.
       Every bus access of trip j is the `_controlled` form under `a_j`, except one that the
       exit test of trip j reads: that one is under the predicate of reaching the test, and its `_unc`
       takes the same rail: `a_{j−1}` where the test of trip j gives `a_j` (the seed or the arm flag for trip 0,
@@ -735,7 +771,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       a literal is copied out from the carried rail (149). — 05, 09, 37, 53, 54, 68, 149, 150,
       151, 152, 153, 169; 203 (an exit on a loaded value); 55, 87, 189.
     - *Classical bound with a quantum exit* (`for (i = 0; i < n; i++) if (q) break;`, a mixed exit
-      `c_classical || q`): no cutoff applies. The loop is a classical loop over the classical bound,
+      `c_classical || q` whose classical test alone bounds the trip count; one whose classical
+      conjunct gives no bound is the K-loop above): no cutoff applies. The loop is a classical loop over the classical bound,
       `q` feeds the predicate chain, and **every** predicate, the last included, is a function of
       the inputs and is uncomputed by the reverse loop (one that controls a kept store is kept,
       rule 5). The chain's `|1⟩` seed is minted after the classical zero-trip test, where a trip
@@ -777,13 +814,17 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     clone of rule 27) is the host boundary. Its call is classified by the call site and by the
     callee's LLVM attributes. The only callees recognised by name and signature are ISO C and
     POSIX interfaces, and a body the bundle has for one of them is never lifted for the call:
-    `malloc`, `calloc`, `aligned_alloc`, `realloc`, `free`; the *stream calls*: every
-    `<stdio.h>` function, input and output alike, and the POSIX descriptor calls (`open`,
-    `close`, `read`, `write`, `lseek`), except the string formatters `sprintf`, `snprintf`,
-    `sscanf` and their `v` forms, which are injected and lifted (the bundle builds them over bundle-internal names
-    for the formatting cores they call on their private `FILE`, `__cq_vfprintf` and
-    `__cq_vfscanf`, lifted like any body, so no stream call by name remains in a lifted
-    body); `signal`, `raise`; rule 23's
+    `malloc`, `calloc`, `aligned_alloc`, `realloc`, `free`; `memcpy`, `memmove` and `memset`,
+    which are rule 22's construction; the *stream calls*: every
+    `<stdio.h>` and `<wchar.h>` stream function, input and output alike, and the POSIX descriptor
+    calls (`open`, `close`, `read`, `write`, `lseek`), except the string formatters `sprintf`,
+    `snprintf`, `sscanf`, `swprintf`, `swscanf` and their `v` forms, which are injected and lifted
+    (the bundle builds them over bundle-internal names for the formatting cores they call on their
+    private `FILE`, `__cq_vfprintf`, `__cq_vfscanf`, `__cq_vfwprintf` and `__cq_vfwscanf`, and for
+    every stream call those cores make on that `FILE`, lifted like any body, so no stream call by
+    name remains in a lifted body; a function whose only `FILE` is one on its own stack, `strtod`,
+    `strtol`, `wcstod`, `atof` and their families, keeps its body too, and the bundle has no body
+    of any other public function that reads or writes a `FILE`, `exit` included); `signal`, `raise`; rule 23's
     fenv functions; rule 24's `setjmp`, `longjmp` and `pthread_*`. `stdin`, `stdout`, `stderr`
     and every `FILE` are the host C library's objects. What clang -O1 emits in place of a memory
     operation is that operation: `memset_pattern4/8/16` is a rule-22 fill whose source repeats, a
@@ -800,7 +841,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       whose address is taken or that is externally visible is, whenever the module contains
       an event; inside a table clone (`_t`, `_t_ctl`, their twins) every function is, always:
       its caller is not in view. The call is made as it stands and reads and writes host bytes, which the bus
-      sees through the overlay (§1.3).
+      sees through the overlay (§1.3). At a QUANTUM cell the callee reads an unspecified byte
+      and a byte it writes there is not seen by the bus (§1.3): a stated deviation and the
+      user's responsibility; a library function avoids it by being injected (rule 18).
     - *Effect entry*: every other call that is in no class below, an unknown callee included
       (it is never dropped). It is ONE call sequence on the function's tape `t` (one
       `tape_alloc` at the entry of each function that records an entry; 47): the fields, then
@@ -818,17 +861,36 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       string is never expanded into fields. When the backend performs the call, what a
       deferred result holds and how a buffer is read is BACKEND_ABI §1.11 alone; the lowered
       program asks nothing. `printf` is the format entry `tape_fmt[_controlled]([c,] t, fmt)`
-      with its variadic arguments as fields by promoted IR type (47, 138). A result the
-      program reads of `printf` or `fprintf` (the count, `%n`) is not an entry's rail: it is
-      the lifted `snprintf(0, 0, fmt, args…)` (rule 18), and the effect goes to the tape with
-      no result. The result rail of any other output call the backend defers is `|0⟩` (a
-      stated deviation; the compiler may warn).
+      with its variadic arguments as fields by promoted IR type (47, 138).
+      *Results.* No value the lowered program reads depends on whether the backend defers a
+      call. For a C library function recognised by name above whose call is an effect entry
+      and no input call, a result the program reads is never the entry's rail: it is the value
+      musl's body returns when every host operation in it succeeds, computed by ordinary
+      lowered code, and the effect goes to the tape with no result (nothing is emitted for an
+      unread result, except for a format that may hold `%n`). `printf`, `fprintf`: the lifted
+      `snprintf(0, 0, fmt, args…)` (rule 18); `vprintf`, `vfprintf`: the lifted
+      `vsnprintf(0, 0, fmt, ap)`, with no copy of the `va_list` added; `wprintf`, `fwprintf`,
+      `vwprintf`, `vfwprintf`: a bundle-internal count entry over the lifted wide core on a
+      private `FILE` whose write discards and returns its length; `puts`, `fputs`: 0; `fputc`,
+      `putc`, `putchar`: the argument as `unsigned char`; `fwrite`: `nmemb`, 0 where `size` is
+      0; `write`: its length; `fputwc`, `putwc`, `putwchar`: the argument, or `WEOF` where the
+      lifted `wctomb` fails; `fputws`: 0, or −1 where the lifted `wcsrtombs` reports an
+      encoding error; `fflush`, `fclose`, `remove`, `rename`, `fsetpos`, `close`: 0; `fseek`,
+      `fseeko`: 0, and −1 for a `whence` outside {0, 1, 2}; `setvbuf`: 0, and −1 for a type
+      outside {0, 1, 2}; an `_unlocked` form as its locked one. A function not named here is
+      decided the same way from musl's source. A failed host operation (a short or failed
+      write, a missing file, an unseekable stream, the stream's error flag) is never produced:
+      a stated deviation. Where musl's value is not a function of the arguments alone (`fopen`,
+      `tmpfile`, `ftell`, `fileno`, `fwide`, `open`, `lseek`: host state), and for every callee
+      that is no such library function, the result is the entry's rail, `|0⟩` when the backend
+      defers the call (a stated deviation, §6; the compiler may warn).
     - *Pure*: a callee LLVM marks `memory(none)` and `willreturn`. With classical arguments
       under a quantum predicate it is executed unguarded and its result merged like any
       classical arm value (rule 9).
     - `noreturn` (`abort`, `exit`, `_Exit`, `__builtin_trap`, `__assert_fail`, any
       `noreturn`-attributed function): under a quantum predicate, `abort_i1(pred)`; rails later
-      modified in place are snapshotted under the predicate first. With a rail argument and no
+      modified in place are snapshotted under the predicate first. With a rail argument, or
+      where a tape or abort event can precede it (the ordinary-host-call test above), and no
       quantum predicate it is the effect entry of its name under an `alloc_i1(true)` seed,
       then `abort_i1` of that seed. The `unreachable` after an unconditional `noreturn` call
       is a return of zero-valued results (`|0⟩` rails).
@@ -842,7 +904,12 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       holds K2, and the overflow predicate `icmp_ugt_i64_hl(n, K2)` is kept as an output rail
       (omitted when range facts bound `n` by K2), computed immediately before the
       `__cq_alloc` call, so that it reads `n` at the value the call saw; a rail alignment is
-      K2 rounded up to a power of two. `calloc(n, s)` is the size `n·s`. `realloc(p, n)` is,
+      K2 rounded up to a power of two. `calloc(n, s)` is the size `n·s` as the EXACT product,
+      never the wrapped one. With a rail operand the size is `umul.with.overflow`'s two
+      templates (rule 4) and the kept predicate is `or_i1` of the overflow bit and
+      `icmp_ugt_i64_hl(n·s, K2)`, both undone at once: it reads 1 wherever the exact product
+      exceeds K2. With classical operands an overflowing product gives the null pointer and no
+      `__cq_alloc` call (a classical test, as C's `calloc`). `realloc(p, n)` is,
       in this order: `q = __cq_alloc(n, 16)`; `s` = the `i64` bus load at `p − 8`
       (`qram_load_i64_hl(m, p − 8)` for a classical `p`; for an address rail at the rail
       `add_i64_hl(p, -8)`, uncomputed after the un-copy of `s`); the length rail
@@ -869,12 +936,21 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       `sig`), after the host call when every argument is classical and no predicate is in
       scope: that host call is made as it stands whatever precedes it (the ordinary-host-call
       test is not asked for `signal`). With a rail argument or a predicate in scope there is
-      no host call and no effect entry. `raise(sig)` loads that cell and calls through the
+      no host call and no effect entry. A signal number is VALID when `1 ≤ sig ≤ 64` and `sig`
+      is none of 9, 19, 32, 33, 34 (musl's `sigaction` and the kernel; the checker's reference
+      uses this set, not its host's). For an invalid one `signal` returns `SIG_ERR` (−1 as an
+      address) and neither loads nor stores: a classical test for a classical `sig` (the host
+      call, where one is made, is still made and fails by itself); for a rail `sig` the flag
+      `v` of that test by ordinary templates, the load and the store under `v` (ANDed with a
+      predicate in scope), the result `select(v, loaded, −1)`, and a bus store of `EINVAL` (22) at
+      `__errno_location()` under `¬v` (ANDed likewise), as a lifted musl body sets `errno`.
+      `raise(sig)` loads that cell and calls through the
       loaded address rail by rule 19, as a call of function type `void (i32)` with `sig` as
       its one actual, except that the complement branch (no registered function: the default
       action or a host handler) is the effect entry `raise` with `sig` as its one field. A
-      result of `raise` the program reads is the `_i32` entry's rail under the complement and
-      the literal 0 under every candidate flag (rule 9). No handler is tracked at compile time.
+      result of `raise` the program reads is the literal 0 under every candidate flag (rule 9)
+      and under the complement musl's value, computed by ordinary lowered code: 0 for
+      `0 ≤ sig ≤ 64`, −1 otherwise (*Results* above; the complement's entry has no result). No handler is tracked at compile time.
     - *Callback.* A library that calls back into the program (`qsort`, `bsearch`) must itself be
       lowered: injected (rule 18) or a lowered library (rule 27).
 
@@ -921,16 +997,17 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     memory through the bus, and nothing about the pointee crosses the call.
     **Clone.** One form for every clone: it computes, **copies each result into a fresh
     rail**, uncomputes its SSA body by rule 5 and returns the copies (a one-template body may
-    return its rail directly). What rule 5 keeps inside it (store rails, tape slots, kept load
+    return its rail directly; a clone with no twin whose result is the KEPT result of a callee
+    with no twin returns that rail directly, since a copy would leave it live beside the copy). What rule 5 keeps inside it (store rails, tape slots, kept load
     copies) simply stays.
     **Twin.** `_unc` recomputes the results (templates, bus loads, its callees' clones and
     twins), XORs each out with `copy_<W>` and uncomputes; the caller frees the result rails
     after it. It repeats no phase and no tape or abort event (it recomputes through `_pure`,
     §1.4) and makes no memory version change: a function that writes memory (rule 5), has a
     measurement whose outcome is tainted (under a quantum predicate, or rule 19's controlled
-    copy) or reads the result rail of an effect entry has no twin (a classical-path measurement
-    keeps it, rule 2; its table clone's is
-    §1.4's), and its rail results are KEPT by the caller. The twin reads memory again, so the call of a clone that loads
+    copy) or reads the result rail of an effect entry has no twin (a classical-path measurement keeps it, rule 2; a table clone's measurement of a formal,
+    itself or through a by-name callee given the copy, leaves it none and its results stay
+    allocated, §1.4; any other table clone's twin is §1.4's), and its rail results are KEPT by the caller. The twin reads memory again, so the call of a clone that loads
     from the bus, itself or through a callee, is a load for rule 5: its twin runs after the
     results' last consumer and before the next memory version change after the call on every
     path, and where that change comes first the results are KEPT and no twin is called. When
@@ -1118,7 +1195,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     — 198, 200, 208; 84, 85, 86, 88, 89, 105, 107, 129, 167, 189.
 
 22. **Memory intrinsics.** `llvm.memcpy`, `llvm.memmove` and `llvm.memset` (`.inline` forms
-    included) are byte accesses on the bus, `qram_load_i8` and `qram_store_i8`: `_hl` at a
+    included), and a call by name of `memcpy`, `memmove` or `memset` (rule 16; the call's result
+    is its destination pointer, and no body of that name is lifted for it, the program's own
+    included: reserved identifiers, C17 §7.1.3), are byte accesses on
+    the bus, `qram_load_i8` and `qram_store_i8`: `_hl` at a
     classical address, at the fresh rail `add_i64_hl(r, j)` for byte j of an address rail `r`
     (j = 0 included), uncomputed and freed right after its access in the same trip. A copy
     LOADS ALL its source bytes and then STORES ALL of them: it has no direction and is exact
@@ -1148,8 +1228,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       copies classical-valued; an `alloca` that is such a source is bus-resident by rule 20 (b)).
 
     A struct assignment, a `byval` copy (rule 26) and `realloc`'s copy are this copy; padding
-    bytes are bytes. `memcmp`, `strlen`, `strcmp` and the other string and memory functions are
-    library calls, lifted by rule 18.
+    bytes are bytes. Every other string and memory function (`memcmp`, `memchr`, `strlen`,
+    `strcmp`, `mempcpy`, `bcopy`, `bzero`, …) is a library call, lifted by rule 18.
     — 196, 200 (a `memset`), 201, 208 (a rail length); 202, 72, 73, 90, 190.
 
 23. **Floating-point environment.** The C17 §7.6 functions (`fegetround`, `fesetround`,
@@ -1171,9 +1251,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     a callee, takes 82's ABI; a caller without the fenv state passes the mode literal 0 and an
     empty flags rail, and the returned flags rail is never read: twin, free, never kept (169's
     `__divdc3` calling `__cq_q_logb_1(x, 0, flags)`). A body of `round.dynamic` ops reached from
-    a caller whose mode is a non-default literal or a rail takes that mode as 82's mode
-    parameter and its ops become `_rm`/`_rmq`; it is a distinct clone, its name fixed with its
-    example (§8, owed).
+    a caller that holds the fenv state with a mode other than the literal 0 (a non-default
+    literal, a run-time classical mode, a rail: a `fesetround` under a quantum predicate makes
+    the mode `select(pred, new, old)`) takes that mode as its one trailing parameter and its
+    ops become `_rm`/`_rmq`; it is a distinct clone, `__cq_q_<fn>_<mask>_rm` for a classical
+    mode and `_rmq` for a mode rail (§1.4), also when every data argument is classical: the
+    call is then never the in-place own symbol, and an `_rmq` clone's result is a rail.
+    Example owed (§8).
     Once the environment has a quantum part, every callee whose body (itself or through a callee)
     reads or writes the environment is reached with the flags rail and the mode as arguments,
     whatever its data arguments: those two digits of its mask are 1. `feenableexcept` and
@@ -1200,9 +1284,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 
 24. **Threads, atomics, volatile, setjmp.** Single-thread collapse: an atomic access is the
     ordinary access (`load atomic`/`store atomic` are rule 20's, `cmpxchg` and `atomicrmw` rule
-    4's), fences are nothing, `pthread_create` is a direct call of the start routine (rule 19
-    when it is a pointer) that writes no `pthread_t`, `pthread_join` is nothing, mutexes are
-    no-ops (these operands are no users for rule 20 (b), and a constant start routine is not
+    4's), fences are nothing, `pthread_create(t, attr, f, p)` is the call `f(p)` (rule 19
+    when `f` is a pointer) and `pthread_join(t, r)` is nothing, except that when some `pthread_join` of the
+    module has a second operand other than the null constant, every `pthread_create` stores `f`'s result in
+    `*t` (converted to the `pthread_t` type) and every such join stores its `pthread_t` operand through `r`
+    (the sequential schedule's result, as a `void *`); each of these calls returns 0 and the mutex calls
+    (`pthread_mutex_lock`, `_trylock`, `_timedlock`, `_unlock` and musl's internal names
+    `__pthread_mutex_*` of the same functions, which a lifted `mtx_*` body calls) are
+    no-ops that return 0 (no operand of these calls is a user for rule 20 (b); the two stores just named are
+    ordinary stores of rule 20, and a constant start routine is not
     address-taken by that use), and a thread-local object is the one thread's
     object at its address (`llvm.threadlocal.address` is that address).
     `volatile` is read off the access and its pointer operand:
@@ -1321,7 +1411,10 @@ that class are equal iff:
    register (rule 10), a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 18, 19; the
    overflow predicates `a_K` and `n > K2` among them); any other live rail is a leak and FAILS,
    with or without a reference: a user program under the checker has no clean-list, so every
-   rail it does not name is clean. Rule 5 keeps, for the shot: a store's tape slot and, as far as
+   rail it does not name is clean. A live rail in a known classical basis state on every input
+   (a seed never rotated, a rail only ever written with classically known values) is no leak,
+   whatever role it carries: an `a_K` kept where B ≤ K always reads 0 and is not judged by
+   rule 14's keep condition. Rule 5 keeps, for the shot: a store's tape slot and, as far as
    the storing function owns them, its value rail (a seed included) and control rail; a load copy that a memory version change
    overtook before its `_unc` (un-copied, not freed), and a result of a clone that loads that one overtook before its twin. An in-place form keeps
    nothing.
@@ -1348,14 +1441,30 @@ and 12 compose to this; it never applies to an Ry, nor to a phase with an angle 
 
 The classical reference of item 1 runs every quantum-exit loop and quantum-depth recursion with the
 same cutoff as the circuit: a loop is stopped after K trips (the exit test after the K-th body gives
-`a_K`). On an input where the C program would run more than K trips the compared outputs are the
-circuit's, `a_K` must read 1, and the rotation list is compared through trip K; on an input with at
+`a_K`). On an input where the C program would run more than K trips `a_K` must read 1, and
+the rotation list and the event sequence (tape entries, abort flags, an early end of the C program)
+are compared through trip K; on an input with at
 most K trips `a_K` must read 0 and everything is compared. Likewise the kept rail `n > K2` of a
-rail-sized allocation must read `n > K2` on every input; where it reads 1 the reference allocates
-K2 bytes as the circuit does, and an access at or beyond byte K2 of that block is outside the block
-on both sides (totalized by §2, not compared against C). A function with no body (rules 16, 27) is
+rail-sized allocation must read `n > K2` on every input (for `calloc` on the exact product, rule 16).
+**Horizon.** On an input where a kept overflow predicate (`a_K`, `n > K2`, a recursion cut) reads 1,
+or an abort flag under a quantum predicate reads 1, nothing after that point is compared:
+outputs, rotations, events and measurements alike.
+**Measurements** are identified by call site. Before the horizon, an execution of a measurement
+site on an input where the C program does not reach it is accepted iff every condition by which
+the C run left the path to the site is quantum under rule 2's static collapse (a quantum arm, a
+trip behind a quantum exit or break, a `_ctl` predicate); where one of them is classical, an
+argument or a statically collapsed outcome, it is a failure. An accepted extra execution is no
+event of that input, and its measured rail is a kept rail. Trip j's copy of a body `cq_measure`
+measures trip j's carried rail (rule 14). A function with no body (rules 16, 27) is
 modelled on both sides by one deterministic stand-in of the name and argument bits; the model is the
-checker's, not the spec's. An input on which the C program is undefined (206's call that violates
+checker's, not the spec's. For a C library call whose result rule 16 computes in the circuit the
+reference takes the result from the same musl source and performs only the host operation; the
+host library's own return value is not the reference (`puts` returns 10 on macOS and 0 in musl).
+Standard input is one finite stream with state, the same bytes on both sides (the checker's
+default, or the `stdin="…"` field of the example's line in `drivers.txt`): an input call
+consumes what the C program consumes on that basis input (a call whose predicate reads 0 consumes
+nothing, a rail length consumes for its value there), and the consumption across branches of
+BACKEND_ABI §1.11 is not modelled. An input on which the C program is undefined (206's call that violates
 `restrict`) is compared against the reference only.
 
 An indeterminate value the C program reads is what its cell holds on the bus: 0 for a cell never
@@ -1367,7 +1476,14 @@ uninitialized cell of a host-resident `alloca` (host stack memory) is not compar
 Pointer values (`ptrtoint`, printed addresses) are compared only relationally (equality and
 order): host addresses differ per run. Byte identity of traces is never required. The tape is
 compared per input as the sequence of its entries in order (name or format, fields, predicate);
-the `|0⟩` result rail of a deferred output is a stated deviation, not compared against the C program.
+the result rail of an entry the backend deferred (rule 16 *Results*: a callee that is no C library
+function, or one whose result is host state) is a stated deviation, and that rail alone is not
+compared against the C program.
+Two kinds of input are not compared and are not a PASS: one on which the program reads such a
+deferred result rail, and one on which a bodiless callee receives a pointer into an object that
+holds a QUANTUM cell at the call (rule 16; reach through a global or a stored pointer is not
+detected, and the report says so). A run is judged on the inputs it compared and states the number
+it did not compare with the reason; a run that compared no input is NOT COMPARED, never a PASS.
 
 The circuit compared is the one the backend builds from the lowered program's execution (§0): the
 gates between `invert_begin()` and `invert_end()` enter it reversed and inverted (rule 17), so the
@@ -1385,6 +1501,10 @@ Only a target proved dead from range facts is dead. The budget is the checker's,
 Every example not listed below conforms.
 
 101 conforms to rule 24 as it stands.
+
+Regeneration owed: 95 `varargs` and 109 `intrinsic_variants` (rule 6 in a rolled loop: the final
+`overflow_arg_area` rail that nothing reads after the loop is undone by the reverse loop, not
+kept; one rail in 95, two in 109).
 
 
 ## 8. Examples written 2026-10-26 (144–180)
@@ -1408,8 +1528,15 @@ Owed, no source yet. Each fixes the construction its rule names:
 - rule 19: a host call with classical arguments and no gate under a quantum predicate; an in-place callee minting
   a register on one classical path only (handle 0); a `select` of two function pointers under a quantum flag; a
   function with no formals under a quantum predicate (mask `v`).
-- rule 23: a `FENV_ACCESS ON` caller with `fesetround(FE_UPWARD)` calling a `round.dynamic` body (fixes that
-  clone's name); a `fenv_t` reached through a pointer (fixes the field offsets).
+- rule 23: a `FENV_ACCESS ON` caller with `fesetround(FE_UPWARD)` calling a `round.dynamic` body (the `_rm`
+  clone), and one with the `fesetround` under a quantum predicate and classical data arguments (the `_rmq` clone);
+  a `fenv_t` reached through a pointer (fixes the field offsets).
+- rule 14: a classical branch with an effect inside a K-loop body; `while (c && q)` with a classical `c`; a
+  `cq_measure` in a K-loop body and in its exit arm. Rule 6: a bijective accumulator read only by a flag.
+- rule 16: `calloc` with two rail operands whose product overflows; `signal` and `raise` with an invalid
+  number; `fseek`, `fclose` and `remove` whose result is read behind a quantum field; `abort` under a quantum
+  predicate followed by a classical `exit`. Rule 22: a by-name `memcpy` from a freestanding body.
+- rule 24: `pthread_join(t, &r)` whose result is read (106 joins with a null result only).
 - rule 24: an observable `volatile` access at an address rail. Rule 26: a `byval`
   copy (with 164). Rule 27: a callback through a declared clone and the table; an `asm` with a quantum operand.
 

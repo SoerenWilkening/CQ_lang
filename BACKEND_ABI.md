@@ -350,7 +350,7 @@ its fields; a format entry when the fields its format string consumes are writte
   call reads or writes is host memory, which the bus sees through the overlay (§1.10); a write the
   backend itself makes for an effect entry is a bus store (§1.10).
 - **The host-boundary table.** An effect entry. The first and the last two rows apply when
-  every earlier event is resolved; the four INPUT rows apply at the call whatever precedes
+  every earlier event is resolved; the five INPUT rows apply at the call whatever precedes
   (input is never held behind a deferred output; only the order of outputs is kept):
 
   | case | backend |
@@ -360,13 +360,16 @@ its fields; a format entry when the fields its format string consumes are writte
   | INPUT call, the buffer ADDRESS is a quantum rail | one host call into a temporary classical buffer, then a quantum-address bus store of those bytes |
   | INPUT call, the LENGTH is a quantum rail n | one host call at the backend's bound K2 (§0) into a temporary classical buffer; for each value v the rail n can take, the bytes the same host call with length v would have stored from that input (`fgets`: the first min(v − 1, len) bytes then a NUL for v ≥ 1, nothing for v = 0; `read`/`fread`: byte j for j < min(v, got)) are bus-stored under n = v. The input consumed is that of the K2 call on every branch (a stated deviation from the C program, like the predicate row) |
   | INPUT call under a quantum predicate | performed unconditionally, its result and its bytes merged under the predicate; the input is consumed on every branch (a stated deviation from the C program, like the measurement in an arm of CR rule 2) |
+  | INPUT call, its `FILE`, descriptor or other identifying argument is a quantum rail id | never deferred: for each value v the rail can take that names a stream open at the call, one host call on v into a temporary classical buffer, its bytes bus-stored and its result merged under id = v; a value that names no open stream stores nothing. The input is consumed on every such stream (a stated deviation, like the predicate row) |
   | OUTPUT call with a quantum field or predicate, or one that reads a QUANTUM cell | deferred to the end of the shot |
-  | the file number, path or other identifying argument is truly quantum | deferred to the end of the shot |
+  | a call that is no INPUT call whose file number, path or other identifying argument is truly quantum | deferred to the end of the shot |
 
   The backend knows by `name` which arguments of a host call are its buffer, its length and its
   identifying arguments, and whether it is an input call. Every other callee is an OUTPUT call:
   the stdio and POSIX writers (`printf`, `fprintf`, `puts`, `fputs`, `putchar`, `putc`, `fputc`,
-  `fwrite`, `write`), a callee the backend does not know, and a null `name`.
+  `fwrite`, `write`), a callee the backend does not know, and a null `name`. For a C library
+  call whose result CR rule 16 computes in the circuit the compiler emits the bare entry (no
+  r): no value the lowered program reads depends on whether the backend defers a call.
 - **Deferred.** A deferred event is one of the last two rows, an unresolved format entry or
   abort flag, or any event that is not an INPUT call behind one; its r is `|0⟩`. At the end of
   the shot (process exit: return from `main`, `exit`, or an `atexit` handler the backend registers on its first call; a
@@ -378,7 +381,10 @@ its fields; a format entry when the fields its format string consumes are writte
   length n at the bound K2, byte j under `j < n`; a NUL-terminated string up to its first HOST
   0 byte or K2 bytes): a HOST cell as its byte, a QUANTUM cell XOR-copied under c into a fresh tape
   rail (as `cqrt_tape_write_i8_controlled`; a cell at an address rail by the `_controlled`
-  load), measured at the end of the shot; under c = 0 no cell is read and the rail stays `|0⟩`. `fmt` and `name` are copied
+  load), measured at the end of the shot; under c = 0 no cell is read and the rail stays `|0⟩`. The
+  performed call receives the captured bytes of a string followed by a 0 and reads them up to the
+  first 0 among them, a measured cell's outcome included; a string of K2 or more bytes is cut at K2
+  (a stated deviation). `fmt` and `name` are copied
   at the call. The predicate c of an entry (`cqrt_tape_fmt_controlled`,
   `cqrt_tape_effect[_<W>]_controlled`) is captured at that call too: a classical-valued c as
   its bit, any other c XOR-copied into a fresh tape rail of the event, never freed, and that
