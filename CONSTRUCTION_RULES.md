@@ -1267,7 +1267,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     whatever its data arguments: those two digits of its mask are 1. `feenableexcept` and
     `fedisableexcept` are not C17 and have no musl body: rule 27.
     **Environment objects.** A `fenv_t` or `fexcept_t` object is memory like any other (rule 20),
-    and a host fenv call reads and writes its host bytes. One confined shape keeps the quantum
+    and a host fenv call reads and writes its host bytes. At a QUANTUM cell of the object rule
+    16's deviation holds as for any host call (the call reads an unspecified byte, and a byte it
+    writes there is not seen by the bus; these functions are never injected), and such an input
+    is not compared (§6). One confined shape keeps the quantum
     part out of memory: an `alloca` whose every user is a recognised fenv call taking the `alloca`
     itself (lifetime and debug intrinsics aside) is host-resident, and its quantum part (the
     flags rail, the mode when it is a rail) is carried per object as SSA values, saved by the
@@ -1486,8 +1489,12 @@ compared against the C program.
 Two kinds of input are not compared and are not a PASS: one on which the program reads such a
 deferred result rail, and one on which a bodiless callee receives a pointer into an object that
 holds a QUANTUM cell at the call (rule 16; reach through a global or a stored pointer is not
-detected, and the report says so). A run is judged on the inputs it compared and states the number
-it did not compare with the reason; a run that compared no input is NOT COMPARED, never a PASS.
+detected, and the report says so). Such an input is still run, and every check of this section
+that reads the lowered run alone (the leak rule, the frees, the uncomputation) is judged on it: a
+violation there is a FAIL. The measurement rule above is judged against the C run's path, which is
+no reference on such an input, and is not judged there. A run is judged on the inputs it compared and
+states the number it did not compare with the reason; a run that compared no input and shows no
+such violation is PASS (STRUCTURE ONLY): counted apart from PASS, never as one.
 
 The circuit compared is the one the backend builds from the lowered program's execution (§0): the
 gates between `invert_begin()` and `invert_end()` enter it reversed and inverted (rule 17), so the
