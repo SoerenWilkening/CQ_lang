@@ -64,7 +64,21 @@ bool outAvailable(Shared &sh, const Instruction *def) {
   for (BasicBlock *b = cur->getSinglePredecessor(); b && seen.insert(b).second; b = b->getSinglePredecessor())
     if (b == def->getParent())
       return true;
-  return false;
+  // cq-8nj3o: past a join (a classical branch's, whose arms both reach it) the predecessors are walked backwards as in
+  // outBefore: def's block dominates the insertion block when no walk avoiding it reaches a block with no predecessor.
+  const BasicBlock *ab = def->getParent();
+  SmallPtrSet<const BasicBlock *, 16> back;
+  SmallVector<const BasicBlock *, 16> work{cur};
+  back.insert(cur);
+  while (!work.empty()) {
+    const BasicBlock *x = work.pop_back_val();
+    if (pred_empty(x))
+      return false;
+    for (const BasicBlock *p : predecessors(x))
+      if (p != ab && back.insert(p).second)
+        work.push_back(p);
+  }
+  return true;
 }
 
 // Does output instruction a come before b on every path to b (a dominates b in the output CFG built
@@ -142,7 +156,7 @@ enum Cls : uint8_t { No = 0, Classical = 1, Measured = 2 };
 // treats as measured: a rail noted in Shared::calleeMeasured whose clone call is before the builder's
 // point.
 Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo, SetVector<Value *> *assumed = nullptr, bool forRead = false) {
-  if (outcomeAt(sh, h))
+  if (measuredHere(sh, h) || (forRead && measuredEarlier(sh, h)))
     return forRead || !sh.carriedMeasured.count(h) ? Measured : No;
   if (assumed) {
     auto cm = sh.calleeMeasured.find(h);
@@ -517,7 +531,8 @@ Value *fromConstrained(LoweringContext &ctx, const RailHist &r, ConstrainedFPInt
 
 Value *recompute(LoweringContext &ctx, Value *h) {
   Shared &sh = shared(ctx);
-  if (Value *m = outcomeAt(sh, h))
+  // classify said the rail is classical here: measured here (static), or, for a cq_measure's read, measured earlier.
+  if (Value *m = outcomeAt(ctx, h, /*reread=*/true))
     return m;
   if (auto c = sh.collapsed.find(h); c != sh.collapsed.end() && availableValue(sh, c->second))
     return c->second;
@@ -623,19 +638,53 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
   }
 }
 
-Value *outcomeAt(Shared &sh, Value *h) {
+// CR rule 2, "a re-measurement of the same rail is a classical re-read": a measurement of the rail already emitted before the
+// builder's point (a K-loop's earlier trip included). It decides only what a cq_measure reads (classicalRead), never whether a
+// value is classical: that is static (measuredHere).
+bool measuredEarlier(Shared &sh, Value *h) {
   auto m = sh.measured.find(h);
   if (m == sh.measured.end())
+    return false;
+  auto *mc = dyn_cast<Instruction>(m->second.outcome);
+  return sh.dominatesCurrent(m->second.at) || (mc && outAvailable(sh, mc));
+}
+
+bool measuredHere(Shared &sh, Value *h) {
+  auto m = sh.measured.find(h);
+  if (m == sh.measured.end() || !sh.cur || !sh.isQ)
+    return false;
+  // The instruction being lowered is the measurement itself, already emitted: the builder is past it (the write-backs and
+  // settles that run after a measurement, rule 2's "right after the measurement", 65).
+  if (m->second.at == sh.cur)
+    return true;
+  return cq::measuredBefore(sh.isQ, m->second.v, sh.cur->getParent(), sh.cur, m->second.at);
+}
+
+Value *outcomeAt(LoweringContext &ctx, Value *h, bool reread) {
+  Shared &sh = shared(ctx);
+  if (!measuredHere(sh, h) && !(reread && measuredEarlier(sh, h)))
     return nullptr;
-  auto *mc = dyn_cast<Instruction>(m->second.second);
-  if (sh.dominatesCurrent(m->second.first) || (mc && outAvailable(sh, mc)))
-    return m->second.second;
-  return nullptr;
+  const Shared::Measurement &m = sh.measured.find(h)->second;
+  auto *mc = dyn_cast<Instruction>(m.outcome);
+  if (!mc || sh.dominatesCurrent(m.at) || outAvailable(sh, mc))
+    return m.outcome;
+  if (auto r = sh.reread.find(h); r != sh.reread.end() && availableValue(sh, r->second))
+    return r->second;
+  // Measured on every path, by measurements none of which reaches here alone: the rail holds the outcome (CR §1.3), and a
+  // measurement of it is a classical re-read (rule 2). No gate, so no open cq_invert gate log records it.
+  std::vector<bool> logs = sh.gateLogOpen;
+  sh.gateLogOpen.assign(logs.size(), false);
+  CallInst *r = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, railTypeOf(m.outcome->getType())}, {h});
+  sh.gateLogOpen = logs;
+  // V1 provenance as calleeCollapse's re-read: a measurement of a rail the user's cq_measure measured.
+  r->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
+  sh.reread[h] = r;
+  return r;
 }
 
 Value *classicalRead(LoweringContext &ctx, Value *handle) {
   Shared &sh = shared(ctx);
-  if (Value *m = outcomeAt(sh, handle))
+  if (Value *m = outcomeAt(ctx, handle, /*reread=*/true))
     return m;
   DenseMap<Value *, Cls> memo;
   if (classify(sh, handle, memo, nullptr, /*forRead=*/true) == No)
@@ -647,7 +696,7 @@ Value *collapse(LoweringContext &ctx, Value *handle) {
   Shared &sh = shared(ctx);
   if (sh.carriedMeasured.count(handle))
     return nullptr;
-  if (Value *m = outcomeAt(sh, handle))
+  if (Value *m = outcomeAt(ctx, handle, /*reread=*/false))
     return m;
   DenseMap<Value *, Cls> memo;
   if (classify(sh, handle, memo) != Measured)
@@ -716,7 +765,7 @@ void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *
     if (b == sh.binds.end() || b->second.size() != 1 || !b->second.front().handle)
       continue;
     Value *h = b->second.front().v;
-    if (outcomeAt(sh, h))
+    if (measuredHere(sh, h) || measuredEarlier(sh, h))
       continue;
     SmallPtrSet<const Function *, 8> onStack;
     Meas m = formalMeasured(sh, *F, i, onStack);
@@ -780,7 +829,7 @@ Value *calleeCollapse(LoweringContext &ctx, Value *handle, const Instruction &at
     // CR rule 2 (cq-29ej): a source the call measures on some classical paths only is lowered as unmeasured.
     if (measuredOnEveryPath(ctx, cm.arg, cm.call))
       ctx.unc().setRole(ctx.unc().idOf(src), Role::Measured);
-    sh.measured[src] = {cm.call, m};
+    sh.measured[src] = {cm.call, m, cm.arg};
     sh.calleeMeasured.erase(src);
   }
   Value *v = collapse(ctx, handle);

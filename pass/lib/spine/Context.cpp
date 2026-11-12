@@ -136,6 +136,11 @@ LoweringContext::LoweringContext(Module &M, const TaintInfo &T, const Specializa
   impl->sh = std::make_shared<spine::Shared>(M, KO);
   impl->sh->unc = std::make_unique<Uncompute>();
   impl->sh->preds = std::make_unique<PathPredicates>();
+  impl->sh->isQ = [T = &T, S = &S](const Value *v) {
+    if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v) || isa<InlineAsm>(v))
+      return false;
+    return T->isQuantum(v, *S);
+  };
   registry[this] = impl->sh;
 }
 
@@ -186,7 +191,7 @@ Value *LoweringContext::rail(const Value *orig) {
   spine::Shared &sh = *impl->sh;
   auto it = sh.binds.find(orig);
   if (isa<Constant>(orig) || it == sh.binds.end() || it->second.size() != 1 || !it->second.front().handle ||
-      spine::outcomeAt(sh, it->second.front().v)) {
+      spine::measuredHere(sh, it->second.front().v)) {
     Operand op = operand(orig);
     if (!op.handle)
       internalError("spine: rail() of a classical value " + describe(orig), orig);

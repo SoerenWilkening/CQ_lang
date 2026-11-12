@@ -599,7 +599,7 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     internalError("spine: cqrt_measure result type differs from cq_measure's", &call);
   if (every)
     ctx.unc().setRole(ctx.unc().idOf(x.v), Role::Measured);
-  spine::shared(ctx).measured[x.v] = {&call, m};
+  spine::shared(ctx).measured[x.v] = {&call, m, call.getArgOperand(0)};
   if (auto *cp = dyn_cast<PHINode>(call.getArgOperand(0));
       cp && any_of(cp->blocks(), [&](const BasicBlock *u) { return spine::shared(ctx).dt(*cp->getFunction()).dominates(cp->getParent(), u); }))
     spine::shared(ctx).carriedMeasured.insert(x.v);

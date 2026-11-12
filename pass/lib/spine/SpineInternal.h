@@ -57,6 +57,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <functional>
 #include <vector>
 
 #include "cq/Calls.h"
@@ -110,8 +111,16 @@ struct Shared {
   std::optional<Pred> curPred;
   std::vector<std::vector<llvm::CallInst *>> gateLogs;   // open logs, by token
   std::vector<bool> gateLogOpen;
-  // Rule 2: rail handle -> (the original cq_measure call, the classical outcome).
-  llvm::DenseMap<const llvm::Value *, std::pair<const llvm::Instruction *, llvm::Value *>> measured;
+  // Rule 2: rail handle -> the original measuring call (a cq_measure, or a clone call that measures its actual, cq-ihlt), the
+  // classical outcome, and the original value it measures. Whether a read at the instruction lowered sees the outcome is
+  // static (measuredHere, cq::measuredBefore, the predicate taint reads by too).
+  struct Measurement { const llvm::Instruction *at; llvm::Value *outcome; const llvm::Value *v; };
+  llvm::DenseMap<const llvm::Value *, Measurement> measured;
+  // Rule 2: a classical re-read (measure_<W> of a rail holding its outcome) where the measurement's own outcome does not reach
+  // (a rail measured on every path by several measurements, CR "Collapse is static").
+  llvm::DenseMap<const llvm::Value *, llvm::Value *> reread;
+  // The taint of an original value in this run's specialization (spine::isQ), for cq::measuredBefore.
+  std::function<bool(const llvm::Value *)> isQ;
   // Rules 2, 14 (owner, cq-2z29a): a loop-carried value's rail once measured: it stays the value every template of the trip reads (its next value,
   // the exit test), and only a cq_measure of it, or of a rail computed from it, is a classical re-read (classicalRead).
   llvm::DenseSet<const llvm::Value *> carriedMeasured;
@@ -252,7 +261,13 @@ std::optional<InverseStep> inverseStep(llvm::Instruction &U, llvm::Value *Y, Ope
 void noteTemplate(Shared &, llvm::CallInst *fwd, const abi::TemplateSpec &, llvm::ArrayRef<Operand>,
                   const llvm::Value *orig);
 void noteCore(Shared &, llvm::CallInst *call, const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
-llvm::Value *outcomeAt(Shared &, llvm::Value *handle);
+// Rule 2, collapse is static (cq-8nj3o): is the rail measured on every path reaching the instruction being lowered (sh.cur)?
+bool measuredHere(Shared &, llvm::Value *handle);
+// Rule 2's re-measurement: a measurement of the rail was emitted before the builder's point (decides a cq_measure's read only).
+bool measuredEarlier(Shared &, llvm::Value *handle);
+// Its classical outcome there (a re-read when no measurement's own outcome reaches the builder's point), else nullptr. With
+// `reread` (a cq_measure's read, rule 2's classical re-read) also when a measurement of it was emitted before the point.
+llvm::Value *outcomeAt(LoweringContext &, llvm::Value *handle, bool reread);
 llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
 // cq-i962: the classical value a rail holds at the builder's point when it is a function of measured
 // rails and classical values only, a rail built from classical seeds alone included (a value computed
