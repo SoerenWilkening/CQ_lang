@@ -562,6 +562,7 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
                      f"group(s) compared, where a measurement was unidentified (cq-pdstc; now {len(chosen)} samples)")
     status = verdict(reasons, stats.get("compared"))
     nq2 = len(stats.get("q2") or [])
+    lines.append(f"cqcheck user: compared {stats.get('compared')} of {len(chosen)} samples")
     if nq2:
         lines.append(f"cqcheck user: {nq2} of {len(chosen)} samples not compared ({Q2_LIMIT})")
     if status == NOT_COMPARED_STATUS:
