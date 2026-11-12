@@ -1701,22 +1701,32 @@ class HostOutput(unittest.TestCase):
         self.assertFalse(compare(ours, self.c(), QKEY, "c").equal)
 
     def test_q2_not_compared_against_c_only(self):
-        # rulings Q2: a sample whose host callee got a pointer into a QUANTUM object is not compared against C; when that
-        # leaves none, the comparison is not equal (the guard); the reference comparison stands
+        # rulings Q2: a sample whose host callee got a pointer into a QUANTUM object is not compared against C; the C
+        # program's record decides and ours only narrows it (cq-auqs3); when that leaves none, the comparison is not
+        # equal (the guard); the reference comparison stands
         import cqcheck.compare as cmp
         ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
         hit = [{"name": "gmtime_r", "addr": "0x200000000010"}]
         q2 = [dataclasses.replace(r, outputs=dict(r.outputs, q2=hit)) for r in ours]
+        cq2 = [dataclasses.replace(r, outputs=dict(r.outputs, q2=hit)) for r in self.c()]
         st = {}
-        reasons = cmp.compare(q2, self.c(), "c", classical_key=QKEY, stats=st)
+        reasons = cmp.compare(q2, cq2, "c", classical_key=QKEY, stats=st)
         self.assertEqual(st["compared"], 0)
         self.assertEqual(len(st["q2"]), len(q2))
         self.assertTrue(any("no sample compared" in x for x in reasons), reasons)
         one = [q2[0]] + list(self.ours()[1:])
         st = {}
-        self.assertEqual(cmp.compare(one, self.c(), "c", classical_key=QKEY, stats=st), [])
+        self.assertEqual(cmp.compare(one, cq2, "c", classical_key=QKEY, stats=st), [])
         self.assertEqual(st["compared"], len(one) - 1)
         self.check(q2, self.ours(side="r"), "ref", False)
+        # a record on our side alone (the C program's object holds no rail) excludes nothing: the wrong value FAILs
+        st = {}
+        self.assertNotEqual(cmp.compare(q2, self.c(), "c", classical_key=QKEY, stats=st), [])
+        self.assertEqual((st["compared"], st["q2"]), (len(q2), []))
+        # a record on the C side alone (no host call of ours saw a QUANTUM object) is compared too
+        st = {}
+        self.assertNotEqual(cmp.compare(ours, cq2, "c", classical_key=QKEY, stats=st), [])
+        self.assertEqual(st["compared"], len(ours))
 
     def test_pointer_field_relational(self):
         # CR §6: host addresses differ per run; a pointer into one object reads as (object, offset)

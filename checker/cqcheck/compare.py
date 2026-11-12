@@ -189,8 +189,8 @@ Against the reference outputs["tape"], the shot's whole event sequence (name or 
 fields, order, performed, text, result; never the evaluator's class), is compared too. A sample
 is never dropped for a deferred entry (owner ruling 2026-11-12 item 4): the |0> result rail of a deferred call
 is the only thing not compared, and what the program computes from it is compared. Against the C oracle a
-sample whose outputs["q2"] is not empty (rulings Q2: a host callee given a pointer into an object holding a
-QUANTUM cell, run.py) is not compared, and a comparison left with none is not equal;
+sample whose outputs["q2"] is not empty on the C side (rulings Q2: a host callee given a pointer into an object of the
+C program holding a rail, oracle.py) and on ours (run.py: no Q2 deviation of ours, nothing to exclude) is not compared, and a comparison left with none is not equal;
 against the C oracle on a capped sample (below) the C side's stdout and effects must be a prefix of
 ours (the circuit runs on past the cut). On an ended sample they are compared exactly (owner ruling
 2026-11-02, cq-64lv): every host effect after an abort under a quantum predicate is a tape entry, and
@@ -2280,10 +2280,14 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 r_by[k] = _truncate(r_by[k], cap)      # a cut inside a cq_invert region closes it (cq-088c)
 
     # rulings Q2 (owner 2026-11-11): an input on which a bodiless callee receives a pointer into an object that holds a
-    # QUANTUM cell at the call is not compared against the C program (rt_bus.c cqe__q2_check; reach through a global or
-    # a stored pointer is not detected). Nothing else excludes a sample here: a deferred result is compared through what
-    # the program computes from it (owner 2026-11-12 item 4).
-    q2_keys = [k for k in keys if (o_by[k].outputs or {}).get("q2")] if oracle == "c" else []
+    # QUANTUM cell at the call is not compared against the C program. The condition is a fact about the C program's call
+    # (cq-auqs3): the C side decides it (outputs["q2"], cqo_rt.c __cqo_q2_check: the real object, a cell holding a
+    # rail), so no lowering can widen it. The lowered side's own record (rt_bus.c cqe__q2_check) may only narrow it: an
+    # input on which no host call of ours was handed a pointer into an object holding a QUANTUM cell shows no Q2
+    # deviation and is compared. Reach through a global or a stored pointer is not detected. Nothing else excludes a
+    # sample here: a deferred result is compared through what the program computes from it (owner 2026-11-12 item 4).
+    q2_keys = [k for k in keys if (r_by[k].outputs or {}).get("q2") and (o_by[k].outputs or {}).get("q2")] \
+        if oracle == "c" else []
     if q2_keys:
         keys = [k for k in keys if k not in set(q2_keys)]
     if stats is not None:
@@ -2291,7 +2295,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     if not keys and q2_keys:
         reasons.append(f"no sample compared: all {len(q2_keys)} hand a bodiless callee a pointer into an object holding a "
                        f"QUANTUM cell (rulings Q2; e.g. sample {q2_keys[0]}: "
-                       f"{(o_by[q2_keys[0]].outputs or {}).get('q2', [])[:1]})")
+                       f"{(r_by[q2_keys[0]].outputs or {}).get('q2', [])[:1]})")
 
     real_exits = _real_exits(keys, o_by, r_by, capped, classical_key) if oracle == "c" else set()
 
@@ -2394,25 +2398,31 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         sites = c_site.get(_call_key(r_by[k].sample), {})
         skips = (r_by[k].outputs or {}).get("skips", []) if isinstance(r_by[k].outputs, dict) else []
 
-        def accepted(extra: List[Tuple[int, int]]) -> List[int]:
-            """The extras (index, C measurements before it) the C run's skips do not account for. Per point (that count)
-            and site of ours: some C site it names has a quantum skip there, and either no classical one, or no more
-            extras there than quantum skips (the point does not tell several branches of one window apart: a loop whose
-            trips measure nothing between them)."""
-            groups: Dict[Tuple[int, Any], List[int]] = {}
+        nc = len(r_by[k].measured or [])
+
+        def accepted(extra: List[Tuple[int, int, int]]) -> List[int]:
+            """The extras (index, gaps lo..hi) the C run's skips do not account for. An extra of ours lies after the C
+            measurement matched to the last of ours before it and before the one matched to the next of ours after it:
+            in the C run, at one of the gaps lo..hi (gap g: after g C measurements). A skip covers the gaps from its
+            branch (n) to its join (e; the end when never joined): the circuit runs the arms a quantum branch skipped in
+            sequence somewhere between (rule 2; cq-qotkl). Per gaps and site of ours: some C site it names has a quantum
+            skip covering them, and either no classical one, or no more extras there than quantum skips (cq-fgo3h: the
+            gaps do not tell several branches of one window apart)."""
+            groups: Dict[Tuple[int, int, Any], List[int]] = {}
             miss = []
-            for i, before in extra:
+            for i, lo, hi in extra:
                 # rulings Q8: a copy read through a select whose condition reads 1 and which is no carried advance
                 # measures another register (run.py: the select is followed only where its condition reads 0)
                 if ms[i].get("site") is None or ms[i].get("sel_other") or \
                         (ms[i].get("fn") in anywhere and ms[i].get("fn") not in here):
                     miss.append(i)
                 else:
-                    groups.setdefault((before, ms[i]["site"]), []).append(i)
-            for (before, site), ix in groups.items():
+                    groups.setdefault((lo, hi, ms[i]["site"]), []).append(i)
+            for (lo, hi, site), ix in groups.items():
                 ok = False
                 for cs in sites.get(site, ()):
-                    at = [sk["q"] for sk in skips if sk["n"] == before and cs in sk["s"]]
+                    at = [sk["q"] for sk in skips if cs in sk["s"] and sk["n"] <= hi
+                          and (nc if sk.get("e") is None else sk["e"]) >= lo]
                     nq = sum(at)
                     if nq and (nq == len(at) or len(ix) <= nq):
                         ok = True
@@ -2425,7 +2435,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         bad: List[int] = []
         for x, (img, past) in enumerate(opts):
             matched = sorted(img)
-            miss = accepted([(i, sum(1 for m in matched if m < i)) for i in range(n) if i not in img and i not in past])
+
+            def gaps(i: int) -> Tuple[int, int]:
+                before = sum(1 for m in matched if m < i)     # matched[j] is C measurement j (in-order embedding)
+                return before, before
+            miss = accepted([(i, *gaps(i)) for i in range(n) if i not in img and i not in past])
             if not miss:
                 return []
             if x == 0:

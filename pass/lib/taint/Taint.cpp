@@ -2211,7 +2211,7 @@ void Analyzer::transferCall(CallBase &CB) {
   if (CB.doesNotAccessMemory() && CB.willReturn() && !qArg)
     return;
   // Ordinary host call: made as it stands.
-  if (!qArg && !qPred && !(streamName(cname) && ptrArg) && !eventPrecedes(CB))
+  if (!qArg && !qPred && !(streamCallee(*G) && ptrArg) && !eventPrecedes(CB))
     return;
   // Effect entry (a format entry for printf). Its result the program reads is the _<W> entry's rail, KEPT.
   if (cur->effectEntries.insert(&CB).second)

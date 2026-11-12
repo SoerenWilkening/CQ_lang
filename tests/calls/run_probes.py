@@ -217,6 +217,10 @@ CASES = [
     ("stream_body_by_name", "stream_body", [], "pass",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fprintf, i32 3\)",
       r"define noundef i32 @fprintf\(ptr noalias nocapture noundef %0, ptr noalias nocapture noundef readonly %1, \.\.\.\)"]),
+    # cq-o1swj (CR 778-779, rule 16 "by name and signature"): a program's own pthread_sum (pthread_* is a closed list) and
+    # K&R's int getline(char *, int) are ordinary functions: lifted (their clones), no effect entry, compared.
+    ("user_pthread_name", "p7", [], "pass", [r"define [^\n]*@__cq_q_pthread_sum_"]),
+    ("user_kr_getline", "p8", [], "pass", [r"define [^\n]*@__cq_q_getline_"]),
     ("stream_body_differs", "stream_body_differs", [], "pass",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fprintf, i32 3\)"]),
     # cq-83c9c: vprintf and vfprintf from a variadic wrapper with a quantum argument: the evaluator reads the va_list on the

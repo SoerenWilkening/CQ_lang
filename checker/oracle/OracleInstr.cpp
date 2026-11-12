@@ -523,6 +523,7 @@ public:
   DenseMap<const Function *, BitVector> msiteReach;
   BitVector msiteTaken;
   bool msiteAny = false;
+  unsigned skipIds = 0;
   // cq-xidq (CR rule 12, §6's global phases, owner ruling 2026-10-29): the functions that reach a cq_phi, directly, by a direct
   // call or through any call by pointer. Their calls pass the caller's quantum scope on (Shadow::phaseScope).
   DenseSet<const Function *> phiReach;
@@ -749,16 +750,66 @@ public:
     }
     // Rulings Q3 (2026-11-11, part 2): the conditions by which the C run leaves the path to a measurement site. A conditional
     // branch (br, switch) at b decides the arms between b and its immediate post-dominator J (an arm: the blocks a successor
-    // reaches before J or b; a loop's exit test: the remaining trips). Where the arms not taken hold measurement sites (in
-    // their blocks, or in the functions their calls reach, In.msiteReach) that the taken arm does not, the run logs them with
-    // whether the condition is quantum there (its node not classical under rule 2's static collapse, cqo_rt.c __cqo_skip):
-    // the circuit runs a quantum branch's arms all, unconditionally (rule 2), and a classical one's taken arm only (rule 8).
+    // reaches before J or b; a loop's exit test: the remaining trips). The run logs the sites the arms not taken would reach
+    // and the taken one does not (in their blocks, or in the functions their calls reach, In.msiteReach), whether the C run
+    // left them by a quantum condition (cqo_rt.c __cqo_skip), and when it reaches J (__cqo_join): the circuit runs a quantum
+    // branch's arms all, in sequence, unconditionally (rule 2), so an extra measurement of ours lies between the two.
+    // cq-nmzv3 (rule 8, rulings Q3 and Q10: a classical conjunct is a classical branch): the class is that of the operands
+    // that decided the condition on this run (qDecided), not of its node: `c && q` with c == 0 is a classical skip.
+    // cq-nmzv3's sibling (review R1 t2): in a skipped arm a site behind a classical branch is credited only where that branch
+    // would lead to it, when its condition is known at b (an argument, or a classical value computed before b and not again
+    // in the arm, or recomputed at b from such values by pure arithmetic); any other condition is unknown and credited
+    // (cq-fgo3h).
+    // Is V a rail in this frame (its node not 0: taint holds it as one in the frame's specialization, rule 8's "purely
+    // classical" is node 0)? And is its node not classical (a rail not collapsed, rule 2)?
+    Value *isRail(IRBuilder<> &B, Value *V) {
+      Value *n = get(V);
+      return isZero(n) ? B.getFalse() : B.CreateICmpNE(n, zero());
+    }
+    Value *nodeQ(IRBuilder<> &B, Value *V) {
+      Value *n = get(V);
+      if (isZero(n))
+        return B.getFalse();
+      return B.CreateICmpNE(B.CreateCall(h("__cqo_sh_isq", I32, {I32}), {n}), B.getInt32(0));
+    }
+    // Whether the operands that decided V on this run were quantum. Through and/or/select chains of i1 (clang's `c && q`
+    // is select(c == 0, true, q == 0)): a purely classical operand (no rail in this frame) that alone forces the outcome
+    // makes it classical; one classical only by a collapse (a K-loop's measured carried value, me_site, owner cq-47f8h)
+    // forces nothing here and counts through the condition's node.
+    Value *qDecided(IRBuilder<> &B, Value *V, unsigned depth) {
+      if (isa<Constant>(V))
+        return B.getFalse();
+      if (V->getType()->isIntegerTy(1) && depth < 8 && (!isa<Instruction>(V) || orig.count(cast<Instruction>(V)))) {
+        auto *BO = dyn_cast<BinaryOperator>(V);
+        if (BO && (BO->getOpcode() == Instruction::And || BO->getOpcode() == Instruction::Or)) {
+          Value *x = BO->getOperand(0), *y = BO->getOperand(1);
+          Value *qx = qDecided(B, x, depth + 1), *qy = qDecided(B, y, depth + 1);
+          bool isAnd = BO->getOpcode() == Instruction::And;
+          auto force = [&](Value *o) {   // 0 for and, 1 for or, from an operand that is no rail
+            return B.CreateAnd(isAnd ? B.CreateNot(o) : o, B.CreateNot(isRail(B, o)));
+          };
+          return B.CreateAnd(B.CreateNot(B.CreateOr(force(x), force(y))), B.CreateOr(qx, qy));
+        }
+        if (BO && BO->getOpcode() == Instruction::Xor)
+          return B.CreateOr(qDecided(B, BO->getOperand(0), depth + 1), qDecided(B, BO->getOperand(1), depth + 1));
+        if (auto *Sel = dyn_cast<SelectInst>(V); Sel && Sel->getCondition()->getType()->isIntegerTy(1)) {
+          // on a condition that is no rail: decided by the arm it chooses; on a rail: by the select's node
+          Value *s0 = Sel->getCondition();
+          Value *ch = B.CreateSelect(s0, qDecided(B, Sel->getTrueValue(), depth + 1),
+                                     qDecided(B, Sel->getFalseValue(), depth + 1));
+          return B.CreateSelect(isRail(B, s0), nodeQ(B, V), ch);
+        }
+      }
+      return nodeQ(B, V);
+    }
     void skips(const std::vector<BasicBlock *> &order) {
       if (!In.msiteAny || !In.msiteReach.count(&F) || In.msiteReach[&F].none())
         return;
       unsigned N = In.msiteNames.size();
       DenseMap<const BasicBlock *, BitVector> local;
+      DenseMap<const BasicBlock *, unsigned> rpo;
       for (BasicBlock *BB : order) {
+        rpo[BB] = rpo.size();
         BitVector b(N);
         for (Instruction &I : *BB)
           if (auto *CB = dyn_cast<CallBase>(&I); CB && orig.count(CB)) {
@@ -768,71 +819,164 @@ public:
           }
         local[BB] = b;
       }
-      auto arm = [&](BasicBlock *b, BasicBlock *s, BasicBlock *J) {
-        BitVector r(N);
+      auto region = [&](BasicBlock *b, BasicBlock *s, BasicBlock *J) {
         SmallPtrSet<BasicBlock *, 32> seen;
         SmallVector<BasicBlock *, 16> w{s};
         while (!w.empty()) {
           BasicBlock *x = w.pop_back_val();
-          if (x == J || !seen.insert(x).second)
+          if (x == J || !rpo.count(x) || !seen.insert(x).second)
             continue;
-          if (auto l = local.find(x); l != local.end())
-            r |= l->second;   // b itself, reached again: the next trip's part of it before its test
           if (x == b)
-            continue;
+            continue;   // b itself, reached again: the next trip's part of it before its test (its sites count)
           for (BasicBlock *y : successors(x))
             w.push_back(y);
         }
-        return r;
+        return seen;
       };
       for (BasicBlock *BB : order) {
         Instruction *Tm = BB->getTerminator();
         if (!orig.count(Tm) || Tm->getNumSuccessors() < 2 || !(isa<BranchInst>(Tm) || isa<SwitchInst>(Tm)))
           continue;
         BasicBlock *J = PDT.getNode(BB) && PDT.getNode(BB)->getIDom() ? PDT.getNode(BB)->getIDom()->getBlock() : nullptr;
+        unsigned K = Tm->getNumSuccessors();
+        std::vector<SmallPtrSet<BasicBlock *, 32>> regs;
         std::vector<BitVector> arms;
         BitVector all(N);
-        for (unsigned k = 0; k < Tm->getNumSuccessors(); ++k)
-          arms.push_back(arm(BB, Tm->getSuccessor(k), J)), all |= arms.back();
-        if (all.none())
-          continue;
-        std::vector<std::pair<Value *, unsigned>> lists;   // per successor index: (list, length)
-        bool anyList = false;
-        for (unsigned k = 0; k < Tm->getNumSuccessors(); ++k) {
+        for (unsigned k = 0; k < K; ++k) {
+          regs.push_back(region(BB, Tm->getSuccessor(k), J));
+          BitVector r(N);
+          for (BasicBlock *x : regs.back())
+            r |= local[x];
+          arms.push_back(r), all |= r;
+        }
+        bool anyDiff = false;
+        for (unsigned k = 0; k < K; ++k) {
           BitVector d = all;
           d.reset(arms[k]);
-          std::vector<Constant *> names;
-          for (unsigned i : d.set_bits())
-            names.push_back(In.str(In.msiteNames[i]));
-          anyList |= !names.empty();
-          if (names.empty()) {
-            lists.push_back({ConstantPointerNull::get(cast<PointerType>(In.Ptr)), 0});
-            continue;
-          }
-          auto *AT = ArrayType::get(In.Ptr, names.size());
-          auto *gv = new GlobalVariable(In.M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, names),
-                                        "__cqo_skip_list");
-          lists.push_back({gv, (unsigned)names.size()});
+          anyDiff |= d.any();
         }
-        if (!anyList)
+        if (!anyDiff)
           continue;
         IRBuilder<> B(Tm);
         Value *cond = condOf(Tm);
-        Value *list, *n;
-        if (auto *BI = dyn_cast<BranchInst>(Tm)) {
-          list = B.CreateSelect(cond, lists[0].first, lists[1].first);
-          n = B.CreateSelect(cond, B.getInt32(lists[0].second), B.getInt32(lists[1].second));
-        } else {
-          auto *SI = cast<SwitchInst>(Tm);
-          list = lists[0].first, n = B.getInt32(lists[0].second);   // successor 0: the default
-          for (auto &c : SI->cases()) {
-            unsigned k = c.getSuccessorIndex();
-            Value *hit = B.CreateICmpEQ(cond, c.getCaseValue());
-            list = B.CreateSelect(hit, lists[k].first, list);
-            n = B.CreateSelect(hit, B.getInt32(lists[k].second), n);
+        // per arm, per block: reached on this run's classical values known at b (see above)
+        std::vector<DenseMap<BasicBlock *, Value *>> reached(K);
+        for (unsigned k = 0; k < K; ++k) {
+          auto &R = regs[k];
+          BasicBlock *s0 = Tm->getSuccessor(k);
+          std::vector<BasicBlock *> blocks(R.begin(), R.end());
+          llvm::sort(blocks, [&](BasicBlock *x, BasicBlock *y) { return rpo[x] < rpo[y]; });
+          // A classical condition's value at b: itself when computed before b and not again in the arm, or recomputed at b
+          // from such values by pure arithmetic (no division, memory or call), else unknown (nullptr).
+          DenseMap<Value *, Value *> memo;
+          std::function<Value *(Value *, unsigned)> known = [&](Value *V, unsigned d) -> Value * {
+            if (isa<Constant>(V) || isa<Argument>(V))
+              return q(V) ? nullptr : V;
+            auto *I = dyn_cast<Instruction>(V);
+            if (!I || !orig.count(I) || q(I))
+              return nullptr;
+            if (!R.count(I->getParent()) && DT.dominates(I, Tm))
+              return I;
+            if (auto m = memo.find(I); m != memo.end())
+              return m->second;
+            Value *r = nullptr;
+            auto *BO = dyn_cast<BinaryOperator>(I);
+            bool pure = (BO && !BO->isIntDivRem()) || isa<CmpInst>(I) || isa<CastInst>(I) || isa<SelectInst>(I) ||
+                        isa<FreezeInst>(I);
+            if (pure && d < 8) {
+              std::vector<Value *> ops;
+              for (Value *o : I->operands()) {
+                Value *k2 = known(o, d + 1);
+                if (!k2) {
+                  ops.clear();
+                  break;
+                }
+                ops.push_back(k2);
+              }
+              if (ops.size() == I->getNumOperands()) {
+                Instruction *C = I->clone();
+                for (unsigned j = 0; j < ops.size(); ++j)
+                  C->setOperand(j, ops[j]);
+                C->dropPoisonGeneratingAnnotations();
+                r = B.Insert(C);
+              }
+            }
+            return memo[I] = r;
+          };
+          auto edge = [&](BasicBlock *p, BasicBlock *x) -> Value * {
+            Instruction *T = p->getTerminator();
+            if (auto *Br = dyn_cast<BranchInst>(T); Br && Br->isConditional() && Br->getSuccessor(0) != Br->getSuccessor(1))
+              if (Value *c = known(Br->getCondition(), 0))
+                return x == Br->getSuccessor(0) ? c : B.CreateNot(c);
+            if (auto *Sw = dyn_cast<SwitchInst>(T))
+              if (Value *sc = known(Sw->getCondition(), 0)) {
+              Value *e = B.getFalse();
+              bool dflt = Sw->getDefaultDest() == x;
+              Value *none = B.getTrue();
+              for (auto &c : Sw->cases()) {
+                Value *hit = B.CreateICmpEQ(sc, c.getCaseValue());
+                if (c.getCaseSuccessor() == x)
+                  e = B.CreateOr(e, hit);
+                none = B.CreateAnd(none, B.CreateNot(hit));
+              }
+              return dflt ? B.CreateOr(e, none) : e;
+            }
+            return B.getTrue();
+          };
+          for (BasicBlock *x : blocks) {
+            Value *r = x == s0 ? B.getTrue() : B.getFalse();
+            for (BasicBlock *p : predecessors(x))
+              if (R.count(p) && rpo[p] < rpo[x] && p != BB)
+                r = B.CreateOr(r, B.CreateAnd(reached[k][p], edge(p, x)));
+            reached[k][x] = r;
           }
         }
-        B.CreateCall(h("__cqo_skip", In.Void, {I32, In.Ptr, I32}), {get(cond), list, n});
+        std::vector<unsigned> ids(all.set_bits_begin(), all.set_bits_end());
+        std::vector<Constant *> names;
+        for (unsigned i : ids)
+          names.push_back(In.str(In.msiteNames[i]));
+        auto *AT = ArrayType::get(In.Ptr, names.size());
+        auto *gv = new GlobalVariable(In.M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, names),
+                                      "__cqo_skip_list");
+        AllocaInst *flags = In.entryAlloca(F, ArrayType::get(I32, ids.size()));
+        for (unsigned x = 0; x < ids.size(); ++x) {
+          unsigned i = ids[x];
+          std::vector<Value *> cred(K);
+          for (unsigned k = 0; k < K; ++k) {
+            Value *c = B.getFalse();
+            for (BasicBlock *y : regs[k])
+              if (local[y].test(i))
+                c = B.CreateOr(c, reached[k][y]);
+            cred[k] = c;
+          }
+          auto flagFor = [&](unsigned k) -> Value * {
+            if (arms[k].test(i))
+              return B.getFalse();
+            Value *f = B.getFalse();
+            for (unsigned k2 = 0; k2 < K; ++k2)
+              if (k2 != k)
+                f = B.CreateOr(f, cred[k2]);
+            return f;
+          };
+          Value *fl;
+          if (isa<BranchInst>(Tm)) {
+            fl = B.CreateSelect(cond, flagFor(0), flagFor(1));
+          } else {
+            auto *SI = cast<SwitchInst>(Tm);
+            fl = flagFor(0);
+            for (auto &c : SI->cases())
+              fl = B.CreateSelect(B.CreateICmpEQ(cond, c.getCaseValue()), flagFor(c.getSuccessorIndex()), fl);
+          }
+          B.CreateStore(B.CreateZExt(fl, I32), B.CreateConstInBoundsGEP2_32(flags->getAllocatedType(), flags, 0, x));
+        }
+        unsigned jid = In.skipIds++;
+        Value *qd = B.CreateZExt(qDecided(B, cond, 0), I32);
+        B.CreateCall(h("__cqo_skip", In.Void, {I32, In.Ptr, In.Ptr, I32, I32}),
+                     {qd, gv, flags, B.getInt32(ids.size()), B.getInt32(jid)});
+        if (J) {
+          IRBuilder<> BJ(&*J->getFirstInsertionPt());
+          BJ.CreateCall(h("__cqo_join", In.Void, {I32}), {BJ.getInt32(jid)});
+        }
       }
     }
     // cq-xidq (CR rule 12: "Inside a `_ctl` clone or a callee reached from a quantum arm it is `rz_i1(pred, θ)`"; §6: a

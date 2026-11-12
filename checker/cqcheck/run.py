@@ -56,7 +56,7 @@ RunResult fields (JSON-serializable):
   sample      the sample dict as given
   outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": {...},
               "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
-              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6); "q2" the host calls given a pointer into an object holding a QUANTUM cell (rulings Q2, rt_bus.c cqe__q2_check); "host_end", present only when the sample ended in the program's own
+              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6); "q2" the host calls given a pointer into an object holding a QUANTUM cell (rulings Q2, rt_bus.c cqe__q2_check; it only narrows the C side's decision, compare.py); "host_end", present only when the sample ended in the program's own
               exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and

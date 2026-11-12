@@ -74,6 +74,18 @@ MUTANTS = {
          # v_4's register, no longer measured, is uncomputed once its last reader (the after-loop select) is undone
          r"  call void @cq_template_select_i32_unc(i32 %36, i32 %22, i32 %6, i32 %26)\n  call void @cqrt_free(i32 %36)\n\4"),
     ],
+    # cq-nmzv3 (review R1 t3): the classical br on c dropped, the measurement on every input
+    "q3_conjunct": [
+        ("mix", "unguarded", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
+        ("mixc", "unguarded_c", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
+    ],
+    # cq-nmzv3's sibling (review R1 t2): the second call of g, behind `if (c)`, unguarded
+    "q3_phantom": [
+        ("phantom", "second_unguarded", r"(?s)(  br i1 (%[\w.]+), label %[\w.]+, label %[\w.]+\n.*?)"
+         r"  br i1 \2, label (%[\w.]+), label %[\w.]+\n", r"\1  br label \3\n"),
+        ("phantom2", "second_unguarded2", r"(  %[\w.]+ = icmp eq i32 %0, 0\n)  br i1 %[\w.]+, label %[\w.]+, label (%[\w.]+)\n",
+         r"\1  br label \2\n"),
+    ],
 }
 _ALL = ("wrong_value", "hoist_trips")      # mutants applied at every match, not the first only
 NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer

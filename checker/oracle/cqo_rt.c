@@ -874,21 +874,31 @@ void __cqo_enter(const char *fn) {
     out_line(trace_fd, line);
 }
 
-/* Rulings Q3 (2026-11-11, part 2): a conditional branch whose taken successor no longer reaches the measurement sites
- * `s` (OracleInstr.cpp Shadow::skips) logs them with whether its condition is quantum (its node not classical, rule 2's
- * static collapse). compare.py accepts an extra measurement of ours at a site only where the C run left its path by
- * quantum conditions alone. */
-void __cqo_skip(uint32_t node, const char *const *s, int32_t n) {
+/* Rulings Q3 (2026-11-11, part 2): a conditional branch whose arms not taken would reach the measurement sites `s` with
+ * flags[i] set and the taken arm does not (OracleInstr.cpp Shadow::skips) logs them with whether the C run left them by a
+ * quantum condition (q: the operands that decided the condition on this run, cq-nmzv3) and the branch's join id; the
+ * join event marks its immediate post-dominator reached (cq-qotkl: the circuit runs the arms in sequence before it).
+ * compare.py accepts an extra measurement of ours at a site only where the C run left its path by quantum conditions. */
+int32_t __cqo_sh_isq(uint32_t node) { return !sh_classical(node); }
+void __cqo_skip(int32_t q, const char *const *s, const int32_t *flags, int32_t n, int32_t j) {
     if (trips_only || n <= 0) return;
     char line[4000];
-    int q = !sh_classical(node);
-    int at = snprintf(line, sizeof line, "{\"ev\":\"skip\",\"q\":%d,\"s\":[", q);
+    int at = snprintf(line, sizeof line, "{\"ev\":\"skip\",\"q\":%d,\"j\":%d,\"s\":[", q != 0, j);
+    int k = 0;
     for (int32_t i = 0; i < n && at < (int)sizeof line - 400; ++i) {
+        if (!flags[i]) continue;
         char f[300];
         jsonstr(f, sizeof f, s[i]);
-        at += snprintf(line + at, sizeof line - at, "%s%s", i ? "," : "", f);
+        at += snprintf(line + at, sizeof line - at, "%s%s", k++ ? "," : "", f);
     }
+    if (!k) return;
     snprintf(line + at, sizeof line - at, "]}");
+    out_line(trace_fd, line);
+}
+void __cqo_join(int32_t j) {
+    if (trips_only) return;
+    char line[64];
+    snprintf(line, sizeof line, "{\"ev\":\"join\",\"j\":%d}", j);
     out_line(trace_fd, line);
 }
 
@@ -1377,6 +1387,38 @@ void __cqo_fx_end(void) {
     out_long(fxline, fxn);
     fx_on = 0;
 }
+/* Rulings Q2 (owner 2026-11-11, cq-auqs3): a bodiless callee (a direct host call, fx_call.h) given a pointer into an
+ * object of the C program that holds a rail at the call. The object is the real one (the object table: the allocas,
+ * byval copies, va areas, heap blocks and globals, find_obj); no object, no event. A cell holds a rail when its
+ * shadow node (rule 2 above: a value the circuit holds as a rail) is not classical. A cell made QUANTUM only by an
+ * implicit write (a classical value stored under a quantum condition: sh_gm, not the cell) is not seen here: such a
+ * sample is compared. Logged as {"ev":"q2","name","addr","lo","hi"}: oracle.py outputs["q2"], the ruling's decision
+ * (compare.py), which no lowering can widen. Reach through a global or a stored pointer is not followed (the
+ * ruling's stated limit). */
+static int q2_rail_cell(uintptr_t lo, uintptr_t hi) {
+    if (!sh_ncells || sh_nn < 2) return 0;
+    if (hi - lo <= ((uintptr_t)1 << 16)) {
+        for (uintptr_t x = lo; x < hi; ++x) {
+            uint32_t n = sh_get(x);
+            if (n && !sh_classical(n)) return 1;
+        }
+        return 0;
+    }
+    for (size_t i = 0; i < SH_CELLS; ++i)
+        if (sh_c[i].gen == *sh_genp && sh_c[i].a >= lo && sh_c[i].a < hi && sh_c[i].node && !sh_classical(sh_c[i].node))
+            return 1;
+    return 0;
+}
+static void __cqo_q2_check(const char *name, uintptr_t a) {
+    if (!a || trips_only || !sample_running()) return;
+    const obj *o = find_obj(a);
+    if (!o || !q2_rail_cell(o->lo, o->hi)) return;
+    char b[256];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"q2\",\"name\":\"%.120s\",\"addr\":\"0x%llx\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+                     name ? name : "", (unsigned long long)a, (unsigned long long)o->lo, (unsigned long long)o->hi);
+    out_long(b, (size_t)m);
+}
+#define FX_PTR_HOOK(name, p) __cqo_q2_check((name), (uintptr_t)(p))
 /* A direct host call: the stand-in, one source with the evaluator (fx_call.h; rulings Q8). */
 #define FX_LOG(line, n) do { if (sample_running()) out_long(line, n); } while (0)
 #define CQ_FX_REALLOC __cqo_realloc /* ruling Q5: getline's buffer and fgetln's line are heap objects of the program */
