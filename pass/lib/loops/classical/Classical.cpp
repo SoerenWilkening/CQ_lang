@@ -428,6 +428,20 @@ private:
     ctx.B().SetInsertPoint(bb);
   }
 
+  // cq-kk46l (rule 8 in a nested K-loop's trips, exits::lowerNestedCutoff's segHook): a block a classical branch of the
+  // nested unit makes is a segment like any block of this walk's classical branches: the open segment first takes the
+  // block the builder is in (it ends with the branch, or the jump into the join), then bb starts its own.
+  void branchSeg(BasicBlock *bb) {
+    if (BasicBlock *now = ctx.B().GetInsertBlock(); cur && now != cur) {
+      segIdx[now] = segs.size() - 1;
+      segs.back().bb = now;
+    }
+    startSeg(bb);
+  }
+  std::function<void(BasicBlock *)> segHook() {
+    return [this](BasicBlock *bb) { branchSeg(bb); };
+  }
+
   Value *seed(Value *classical, RailType w) {
     CallInst *call = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {classical});
     ctx.unc().recordSeed(call);
@@ -1618,7 +1632,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   };
   // CR rule 14 (nested K-loops, "inner chain seeded by the outer trip predicate"): a quantum-exit sub-loop
   // is one node of the trip, lowered by loops-cutoff (exits::lowerNestedCutoff) as a K-loop nested in a
-  // K-loop is: its K trips unrolled into the trip's open block under its seed, its unit (the loop, its exit
+  // K-loop is: its K trips unrolled at the trip's open block under its seed (a classical branch of a trip a real
+  // branch whose blocks are segments of this walk, cq-kk46l: branchSeg), its unit (the loop, its exit
   // arm, its noreturn and dead arms) always ending at its continuation C, every phi of C with an incoming
   // from the unit bound by it. kOf: the unit's blocks inside L -> the sub-loop.
   DenseMap<const BasicBlock *, Loop *> kOf;
@@ -2423,7 +2438,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (Pred hp = qp(b); !hp.isTop())
             sf = ctx.preds().flag(ctx, hp);
         if (classify(*S, ctx.T, ctx.S) == Case::QuantumExit) {
-          noteStop(exits::lowerNestedCutoff(ctx, *S, sf));
+          noteStop(exits::lowerNestedCutoff(ctx, *S, sf, segHook()));
+          followBuilder();
         } else {
           noteStop(exits::lowerClassicalInTrip(ctx, *S, sf));
           followBuilder();
@@ -3020,8 +3036,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // CR rule 14, nested K-loops: the chain's seed is this trip's predicate (case 3: a_{j-1}; a case-1
         // trip inside a case-3 trip: that trip's rail) & the sub-loop header's quantum predicate within the
         // trip, a fresh rail (gates on fresh rails only); |1> when both are true. Its a_K is kept once per
-        // trip of this loop (B > K or no bound), every other rail is a record of this segment, mirrored by
-        // the reverse loop per trip.
+        // trip of this loop (B > K or no bound), every other rail is a record of the segment it is made in (this
+        // one, or one its classical branches open), mirrored by the reverse loop per trip.
         exits::Unit SU = exits::unitOf(*sl);
         BasicBlock *C = SU.cont;
         if (!C || !L.contains(C))
@@ -3042,12 +3058,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (PHINode &P : C->phis())
           if (ctx.bound(&P))
             was.insert(&P);
-        BasicBlock *at = cur;
         auto keepTail = tailBindsOf(sl);
-        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd));
+        // cq-kk46l: its classical branches are segments of this walk (segHook); the walk goes on where the last joined.
+        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook()));
         clearTail(sl, keepTail);
-        if (ctx.B().GetInsertBlock() != at)
-          internalError("loops-classical: a nested K-loop left the trip's open block", sl->getHeader()->getTerminator());
+        followInsert();
         for (PHINode &P : C->phis())
           if (!was.count(&P) && ctx.bound(&P))
             kBound.insert(&P);
