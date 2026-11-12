@@ -1527,6 +1527,15 @@ static void on_timeout(int sig) {
  * models on both sides by one stand-in of the name and argument bits (CR 1356-1358), as rt_tape.c does for ours: logged,
  * the stand-in's result, no host call. A handler is the program's when it is neither SIG_DFL, SIG_IGN nor one this
  * runtime installed (on_crash, on_timeout); the host's raise then runs it, as the C program does. */
+/* The C program's signal(sig, h) (OracleInstr.cpp notes()): the host's signal, as the C program makes it, except that a
+ * previous handler this runtime installed (on_crash, on_timeout) reads SIG_DFL: the program installed none, and CR rule
+ * 16's signal table returns the cell's previous content, 0 (SIG_DFL) for a signal the program never registered. */
+void (*__cqo_signal(int32_t sig, void (*h)(int)))(int) {
+    void (*r)(int) = signal(sig, h);
+    if (r == (void (*)(int))on_crash || r == on_timeout) r = SIG_DFL;
+    return r;
+}
+
 int32_t __cqo_raise(int32_t sig) {
     struct sigaction cur;
     if (sig > 0 && sigaction(sig, 0, &cur) == 0) {

@@ -3017,6 +3017,13 @@ public:
         CB->setCalledFunction(hook("__cqo_raise", I32, {I32}));
         continue;
       }
+      // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed
+      if (callee && callee->isDeclaration() && callee->getName() == "signal" && CB->arg_size() == 2 &&
+          CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
+          CB->getArgOperand(1)->getType()->isPointerTy()) {
+        CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
+        continue;
+      }
       if (callee && callee->isDeclaration() && hostEffects.contains(callee->getName()))
         logEffect(CB, callee->getName());
       if (callee && callee->getName() == "raise" && CB->arg_size() == 1) {
