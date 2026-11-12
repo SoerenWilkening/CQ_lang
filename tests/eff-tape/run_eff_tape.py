@@ -8,6 +8,9 @@ Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run 45
     (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times; the output
     must pass plain cq-verify. A probe with `; EXPECT-ERROR: <text>` must instead make cq-lower exit
     non-zero with <text> on stderr (an internal error, never a lowering).
+  - probes/deferred_*.c (owner ruling 2026-11-12, rule 16): C programs reading the result of a deferred C library
+    output call, through driver/cqcc -S (so the bundle's result entries are linked by driver/cq_entries.py's
+    contract), with `// CHECK` / `// CHECK-COUNT` lines as above; the output must pass plain cq-verify.
   - the owned examples: cq-lower (with its built-in verifier) exits 0, cq-verify accepts the output, no
     CQ.h surface call is left. The normalized textual diff against the reference is printed as a quality
     signal that never fails.
@@ -15,6 +18,7 @@ Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run 45
 Outputs go to build/tests/eff-tape/out/.
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -51,12 +55,19 @@ def verify(a, dest: Path) -> list:
     return [] if v.returncode == 0 else ["cq-verify: " + (v.stderr.strip().splitlines() or ["?"])[0]]
 
 
+def cqcc_lower(a, src: Path, dest: Path):
+    env = dict(os.environ, CQ_PLUGIN=str(Path(a.plugin).resolve()), CQ_SPEC_DIR=str(Path(a.spec).resolve()))
+    return subprocess.run([sys.executable, str(ROOT / "driver" / "cqcc"), "-S", str(src), "-o", str(dest)],
+                          capture_output=True, text=True, env=env)
+
+
 def probes(a) -> int:
     failures = 0
-    for p in sorted((Path(__file__).parent / "probes").glob("*.ll")):
-        dest = OUT / ("probe_" + p.name)
+    here = Path(__file__).parent / "probes"
+    for p in sorted(here.glob("*.ll")) + sorted(here.glob("deferred_*.c")):
+        dest = OUT / ("probe_" + p.stem + ".ll")
         src = p.read_text()
-        r = lower(a, p, dest)
+        r = cqcc_lower(a, p, dest) if p.suffix == ".c" else lower(a, p, dest)
         reasons = []
         expect = re.search(r"^; EXPECT-ERROR: (.*)$", src, re.M)
         if expect:
@@ -70,7 +81,7 @@ def probes(a) -> int:
             module = dest.read_text()
             reasons += verify(a, dest)
             for line in src.splitlines():
-                m = re.match(r"; CHECK(-COUNT)? (\w+): (.*)$", line)
+                m = re.match(r"(?:;|//) CHECK(-COUNT)? (\w+): (.*)$", line)
                 if not m:
                     continue
                 body = function_text(module, m.group(2))

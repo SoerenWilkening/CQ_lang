@@ -37,7 +37,9 @@
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/TargetParser/Triple.h"
 
+#include <cstring>
 #include <functional>
+#include <optional>
 #include <map>
 #include <vector>
 #include <memory>
@@ -97,11 +99,8 @@ struct Consume {
 // format the tape entry carries. A positional format (C17 7.21.6.1 has none; POSIX `%n$`, `*m$`)
 // names its arguments by number: the entry carries the same format with the positions removed and its
 // fields in the order the conversions read them (an argument read twice is two fields), which prints
-// the same characters. Returns false when the format is not a constant string.
-bool printfPlan(const Value *fmt, SmallVectorImpl<Consume> &plan, std::string &plain, bool &positional) {
-  StringRef s;
-  if (!getConstantStringInfo(fmt, s))
-    return false;
+// the same characters.
+void printfPlanOf(StringRef s, SmallVectorImpl<Consume> &plan, std::string &plain, bool &positional) {
   positional = false;
   plain.clear();
   unsigned next = 0;
@@ -156,7 +155,6 @@ bool printfPlan(const Value *fmt, SmallVectorImpl<Consume> &plan, std::string &p
     plan.append(stars.begin(), stars.end());
     plan.push_back({pos ? *pos : next++, c});
   }
-  return true;
 }
 
 
@@ -570,9 +568,129 @@ void lowerMainExit(LoweringContext &ctx, Operand r, Type *ty) {
   ctx.unc().noteVersionChange(eff);
 }
 
+namespace {
+
+// ------------------------------------------------------------------ deferred output calls (rule 16, 2026-11-12)
+
+// The C library output calls whose result the circuit computes (owner ruling 2026-11-12, DECISIONS.md): an output
+// call is a pure part (formatting, counting, encoding) plus a write; only the write is a tape effect. The result is
+// the value musl b1efda5's body returns when every write succeeds, computed by ordinary lowered code: a format's
+// count is the bundle's result entry (bundle/recipe.json "entries", bundle/src/cq_count.c) lifted (rule 18), the
+// rest a template over the arguments. A failed write is never produced (the ruling's stated deviation).
+enum class OutKind : uint8_t {
+  Fmt,     // printf, fprintf, dprintf: __cq_count_snprintf(0, 0, fmt, args...)
+  VFmt,    // vprintf, vfprintf, vdprintf: __cq_count_vsnprintf(0, 0, fmt, ap); musl's vfprintf copies ap (675)
+  WFmt,    // wprintf, fwprintf: __cq_count_wprintf(fmt, args...)
+  VWFmt,   // vwprintf, vfwprintf: __cq_count_vwprintf(fmt, ap)
+  Zero,    // puts, fputs, fflush, putw (and _unlocked): 0
+  UChar,   // fputc, putc, putchar (and _unlocked): (unsigned char)c
+  Fwrite,  // fwrite (and _unlocked): size ? nmemb : 0
+  Wc,      // fputwc, putwc, putwchar (and _unlocked): wctomb(buf, c) < 0 ? WEOF : c
+  Ws,      // fputws (and _unlocked): wcsrtombs(0, &ws, 0, 0) == -1 ? -1 : 0
+};
+
+struct OutFn {
+  OutKind kind;
+  unsigned first;   // the format (Fmt..VWFmt) or the value argument (UChar, Wc, Ws)
+};
+
+// By C name (a Mach-O asm label "\01_n" names n). Decisions by the ruling's criterion and musl's source, beyond the
+// named list: dprintf/vdprintf are vfprintf on an fd FILE (vdprintf.c), the count on success; putw is
+// fwrite(&x, sizeof x, 1, f) - 1 (putw.c), 0; fflush is 0 (fflush.c); an _unlocked form is its locked form.
+// perror and psignal return nothing; fclose, write and the other calls that are not output calls keep their result
+// (ABI 1.11, ruling item 3).
+std::optional<OutFn> outputFunction(const Function &F) {
+  StringRef n = F.getName();
+  if (n.starts_with("\01_"))
+    n = n.drop_front(2);
+  if (n.ends_with("_unlocked"))
+    n = n.drop_back(strlen("_unlocked"));
+  static const std::map<std::string, OutFn, std::less<>> table = {
+      {"printf", {OutKind::Fmt, 0}},     {"fprintf", {OutKind::Fmt, 1}},    {"dprintf", {OutKind::Fmt, 1}},
+      {"vprintf", {OutKind::VFmt, 0}},   {"vfprintf", {OutKind::VFmt, 1}},  {"vdprintf", {OutKind::VFmt, 1}},
+      {"wprintf", {OutKind::WFmt, 0}},   {"fwprintf", {OutKind::WFmt, 1}},
+      {"vwprintf", {OutKind::VWFmt, 0}}, {"vfwprintf", {OutKind::VWFmt, 1}},
+      {"puts", {OutKind::Zero, 0}},      {"fputs", {OutKind::Zero, 0}},     {"fflush", {OutKind::Zero, 0}},
+      {"putw", {OutKind::Zero, 0}},
+      {"fputc", {OutKind::UChar, 0}},    {"putc", {OutKind::UChar, 0}},     {"putchar", {OutKind::UChar, 0}},
+      {"fwrite", {OutKind::Fwrite, 0}},
+      {"fputwc", {OutKind::Wc, 0}},      {"putwc", {OutKind::Wc, 0}},       {"putwchar", {OutKind::Wc, 0}},
+      {"fputws", {OutKind::Ws, 0}},
+  };
+  auto it = table.find(n);
+  if (it == table.end())
+    return std::nullopt;
+  // The prototype (a program's own function of that name with another one is not the library's).
+  FunctionType *ft = F.getFunctionType();
+  OutFn o = it->second;
+  auto argIs = [&](unsigned i, bool ptr) {
+    return i < ft->getNumParams() && (ptr ? ft->getParamType(i)->isPointerTy() : ft->getParamType(i)->isIntegerTy());
+  };
+  if (!ft->getReturnType()->isIntegerTy())
+    return std::nullopt;
+  switch (o.kind) {
+  case OutKind::Fmt: case OutKind::WFmt:
+    return ft->isVarArg() && ft->getNumParams() == o.first + 1 && argIs(o.first, true) ? std::optional(o) : std::nullopt;
+  case OutKind::VFmt: case OutKind::VWFmt:
+    return !ft->isVarArg() && ft->getNumParams() == o.first + 2 && argIs(o.first, true) && argIs(o.first + 1, true)
+               ? std::optional(o) : std::nullopt;
+  case OutKind::Zero:
+    return !ft->isVarArg() ? std::optional(o) : std::nullopt;
+  case OutKind::UChar: case OutKind::Wc:
+    return !ft->isVarArg() && argIs(0, false) ? std::optional(o) : std::nullopt;
+  case OutKind::Fwrite:
+    return !ft->isVarArg() && ft->getNumParams() == 4 && argIs(0, true) && argIs(1, false) && argIs(2, false)
+               ? std::optional(o) : std::nullopt;
+  case OutKind::Ws:
+    return !ft->isVarArg() && argIs(0, true) ? std::optional(o) : std::nullopt;
+  }
+  return std::nullopt;
+}
+
+bool isFormat(OutKind k) { return k == OutKind::Fmt || k == OutKind::VFmt || k == OutKind::WFmt || k == OutKind::VWFmt; }
+
+// May the format at fmt write through %n? True unless it is a constant string (narrow, or wide: an array of i32 code
+// units, a unit above 0x7f read as a plain character) with no n conversion.
+bool formatMayHoldN(const Value *fmt, bool wide) {
+  std::string text;
+  if (!wide) {
+    StringRef s;
+    if (!getConstantStringInfo(fmt, s))
+      return true;
+    text = s.str();
+  } else {
+    auto *gv = dyn_cast<GlobalVariable>(getUnderlyingObject(fmt));
+    if (!gv || !gv->isConstant() || !gv->hasDefinitiveInitializer() || fmt != gv)
+      return true;
+    auto *cds = dyn_cast<ConstantDataSequential>(gv->getInitializer());
+    if (!cds || !cds->getElementType()->isIntegerTy(32))
+      return !isa<ConstantAggregateZero>(gv->getInitializer());
+    for (unsigned i = 0; i < cds->getNumElements(); ++i) {
+      uint64_t u = cds->getElementAsInteger(i);
+      if (!u)
+        break;
+      text += u < 0x80 ? char(u) : '?';
+    }
+  }
+  SmallVector<Consume, 8> plan;
+  std::string plain;
+  bool positional = false;
+  printfPlanOf(text, plan, plain, positional);
+  return any_of(plan, [](const Consume &k) { return k.conv == 'n'; });
+}
+
+// An alloca at the entry of F's entry block.
+AllocaInst *entryAlloca(Function &F, Type *ty, uint64_t n, const Twine &name) {
+  IRBuilder<> B(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+  Type *i64 = Type::getInt64Ty(F.getContext());
+  return B.CreateAlloca(ty, n == 1 ? nullptr : ConstantInt::get(i64, n), name);
+}
+
+} // namespace
+
 bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
-  // The printf-family calls some specialization defers (rule 16) whose count is read or whose format may
-  // write through %n (a format that is not a constant string may hold one).
+  // The C library output calls some specialization defers (rule 16) whose result is read, or (a format) whose format
+  // may write through %n.
   SetVector<CallBase *> sites;
   for (const Specialization &S : T.specializations()) {
     if (S.F->isDeclaration() || S.pure)
@@ -581,20 +699,13 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
       for (Instruction &I : bb) {
         auto *CB = dyn_cast<CallBase>(&I);
         const Function *F = CB ? calleeOf(*CB) : nullptr;
-        if (!F || !(libFunc(*F, LibFunc_printf) || libFunc(*F, LibFunc_fprintf)))
+        std::optional<OutFn> o = F && F->isDeclaration() ? outputFunction(*F) : std::nullopt;
+        if (!o || CB->getFunctionType() != F->getFunctionType())
           continue;
         if (calls::classify(*CB, T, S) != calls::Class::HostEffect)
           continue;
-        unsigned fmtArg = libFunc(*F, LibFunc_fprintf) ? 1 : 0;
-        StringRef fmt;
-        bool percentN = !getConstantStringInfo(CB->getArgOperand(fmtArg), fmt);
-        if (!percentN) {
-          SmallVector<Consume, 8> plan;
-          std::string plain;
-          bool positional = false;
-          printfPlan(CB->getArgOperand(fmtArg), plan, plain, positional);
-          percentN = any_of(plan, [](const Consume &k) { return k.conv == 'n'; });
-        }
+        bool percentN = isFormat(o->kind) &&
+                        formatMayHoldN(CB->getArgOperand(o->first), o->kind == OutKind::WFmt || o->kind == OutKind::VWFmt);
         if (!CB->use_empty() || percentN)
           sites.insert(CB);
       }
@@ -602,19 +713,91 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
   if (sites.empty())
     return false;
   LLVMContext &C = M.getContext();
-  Type *ptr = PointerType::get(C, 0), *i32 = Type::getInt32Ty(C);
+  PointerType *ptr = PointerType::get(C, 0);
+  Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);
   Type *sizeT = M.getDataLayout().getIntPtrType(C);
-  FunctionCallee snp = M.getOrInsertFunction("snprintf", FunctionType::get(i32, {ptr, sizeT, ptr}, /*isVarArg=*/true));
+  Constant *null = ConstantPointerNull::get(ptr);
+  // The entries (bundle/recipe.json "entries"): their bodies are in the module when the link followed the contract
+  // there (driver/cq_entries.py); a bodiless one is a call the checker judges, with one note.
+  std::map<std::string, FunctionCallee> entries;
+  auto entry = [&](StringRef name, FunctionType *ft) {
+    auto it = entries.find(name.str());
+    if (it != entries.end())
+      return it->second;
+    FunctionCallee fc = M.getOrInsertFunction(name, ft);
+    if (auto *f = dyn_cast<Function>(fc.getCallee()); f && f->isDeclaration())
+      noteUnbuilt(("eff-tape: the result entry " + name + " has no body: the link did not follow bundle/recipe.json "
+                   "\"entries\" (driver/cq_entries.py)").str());
+    return entries[name.str()] = fc;
+  };
   for (CallBase *CB : sites) {
-    unsigned fmtArg = libFunc(*calleeOf(*CB), LibFunc_fprintf) ? 1 : 0;
-    SmallVector<Value *, 8> args{ConstantPointerNull::get(cast<PointerType>(ptr)), ConstantInt::get(sizeT, 0)};
-    for (unsigned a = fmtArg; a < CB->arg_size(); ++a)
-      args.push_back(CB->getArgOperand(a));
+    OutFn o = *outputFunction(*calleeOf(*CB));
+    Function &fn = *CB->getFunction();
     IRBuilder<> B(CB);
-    CallInst *n = B.CreateCall(snp, args);
-    n->setMetadata("cq.deferred.result", MDNode::get(C, {}));
-    if (!CB->use_empty() && CB->getType() == n->getType())
-      CB->replaceAllUsesWith(n);
+    Type *rt = CB->getType();
+    Value *v = nullptr;
+    auto forward = [&](SmallVectorImpl<Value *> &args, unsigned from) {
+      for (unsigned a = from; a < CB->arg_size(); ++a)
+        args.push_back(CB->getArgOperand(a));
+    };
+    switch (o.kind) {
+    case OutKind::Fmt: case OutKind::VFmt: {
+      bool va = o.kind == OutKind::VFmt;
+      FunctionCallee e = va ? entry("__cq_count_vsnprintf", FunctionType::get(i32, {ptr, sizeT, ptr, ptr}, false))
+                            : entry("__cq_count_snprintf", FunctionType::get(i32, {ptr, sizeT, ptr}, true));
+      SmallVector<Value *, 8> args{null, ConstantInt::get(sizeT, 0)};
+      forward(args, o.first);
+      v = B.CreateCall(e, args);
+      break;
+    }
+    case OutKind::WFmt: case OutKind::VWFmt: {
+      bool va = o.kind == OutKind::VWFmt;
+      FunctionCallee e = va ? entry("__cq_count_vwprintf", FunctionType::get(i32, {ptr, ptr}, false))
+                            : entry("__cq_count_wprintf", FunctionType::get(i32, {ptr}, true));
+      SmallVector<Value *, 8> args;
+      forward(args, o.first);
+      v = B.CreateCall(e, args);
+      break;
+    }
+    case OutKind::Zero:
+      v = ConstantInt::get(rt, 0);
+      break;
+    case OutKind::UChar:
+      v = B.CreateZExt(B.CreateTrunc(CB->getArgOperand(0), i8), rt);
+      break;
+    case OutKind::Fwrite: {
+      Value *size = CB->getArgOperand(1), *nmemb = CB->getArgOperand(2);
+      v = B.CreateSelect(B.CreateICmpEQ(size, ConstantInt::get(size->getType(), 0)), ConstantInt::get(rt, 0),
+                         B.CreateZExtOrTrunc(nmemb, rt));
+      break;
+    }
+    case OutKind::Wc: {
+      // musl __fputwc_unlocked: an ASCII c is putc_unlocked's (unsigned char)c == c, any other is WEOF where wctomb
+      // fails; wctomb of an ASCII c is 1, so the one test covers both. The buffer is MB_LEN_MAX (4) bytes.
+      Value *c = CB->getArgOperand(0);
+      AllocaInst *buf = entryAlloca(fn, i8, 4, "cq.wctomb.buf");
+      FunctionCallee e = entry("__cq_count_wctomb", FunctionType::get(i32, {ptr, i32}, false));
+      Value *r = B.CreateCall(e, {buf, B.CreateSExtOrTrunc(c, i32)});
+      v = B.CreateSelect(B.CreateICmpSLT(r, ConstantInt::get(i32, 0)), ConstantInt::get(rt, -1, /*signed=*/true),
+                         B.CreateZExtOrTrunc(c, rt));
+      break;
+    }
+    case OutKind::Ws: {
+      // musl fputws: l = wcsrtombs(buf, &ws, BUFSIZ, 0) until 0 or (size_t)-1; returns l. ws a null pointer is
+      // outside the domain (C17 7.29.3.4: a wide string).
+      AllocaInst *slot = entryAlloca(fn, ptr, 1, "cq.wcsrtombs.ws");
+      B.CreateStore(CB->getArgOperand(0), slot);
+      FunctionCallee e = entry("__cq_count_wcsrtombs", FunctionType::get(sizeT, {ptr, ptr, sizeT, ptr}, false));
+      Value *r = B.CreateCall(e, {null, slot, ConstantInt::get(sizeT, 0), null});
+      v = B.CreateSelect(B.CreateICmpEQ(r, ConstantInt::getAllOnesValue(sizeT)), ConstantInt::get(rt, -1, true),
+                         ConstantInt::get(rt, 0));
+      break;
+    }
+    }
+    if (auto *I = dyn_cast<Instruction>(v))
+      I->setMetadata("cq.deferred.result", MDNode::get(C, {}));
+    if (!CB->use_empty() && v->getType() == rt)
+      CB->replaceAllUsesWith(v);
   }
   return true;
 }
