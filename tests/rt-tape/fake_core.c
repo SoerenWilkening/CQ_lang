@@ -86,6 +86,8 @@ int cqe__known(int32_t h) {
   rail *r = get(h);
   return r ? r->known : 0;
 }
+/* core.c: a handle as an event writes it; the fake core's rails have no names apart from their handles */
+long long cqe__hname(int32_t h) { return (long long)h; }
 void cqe__setrole(int32_t h, int role) {
   rail *r = get(h);
   if (r && role == 2) r->role = "tape";
