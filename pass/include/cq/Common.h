@@ -49,6 +49,10 @@ bool streamCallee(const llvm::Function &F);
 // setjmp, longjmp and pthread_*) whose body is never lifted (cq-pt57w, cq-rrc52). Rule 16 classifies the call;
 // nothing descends into F's body for it.
 bool hostCallee(const llvm::Function &F);
+// CR rule 24: the mutex calls, no-ops returning 0, by C name (a leading "\01_" removed): pthread_mutex_lock, _trylock,
+// _timedlock, _unlock, _init, _destroy, and musl's internal names __pthread_mutex_lock, _trylock, _timedlock, _unlock
+// of the same functions, which a lifted mtx_* body calls (owner ruling 2026-11-12 on cq-dbtpi).
+bool rule24Mutex(llvm::StringRef cname);
 // The C name of a callee: the function's own, or the libm function an LLVM math intrinsic stands for (rule 18).
 std::string calleeName(const llvm::Function &F, const llvm::Value *at);
 // cq-z6q1 (CR rule 14; 189): the exit of the loop headed by `header` from block `exiting` has an exit count

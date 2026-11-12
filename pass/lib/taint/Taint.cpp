@@ -2255,8 +2255,7 @@ void Analyzer::transferCall(CallBase &CB) {
     StringRef pn = G->getName();
     if (pn.starts_with("\x01_"))
       pn = pn.drop_front(2);
-    if (hostCallee(*G) && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
-                               pn == "pthread_mutex_trylock" || pn == "pthread_mutex_init" || pn == "pthread_mutex_destroy"))
+    if (hostCallee(*G) && (pn == "pthread_join" || rule24Mutex(pn)))
       return;
   }
   if (G->getName() == "pthread_create" && actuals.size() == 4) {

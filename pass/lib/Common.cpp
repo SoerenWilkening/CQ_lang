@@ -205,7 +205,10 @@ static const char *protoOf(StringRef n) {
       {"pthread_rwlockattr_setpshared", "ipi"}, {"pthread_rwlockattr_getpshared", "ipp"},
       {"pthread_barrierattr_destroy", "ip"}, {"pthread_barrierattr_getpshared", "ipp"},
       {"pthread_barrierattr_init", "ip"}, {"pthread_barrierattr_setpshared", "ipi"}, {"pthread_atfork", "ippp"},
-      {"pthread_getconcurrency", "i"}, {"pthread_setconcurrency", "ii"}, {"pthread_getcpuclockid", "itp"}};
+      {"pthread_getconcurrency", "i"}, {"pthread_setconcurrency", "ii"}, {"pthread_getcpuclockid", "itp"},
+      // musl's internal names of the mutex calls a lifted mtx_* body calls (src/internal/pthread_impl.h; CR rule 24)
+      {"__pthread_mutex_lock", "ip"}, {"__pthread_mutex_trylock", "ip"}, {"__pthread_mutex_timedlock", "ipp"},
+      {"__pthread_mutex_unlock", "ip"}};
   for (const auto &[name, sig] : protos)
     if (n == name)
       return sig;
@@ -258,7 +261,8 @@ bool streamCallee(const Function &F) {
 
 // cq-rrc52 (CR rule 16): the ISO C and POSIX interfaces rule 16 names besides the stream calls: malloc, calloc,
 // aligned_alloc, realloc, free; signal, raise; rule 23's fenv functions (C17 7.6); rule 24's setjmp, longjmp and
-// pthread_* (cq-o1swj: the POSIX <pthread.h> functions protoOf lists, a closed list, not a prefix).
+// pthread_* (cq-o1swj: the POSIX <pthread.h> functions protoOf lists, a closed list, not a prefix) and musl's
+// internal __pthread_mutex_* names of rule 24's mutex calls (cq-dbtpi).
 static bool rule16Name(StringRef n) {
   static const char *names[] = {"malloc",          "calloc",        "aligned_alloc",   "realloc",        "free",
                                 "signal",          "raise",         "feclearexcept",   "fegetexceptflag", "feraiseexcept",
@@ -267,7 +271,18 @@ static bool rule16Name(StringRef n) {
   for (const char *x : names)
     if (n == x)
       return true;
-  return n.starts_with("pthread_") && protoOf(n);
+  return (n.starts_with("pthread_") || n.starts_with("__pthread_mutex_")) && protoOf(n);
+}
+
+bool rule24Mutex(StringRef n) {
+  static const char *names[] = {"pthread_mutex_lock",    "pthread_mutex_trylock", "pthread_mutex_timedlock",
+                                "pthread_mutex_unlock",  "pthread_mutex_init",    "pthread_mutex_destroy",
+                                "__pthread_mutex_lock",  "__pthread_mutex_trylock", "__pthread_mutex_timedlock",
+                                "__pthread_mutex_unlock"};
+  for (const char *x : names)
+    if (n == x)
+      return true;
+  return false;
 }
 
 // "A body the bundle has for one of them is never lifted for the call" (CR rule 16).

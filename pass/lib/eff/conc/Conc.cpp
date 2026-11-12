@@ -114,8 +114,7 @@ SmallVector<Function *, 8> collapseThreads(Module &M, const TaintInfo &T) {
       if (auto *CB = dyn_cast<CallBase>(&I)) {
         StringRef n = nameOf(*CB);
         if ((n == "pthread_create" && CB->arg_size() == 4) || (n == "pthread_join" && CB->arg_size() == 2) ||
-            n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" || n == "pthread_mutex_trylock" ||
-            n == "pthread_mutex_init" || n == "pthread_mutex_destroy")
+            rule24Mutex(n))
           todo.push_back(CB);
       }
     for (CallBase *CB : todo) {
