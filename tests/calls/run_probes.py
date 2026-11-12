@@ -283,7 +283,13 @@ CASES = [
       r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.puts, i32 1\)"]),
     ("stream_reads_string", "stream_reads_string", [], "wrong: stream_reads_string.wrongptr.ll", []),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
-    ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
+    ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64_controlled\("]),
+    # cq-silnj (rule 16; owner 2026-11-12): a signal number outside {1..64} minus {9, 19, 32, 33, 34} gives SIG_ERR, no
+    # load and no store, EINVAL at __errno_location(); a rail or run-time number through the flag v of that test.
+    ("sig_valid", "sv_const", [], "pass", [r"@cqrt_alloc_i64\(i64 -1\)", r"@cqrt_alloc_i32\(i32 22\)"]),
+    ("sig_valid", "sv_runtime", [], "pass", [r"@cqrt_qram_load_i64_hl_controlled\("]),
+    ("sig_valid", "sv_rail", [], "pass", [r"@cq_template_lshr_i64_lh\(", r"@cq_template_select_i64_hl\("]),
+    ("sig_valid", "sv_rail_pred", [], "pass", [r"@cqrt_and_i1\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
     ("mint2", "mint2", [], "pass", [r"call void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, double %\d+, i32 %\d+\)"]),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).

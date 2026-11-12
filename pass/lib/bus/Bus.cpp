@@ -264,6 +264,52 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
   ctx.unc().noteVersionChange(call);
 }
 
+CallInst *emitLoadUnder(LoweringContext &ctx, Type *T, Operand addr, Value *c) {
+  Value *m = mem(ctx);
+  abi::CoreSpec spec{abi::Core::QramLoad, accessType(ctx.M.getContext(), T), /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
+  SmallVector<Value *, 3> args;
+  SmallVector<Operand, 3> ops;
+  if (c) {
+    args.push_back(c);
+    ops.push_back(Operand{c, true});
+  }
+  args.append({m, addr.v});
+  ops.append({Operand{m, false}, addr});
+  CallInst *call = ctx.emitCore(spec, args);
+  ctx.unc().recordBusLoad(call, ops);
+  return call;
+}
+
+void emitKeptStoreUnder(LoweringContext &ctx, Type *T, Operand addr, Operand value, Value *c, bool neg) {
+  LLVMContext &C = ctx.M.getContext();
+  RailType w = accessType(C, T);
+  Value *v = value.v;
+  if (!value.handle) {
+    Value *lit = spine::codeAddressAsInt(ctx.B(), v, irTypeOf(C, w));
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {lit});
+    ctx.unc().recordSeed(seed);
+    v = seed;
+  }
+  Value *m = mem(ctx);
+  neg = neg && c;
+  abi::CoreSpec spec{abi::Core::QramStore, w, /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
+  SmallVector<Value *, 4> args;
+  if (c)
+    args.push_back(c);
+  args.append({m, addr.v, v});
+  abi::CoreSpec x{abi::Core::NotI1, RailType{Kind::Int, 1}};
+  if (neg)
+    ctx.emitCore(x, {c});
+  CallInst *call = ctx.emitCore(spec, args);
+  if (neg) {
+    CallInst *close = ctx.emitCore(x, {c});
+    if (addr.handle)
+      ctx.unc().noteUse(ctx.unc().idOf(addr.v), close);
+  }
+  ctx.unc().noteKeptStore(call, v, c);
+  ctx.unc().noteVersionChange(call);
+}
+
 void lowerLoad(LoweringContext &ctx, LoadInst &L, bool unguarded) {
   if (isBoolCellLoad(ctx, L))
     return lowerBoolCellLoad(ctx, L);

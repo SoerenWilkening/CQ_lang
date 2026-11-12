@@ -9,6 +9,7 @@
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -114,8 +115,6 @@ AllocShape callShape(LoweringContext &ctx, CallBase &CB) {
   AllocShape s;
   if (n == "malloc") {
     s = single(CB.getArgOperand(0));
-  } else if (n == "calloc") {
-    s = product(CB.getArgOperand(0), CB.getArgOperand(1));
   } else if (n == "aligned_alloc") {
     s = single(CB.getArgOperand(1));
     s.align = alignOperand(ctx, CB.getArgOperand(0));
@@ -155,6 +154,69 @@ AllocShape allocaShape(LoweringContext &ctx, AllocaInst &A) {
   return s;
 }
 
+// calloc(n, s) (rule 16; owner 2026-11-12, cq-mrdkr): the size is the EXACT product, never the wrapped one. Classical
+// operands: an overflowing product is the null pointer and no __cq_alloc call (a classical test, as C's calloc), folded
+// for constants. A rail operand: K2 bytes, the size umul.with.overflow's two templates, and the kept predicate
+// or_i1(overflow, n*s > K2) into a fresh rail, the overflow bit and the compare undone at once (omitted when range facts
+// bound n*s by K2), computed immediately before the __cq_alloc call.
+void lowerCalloc(LoweringContext &ctx, CallBase &CB) {
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  const Value *origN = CB.getArgOperand(0), *origS = CB.getArgOperand(1);
+  Operand x = asI64(ctx, origN), y = asI64(ctx, origS);
+  Value *align = lit(ctx, 16);
+  if (!x.handle && !y.handle) {
+    auto *kx = dyn_cast<ConstantInt>(x.v), *ky = dyn_cast<ConstantInt>(y.v);
+    if (kx && ky) {
+      bool overflow = false;
+      (void)kx->getValue().umul_ov(ky->getValue(), overflow);
+      Value *r = overflow ? static_cast<Value *>(ConstantPointerNull::get(PointerType::getUnqual(C)))
+                          : emitAlloc(ctx, B.CreateMul(x.v, y.v), align);
+      spine::bindOperand(ctx, &CB, Operand{r, false});
+      return;
+    }
+    CallInst *mo = B.CreateCall(Intrinsic::getDeclaration(&ctx.M, Intrinsic::umul_with_overflow, {i64Ty(ctx)}), {x.v, y.v});
+    ctx.unc().noteVersionChange(mo);   // on both paths: nothing the change orders is placed in an arm
+    Value *size = B.CreateExtractValue(mo, {0u}), *ovf = B.CreateExtractValue(mo, {1u});
+    BasicBlock *pre = B.GetInsertBlock();
+    BasicBlock *Do = BasicBlock::Create(C, "", &ctx.out()), *Join = BasicBlock::Create(C, "", &ctx.out());
+    B.CreateCondBr(ovf, Join, Do);
+    B.SetInsertPoint(Do);
+    CallInst *q = B.CreateCall(abi::declareHost(ctx.M, abi::Host::Alloc), {size, align});
+    B.CreateBr(Join);
+    B.SetInsertPoint(Join);
+    PHINode *r = B.CreatePHI(q->getType(), 2);
+    r->addIncoming(ConstantPointerNull::get(cast<PointerType>(q->getType())), pre);
+    r->addIncoming(q, Do);
+    spine::bindOperand(ctx, &CB, Operand{r, false});
+    return;
+  }
+  Operand m = mulSize(ctx, x, y);
+  std::optional<uint64_t> bound = mulBound(rangeBound(ctx, origN), rangeBound(ctx, origS));
+  uint64_t k2 = K2(ctx);
+  if (!bound || *bound > k2) {
+    if (!x.handle)
+      std::swap(x, y);
+    abi::TemplateSpec ov;
+    ov.op = "umul_overflow";
+    ov.w = RailType{Kind::Int, 64};
+    ov.shape = y.handle ? "" : "hl";
+    CallInst *o = rawTemplate(ctx, ov, {x.v, y.v});
+    abi::TemplateSpec gt;
+    gt.op = "icmp";
+    gt.pred = "ugt";
+    gt.w = RailType{Kind::Int, 64};
+    gt.shape = "hl";
+    CallInst *g = rawTemplate(ctx, gt, {m.v, lit(ctx, k2)});
+    CallInst *k = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {ConstantInt::getFalse(C)});
+    ctx.unc().recordExternal(k, Role::KeptOverflow);
+    ctx.emitCore(abi::CoreSpec{abi::Core::OrI1}, {o, g, k});
+    undoRaw(ctx, gt, g);
+    undoRaw(ctx, ov, o);
+  }
+  spine::bindOperand(ctx, &CB, Operand{emitAlloc(ctx, lit(ctx, k2), align), false});
+}
+
 } // namespace
 
 std::optional<uint64_t> rangeBound(LoweringContext &ctx, const Value *V) {
@@ -191,8 +253,11 @@ void lowerAlloc(LoweringContext &ctx, Instruction &site) {
   AllocShape s;
   if (auto *A = dyn_cast<AllocaInst>(&site))
     s = allocaShape(ctx, *A);
-  else if (auto *CB = dyn_cast<CallBase>(&site))
+  else if (auto *CB = dyn_cast<CallBase>(&site)) {
+    if (const Function *F = CB->getCalledFunction(); F && F->getName() == "calloc")
+      return lowerCalloc(ctx, *CB);
     s = callShape(ctx, *CB);
+  }
   else
     internalError("bus: lowerAlloc of an instruction that allocates nothing", &site);
   spine::bindOperand(ctx, &site, Operand{emitAlloc(ctx, sizeOperand(ctx, s.size, s.bound), s.align), false});

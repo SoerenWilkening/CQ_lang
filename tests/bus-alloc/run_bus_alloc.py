@@ -8,6 +8,9 @@ sampler cannot compare against C.
 probes/alloc_nobuiltin.O1.ll (clang -O1 -fno-builtin -include CQ.h of alloc_nobuiltin.c, cq-15amv): malloc, calloc, realloc
 and free with no allockind, the allocation by its rule-16 name alone, at rail sizes, the result compared with NULL; each
 entry has a __cq_alloc and is §6-equal to its C program (the full `cqcheck user`).
+probes/calloc_exact.O1.ll (clang -O1 -fno-builtin -include CQ.h of calloc_exact.c; owner 2026-11-12, cq-mrdkr): calloc's size is
+the exact product: a rail operand keeps or_i1(umul overflow, n*s > K2); classical operands that overflow give NULL and no
+__cq_alloc call; each entry §6-equal to its C program (the full `cqcheck user`).
 probes/inplace.O1.ll, probes/inplace_loop.O1.ll: rule 5's in-place form, the shapes that stay the form and the shapes that
 are a kept store instead; each entry §6-equal to its C program (`--light`).
 """
@@ -52,6 +55,13 @@ NOBUILTIN = {
     "n_malloc": [("4096", "16")],
     "n_malloc_fold": [("4096", "16")],   # cq-yt5lz: the result classical over a == NULL, no measurement
     "n_realloc": [("4", "16"), ("4096", "16")],
+}
+# cq-mrdkr: entry -> patterns its lowered body must hold.
+KEPT_OR = r"@cq_template_umul_overflow_i64(?:_hl)?\(.*\n.*@cq_template_icmp_ugt_i64_hl\(.*\n.*@cqrt_alloc_i1\(i1 false\)\n\s*call void @cqrt_or_i1\("
+CALLOC = {
+    "c_rails": [KEPT_OR, ALLOC % ("4096", "16")],
+    "c_rail_count": [KEPT_OR, ALLOC % ("4096", "16")],
+    "c_classical": [r"@llvm\.umul\.with\.overflow\.i64\(", r"phi ptr \[ null, "],
 }
 # Rule 5 In-place form: entry -> does its body hold the form's swaps at i32?
 SWAP = r"@cqrt_qram_swap_i32"
@@ -204,6 +214,30 @@ def check_nobuiltin(a):
     return failures
 
 
+def check_calloc(a):
+    failures = 0
+    chosen = [fn for fn in CALLOC if not a.entry or fn in a.entry]
+    if not chosen:
+        return 0
+    src, lowered = PROBES / "calloc_exact.O1.ll", OUT / "calloc_exact.lowered.ll"
+    e = lower(a, src, lowered)
+    if e:
+        print(f"FAIL calloc_exact: {e}")
+        return len(chosen)
+    text = lowered.read_text()
+    for fn in chosen:
+        b = body(text, fn)
+        why = [] if b else ["no lowered body"]
+        why += [f"no {p}" for p in CALLOC[fn] if not re.search(p, b)]
+        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
+                            "--entry", fn], capture_output=True, text=True, cwd=ROOT / "checker")
+        if c.returncode or "PASS" not in c.stdout + c.stderr:
+            why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1][:400])
+        print(("FAIL " if why else "ok   ") + fn + ("" if not why else ": " + "; ".join(why)))
+        failures += bool(why)
+    return failures
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
@@ -217,6 +251,7 @@ def main():
         failures += 1
     failures += check_inplace(a)
     failures += check_nobuiltin(a)
+    failures += check_calloc(a)
     src, lowered = PROBES / "alloc.O1.ll", OUT / "alloc.lowered.ll"
     e = lower(a, src, lowered)
     if e:

@@ -2167,6 +2167,72 @@ Operand signalCell(LoweringContext &ctx, Operand sig) {
   return Operand{ctx.emitTemplate(add, {Operand{scaled, true}, Operand{B.CreatePtrToInt(tbl, i64), false}}), true};
 }
 
+// A valid signal number (rule 16; owner 2026-11-12, cq-silnj): 1 <= sig <= 64 and none of 9, 19, 32, 33, 34. Bit
+// sig - 1 of kSigValid is set exactly for a valid sig in [1, 64].
+constexpr uint64_t kSigValid = ~((1ull << 8) | (1ull << 18) | (1ull << 31) | (1ull << 32) | (1ull << 33));
+
+bool validSignal(int64_t sig) { return sig >= 1 && sig <= 64 && ((kSigValid >> (sig - 1)) & 1); }
+
+// The flag v of that test, by ordinary templates over a rail sig: t = sig - 1; v = (t <u 64) & bit (t & 63) of
+// kSigValid. Over a classical sig the classical test, its outcome a seed.
+Value *signalValidFlag(LoweringContext &ctx, Operand sig) {
+  IRBuilder<> &B = ctx.B();
+  Type *i32 = B.getInt32Ty(), *i64 = B.getInt64Ty();
+  if (!sig.handle) {
+    Value *t = B.CreateAdd(sig.v, ConstantInt::get(i32, -1, true));
+    Value *in = B.CreateICmpULT(t, ConstantInt::get(i32, 64));
+    Value *bit = B.CreateTrunc(B.CreateLShr(ConstantInt::get(i64, kSigValid), B.CreateZExt(B.CreateAnd(t, 63), i64)),
+                               B.getInt1Ty());
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {B.CreateAnd(in, bit)});
+    ctx.unc().recordSeed(seed);
+    return seed;
+  }
+  RailType w32{Kind::Int, 32}, w64{Kind::Int, 64}, w1{Kind::Int, 1};
+  auto tmpl = [&](const char *op, const char *pred, RailType w, std::optional<RailType> to, const char *shape,
+                  ArrayRef<Operand> ops) {
+    abi::TemplateSpec t;
+    t.op = op;
+    if (pred)
+      t.pred = pred;
+    t.w = w;
+    t.to = to;
+    t.shape = shape;
+    return Operand{ctx.emitTemplate(t, ops), true};
+  };
+  Operand t = tmpl("add", nullptr, w32, std::nullopt, "hl", {sig, Operand{ConstantInt::get(i32, -1, true), false}});
+  Operand in = tmpl("icmp", "ult", w32, std::nullopt, "hl", {t, Operand{ConstantInt::get(i32, 64), false}});
+  Operand t6 = tmpl("and", nullptr, w32, std::nullopt, "hl", {t, Operand{ConstantInt::get(i32, 63), false}});
+  Operand z = tmpl("zext", nullptr, w32, w64, "", {t6});
+  Operand sh = tmpl("lshr", nullptr, w64, std::nullopt, "lh", {Operand{ConstantInt::get(i64, kSigValid), false}, z});
+  Operand bit = tmpl("trunc", nullptr, w64, w1, "", {sh});
+  return tmpl("and", nullptr, w1, std::nullopt, "", {in, bit}).v;
+}
+
+// t = a & b into a fresh rail (b negated when `negA`: t = !a & b, an X bracket on a), kept: a bus access's control.
+Value *conjoin(LoweringContext &ctx, Value *a, Value *b, bool negA) {
+  RailType w1{Kind::Int, 1};
+  CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w1}, {ConstantInt::getFalse(ctx.M.getContext())});
+  ctx.unc().recordExternal(t, Role::Kept);
+  if (negA)
+    ctx.emitCore(abi::CoreSpec{abi::Core::NotI1, w1}, {a});
+  ctx.emitCore(abi::CoreSpec{abi::Core::AndI1}, {a, b, t});
+  if (negA)
+    ctx.emitCore(abi::CoreSpec{abi::Core::NotI1, w1}, {a});
+  return t;
+}
+
+// errno as a lifted musl body sets it: the i32 address __errno_location() returns. A module with no __errno_location
+// (a program built against another C library, whose errno the bus does not hold) gets no store, with a note.
+std::optional<Operand> errnoAddress(LoweringContext &ctx, const CallBase &CB) {
+  IRBuilder<> &B = ctx.B();
+  Function *f = ctx.M.getFunction("__errno_location");
+  if (!f || f->arg_size() || !f->getReturnType()->isPointerTy()) {
+    noteUnbuilt("calls: signal's EINVAL with no __errno_location in the module (errno not stored)", &CB);
+    return std::nullopt;
+  }
+  return Operand{B.CreatePtrToInt(B.CreateCall(f), B.getInt64Ty()), false};
+}
+
 } // namespace
 
 void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
@@ -2183,25 +2249,66 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   });
 }
 
+// Rule 16 signal table; owner 2026-11-12, cq-silnj: an invalid signal number gives SIG_ERR with no load and no store.
+// A valid constant: the load and store as they stand. An invalid constant: SIG_ERR and EINVAL stored at errno (under
+// the predicate in scope). Otherwise the flag v of the test: the load and store under v (ANDed with the predicate in
+// scope), the result select(v, loaded, -1), EINVAL stored at errno under NOT v (ANDed likewise).
 void lowerSignal(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   Operand sig = ctx.operand(CB.getArgOperand(0));
   Operand h = bus::address(ctx, CB.getArgOperand(1));
-  if (!sig.handle && !h.handle && !bus::accessControl(ctx)) {
+  Value *flag = bus::accessControl(ctx);
+  if (!sig.handle && !h.handle && !flag) {
     // The host call as it stands, whatever precedes it (the ordinary-host-call test is not asked for signal).
     Instruction *n = CB.clone();
     for (unsigned i = 0; i < CB.arg_size(); ++i)
       n->setOperand(i, ctx.operand(CB.getArgOperand(i)).v);
     ctx.B().Insert(n);
   }
-  Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+  LLVMContext &C = ctx.M.getContext();
+  Type *i64 = Type::getInt64Ty(C), *i32 = Type::getInt32Ty(C);
+  Operand einval{ConstantInt::get(i32, 22), false};
+  auto *k = sig.handle ? nullptr : dyn_cast<ConstantInt>(sig.v);
+  if (k && !validSignal(k->getSExtValue())) {
+    if (std::optional<Operand> e = errnoAddress(ctx, CB))
+      bus::emitKeptStore(ctx, i32, *e, einval);
+    if (!CB.use_empty()) {   // the result is a rail (the table's cell is bus memory): SIG_ERR as a seed
+      CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 64}}, {ConstantInt::get(i64, -1, true)});
+      ctx.unc().recordSeed(seed);
+      spine::bindOperand(ctx, &CB, Operand{seed, true});
+    }
+    return;
+  }
   Operand cell = signalCell(ctx, sig);
-  CallInst *old = bus::emitLoad(ctx, i64, cell);
-  bus::emitKeptStore(ctx, i64, cell, h);
-  if (CB.use_empty())
+  if (k) {
+    CallInst *old = bus::emitLoad(ctx, i64, cell);
+    bus::emitKeptStore(ctx, i64, cell, h);
+    if (CB.use_empty())
+      ctx.unc().resolveAt(old->getNextNode(), {ctx.unc().idOf(old)});   // un-copied before the store
+    else
+      spine::bindOperand(ctx, &CB, Operand{old, true});
+    return;
+  }
+  Value *v = signalValidFlag(ctx, sig);
+  Value *c = flag ? conjoin(ctx, v, flag, false) : v;
+  CallInst *old = bus::emitLoadUnder(ctx, i64, cell, c);
+  bus::emitKeptStoreUnder(ctx, i64, cell, h, c, false);
+  if (std::optional<Operand> e = errnoAddress(ctx, CB)) {
+    if (flag)
+      bus::emitKeptStoreUnder(ctx, i32, *e, einval, conjoin(ctx, v, flag, true), false);
+    else
+      bus::emitKeptStoreUnder(ctx, i32, *e, einval, v, true);
+  }
+  if (CB.use_empty()) {
     ctx.unc().resolveAt(old->getNextNode(), {ctx.unc().idOf(old)});   // un-copied before the store
-  else
-    spine::bindOperand(ctx, &CB, Operand{old, true});
+    return;
+  }
+  abi::TemplateSpec sel;
+  sel.op = "select";
+  sel.w = RailType{Kind::Int, 64};
+  sel.shape = "hl";
+  spine::bindOperand(ctx, &CB, Operand{ctx.emitTemplate(sel, {Operand{v, true}, Operand{old, true},
+                                                              Operand{ConstantInt::get(i64, -1, true), false}}), true});
 }
 
 void lowerRaise(LoweringContext &ctx, CallBase &CB) {
