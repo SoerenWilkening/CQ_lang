@@ -373,6 +373,9 @@ CASES = [
     ("vaC", "vaC", [], "pass", [r"call i32 %\d+\(i32 %\d+, ptr %\d+, i32 4\)"]),
     # cq-f0rb6 (rules 16, 19, 22): va_copy in an own symbol (vget, no quantum argument) of the caller's bus-resident va_list is
     # memcpy(d, s, 24), a bus copy, never the host intrinsic (the evaluator's bus is host memory, so only the form shows it).
+    # cq-aa27m (rules 5, 6, 18; CR 556-559): a clone returns the KEPT result of a callee with no twin directly, no copy-out.
+    ("kept_result_return", "kept_result_return", [], "pass",
+     [r"= call fastcc i32 @vget\(ptr noundef %\d+\)\n  ret i32 %\d+\n}"]),
     ("va_copy_own", "va_copy_own", [], "pass",
      [r"define internal fastcc i32 @vget\(ptr noundef %0\)[^}]*?call i32 @cqrt_qram_load_i8_hl\([^}]*?\n}"]),
     ("vaF", "vaF", [], "pass", [r"call i32 %\d+\(i32 %\d+, i32 %\d+, ptr %\d+, i32 4\)"]),

@@ -1606,6 +1606,13 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       if (CRT != handleTy(ctx.M.getContext()))
         internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
       ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Result);
+    } else if (op.handle && isa<CallBase>(rv) && !calls::hasTwin(ctx.T, ctx.S) && ctx.unc().recorded(op.v) &&
+               ctx.unc().liveRole(ctx.unc().idOf(op.v)) == Role::Kept) {
+      // cq-aa27m (rules 5, 6, 18; CR 556-559): the result of a callee with no twin is KEPT, never uncomputed, so a copy-out
+      // would leave it allocated beside the copy. It is returned directly, as a rule-6 image is (204).
+      if (CRT != handleTy(ctx.M.getContext()))
+        internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
+      ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Result);
     } else if (op.handle) {
       if (CRT != handleTy(ctx.M.getContext()))
         internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
