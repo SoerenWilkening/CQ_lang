@@ -5,13 +5,18 @@
 
 1. bundle/manifest.json lists exactly the pinned output of bundle/pins.json, and that file has the pinned
    sha256.
-2. The bundle is closed (no undefined symbols but llvm.* intrinsics) and defines the bead's functions.
+2. The bundle is closed (no undefined symbols but llvm.* intrinsics and the functions bundle/recipe.json omits, host
+   calls, or names bodiless) and defines the bead's functions, the rule 16 string formatters over their internal cores, and the result
+   entries of recipe.json "entries" (cq-cdf9z) as external functions; it defines no omitted name and no standard
+   stream (owner ruling 2026-11-11 Q6).
 3. For every example whose reference lowered.ll lifts a library body (a __cq_q_<fn>_* definition for an <fn>
    that is not user code of the example) or whose .O1.ll calls a bundle function: `llvm-link --only-needed`
    of the .O1.ll with the bundle succeeds; every lifted library <fn> is in the bundle; a body the .O1.ll
    already defines (the compiler-rt reproductions) is kept, never replaced by the bundle's.
 4. The bundle defines nothing beyond those: every bundle function is lifted by some reference, called by
    some example's .O1.ll, or called by another bundle function so reached.
+5. count_probe.c, linked --only-needed with the bundle and run natively: the result entries and string formatters
+   compute musl's values (cq-cdf9z).
 With --sources, the bundle is also rebuilt from the pinned checkouts and must reproduce the pinned sha256.
 """
 import argparse
@@ -29,7 +34,15 @@ LLVM_BIN = Path("/usr/local/opt/llvm@19/bin")
 # The bead's list (cq-w1-bundle): compiler-rt's complex helpers, musl memcmp and the libm bodies the
 # helpers call. ilogb/ilogbf/ilogbl are reached from logb/logbf/logbl (musl keeps them in their own TUs).
 REQUIRED = {"__muldc3", "__divdc3", "__mulsc3", "__divsc3", "__mulxc3", "__divxc3", "memcmp",
-            "logb", "scalbn", "logbf", "scalbnf", "logbl", "scalbnl"}
+            "logb", "scalbn", "logbf", "scalbnf", "logbl", "scalbnl",
+            # rule 18, Q5 (8dcb7c47): the libm bodies a math intrinsic links by a declaration of its name
+            "exp", "atan2", "atan", "sin", "log", "pow", "fabs", "floor"}
+# CR rule 16: the string formatters are injected and lifted (cq-cdf9z)
+FORMATTERS = {"sprintf", "snprintf", "sscanf", "vsprintf", "vsnprintf", "vsscanf",
+              "swprintf", "vswprintf", "swscanf", "vswscanf"}
+CORES = {"__cq_vfprintf", "__cq_vfscanf", "__cq_vfwprintf", "__cq_vfwscanf"}
+STD_STREAMS = {"stdin", "stdout", "stderr", "__stdin_FILE", "__stdout_FILE", "__stderr_FILE",
+               "__stdin_used", "__stdout_used", "__stderr_used"}
 
 fails = []
 
@@ -69,6 +82,26 @@ def calls(ll_text):
         elif cur:
             for c in re.findall(r"\bcall [^@;]*@([\w.$]+)\(", line.split(";")[0]):
                 out[cur].add(c)
+    return out
+
+
+def body_refs(ll_text):
+    """Every name each body, global initializer or alias refers to (calls, addresses taken): name -> set."""
+    out, cur = {}, None
+    for line in ll_text.splitlines():
+        g = re.match(r'^@([\w.$]+) = (.*)$', line)
+        if g and cur is None:
+            out.setdefault(g.group(1), set()).update(re.findall(r"@([\w.$]+)", g.group(2)))
+            continue
+        m = re.match(r'^define [^@]*@([\w.$]+)\(', line)
+        if m:
+            cur = m.group(1)
+            out[cur] = set()
+            continue
+        if line.startswith("}"):
+            cur = None
+        elif cur:
+            out[cur] |= set(re.findall(r"@([\w.$]+)", line.split(";")[0]))
     return out
 
 
@@ -113,13 +146,27 @@ def main(argv):
         fail(f"{out.name} sha256 {digest} != pinned {pins['sha256']}")
 
     # 2.
-    und = {u for u in nm(out, "--undefined-only") if not u.startswith("llvm.")}
+    recipe = json.loads((BUNDLE / "recipe.json").read_text())
+    omit = set(recipe["omit"])
+    entries = set(recipe["entries"])
+    und = {u for u in nm(out, "--undefined-only")
+           if not u.startswith("llvm.") and u not in omit and u not in recipe["bodiless"]}
     if und:
         fail(f"bundle not closed, undefined: {sorted(und)}")
     defined = nm(out, "--defined-only")
-    if not REQUIRED <= defined:
-        fail(f"bundle lacks {sorted(REQUIRED - defined)}")
-    bundle_calls = calls(run([LLVM_BIN / "llvm-dis", out, "-o", "-"]).stdout)
+    exported = nm(out, "--extern-only") & defined
+    want = REQUIRED | FORMATTERS | entries
+    if not want <= exported:
+        fail(f"bundle lacks (as external definitions) {sorted(want - exported)}")
+    if not CORES <= defined:
+        fail(f"bundle lacks the formatter cores {sorted(CORES - defined)}")
+    if defined & (omit | STD_STREAMS):
+        fail(f"bundle defines omitted names or standard streams: {sorted(defined & (omit | STD_STREAMS))}")
+    text = run([LLVM_BIN / "llvm-dis", out, "-o", "-"]).stdout
+    stds = sorted(n for n in STD_STREAMS if re.search(rf"@{n}\b", text))
+    if stds:
+        fail(f"bundle refers to standard streams {stds}")
+    bundle_calls = body_refs(text)
 
     # 3.
     reached = set()
@@ -171,12 +218,12 @@ def main(argv):
         if f in closure or f not in defined:
             continue
         closure.add(f)
-        todo += bundle_calls.get(f, ()) | {d for d in bundle_calls.get("_" + f, ())}
-    closure |= {f for f in REQUIRED}  # the bead's list is required whether or not the corpus calls it
+        todo += bundle_calls.get(f, set()) | {d for d in bundle_calls.get("_" + f, set())}
+    closure |= REQUIRED | FORMATTERS | entries  # required whether or not the corpus calls them
     todo = list(closure)
     while todo:
         f = todo.pop()
-        for c in bundle_calls.get(f, ()):
+        for c in bundle_calls.get(f, set()):
             if c in defined and c not in closure:
                 closure.add(c)
                 todo.append(c)
@@ -185,6 +232,21 @@ def main(argv):
         fail(f"bundle defines functions nothing reaches: {sorted(extra)}")
     print(f"examples: {' '.join(owned)}")
     print(f"bundle: {sorted(defined)}")
+
+    # 5.
+    with tempfile.TemporaryDirectory(prefix="cqbundle-probe.") as t:
+        tmp = Path(t)
+        probe = Path(__file__).resolve().parent / "count_probe.c"
+        steps = [[LLVM_BIN / "clang", "-O1", "-w", "-D_FORTIFY_SOURCE=0", "-c", "-emit-llvm", probe, "-o", tmp / "p.bc"],
+                 [LLVM_BIN / "llvm-link", tmp / "p.bc", "--only-needed", out, "-o", tmp / "pl.bc"],
+                 [LLVM_BIN / "clang", "-O1", tmp / "pl.bc", "-o", tmp / "probe"], [tmp / "probe"]]
+        for cmd in steps:
+            r = run(cmd)
+            if r.returncode:
+                fail(f"count probe: {Path(str(cmd[0])).name} exited {r.returncode}: {(r.stderr or r.stdout).strip()[:600]}")
+                break
+        else:
+            print("count probe: pass")
 
     if a.sources:
         with tempfile.TemporaryDirectory(prefix="cqbundle-rebuild.") as t:
