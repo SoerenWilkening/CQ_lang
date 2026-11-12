@@ -139,19 +139,45 @@ static StringRef cName(const Function &F) {
   return n;
 }
 
-bool streamCallee(const Function &F) {
-  if (F.isIntrinsic() || !streamName(cName(F)))
-    return false;
+// A function whose C name rule 16 lists is that interface when its prototype is the one LLVM's TargetLibraryInfo knows
+// for the name; a name TargetLibraryInfo knows with another prototype is the program's own function of that name; one
+// it does not know (lseek, getline, fesetround, signal, pthread_create, ...) is recognised by name.
+static bool listedInterface(const Function &F) {
   LibFunc lf;
   if (libFuncOf(F, lf))
     return true;
-  // A name TargetLibraryInfo knows with another prototype is the program's own function of that name; one it does
-  // not know (lseek, getline, dprintf, ...) is recognised by name.
   static const TargetLibraryInfoImpl names{Triple()};
   return !names.getLibFunc(cName(F), lf);
 }
 
-bool hostCallee(const Function &F) { return F.isDeclaration() || streamCallee(F); }
+bool streamCallee(const Function &F) {
+  if (F.isIntrinsic() || !streamName(cName(F)))
+    return false;
+  return listedInterface(F);
+}
+
+// cq-rrc52 (CR rule 16): the ISO C and POSIX interfaces rule 16 names besides the stream calls: malloc, calloc,
+// aligned_alloc, realloc, free; signal, raise; rule 23's fenv functions (C17 7.6); rule 24's setjmp, longjmp and
+// pthread_*.
+static bool rule16Name(StringRef n) {
+  static const char *names[] = {"malloc",          "calloc",        "aligned_alloc",   "realloc",        "free",
+                                "signal",          "raise",         "feclearexcept",   "fegetexceptflag", "feraiseexcept",
+                                "fesetexceptflag", "fetestexcept",  "fegetround",      "fesetround",     "fegetenv",
+                                "feholdexcept",    "fesetenv",      "feupdateenv",     "setjmp",         "longjmp"};
+  for (const char *x : names)
+    if (n == x)
+      return true;
+  return n.starts_with("pthread_");
+}
+
+// "A body the bundle has for one of them is never lifted for the call" (CR rule 16).
+bool hostCallee(const Function &F) {
+  if (F.isDeclaration())
+    return true;
+  if (F.isIntrinsic())
+    return false;
+  return streamCallee(F) || (rule16Name(cName(F)) && listedInterface(F));
+}
 
 bool libFuncOf(const Function &F, LibFunc &lf) {
   static thread_local std::unique_ptr<TargetLibraryInfoImpl> impl;

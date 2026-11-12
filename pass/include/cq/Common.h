@@ -44,8 +44,10 @@ bool streamName(llvm::StringRef cname);
 // cq-pt57w (CR rule 16): F is a stream call recognised by name and signature (its prototype checked where LLVM's
 // TargetLibraryInfo knows the name). "A body the bundle has for one of them is never lifted for the call."
 bool streamCallee(const llvm::Function &F);
-// CR rule 16: a call of F by name is at the host boundary: F has no body, or it is a stream call whose body is never
-// lifted. Rule 16 classifies the call; nothing descends into F's body for it.
+// CR rule 16: a call of F by name is at the host boundary: F has no body, or it is one of the ISO C and POSIX
+// interfaces rule 16 names (a stream call, malloc and its family, signal, raise, rule 23's fenv functions, rule 24's
+// setjmp, longjmp and pthread_*) whose body is never lifted (cq-pt57w, cq-rrc52). Rule 16 classifies the call;
+// nothing descends into F's body for it.
 bool hostCallee(const llvm::Function &F);
 // The C name of a callee: the function's own, or the libm function an LLVM math intrinsic stands for (rule 18).
 std::string calleeName(const llvm::Function &F, const llvm::Value *at);

@@ -167,7 +167,7 @@ bool terminalNoreturn(const CallBase &CB, SmallPtrSetImpl<const Function *> &onS
     return F->getIntrinsicID() == Intrinsic::trap || F->getIntrinsicID() == Intrinsic::ubsantrap;
   if (CB.hasFnAttr(Attribute::ReturnsTwice) || F->hasFnAttribute(Attribute::ReturnsTwice))
     return false;
-  if (!F->isDeclaration())
+  if (!hostCallee(*F))
     return abortsOnEveryPath(*F, onStack);
   StringRef n = F->getName();
   if (n == "longjmp" || n == "_longjmp" || n == "siglongjmp")
@@ -306,11 +306,11 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
   // module's, classical ones included: the host part stays, and the quantum part (the mode and flags
   // rails) changes with it (a classical fesetround drops a quantum mode rail, feclearexcept clears
   // flag rails). eff-fenv copies the call to the host when the quantum part is not involved.
-  if (F->isDeclaration() && isFenvFunction(F->getName()))
+  if (hostCallee(*F) && isFenvFunction(F->getName()))
     return Class::Fenv;
 
   // Rule 24 (106): the thread primitives collapse to the sequential schedule (eff-conc).
-  if (F->isDeclaration()) {
+  if (hostCallee(*F)) {
     StringRef n = F->getName();
     if (n.starts_with("\01_"))
       n = n.drop_front(2);
@@ -331,7 +331,7 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
   if ((ak & AllocFnKind::Alloc) != AllocFnKind::Unknown)
     return Class::Alloc;
 
-  if (!F->isDeclaration() && (CB.doesNotReturn() || F->doesNotReturn())) {
+  if (!hostCallee(*F) && (CB.doesNotReturn() || F->doesNotReturn())) {
     // cq-wskg: a defined noreturn callee (rule 16) is never lifted (taint publishes no clone for it).
     // Built: under a quantum predicate, with no quantum or non-classical-object argument, a callee that
     // aborts on every path with nothing before is the noreturn call it ends in, abort_i1(pred)

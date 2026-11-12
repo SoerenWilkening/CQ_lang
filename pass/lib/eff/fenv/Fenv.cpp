@@ -185,7 +185,7 @@ enum class FenvFn : uint8_t {
 
 FenvFn fenvFn(const CallBase &CB) {
   const Function *F = CB.getCalledFunction();
-  if (!F || !F->isDeclaration())
+  if (!F || !hostCallee(*F))   // a body the bundle has is never lifted (rule 16, cq-rrc52)
     return FenvFn::None;
   static const std::pair<const char *, FenvFn> names[] = {
       {"feclearexcept", FenvFn::ClearExcept}, {"fegetexceptflag", FenvFn::GetExceptFlag},
@@ -316,7 +316,7 @@ void bodyEnv(const Function &F, BodyEnv &e, SmallPtrSetImpl<const Function *> &s
           e.any = e.flags = e.mode = true;   // an indirect call may reach anything
         continue;
       }
-      if (!G->isDeclaration())
+      if (!hostCallee(*G))
         bodyEnv(*G, e, seen);
     }
 }
@@ -357,7 +357,7 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
       if (envOp(I))
         return true;   // an indirect call may reach anything
       const Function *G = CB->getCalledFunction();
-      if (G && !G->isDeclaration() && bodyTouchesFenv(*G, seen))
+      if (G && !hostCallee(*G) && bodyTouchesFenv(*G, seen))
         return true;
     }
   return false;
@@ -1174,7 +1174,7 @@ void requireWritable(LoweringContext &ctx, State &st, const Instruction &I, bool
       return bad != nullptr;
     }
     const Function *G = CB->getCalledFunction();
-    if (G && G->isDeclaration())
+    if (G && hostCallee(*G))
       return false;   // a library function leaves the mode alone; what it raises is host flags
     if (CB->isInlineAsm())
       return false;

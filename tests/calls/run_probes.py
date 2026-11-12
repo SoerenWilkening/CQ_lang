@@ -373,6 +373,11 @@ CASES = [
     # cq-ntvv (CR §1.4: only an internal function with no remaining use is dropped): an exported original whose only in-module
     # call was retargeted to its clone stays, its own body.
     ("extern_original_kept", "e", [], "pass", [r"define i32 @inner\(i32 noundef %0, i32 noundef %1\)"]),
+    # cq-rrc52 (CR rule 16): a body the bundle has for fesetround is never lifted for the call: the quantum call is rule 23's
+    # rail operation (it reads the host mode with fegetround), no __cq_q_fesetround clone. "lower": the C oracle runs the
+    # program's fesetround body where the lowered program has rule 23's call by name (return 1 against the body's -1, the
+    # mode rail unrecognised as kept): the checker gap is cq-du1gw.
+    ("fenv_body_host", "e", [], "lower", [r"call i32 @fegetround\(\)", r"define [^\n]*@fesetround\("]),
 ]
 
 

@@ -47,7 +47,7 @@ namespace {
 // A pthread_join of the module that asks for the start routine's result (a non-null second argument).
 const CallBase *joinAskingResult(const Module &M) {
   for (const Function &G : M)
-    if (G.isDeclaration() && (G.getName() == "pthread_join" || G.getName() == "\01_pthread_join"))
+    if (hostCallee(G) && (G.getName() == "pthread_join" || G.getName() == "\01_pthread_join"))
       for (const User *u : G.users())
         if (auto *J = dyn_cast<CallBase>(u); J && J->arg_size() == 2 &&
                                              !(isa<Constant>(J->getArgOperand(1)) &&

@@ -2054,14 +2054,14 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   // Rule 16 Signal table: signal is the bus load of the cell and the bus store of the handler; raise loads the cell and
   // calls through the loaded address rail by rule 19. No handler is tracked.
-  if (G->isDeclaration() && G->getName() == "signal" && actuals.size() == 2) {
+  if (hostCallee(*G) && G->getName() == "signal" && actuals.size() == 2) {
     setL(&CB, allLanes(rn));
     cur->busLoad = true;
     cur->writesOuter = true;
     cur->anyQuantum = true;
     return;
   }
-  if (G->isDeclaration() && G->getName() == "raise" && actuals.size() == 1) {
+  if (hostCallee(*G) && G->getName() == "raise" && actuals.size() == 1) {
     if (rn && !CB.use_empty()) {
       setL(&CB, allLanes(rn));
       cur->readsEffect = true;
@@ -2078,7 +2078,7 @@ void Analyzer::transferCall(CallBase &CB) {
     StringRef pn = G->getName();
     if (pn.starts_with("\x01_"))
       pn = pn.drop_front(2);
-    if (G->isDeclaration() && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
+    if (hostCallee(*G) && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
                                pn == "pthread_mutex_trylock" || pn == "pthread_mutex_init" || pn == "pthread_mutex_destroy"))
       return;
   }
@@ -2092,7 +2092,8 @@ void Analyzer::transferCall(CallBase &CB) {
         return;
       }
   }
-  // cq-pt57w (rule 16): a stream call by name is the host boundary although the bundle has its body, never lifted.
+  // cq-pt57w, cq-rrc52 (rule 16): an interface rule 16 names is the host boundary although the bundle has its body, never
+  // lifted.
   if (!hostCallee(*G)) {
     lift(CB, G, actuals, false);
     return;

@@ -140,10 +140,10 @@ bool fromMeasurement(Value *v) {
 
 
 // The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
-// they read or write the host flags only. A program body of that name is replayed as any body.
+// they read or write the host flags only, a body the bundle has for one included (rule 16, cq-rrc52).
 bool hostFlagCall(const CallBase &CB) {
   const Function *G = CB.getCalledFunction();
-  return G && G->isDeclaration() && (G->getName() == "fetestexcept" || G->getName() == "feclearexcept" || G->getName() == "feraiseexcept") &&
+  return G && hostCallee(*G) && (G->getName() == "fetestexcept" || G->getName() == "feclearexcept" || G->getName() == "feraiseexcept") &&
          CB.arg_size() == 1 && CB.getType()->isIntegerTy(32) && CB.getArgOperand(0)->getType()->isIntegerTy(32);
 }
 
