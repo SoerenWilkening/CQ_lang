@@ -125,6 +125,206 @@ define i32 @pb_nested(i32 noundef %0, double noundef %1, i32 noundef %2, i32 nou
   ret i32 %43
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @pc_choice(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3, i32 noundef %4) local_unnamed_addr #0 {
+  %6 = alloca i32, align 4
+  %7 = alloca ptr, align 8
+  %8 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #3
+  %9 = tail call i32 @cq_theta_ui32(i32 noundef %4, double noundef %1) #3
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %6) #4
+  store i32 0, ptr %6, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 8, ptr nonnull %7)
+  store volatile ptr %6, ptr %7, align 8, !tbaa !10
+  %10 = load volatile ptr, ptr %7, align 8, !tbaa !10
+  %11 = icmp ugt i32 %8, %2
+  br i1 %11, label %12, label %31
+
+12:                                               ; preds = %5
+  %13 = and i32 %3, 1
+  %14 = icmp eq i32 %13, 0
+  %15 = mul i32 %9, 3
+  br label %16
+
+16:                                               ; preds = %12, %26
+  %17 = phi i32 [ %8, %12 ], [ %19, %26 ]
+  %18 = phi i32 [ 1, %12 ], [ %29, %26 ]
+  %19 = lshr i32 %17, 1
+  br i1 %14, label %22, label %20
+
+20:                                               ; preds = %16
+  %21 = add i32 %19, %15
+  call void @cq_phi(double noundef 2.500000e-01) #4
+  br label %26
+
+22:                                               ; preds = %16
+  %23 = xor i32 %19, %9
+  %24 = load i32, ptr %10, align 4, !tbaa !6
+  %25 = add i32 %24, 2
+  store i32 %25, ptr %10, align 4, !tbaa !6
+  br label %26
+
+26:                                               ; preds = %22, %20
+  %27 = phi i32 [ %21, %20 ], [ %23, %22 ]
+  %28 = mul i32 %18, 5
+  %29 = add i32 %27, %28
+  %30 = icmp ugt i32 %19, %2
+  br i1 %30, label %16, label %31, !llvm.loop !17
+
+31:                                               ; preds = %26, %5
+  %32 = phi i32 [ 1, %5 ], [ %29, %26 ]
+  %33 = call i32 @cq_measure_ui32(i32 noundef %32) #4
+  %34 = shl i32 %33, 6
+  %35 = load i32, ptr %10, align 4, !tbaa !6
+  %36 = call i32 @cq_measure_ui32(i32 noundef %35) #4
+  %37 = add i32 %36, %34
+  call void @llvm.lifetime.end.p0(i64 8, ptr nonnull %7)
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %6) #4
+  ret i32 %37
+}
+
+declare void @cq_phi(double noundef) local_unnamed_addr #2
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @pd_csub(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3, i32 noundef %4, i32 noundef %5) local_unnamed_addr #0 {
+  %7 = alloca i32, align 4
+  %8 = alloca ptr, align 8
+  %9 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #3
+  %10 = tail call i32 @cq_theta_ui32(i32 noundef %5, double noundef %1) #3
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %7) #4
+  store i32 0, ptr %7, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 8, ptr nonnull %8)
+  store volatile ptr %7, ptr %8, align 8, !tbaa !10
+  %11 = load volatile ptr, ptr %8, align 8, !tbaa !10
+  %12 = icmp ugt i32 %9, %2
+  br i1 %12, label %13, label %55
+
+13:                                               ; preds = %6
+  %14 = and i32 %3, 1
+  %15 = icmp eq i32 %14, 0
+  %16 = and i32 %4, 3
+  %17 = icmp eq i32 %16, 0
+  %18 = and i32 %3, 2
+  %19 = icmp eq i32 %18, 0
+  %20 = and i32 %4, 3
+  %21 = icmp eq i32 %20, 0
+  %22 = or i1 %15, %17
+  br label %23
+
+23:                                               ; preds = %13, %51
+  %24 = phi i32 [ %9, %13 ], [ %26, %51 ]
+  %25 = phi i32 [ 0, %13 ], [ %53, %51 ]
+  %26 = lshr i32 %24, 1
+  br i1 %22, label %37, label %27
+
+27:                                               ; preds = %23
+  %28 = load i32, ptr %11, align 4, !tbaa !6
+  br label %29
+
+29:                                               ; preds = %27, %29
+  %30 = phi i32 [ %28, %27 ], [ %33, %29 ]
+  %31 = phi i32 [ 0, %27 ], [ %34, %29 ]
+  %32 = xor i32 %31, %10
+  %33 = add i32 %30, %32
+  %34 = add nuw nsw i32 %31, 1
+  %35 = icmp eq i32 %34, %16
+  br i1 %35, label %36, label %29, !llvm.loop !18
+
+36:                                               ; preds = %29
+  store i32 %33, ptr %11, align 4, !tbaa !6
+  br label %37
+
+37:                                               ; preds = %23, %36
+  %38 = icmp ule i32 %10, %26
+  %39 = select i1 %19, i1 true, i1 %38
+  %40 = or i1 %39, %21
+  br i1 %40, label %51, label %41
+
+41:                                               ; preds = %37
+  %42 = load i32, ptr %11, align 4, !tbaa !6
+  br label %43
+
+43:                                               ; preds = %41, %43
+  %44 = phi i32 [ %42, %41 ], [ %47, %43 ]
+  %45 = phi i32 [ 0, %41 ], [ %48, %43 ]
+  %46 = add nuw i32 %45, %26
+  %47 = xor i32 %44, %46
+  %48 = add nuw nsw i32 %45, 1
+  %49 = icmp eq i32 %48, %16
+  br i1 %49, label %50, label %43, !llvm.loop !19
+
+50:                                               ; preds = %43
+  store i32 %47, ptr %11, align 4, !tbaa !6
+  br label %51
+
+51:                                               ; preds = %37, %50
+  %52 = mul i32 %25, 3
+  %53 = add i32 %26, %52
+  %54 = icmp ugt i32 %26, %2
+  br i1 %54, label %23, label %55, !llvm.loop !20
+
+55:                                               ; preds = %51, %6
+  %56 = phi i32 [ 0, %6 ], [ %53, %51 ]
+  %57 = call i32 @cq_measure_ui32(i32 noundef %56) #4
+  %58 = shl i32 %57, 8
+  %59 = load i32, ptr %11, align 4, !tbaa !6
+  %60 = call i32 @cq_measure_ui32(i32 noundef %59) #4
+  %61 = add i32 %60, %58
+  call void @llvm.lifetime.end.p0(i64 8, ptr nonnull %8)
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #4
+  ret i32 %61
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @pe_arm(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  br label %5
+
+5:                                                ; preds = %14, %3
+  %6 = phi i32 [ 0, %3 ], [ %10, %14 ]
+  %7 = phi i32 [ 1, %3 ], [ %9, %14 ]
+  %8 = mul nsw i32 %7, 3
+  %9 = add nsw i32 %8, %6
+  %10 = add nuw nsw i32 %6, 1
+  %11 = shl i32 512, %6
+  %12 = and i32 %11, %4
+  %13 = icmp eq i32 %12, 0
+  br i1 %13, label %14, label %18
+
+14:                                               ; preds = %5
+  %15 = shl i32 2, %6
+  %16 = and i32 %15, %4
+  %17 = icmp eq i32 %16, 0
+  br i1 %17, label %31, label %5, !llvm.loop !21
+
+18:                                               ; preds = %5
+  %19 = and i32 %2, 1
+  %20 = icmp eq i32 %19, 0
+  br i1 %20, label %27, label %21
+
+21:                                               ; preds = %18, %21
+  %22 = phi i32 [ %26, %21 ], [ %10, %18 ]
+  %23 = shl i32 65536, %22
+  %24 = and i32 %23, %4
+  %25 = icmp eq i32 %24, 0
+  %26 = add nuw nsw i32 %22, 1
+  br i1 %25, label %27, label %21, !llvm.loop !22
+
+27:                                               ; preds = %21, %18
+  %28 = phi i32 [ %10, %18 ], [ %22, %21 ]
+  %29 = mul nsw i32 %28, 7
+  %30 = add nsw i32 %29, %9
+  br label %31
+
+31:                                               ; preds = %14, %27
+  %32 = phi i32 [ %30, %27 ], [ %9, %14 ]
+  %33 = tail call i32 @cq_measure_si32(i32 noundef %32) #4
+  ret i32 %33
+}
+
+declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #2
+
+declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -151,3 +351,9 @@ attributes #4 = { nounwind }
 !14 = !{!"llvm.loop.unroll.disable"}
 !15 = distinct !{!15, !13, !14}
 !16 = distinct !{!16, !13, !14}
+!17 = distinct !{!17, !13, !14}
+!18 = distinct !{!18, !13, !14}
+!19 = distinct !{!19, !13, !14}
+!20 = distinct !{!20, !13, !14}
+!21 = distinct !{!21, !13, !14}
+!22 = distinct !{!22, !13, !14}

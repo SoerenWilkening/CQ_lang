@@ -384,6 +384,54 @@ private:
       r = ctx.B().CreateSelect(arms[i].first, arms[i].second, r);
     return r;
   }
+  // The merge of a quantum phi of a trip over its arms (trip-local edge predicate, value). cq-o5tjh (CR rule 9: "A
+  // `select` or `phi` whose condition (or choice of incoming edge) is purely classical is a classical `select`/`phi`
+  // over the handles, no gate; ... a literal incoming of a classical `phi` over handles is a seed"): where the choice
+  // among the arms is classical, the classical select chain over the handles (each select a merge, Uncompute U1), its
+  // conditions read from this trip's classical values; else rule 9's select chain, a classical term a seed (rule 8).
+  Value *mergeArms(ArrayRef<std::pair<Pred, Operand>> arms, Type *ty) {
+    RailType w = railOf(ty);
+    // The choice is classical when, at the merge (where some arm's predicate holds, M), every arm's predicate is M & a
+    // classical condition: its classical projection. Where M is false the merge is never read.
+    Pred M = Pred::bottom();
+    for (auto &a : arms)
+      M = M | a.first;
+    std::vector<Pred> cls;
+    for (auto &a : arms) {
+      Pred c = a.first.classicalProjection(ctx.T, ctx.S);
+      Pred d = M & c;
+      if (!((d & !a.first) | (!d & a.first)).isBottom())
+        return selectChain(ctx, arms, w);
+      cls.push_back(c);
+    }
+    if (arms.empty())
+      return selectChain(ctx, arms, w);
+    Value *r = nullptr;
+    for (size_t i = arms.size(); i-- > 0;) {
+      Operand v = arms[i].second;
+      if (!v.handle)
+        v = Operand{seedRail(v.v->getType()->isPointerTy() ? ctx.B().CreatePtrToInt(v.v, ctx.B().getInt64Ty()) : v.v,
+                             v.v->getType()->isPointerTy() ? ctx.B().getInt64Ty() : ty),
+                    true};
+      if (!r) {
+        r = v.v;
+        continue;
+      }
+      if (v.v == r)
+        continue;
+      Value *cond = classicalValue(ctx, cls[i]);
+      if (auto *k = dyn_cast<ConstantInt>(cond)) {
+        if (k->isOne())
+          r = v.v;
+        continue;
+      }
+      Value *sel = ctx.B().CreateSelect(cond, v.v, r);
+      if (auto *si = dyn_cast<Instruction>(sel))
+        ctx.unc().recordMerge(si);
+      r = sel;
+    }
+    return r;
+  }
 };
 
 void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
@@ -1168,8 +1216,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           if (!is_contained(outs, &I))
             outs.push_back(&I);
         }
-    Value *trip = conj(q, lp, at);
+    // cq-o5tjh (rule 8, as underClassical): lp's classical part is the branch around S, its quantum part alone the
+    // trip rail's conjunct (no seed of a classical term). A oneBlock unit keeps its classical terms (cq-kk46l).
+    Pred cg = (oneBlock || lp.isBottom()) ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
+    Value *trip = conj(q, cg.isTop() ? lp : lp.quantumPart(ctx.T, ctx.S), at);
     Value *g = creachOf(S.getHeader());
+    if (!cg.isTop()) {
+      Value *cv = classicalValue(ctx, cg);
+      auto *g0 = dyn_cast<ConstantInt>(g);
+      g = g0 && g0->isOne() ? cv : ctx.B().CreateAnd(g, cv);
+    }
     auto *gc = dyn_cast<ConstantInt>(g);
     if (gc && gc->isZero())
       internalError("loops-cutoff: a sub-loop lowered where the trip's classical path never reaches it", at);
@@ -1558,7 +1614,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           // A trip with a classical branch or switch has no output blocks to join classically (it is
           // straight-line code): the merge is rule 9's select chain over the trip-local edge
-          // predicates, a classical term of them a seed rail (rule 8).
+          // predicates, a classical term of them a seed rail (rule 8), or, where the choice is purely
+          // classical, a classical select over the handles (mergeArms, cq-o5tjh).
           std::vector<std::pair<Pred, Operand>> arms;
           auto up = unitPhi.find(&P);
           bool unitArm = false;
@@ -1576,7 +1633,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             }
             arms.push_back({e, ctx.operand(P.getIncomingValue(i))});
           }
-          set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
+          set(&P, Operand{mergeArms(arms, P.getType()), true});
         }
       lowerInsts(b, q, lpb);
       });
@@ -1702,7 +1759,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         unsigned K = ctx.K(S);
         std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
         unsigned cs = Bs ? unsigned(std::min<uint64_t>(K, *Bs)) : K;
-        lowerLoop(*S, conj(q, acc, b->getTerminator()), cs, false, false);
+        // cq-o5tjh (rule 8, as for a sub-loop of the trip, cq-jws5r): behind a classical condition of this evaluation
+        // the loop of the arm is skipped by a real branch, its chain seeded by the quantum part of the arm's predicate
+        // alone. What it leaves for the code after it (its continuation's phis, its stop rail and chain end) reads |0>
+        // where it was skipped, where every predicate that selects it is false.
+        exits::Unit SU = exits::unitOf(*S);
+        bool branched = !oneBlock && !acc.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont;
+        SmallVector<BasicBlock *, 16> unitBlocks(S->blocks().begin(), S->blocks().end());
+        unitBlocks.append(SU.arm.begin(), SU.arm.end());
+        SmallVector<PHINode *, 4> contPhis;
+        if (branched)
+          for (PHINode &P : SU.cont->phis())
+            contPhis.push_back(&P);
+        stopped = nullptr;
+        underClassical(branched ? acc : Pred::top(), unitBlocks, contPhis, {&stopped, &chainEnd}, [&](const Pred &lp) {
+          lowerLoop(*S, conj(q, branched ? lp : acc, b->getTerminator()), cs, false, false);
+        });
         if (stopped) {
           noteStop(stopped);
           stopped = nullptr;
@@ -1741,7 +1813,33 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             E = E | *e;
             tailArms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
           }
-          if (!tailArms.empty()) {
+          // Rule 9: P's edges from this evaluation's own arm blocks around the loop (pe_arm: a classical branch of the arm
+          // skips it) hold where they are taken; the loop's binding is P's value only on the loop's edges, under the
+          // predicate of reaching its header.
+          std::vector<std::pair<Pred, Operand>> outArms;
+          Loop *own = nullptr;
+          for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+            BasicBlock *u = P.getIncomingBlock(i);
+            if (nestedTailOwner(u))
+              continue;
+            Loop *S = L.contains(u) ? nullptr : (subLoopOf(u) ? subLoopOf(u) : nestedArmOwner(u));
+            if (S && !S->contains(b)) {
+              own = S;
+              continue;
+            }
+            auto e = edgeIn(u, b);
+            if (!e || e->isBottom())
+              continue;
+            outArms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
+          }
+          if (own && !outArms.empty()) {
+            auto it = armLocal.find(own->getHeader());
+            if (it == armLocal.end())
+              internalError("loops-cutoff: a loop of the arm bound a phi it was not lowered for", &P);
+            outArms.insert(outArms.end(), tailArms.begin(), tailArms.end());
+            outArms.push_back({it->second, ctx.operand(&P)});
+            set(&P, Operand{mergeArms(outArms, P.getType()), true});
+          } else if (!tailArms.empty()) {
             tailArms.push_back({!E, ctx.operand(&P)});
             set(&P, Operand{selectChain(ctx, tailArms, railOf(P.getType())), true});
           }
@@ -1767,7 +1865,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           arms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
         }
-        set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
+        set(&P, Operand{mergeArms(arms, P.getType()), true});
       }
       lowerInsts(b, q, lpb);
       });
@@ -1898,7 +1996,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
           if (auto sp = srcPred(P.getIncomingBlock(i)))
             arms.push_back({*sp & edgeCond(P.getIncomingBlock(i), b), ctx.operand(P.getIncomingValue(i))});
-        set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
+        set(&P, Operand{mergeArms(arms, P.getType()), true});
       }
       // Every instruction of the arm runs only where the arm is taken: under the flag.
       f = conj(q, lpb, b->getTerminator());

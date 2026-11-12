@@ -37,3 +37,58 @@ unsigned pb_nested(unsigned x0, double th, unsigned k, int c, unsigned z0) {
   }
   return cq_measure(n) * 256 + cq_measure(*f);
 }
+
+/* (c) cq-o5tjh (CR rule 9: "A `select` or `phi` whose condition (or choice of incoming edge) is purely classical is a
+ *     classical `select`/`phi` over the handles, no gate"): the merge of the two classical arms is a classical select
+ *     in every trip copy, not a select template on a seed of the classical condition. */
+unsigned pc_choice(unsigned x0, double th, unsigned k, int c, unsigned y0) {
+  unsigned x = x0, y = y0; cq_theta(&x, th); cq_theta(&y, th);
+  unsigned acc = 1, cell = 0;
+  unsigned *volatile p = &cell;
+  unsigned *f = p;
+  while (x > k) {
+    x >>= 1;
+    unsigned v;
+    if (c & 1) { v = y * 3 + x; cq_phi(0.25); } else { v = y ^ x; *f += 2; }
+    acc = acc * 5 + v;
+  }
+  return cq_measure(acc) * 64 + cq_measure(*f);
+}
+
+/* (d) cq-o5tjh: a classically bounded sub-loop of the trip behind a classical condition and behind a mixed one: the
+ *     classical part is the branch around it, its trip rail the quantum part alone (no seed of the classical term). */
+unsigned pd_csub(unsigned x0, double th, unsigned k, int c, unsigned m, unsigned y0) {
+  unsigned x = x0, y = y0; cq_theta(&x, th); cq_theta(&y, th);
+  unsigned acc = 0, cell = 0;
+  unsigned *volatile p = &cell;
+  unsigned *f = p;
+  while (x > k) {
+    x >>= 1;
+    if (c & 1) { for (unsigned i = 0; i < (m & 3); i++) *f += y ^ i; }
+    if ((c & 2) && y > x) { for (unsigned i = 0; i < (m & 3); i++) *f ^= x + i; }
+    acc = acc * 3 + x;
+  }
+  return cq_measure(acc) * 256 + cq_measure(*f);
+}
+
+/* (e) cq-o5tjh: a K-loop of a K-loop's exit arm behind a classical condition of the arm. */
+int pe_arm(int x0, double th, int c) {
+  int x = x0; cq_theta(&x, th);
+  int i = 0, acc = 1, r, j;
+  do {
+    acc = acc * 3 + i;
+    i++;
+    if ((x >> (i + 8)) & 1)
+      goto found;
+  } while ((x >> i) & 1);
+  r = acc;
+  goto join;
+found:
+  j = i;
+  if (c & 1)
+    while ((x >> (j + 16)) & 1)
+      j++;
+  r = acc + j * 7;
+join:
+  return cq_measure(r);
+}
