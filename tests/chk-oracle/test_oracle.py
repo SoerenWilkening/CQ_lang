@@ -618,6 +618,35 @@ int pctn(int k) {
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(2)]}]), ["0x42122"])
 
 
+class EffectValues(unittest.TestCase):
+    """Owner rulings 2026-11-12 cq-dbtpi and cq-silnj: the C program reads musl's success values of the C library effect
+    entries that are no input call, never the stand-in's hash; and signal's validity set is the ruling's (1 <= sig <= 64,
+    none of 9, 19, 32, 33, 34), never macOS's."""
+
+    def test_success_values(self):
+        o1 = compile_c("effvals", """
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+int effvals(int w, int t, int s) {
+    char buf[64];
+    FILE *f = (FILE *)buf;           /* the stand-in reads no FILE */
+    fpos_t pos = 0;
+    int r = 0, k = 0;
+#define B(x) (r |= ((x) != 0) << k++)
+    B(fclose(f)); B(remove("cq_no_such_file")); B(rename("cq_no_a", "cq_no_b")); B(fsetpos(f, &pos)); B(close(-7));
+    B(fflush(f));
+    B(fseek(f, 3, w)); B(fseek(f, 3, w + 3)); B(setvbuf(f, 0, t, 0)); B(setvbuf(f, 0, t + 3, 0));
+    B(raise(s)); B(raise(s + 65)); B(raise(-1));
+    return r | (fseek(f, 0, w + 3) == -1) << 16 | (setvbuf(f, 0, -1, 0) == -1) << 17;
+}
+""")
+        sp = spec("effvals", "int effvals(int, int, int)", [("effvals", ["int", "int", "int"])])
+        # 0 everywhere but fseek's and setvbuf's invalid whence and type and raise of 65 and -1: bits 7, 9, 11, 12
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(1), i32(2), i32(40)]},
+                                       {"call": 0, "args": [i32(0), i32(0), i32(0)]}]), ["0x31a80", "0x31a80"])
+
+
 class Cutoff(unittest.TestCase):
     """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
     recursion stops after K trips; the cq-arch T2 records in outputs["loops"]."""

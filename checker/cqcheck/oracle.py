@@ -415,10 +415,12 @@ def host_streams(text: str) -> str:
 
 
 # Owner ruling 2026-11-12 (item 4): the C library output calls whose result the C program reads take musl's value
-# (OracleInstr.cpp cq-oracle-output-results; the names of pass/lib/eff/tape/Tape.cpp outputFunction).
+# (OracleInstr.cpp cq-oracle-output-results; the names of pass/lib/eff/tape/Tape.cpp outputFunction). Owner ruling
+# 2026-11-12 cq-dbtpi: so do fclose, remove, rename, fsetpos, close (0), fseek and setvbuf (0, or -1 for a whence or type
+# outside {0, 1, 2}).
 _OUTPUT_NAMES = frozenset((
     "printf fprintf dprintf vprintf vfprintf vdprintf wprintf fwprintf vwprintf vfwprintf puts fputs fflush putw fputc putc "
-    "putchar fwrite fputwc putwc putwchar fputws").split())
+    "putchar fwrite fputwc putwc putwchar fputws fclose remove rename fsetpos close fseek setvbuf").split())
 _DECLARED_ANY = re.compile(r'(?m)^declare\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 
