@@ -653,6 +653,165 @@ public:
       In.railLoads.push_back({c, &F, std::move(rail), 2});
       return c;
     }
+    // CR rule 2, 406-408 (cq-ndtt): collapse is STATIC, "it applies to a value whose quantum sources are measured on EVERY
+    // path reaching it". The runtime marks the measured node at the measurement and every later reader of the sample sees it
+    // classical, so a measurement M of root v may mark only when no reader it reaches is reached from v's definition by a
+    // path that measures nothing (pm_join: y measured in a classical arm, y * 3 read after the join, stays a rail on every
+    // path). Readers: the cq_measure sites and the branches whose operand depends on v by SSA (through memory not seen:
+    // known limit). A path ends at v's definition (a new instance) and at a measurement of v; a quantum branch is no choice
+    // (rule 2: a measurement in its region runs on every path through it), as in the pass's cq::measuredOnEveryPath. A
+    // formal or a loaded value is the caller's or the cell's rail: it collapses only when also measured on every path to a
+    // return (cq::measuredOnEveryPath; CR 406-410: a clone measuring a rail on some paths leaves the caller's rail alone).
+    bool staticCollapse(const CallBase *M, function_ref<bool(const Value *)> isQ) {
+      auto strip = [](const Value *x) {
+        while (auto *f = dyn_cast<FreezeInst>(x))
+          x = f->getOperand(0);
+        return x;
+      };
+      const Value *root = strip(M->getArgOperand(0));
+      if (!isa<Argument>(root) && !isa<Instruction>(root))
+        return true;
+      auto isMeas = [&](const Instruction &I) {
+        auto *c = dyn_cast<CallInst>(&I);
+        return c && orig.count(c) && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cq_measure") &&
+               c->arg_size() == 1 && strip(c->getArgOperand(0)) == root;
+      };
+      const auto *defI = isa<LoadInst>(root) || isa<AtomicRMWInst>(root) || isa<AtomicCmpXchgInst>(root) ||
+                                 (isa<ExtractValueInst>(root) &&
+                                  isa<AtomicCmpXchgInst>(cast<ExtractValueInst>(root)->getAggregateOperand()))
+                             ? nullptr
+                             : dyn_cast<Instruction>(root);
+      if (!defI && !cq::measuredOnEveryPath(isQ, root, M))
+        return false;
+      BasicBlock *D = defI ? const_cast<BasicBlock *>(defI->getParent()) : &F.getEntryBlock();
+      // the readers of v: values depending on it by SSA, and the cq_measure calls and branches reading one of them
+      SmallPtrSet<const Value *, 32> dep;
+      std::vector<const Value *> w{root};
+      dep.insert(root);
+      while (!w.empty()) {
+        const Value *x = w.back();
+        w.pop_back();
+        for (const User *U : x->users())
+          if (auto *I = dyn_cast<Instruction>(U); I && orig.count(I) && !I->getType()->isVoidTy() && dep.insert(I).second)
+            w.push_back(I);
+      }
+      auto reader = [&](const Instruction &I) {
+        if (!orig.count(&I))
+          return false;
+        if (auto *c = dyn_cast<CallInst>(&I); c && c->getCalledFunction() &&
+                                              c->getCalledFunction()->getName().starts_with("cq_measure"))
+          return dep.count(c->getArgOperand(0)) > 0;
+        if (I.isTerminator() && I.getNumSuccessors() > 1)
+          if (Value *c = condOf(const_cast<Instruction *>(&I)))
+            return dep.count(c) > 0;
+        return false;
+      };
+      // A block's entry is uncovered when a path from v's definition reaches it measuring nothing.
+      auto quantumBranch = [&](const BasicBlock *b) {
+        Value *c = condOf(const_cast<Instruction *>(b->getTerminator()));
+        return c && b->getTerminator()->getNumSuccessors() > 1 && isQ(c);
+      };
+      auto measuredIn = [&](const BasicBlock *b) { return any_of(*b, isMeas); };
+      // The pass's region rule (cq::measuredOnEveryPath): a quantum branch whose region up to its post-dominator holds a
+      // measurement reached through quantum branches (a classical branch inside passed at its post-dominator).
+      auto sureMeasured = [&](const BasicBlock *b) {
+        const BasicBlock *J = PDT.getNode(b) && PDT.getNode(b)->getIDom() ? PDT.getNode(b)->getIDom()->getBlock() : nullptr;
+        SmallPtrSet<const BasicBlock *, 16> reg, sure;
+        SmallVector<const BasicBlock *, 16> ws(succ_begin(b), succ_end(b));
+        while (!ws.empty()) {
+          const BasicBlock *x = ws.pop_back_val();
+          if (x == J || x == b || !reg.insert(x).second)
+            continue;
+          for (const BasicBlock *s : successors(x))
+            ws.push_back(s);
+        }
+        ws.assign(succ_begin(b), succ_end(b));
+        while (!ws.empty()) {
+          const BasicBlock *x = ws.pop_back_val();
+          if (x == J || x == b || !reg.count(x) || !sure.insert(x).second)
+            continue;
+          if (measuredIn(x))
+            return true;
+          const Instruction *t = x->getTerminator();
+          if (t->getNumSuccessors() > 1 && !quantumBranch(x))
+            if (auto *n = PDT.getNode(x); n && n->getIDom() && n->getIDom()->getBlock()) {
+              ws.push_back(n->getIDom()->getBlock());
+              continue;
+            }
+          for (const BasicBlock *s : successors(x))
+            ws.push_back(s);
+        }
+        return false;
+      };
+      SmallPtrSet<const BasicBlock *, 32> unc;
+      {
+        // from the definition to the end of D
+        for (const Instruction *I = defI ? defI->getNextNode() : &D->front(); I; I = I->getNextNode())
+          if (isMeas(*I))
+            return true;   // every path from the definition passes this measurement
+        SmallVector<const BasicBlock *, 16> ws;
+        auto from = [&](const BasicBlock *b) {
+          if (quantumBranch(b) && sureMeasured(b))
+            return;
+          for (const BasicBlock *s : successors(b))
+            ws.push_back(s);
+        };
+        from(D);
+        while (!ws.empty()) {
+          const BasicBlock *x = ws.pop_back_val();
+          if (x == D || !unc.insert(x).second || measuredIn(x))
+            continue;
+          from(x);
+        }
+      }
+      // the readers M reaches (up to v's next definition): none may be uncovered
+      auto uncoveredReader = [&](const BasicBlock *b, const Instruction *after) {
+        bool covered = !unc.count(b) || after;
+        for (const Instruction &I : *b) {
+          if (after && (&I == after || I.comesBefore(after)))
+            continue;
+          if (isMeas(I))
+            covered = true;
+          else if (!covered && reader(I))
+            return true;
+        }
+        return false;
+      };
+      SmallPtrSet<const BasicBlock *, 32> seen;
+      SmallVector<const BasicBlock *, 16> ws(succ_begin(M->getParent()), succ_end(M->getParent()));
+      while (!ws.empty()) {
+        const BasicBlock *x = ws.pop_back_val();
+        if (x == D || !seen.insert(x).second)
+          continue;
+        if (uncoveredReader(x, nullptr))
+          return false;
+        for (const BasicBlock *s : successors(x))
+          ws.push_back(s);
+      }
+      return true;
+    }
+    // The frame's specialization answers at run time; a frame no call named (id 0, through a pointer) collapses when some
+    // specialization does. None collapses in a _ctl clone (rule 19's controlled copy) or a table clone (§1.4: a kept copy is
+    // measured). Computed on the function as clang wrote it (orig; Shadow adds instructions, no blocks).
+    Value *collapses(IRBuilder<> &B, CallBase *CB) {
+      std::vector<int32_t> vals(In.KI.on ? In.KI.N + 1 : 1, 0);
+      bool any = false, all = true;
+      for (const cq::Specialization *S : specs) {
+        bool e = !S->table && !S->ctl && staticCollapse(CB, [&](const Value *x) { return T.isQuantum(x, *S); });
+        any |= e, all &= e;
+        if (In.KI.on)
+          if (auto id = In.KI.idOf.find(S); id != In.KI.idOf.end())
+            vals[id->second] = e;
+      }
+      if (specs.empty())
+        any = all = staticCollapse(CB, [](const Value *) { return false; });
+      if (all == any || !In.KI.on)
+        return B.getInt32(any);
+      vals[0] = any;
+      auto *c = B.CreateCall(h("__cqo_sh_pick", I32, {I32, I32, I32}), {B.getInt32(1), B.getInt32(0), B.getInt32(1)});
+      In.railLoads.push_back({c, &F, std::move(vals), 2});
+      return c;
+    }
     Value *zero() { return ConstantInt::get(I32, 0); }
     Value *opaque() { return ConstantInt::get(I32, 1); }
     static bool isZero(Value *v) {
@@ -1324,12 +1483,12 @@ public:
           sh[CB] = B.CreateCall(h("__cqo_sh_leaf", I32, {}), {});
         } else if (k == KMeasure) {
           IRBuilder<> Bb(CB);
-          Bb.CreateCall(h("__cqo_sh_measure", In.Void, {I32}), {args[0]});
+          auto *m = Bb.CreateCall(h("__cqo_sh_measure", I32, {I32, I32}), {args[0], collapses(Bb, CB)});
           // A loop-carried value's rail this trip is the incoming it took: that one is measured too (owner, cq-2z29a: the later trips re-read
           // what is computed from it alone).
           if (auto ci = carriedIn.find(CB->getArgOperand(0)); ci != carriedIn.end())
             Bb.CreateCall(h("__cqo_sh_mark", In.Void, {I32}), {ci->second});
-          sh[CB] = args[0];  // dominated uses denote the outcome: the measured node, classical now
+          sh[CB] = m;  // dominated uses denote the outcome: classical (the measured node, or its basis copy's)
         }
         return;
       }

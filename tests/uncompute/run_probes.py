@@ -40,11 +40,10 @@ CASES = [
     ("kept_merge", "ks", [], "pass", [r"br i1 %cq\.not"]),
     # CR rule 2 (2026-11-02, cq-29ej: collapse is static; §1.3 a measured rail is never freed): a rail measured on
     # some classical paths only is lowered as unmeasured and the measurement reads a kept basis copy (cq-4lqy;
-    # was: 'a rail measured on some paths only, ...'). pm_join and pm_loop lower and verify; their §6 run waits
-    # on the checker's C oracle treating a value measured after a partial measurement as classical (bead below).
+    # was: 'a rail measured on some paths only, ...'). pm_join and pm_loop: the C oracle's collapse is static too (cq-ndtt).
     ("partial_measure", "pm_ret", [], "pass", [r"call void @cqrt_copy_i32"]),
-    ("partial_measure", "pm_join", [], "lower", [r"call void @cqrt_copy_i32"]),
-    ("partial_measure", "pm_loop", [], "lower", [r"call void @cqrt_copy_i32"]),
+    ("partial_measure", "pm_join", [], "pass", [r"call void @cqrt_copy_i32"]),
+    ("partial_measure", "pm_loop", [], "pass", [r"call void @cqrt_copy_i32"]),
     # CR §0, rule 5, §1.1 (cq-4lqy): a gate through a slot cell that may name an operand rail of pending garbage is
     # decided at run time by comparing handles (was: 'awaiting owner ruling: ... a gate through a slot cell').
     # ah_loop fails §6 with a leaked i1 rail: bead cq-asp1 (suspected mem-slots, a register cell copy overwritten).
@@ -57,8 +56,10 @@ CASES = [
         "sl_trip", "sl_acc", "sl_phi_some", "sl_kloop", "sl_arm", "sl_arm_false",
         "sl_exit", "sl_exit_zero", "sl_exit_both", "sl_exit_twice", "sl_exit_nested", "sl_exit_kloop")],
     # CR §1.3 (cq-4lqy): a POP kept on some paths keeps the earlier POPs and the bus on the same paths.
-    # kp, kq (a measured merge whose arm t is measured again as t * 7): bead cq-g72r (rule 2 collapse of t * 7 where
-    # the merge measured t); listed once it is fixed.
+    # kp, kq (a measured merge whose arm t is measured again as t * 7): rule 2's collapse is per value (cq-g72r, cq-ndtt):
+    # measuring the merge does not collapse t, so t * 7 is a measurement on every path on both sides.
+    ("kept_merge", "kp", [], "pass", []),
+    ("kept_merge", "kq", [], "pass", []),
 ]
 
 

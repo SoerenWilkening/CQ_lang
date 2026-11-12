@@ -892,6 +892,35 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertEqual(len(rr.measured), gates, smp)
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
+    def test_static_collapse(self):
+        """CR rule 2, 406-408 (cq-ndtt, cq-g72r): collapse is static. A value measured on some classical paths only stays a
+        rail after the join, also on the samples that measured it (a later cq_measure of what is computed from it is a
+        measurement); measured on every path, it collapses. Measuring a classical merge measures the merge, not the
+        incoming it chose (kq: t * 7 is a measurement on both paths)."""
+        o1 = compile_c("static_collapse", """
+int pm_join(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = x + 7, r = 0;
+    if (c) r = cq_measure(y); return r + cq_measure(y * 3); }
+int both(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = x + 7, r;
+    if (c) r = cq_measure(y); else r = 2 * cq_measure(y); return r + cq_measure(y * 3); }
+int kq(int a, double th, int c) { int x = a; cq_theta(&x, th); int t = x & 6, y;
+    if (c) y = t; else y = x | 1; int r = cq_measure(y); return r + cq_measure(t * 7); }
+int pm_ret(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = 3 * x + 1;
+    if (c) return cq_measure(y); int z = y ^ 5; return cq_measure(x) + cq_measure(z & 1); }
+""")
+        sp = spec("static_collapse", "int pm_join(int,double,int);int both(int,double,int);int kq(int,double,int);"
+                  "int pm_ret(int,double,int)",
+                  [("pm_join", ["int", "double", "int"]), ("both", ["int", "double", "int"]),
+                   ("kq", ["int", "double", "int"]), ("pm_ret", ["int", "double", "int"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        for smp, gates, reads in [(S(0, i32(5), HALF, i32(1)), 2, 0), (S(0, i32(5), HALF, i32(0)), 1, 0),
+                                  (S(1, i32(5), HALF, i32(1)), 1, 1), (S(1, i32(5), HALF, i32(0)), 1, 1),
+                                  (S(2, i32(5), HALF, i32(1)), 2, 0), (S(2, i32(5), HALF, i32(0)), 2, 0),
+                                  # measured on one path only: a reader after it on that path still collapses
+                                  (S(3, i32(5), HALF, i32(0)), 1, 1), (S(3, i32(5), HALF, i32(1)), 1, 0)]:
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+
     def test_measure_in_a_loop_body(self):
         """Owner, cq-2z29a, cq-47f8h: a loop-carried value with a rail incoming is a rail. What is computed from the measured rail alone is a read on the
         later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement."""
