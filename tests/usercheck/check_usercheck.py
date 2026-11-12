@@ -32,7 +32,7 @@ Fails on any of:
             with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
-            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw). --rv3 runs this group alone
+            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw); raise with no handler, its field wrong (cq-njo63); signal's previous handler where none was registered (cq-t0xnq). --rv3 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -357,6 +357,12 @@ RV3 = {
     # cq-du1gw (CR rule 16, 778-787): fesetround's own body in the module is the host's fesetround on both sides (lowered
     # by cq-rrc52's pass, nr-E2; green once that pass's Common.cpp is in the tree)
     "du1gw": [],
+    # cq-njo63 (CR rule 16's signal table, CR 1356-1358): raise with no handler registered is the effect entry raise, the
+    # stand-in on both sides (no host SIGTERM in the C oracle); its field wrong
+    # cq-t0xnq (CR rule 16's signal table): signal's previous handler is SIG_DFL where the program registered none, never
+    # the C oracle runtime's own SIGSEGV handler; the result read as 1 instead
+    "t0xnq": [("prev", r"%9 = call i32 @cq_template_zext_i1_to_i32\(i32 %8\)", "%9 = call i32 @cqrt_alloc_i32(i32 1)")],
+    "njo63": [("signo", r"@cqrt_tape_write_i32_lit\(i32 %3, i32 15\)", "@cqrt_tape_write_i32_lit(i32 %3, i32 14)")],
     "glob": [("classical", r"%9 = shl nsw i32 %0, 1", "%9 = shl nsw i32 %0, 2"),
              ("measured", r"%8 = call i32 @cqrt_alloc_i32\(i32 %7\)",
               "%bad = add i32 %7, 1\n  %8 = call i32 @cqrt_alloc_i32(i32 %bad)")],

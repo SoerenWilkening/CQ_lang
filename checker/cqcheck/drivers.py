@@ -1310,7 +1310,8 @@ def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hoo
 # (checker/rt/fx_standin.h, checker/oracle/fx_call.h). effect_callees says which declared callees of a
 # module that is; rename_effects sends their calls to `cqd_fx_<name>`, which effect_wrappers_ir defines.
 # Real on both sides: what no effect entry stands for: the allocator and the string and memory functions
-# (lifted or the oracle's), libm, the fp environment, setjmp, signals and raise, program end, threads, and
+# (lifted or the oracle's), libm, the fp environment (rule 23's functions, C17 7.6, by name: feof and ferror are stream
+# calls, INPUT entries of fx_standin.h; cq-muafq), setjmp, signals and raise, program end, threads, and
 # the printing family, whose text is compared as stdout. Bodies the driver line writes (203's ext_fill) and
 # the corpus's rule 27 roots (rulings Q6) are no host calls either.
 
@@ -1318,7 +1319,7 @@ FX_PREFIX = "cqd_fx_"
 _REAL = re.compile(
     r"^(llvm\.|cq_|cqrt_|cqd_|__|malloc$|calloc$|realloc$|reallocf$|free$|aligned_alloc$|valloc$|posix_memalign$"
     r"|mem(cpy|move|set|cmp|chr)$|memset_pattern(4|8|16)$|bcmp$|bzero$|bcopy$|str[a-z]*$|wcs[a-z]*$|wmem[a-z]*$"
-    r"|fe[a-z]+$|_?setjmp$|_?longjmp$|sig[a-z]*$|raise$|abort$|exit$|_exit$|_Exit$|atexit$|pthread_[a-z_]+$|thrd_[a-z]+$"
+    r"|fe(clearexcept|getexceptflag|raiseexcept|setexceptflag|testexcept|getround|setround|getenv|holdexcept|setenv|updateenv)$|_?setjmp$|_?longjmp$|sig[a-z]*$|raise$|abort$|exit$|_exit$|_Exit$|atexit$|pthread_[a-z_]+$|thrd_exit$"
     r"|v?[sf]?n?printf$|v?asprintf$|v?f?wprintf$"
     r"|(a?(sin|cos|tan)h?|atan2|exp(2|10|m1)?|log(2|10|1p|b)?|pow|sqrt|cbrt|hypot|fabs|floor|ceil|round|trunc|rint|nearbyint"
     r"|ll?rint|ll?round|fmod|remainder|remquo|ldexp|frexp|modf|scalbl?n|ilogb|copysign|nan|nextafter|nexttoward|fdim|fmax|fmin"
