@@ -12,6 +12,7 @@
 //   4. reachability from the roots, twins and _pure variants, masks, names, the published list.
 // No state outlives the call: computeTaint is safe to call twice on one module (cq-5k5, option a).
 #include "TaintImpl.h"
+#include "../bus/BusInternal.h"
 #include "cq/Order.h"
 
 #include <algorithm>
@@ -2041,19 +2042,16 @@ void Analyzer::transferCall(CallBase &CB) {
       setL(&CB, allLanes(rn));
     return;
   }
-  // Allocation, deallocation (rule 16): heap objects.
-  if (isAllocationFn(&CB, st.TLI.get())) {
-    if (Value *Old = getReallocatedOperand(&CB)) {
-      setL(&CB, L(Old));
-      cur->anyQuantum = true;   // rule 16 realloc: __cq_alloc and the rule-22 copy
-      return;
-    }
+  // Allocation, deallocation (rule 16): heap objects, recognised as the lowering recognises them (bus::hostAllocKind:
+  // the declaration's allockind, or the rule-16 name). The result is __cq_alloc's classical address, realloc's too.
+  AllocFnKind ak = bus::hostAllocKind(*G);
+  if ((ak & AllocFnKind::Free) != AllocFnKind::Unknown)
+    return;
+  if ((ak & (AllocFnKind::Alloc | AllocFnKind::Realloc)) != AllocFnKind::Unknown) {
     setL(&CB, Lanes(rn));
-    cur->anyQuantum = true;   // __cq_alloc (rule 16)
+    cur->anyQuantum = true;   // __cq_alloc (rule 16); realloc: and the rule-22 copy
     return;
   }
-  if (getFreedOperand(&CB, st.TLI.get()))
-    return;
   // setjmp and longjmp outside rule 24's pairing are host calls: a classical result, no gate and no tape entry
   // (abort_i1 under a quantum predicate); the pairing is rewritten before the final taint.
   if (CB.hasFnAttr(Attribute::ReturnsTwice))
