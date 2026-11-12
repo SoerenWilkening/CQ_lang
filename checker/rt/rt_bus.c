@@ -36,6 +36,7 @@
  * control; host is 1 when every cell of the access is HOST after it. At the end of the shot
  * {"ev":"cells","q":[[addr,byte],...]} lists the QUANTUM cells by address. __cqe_out_mem logs one named output
  * read from the bus: {"ev":"out_mem","name":..,"w":"i<8*bytes>","v":..}, with no rail and no measurement. */
+#include <dlfcn.h>
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <stdint.h>
@@ -547,18 +548,20 @@ void cqe__bus_cell_state(uint64_t a, int *q, uint8_t *v, int *known) {
  * address order, recorded by cqe__q2_alloc: cq_host.c hands them out upward and never reuses one; the table is in __DATA, so a sample's restore puts
  * it back with the arena); for any other address (a global, a host-stack local) the 8 cells from it, an approximation.
  * Reach through a global or a stored pointer is not detected (the ruling's stated limit). */
-void *__cq_alloc(int64_t size, int64_t align) __attribute__((weak));
+
 void cqe_log(const char *json_object);
 #define Q2_BLOCKS 16384
 static uint64_t q2_lo[Q2_BLOCKS], q2_hi[Q2_BLOCKS];
 static int q2_n, q2_full;
 
 void *cqe__q2_alloc(int64_t size, int64_t align) { /* run.py host_effects_module sends __cq_alloc here */
-  if (!__cq_alloc) {
+  static void *(*alloc)(int64_t, int64_t);
+  if (!alloc) alloc = (void *(*)(int64_t, int64_t))dlsym(RTLD_DEFAULT, "__cq_alloc"); /* bundle/host/cq_host.c */
+  if (!alloc) {
     fprintf(stderr, "cq: rt_bus: __cq_alloc without bundle/host/cq_host.c\n");
     abort();
   }
-  void *p = __cq_alloc(size, align);
+  void *p = alloc(size, align);
   if (p && size > 0) {
     if (q2_n < Q2_BLOCKS && (!q2_n || (uint64_t)(uintptr_t)p >= q2_hi[q2_n - 1])) {
       q2_lo[q2_n] = (uint64_t)(uintptr_t)p, q2_hi[q2_n] = (uint64_t)(uintptr_t)p + (uint64_t)size;

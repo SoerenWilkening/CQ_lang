@@ -775,9 +775,16 @@ static void advance(void) {
  * does not know, or an argument of a known one that is no buffer, string, format or va_list role): rt_bus.c logs it
  * when the object at that address holds a QUANTUM cell at the call. A field is a candidate when it is a classical-valued
  * 64-bit word (a pointer is an i64 field). */
-void cqe__q2_check(const char *name, uint64_t a);
+/* rt_bus.c's, looked up at run time: a test runtime may link this file without rt_bus.c */
+static void (*q2_check_fn(void))(const char *, uint64_t) {
+  static void (*fn)(const char *, uint64_t);
+  static int looked;
+  if (!looked) looked = 1, fn = (void (*)(const char *, uint64_t))dlsym(RTLD_DEFAULT, "cqe__q2_check");
+  return fn;
+}
 static void q2_fields(const event *e) {
-  if (e->k != E_EFFECT) return;
+  void (*cqe__q2_check)(const char *, uint64_t) = q2_check_fn();
+  if (e->k != E_EFFECT || !cqe__q2_check) return;
   const cq_fx_ent *ent = cq_fx_find(e->str);
   for (int i = 0; i < e->nfields; i++) {
     const field *f = &e->fields[i];
