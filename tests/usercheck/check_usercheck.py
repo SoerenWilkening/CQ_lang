@@ -3,7 +3,7 @@
 
 Fails on any of:
   program   a small C program (src/*.c) compiled by cqcc -S is not green under `cqcheck user` with its
-            entry (exit 0)
+            entry (exit 0); hret: a handle-returning entry beside a replayed table clone (cq-xazgw)
   corpus    a CQ_spec example's reference lowered.ll is not green against its .O1.ll, with every entry
             of its drivers.txt line and no quantum flags (default 01, 02, 42, 60, 61, 120, 133 and
             117 at --samples 200; --examples NN_name[:samples]... for others). 60 takes a pointer to
@@ -50,7 +50,7 @@ ROOT = HERE.parents[1]
 CQCC = ROOT / "driver" / "cqcc"
 SRC = HERE / "src"
 PROGRAMS = [("classical", "poly"), ("qmain", "main"), ("phase", "phase_if"), ("fromptr", "from_ptr"),
-            ("fpq", "fpq")]
+            ("fpq", "fpq"), ("hret", "a")]
 DEFAULT_EXAMPLES = ["01_add_classical_const", "02_add_quantum_quantum", "42_measure_one_of_two", "60_qft",
                     "61_invert_theta_and_call", "120_multidim_array", "133_state_prep_overwrite",
                     "117_qpe_counting:200"]

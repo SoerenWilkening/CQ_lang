@@ -568,8 +568,8 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
+        tot += hret_names_ir(handle_returning_fns(canon))   # before the write: lowered.steps.ll is built from the file (cq-xazgw)
         (tmp / "lowered.tot.ll").write_text(tot)
-        tot += hret_names_ir(handle_returning_fns(canon))
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
         raise BuildError(f"cq: unimplemented: {e}")
