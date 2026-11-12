@@ -3443,8 +3443,54 @@ std::optional<Fn> outputFunction(const Function &F) {
   return std::nullopt;
 }
 
+// cq-xwv7r (owner ruling 2026-11-12: the reference follows musl's source): musl's vfprintf and vfwprintf work on a copy of
+// the caller's va_list (vfprintf.c:675, vfwprintf.c:357), so after vprintf(fmt, ap) the caller's ap is where it was; the
+// host's (macOS) advances it. The calls the host performs for the C program (drivers._REAL: vprintf, vfprintf, vwprintf,
+// vfwprintf; vdprintf is the stand-in, which reads no argument) are given a copy (llvm.va_copy into an entry-block
+// va_list, llvm.va_end after the call), so the caller's ap stays as musl leaves it. Returns whether it changed M.
+bool copyHostVaLists(Module &M) {
+  SmallVector<CallBase *, 8> sites;
+  for (Function &G : M)
+    for (Instruction &I : instructions(G)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
+      if (!F || !F->isDeclaration() || CB->getFunctionType() != F->getFunctionType())
+        continue;
+      StringRef n = F->getName();
+      if (n.starts_with("\01_"))
+        n = n.drop_front(2);
+      if (n != "vprintf" && n != "vfprintf" && n != "vwprintf" && n != "vfwprintf")
+        continue;
+      std::optional<Fn> o = outputFunction(*F);
+      if (o && (o->kind == Kind::VFmt || o->kind == Kind::VWFmt))
+        sites.push_back(CB);
+    }
+  if (sites.empty())
+    return false;
+  LLVMContext &C = M.getContext();
+  PointerType *ptr = PointerType::get(C, 0);
+  // x86-64 SysV va_list: [1 x { i32, i32, ptr, ptr }] (CR §0: x86-64 only)
+  Type *tag = StructType::get(C, {Type::getInt32Ty(C), Type::getInt32Ty(C), ptr, ptr});
+  Type *vaList = ArrayType::get(tag, 1);
+  for (CallBase *CB : sites) {
+    Fn o = *outputFunction(*cast<Function>(CB->getCalledOperand()->stripPointerCasts()));
+    unsigned ai = o.first + 1;
+    Function &fn = *CB->getFunction();
+    IRBuilder<> E(&fn.getEntryBlock(), fn.getEntryBlock().getFirstInsertionPt());
+    AllocaInst *copy = E.CreateAlloca(vaList, nullptr, "cqo.va.copy");
+    copy->setAlignment(Align(16));
+    IRBuilder<> B(CB);
+    B.CreateIntrinsic(Intrinsic::vacopy, {ptr}, {copy, CB->getArgOperand(ai)});
+    CB->setArgOperand(ai, copy);
+    B.SetInsertPoint(CB->getNextNode());
+    B.CreateIntrinsic(Intrinsic::vaend, {ptr}, {copy});
+  }
+  return true;
+}
+
 struct Pass : PassInfoMixin<Pass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    bool copied = copyHostVaLists(M);
     SmallVector<CallBase *, 16> sites;
     for (Function &G : M)
       for (Instruction &I : instructions(G)) {
@@ -3456,7 +3502,7 @@ struct Pass : PassInfoMixin<Pass> {
           sites.push_back(CB);
       }
     if (sites.empty())
-      return PreservedAnalyses::all();
+      return copied ? PreservedAnalyses::none() : PreservedAnalyses::all();
     LLVMContext &C = M.getContext();
     PointerType *ptr = PointerType::get(C, 0);
     Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);

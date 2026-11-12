@@ -372,6 +372,10 @@ RV3 = {
     # cq-ggcbc (CR 1356-1358): a bodiless `__` callee (__srget) is the stand-in on the C side too, never the host's
     "ggcbc": [("plus", r"%4 = tail call i32 @__srget\(ptr noundef null\) #2",
                "%srg = tail call i32 @__srget(ptr noundef null) #2\n  %4 = add i32 %srg, 256")],
+    # cq-xwv7r: vprintf / vwprintf leave the caller's va_list where musl leaves it (the C side passes the host a copy);
+    # both FAILed on every sample before
+    "xwv7r": [],
+    "xwv7r_w": [],
     "glob": [("classical", r"%9 = shl nsw i32 %0, 1", "%9 = shl nsw i32 %0, 2"),
              ("measured", r"%8 = call i32 @cqrt_alloc_i32\(i32 %7\)",
               "%bad = add i32 %7, 1\n  %8 = call i32 @cqrt_alloc_i32(i32 %bad)")],
