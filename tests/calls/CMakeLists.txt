@@ -5,7 +5,7 @@ cq_add_unit_test(calls_finalize_tests finalize_tests.cpp)
 
 set(CQ_CALLS_CASES
   noop_no_clone noop_clone_namespace_absent drop_retargeted keep_classical_caller keep_address_taken
-  keep_used_global drop_mutual_recursion drop_chain keep_live_chain drop_external_original keep_inplace_entry
+  keep_used_global drop_mutual_recursion drop_chain keep_live_chain keep_external_original keep_inplace_entry
   drop_dead_references keep_shared_references declared_clone_only twin_only
   twin_define twin_fieldwise twin_chain twin_pure twin_declared twin_return_phi)
 foreach(c ${CQ_CALLS_CASES})

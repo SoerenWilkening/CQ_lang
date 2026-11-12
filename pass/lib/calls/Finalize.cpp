@@ -13,7 +13,8 @@
 //               functions (CR §1.4: a fn ending in _<binary>_b<N>) is an internal error, not a
 //               guess. A clone whose fn has no body here (rule 27 declared clones, libm names of
 //               intrinsics with no injected body) has no original.
-//   Live.       An original with a use anywhere but inside an original's body (a call or any other
+//   Live.       An externally visible original (cq-ntvv, CR §1.4: only an internal function is
+//               dropped), an original with a use anywhere but inside an original's body (a call or any other
 //               use: classical call sites, address-taken function pointers, global initializers,
 //               @llvm.used) is live, and so is every original a live original's body uses. The
 //               rest have no classical caller left: every call was retargeted to a clone, or comes
@@ -139,10 +140,10 @@ bool fromMeasurement(Value *v) {
 
 
 // The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
-// they read or write the host flags only. A program body of that name is replayed as any body.
+// they read or write the host flags only, a body the bundle has for one included (rule 16, cq-rrc52).
 bool hostFlagCall(const CallBase &CB) {
   const Function *G = CB.getCalledFunction();
-  return G && G->isDeclaration() && (G->getName() == "fetestexcept" || G->getName() == "feclearexcept" || G->getName() == "feraiseexcept") &&
+  return G && hostCallee(*G) && (G->getName() == "fetestexcept" || G->getName() == "feclearexcept" || G->getName() == "feraiseexcept") &&
          CB.arg_size() == 1 && CB.getType()->isIntegerTy(32) && CB.getArgOperand(0)->getType()->isIntegerTy(32);
 }
 
@@ -851,6 +852,11 @@ void finalize(Module &M) {
   // musl exp's static specialcase, reached only from exp's dropped original): it follows the liveness below.
   for (Function *O : originals)
     if ((!O->hasLocalLinkage() || O->hasAddressTaken()) && rewrittenInPlace(*O) && live.insert(O).second)
+      work.push_back(O);
+  // cq-ntvv (CR §1.4: "An internal function with no remaining use is dropped"): only an internal one. An externally
+  // visible original is the program's exported symbol whatever its in-module callers became.
+  for (Function *O : originals)
+    if (!O->hasLocalLinkage() && live.insert(O).second)
       work.push_back(O);
   for (Function *O : originals)
     for (User *U : O->users()) {

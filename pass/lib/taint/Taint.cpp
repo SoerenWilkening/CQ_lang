@@ -438,6 +438,28 @@ FnInfo &Analyzer::fn(const Function *F) {
   ReversePostOrderTraversal<Function *> RPOT(&MF);
   for (BasicBlock *BB : RPOT)
     info->rpo.push_back(BB);
+  {
+    std::vector<const BasicBlock *> post;
+    SmallPtrSet<const BasicBlock *, 32> seen;
+    std::vector<std::pair<const BasicBlock *, unsigned>> stack;
+    const BasicBlock *E = &MF.getEntryBlock();
+    seen.insert(E);
+    stack.push_back({E, E->getTerminator()->getNumSuccessors()});
+    while (!stack.empty()) {
+      auto &[b, k] = stack.back();
+      if (k == 0) {
+        post.push_back(b);
+        stack.pop_back();
+        continue;
+      }
+      const BasicBlock *s = b->getTerminator()->getSuccessor(--k);
+      if (seen.insert(s).second)
+        stack.push_back({s, s->getTerminator()->getNumSuccessors()});
+    }
+    unsigned n = 0;
+    for (auto it = post.rbegin(); it != post.rend(); ++it)
+      info->walk[*it] = n++;
+  }
   // Direct control dependence (Ferrante et al.): for an edge A -> S of a branching A, every block on
   // the post-dominator tree path from S up to (excluding) ipdom(A) is control dependent on A.
   //
@@ -2054,14 +2076,14 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   // Rule 16 Signal table: signal is the bus load of the cell and the bus store of the handler; raise loads the cell and
   // calls through the loaded address rail by rule 19. No handler is tracked.
-  if (G->isDeclaration() && G->getName() == "signal" && actuals.size() == 2) {
+  if (hostCallee(*G) && G->getName() == "signal" && actuals.size() == 2) {
     setL(&CB, allLanes(rn));
     cur->busLoad = true;
     cur->writesOuter = true;
     cur->anyQuantum = true;
     return;
   }
-  if (G->isDeclaration() && G->getName() == "raise" && actuals.size() == 1) {
+  if (hostCallee(*G) && G->getName() == "raise" && actuals.size() == 1) {
     if (rn && !CB.use_empty()) {
       setL(&CB, allLanes(rn));
       cur->readsEffect = true;
@@ -2078,7 +2100,7 @@ void Analyzer::transferCall(CallBase &CB) {
     StringRef pn = G->getName();
     if (pn.starts_with("\x01_"))
       pn = pn.drop_front(2);
-    if (G->isDeclaration() && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
+    if (hostCallee(*G) && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
                                pn == "pthread_mutex_trylock" || pn == "pthread_mutex_init" || pn == "pthread_mutex_destroy"))
       return;
   }
@@ -2092,7 +2114,8 @@ void Analyzer::transferCall(CallBase &CB) {
         return;
       }
   }
-  // cq-pt57w (rule 16): a stream call by name is the host boundary although the bundle has its body, never lifted.
+  // cq-pt57w, cq-rrc52 (rule 16): an interface rule 16 names is the host boundary although the bundle has its body, never
+  // lifted.
   if (!hostCallee(*G)) {
     lift(CB, G, actuals, false);
     return;
@@ -2406,6 +2429,19 @@ void Analyzer::analyze(SpecState &S) {
       fenvCur = BB->isEntryBlock() ? fenvstate::kIdentity : 0;
       for (const BasicBlock *Pr : predecessors(BB))
         fenvCur |= S.fenvOut.lookup(Pr);
+      // cq-ndwfr, cq-c07bk (rules 8, 9, 23): in a function with a quantum branch the spine emits the blocks along one
+      // walk L, the arms of a quantum branch one after another, a block whose classical factor is not established
+      // entered from the block before it in L behind a classical guard (spine/Construct.cpp). eff-fenv's state is
+      // read over those output paths: a fact an earlier block makes a rail (fesetround under a predicate: MODE' =
+      // select(p, r, MODE)) is a rail at the start of every later block (a merge over handles). A block joins the
+      // state at the end of every block before it in L that does not reach it in the CFG.
+      if (S.taintedTerm.size())
+        for (const BasicBlock *O : fi.rpo) {
+          if (O == BB || fi.walk.lookup(O) >= fi.walk.lookup(BB) || !S.fenvOut.lookup(O))
+            continue;
+          if (!isPotentiallyReachable(O, BB, nullptr, fi.DT.get(), fi.LI.get()))
+            fenvCur |= S.fenvOut.lookup(O);
+        }
       for (const Instruction &CI : *BB) {
         Instruction &I = const_cast<Instruction &>(CI);
         curUser = &I;
@@ -3462,6 +3498,8 @@ bool TaintInfo::listedRoot(const llvm::Function &F) const {
 }
 
 bool TaintInfo::loadsBus(const Specialization &S) const { return stateOf(needImpl(impl), S)->busLoadT; }
+
+uint8_t TaintInfo::fenvAtEntry(const Specialization &S) const { return stateOf(needImpl(impl), S)->fenvIn & 3; }
 
 bool TaintInfo::noTwinByEffects(const Specialization &S) const {
   const SpecState *SS = stateOf(needImpl(impl), S);

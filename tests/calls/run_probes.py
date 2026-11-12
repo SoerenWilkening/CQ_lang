@@ -370,6 +370,22 @@ CASES = [
     ("fe3", "fe3", [], "pass", []),
     ("fe2", "fe2", [], "pass", []),
     ("fe6", "fe6", [], "pass", []),
+    # cq-ntvv (CR §1.4: only an internal function with no remaining use is dropped): an exported original whose only in-module
+    # call was retargeted to its clone stays, its own body.
+    ("extern_original_kept", "e", [], "pass", [r"define i32 @inner\(i32 noundef %0, i32 noundef %1\)"]),
+    # cq-rrc52 (CR rule 16): a body the bundle has for fesetround is never lifted for the call: the quantum call is rule 23's
+    # rail operation (it reads the host mode with fegetround), no __cq_q_fesetround clone. "lower": the C oracle runs the
+    # program's fesetround body where the lowered program has rule 23's call by name (return 1 against the body's -1, the
+    # mode rail unrecognised as kept): the checker gap is cq-du1gw.
+    ("fenv_body_host", "e", [], "lower", [r"call i32 @fegetround\(\)", r"define [^\n]*@fesetround\("]),
+    # cq-ndwfr (rule 23): a strictfp body's 82-ABI clone reached from a caller with no fenv state reads FLAGS (the empty
+    # rail it is passed: fetestexcept is the host part alone, as taint has it); a fact one arm of a quantum branch makes a
+    # rail (fesetround under the predicate) is a rail in the sibling arm the spine runs after it (rules 9, 23).
+    ("fenv_clone_empty_flags", "e", [], "pass", [r"call i32 @fetestexcept\(i32 32\)"]),
+    ("fenv_sibling_arm_mode", "e", [], "pass", [r"cq_template_fdiv_f64_\w*rmq\w*\("]),
+    # cq-c07bk (rules 8, 9, 23): the arm the spine linearizes first calls a dynamic-mode body with classical arguments; the
+    # later arm's fesetround under the predicate does not reach it: the call is the own symbol, as it stands.
+    ("fenv_later_arm_mode", "e", [], "pass", [r"call double @nx\(double"]),
 ]
 
 

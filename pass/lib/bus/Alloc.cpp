@@ -174,7 +174,7 @@ std::optional<uint64_t> rangeBound(LoweringContext &ctx, const Value *V) {
 
 AllocFnKind hostAllocKind(const Function &F) {
   AllocFnKind k = F.getAttributes().getFnAttrs().getAllocKind();
-  if (k != AllocFnKind::Unknown || !F.isDeclaration())
+  if (k != AllocFnKind::Unknown || !hostCallee(F))
     return k;
   StringRef n = F.getName();
   if (n == "malloc" || n == "calloc" || n == "aligned_alloc")

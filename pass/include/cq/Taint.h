@@ -88,6 +88,9 @@ public:
   bool listedRoot(const llvm::Function &) const;
   // Rule 18: the clone of S loads from the bus, itself or through a callee (its call is a load for rule 5).
   bool loadsBus(const Specialization &) const;
+  // Rule 23 (cq-ndwfr): the environment facts that may be quantum at S's entry, joined over its callers: bit 0 the
+  // mode, bit 1 the flags. A clear bit is a fact every caller holds classically (an empty flags rail, a literal mode).
+  uint8_t fenvAtEntry(const Specialization &) const;
   // Rule 18 with rulings Q3: S has a tainted measurement or reads the result rail of an effect entry, itself or through
   // a callee: no twin. Writing memory (bus::writesMemory) is the third reason.
   bool noTwinByEffects(const Specialization &) const;

@@ -391,8 +391,9 @@ define internal fastcc i32 @__cq_q_h_1(i32 %x) {
 }
 )";
 
-// 170-shaped: an externally visible injected-library original whose every call was retargeted is
-// dropped (CR §1.4 drops __muldc3); a bounds clone (§1.4 _b) and a libm-named clone are read too.
+// 170-shaped: an externally visible injected-library original whose every call was retargeted stays
+// (cq-ntvv, CR §1.4: only an internal function with no remaining use is dropped); a bounds clone (§1.4 _b)
+// and a libm-named clone are read too.
 const char *kExternal = R"(
 define { double, double } @entry(double %a, double %b, i32 %h, i32 %n) {
   %r = call fastcc { i32, i32 } @__cq_q___muldc3_1100(i32 %h, i32 %h, double %a, double %b)
@@ -1106,7 +1107,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"drop_chain", [] { expectDropped("drop_chain", kChain, {"f", "g", "h"}); }},
     {"keep_live_chain", [] { expectDropped("keep_live_chain", kLiveChain, {}); }},
     {"keep_inplace_entry", [] { expectDropped("keep_inplace_entry", kInPlace, {}); }},   // cq-i9wk
-    {"drop_external_original", [] { expectDropped("drop_external_original", kExternal, {"__muldc3", "memcmp"}); }},
+    {"keep_external_original", [] { expectDropped("keep_external_original", kExternal, {}); }},
     {"drop_dead_references",
      [] {
        expectDropped("drop_dead_references", kDeadRefs,
