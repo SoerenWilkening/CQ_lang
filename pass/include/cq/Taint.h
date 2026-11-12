@@ -48,7 +48,12 @@ struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = f
                         bool plain = false;
                         // §1.4: the table clone _t / _t_ctl: every scalar formal a handle, then the cutoff K as a
                         // classical i32, every result a handle (rule 19). Reached through a row of the clone table only.
-                        bool table = false; };
+                        bool table = false;
+                        // §1.4, rule 23 (owner 2026-11-12, cq-a9ij3): the caller's rounding mode as a trailing parameter of a
+                        // body that rounds in the dynamic mode: 0 none (the literal 0 of the chain's root, or 82's classical
+                        // mode parameter), 1 `_rm` (a classical i32), 2 `_rmq` (a mode rail; every result a rail). Never the
+                        // own symbol when set, the all-zero mask included.
+                        uint8_t rm = 0; };
 struct TaintOptions { std::vector<abi::CloneSpec> roots;   // library-build and stress roots
                       std::vector<std::string> listed; };   // rule 27: the bodiless functions the root lists name
 // Rule 23, a fenv call's object: the confined alloca (host-resident, its quantum part SSA), a constant (an empty part),

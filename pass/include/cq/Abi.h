@@ -41,7 +41,8 @@ llvm::FunctionCallee declare(llvm::Module &, const CoreSpec &);
 std::optional<CoreSpec> parseCore(llvm::StringRef symbol);
 struct CloneSpec { std::string fn; Mask mask; std::vector<uint64_t> bounds;
                    bool ctl = false, pure = false; bool unc = false;
-                   bool table = false; };   // CR §1.4: the table clone _t (kinds _t, _t_ctl, _t_unc, _t_ctl_unc)
+                   bool table = false;      // CR §1.4: the table clone _t (kinds _t, _t_ctl, _t_unc, _t_ctl_unc)
+                   uint8_t rm = 0; };       // CR §1.4 (owner 2026-11-12, cq-a9ij3): 1 _rm (classical mode), 2 _rmq (mode rail)
 std::string name(const CloneSpec &);
 std::optional<CloneSpec> parseClone(llvm::StringRef symbol);
 std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 lowercase hex of sha256(asm string as LLVM spells it, one NUL byte, constraint string)

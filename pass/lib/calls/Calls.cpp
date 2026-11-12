@@ -97,12 +97,12 @@ const TaintInfo &taintOf(const Specialization &S) {
 }
 
 abi::CloneSpec cloneSpecOf(const Specialization &S) {
-  return abi::CloneSpec{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table};
+  return abi::CloneSpec{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table, S.rm};
 }
 
 bool sameFields(const abi::CloneSpec &a, const abi::CloneSpec &b) {
   return a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-         a.unc == b.unc && a.table == b.table;
+         a.unc == b.unc && a.table == b.table && a.rm == b.rm;
 }
 
 // The CR §1.4 name of cs; unimplemented when the right-to-left reading does not give cs back.
@@ -598,6 +598,12 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     Value *block = variadicBlock(ctx, CB, nFixed);
     args.push_back(block);
     r.ops.push_back(Operand{block, false});
+  }
+  if (fenv::cloneTakesMode(ctx.T, S)) {
+    // CR §1.4, rule 23 (owner 2026-11-12, cq-a9ij3): _rm / _rmq, the caller's mode trails the formals' fields.
+    Operand m = fenv::modeArg(ctx, CB, S);
+    args.push_back(m.v);
+    r.ops.push_back(m);
   }
   if (fenv::cloneCarriesEnv(ctx.T, S)) {
     // E1 (82): the mode and flags trail the formals' fields.
@@ -1242,6 +1248,8 @@ Function *materialize(Module &M, const Specialization &S) {
   Type *rt = cloneResultType(C, rl, S.F->getReturnType());
   if (S.table)
     ps.push_back(Type::getInt32Ty(C));   // §1.4: the cutoff K
+  if (fenv::cloneTakesMode(T, S))
+    ps.push_back(Type::getInt32Ty(C));   // §1.4 (cq-a9ij3): _rm's classical mode, _rmq's mode handle
   if (fenv::cloneCarriesEnv(T, S)) {
     // E1 (CR rule 23, 82): the caller's mode and flags trail the parameters; the new flags handle is
     // the result's last field: i32 alone for an otherwise void clone, {result, i32} for a scalar result,

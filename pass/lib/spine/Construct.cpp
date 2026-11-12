@@ -2621,6 +2621,12 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         internalError("spine: a variadic clone with no block parameter", C);
       sh.varargs.push_back(Operand{C->getArg(p++), false});
     }
+    if (fenv::cloneTakesMode(ctx.T, S)) {
+      // CR §1.4, rule 23 (owner 2026-11-12, cq-a9ij3): _rm / _rmq, the caller's mode, one trailing parameter.
+      if (p >= C->arg_size())
+        internalError("spine: a clone with a mode word without its mode parameter", C);
+      fenv::bindCloneMode(ctx, C->getArg(p++));
+    }
     if (fenv::cloneCarriesEnv(ctx.T, S)) {
       // E1 (CR rule 23, 82): the caller's mode and flags, the two trailing parameters.
       if (p + 2 > C->arg_size())

@@ -108,8 +108,8 @@
 // LIMITS. Awaiting owner rulings (SPEC_ISSUES, each an internal compiler error naming its entry):
 // a classical call
 // of a body that reads, clears, saves or rounds in the environment while its quantum part is live;
-// a quantum MODE passed into or returned from a clone (82's ABI carries a classical mode and returns
-// only the flags; the mode clone's name is owed, CR §8); a constrained op with no rule 4 template
+// a quantum MODE a clone makes and returns (82's ABI returns only the flags; a mode passed INTO a clone is
+// the owner's 2026-11-12 ruling cq-a9ij3: _rm / _rmq, cloneTakesMode and envArgs); a constrained op with no rule 4 template
 // (a libm intrinsic: its clone's mode parameter is the same owed name). Open (cq-v1fu, needs the loop module): a
 // quantum change inside a classically bounded loop (its loop-carried state).
 #include "cq/Effects.h"
@@ -158,6 +158,9 @@ std::array<Operand, 2> envArgs(LoweringContext &, CallBase &site);
 void afterCloneCall(LoweringContext &, CallBase &site, Value *flagsOut);
 void bindCloneEnv(LoweringContext &, Argument *mode, Argument *flags);
 Value *cloneExitFlags(LoweringContext &, ReturnInst &);
+bool cloneTakesMode(const TaintInfo &T, const Specialization &S);
+Operand modeArg(LoweringContext &, CallBase &site, const Specialization &callee);
+void bindCloneMode(LoweringContext &, Argument *mode);
 
 namespace {
 
@@ -375,7 +378,7 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
 // is exact).
 bool sameSpec(const Specialization &a, const Specialization &b) {
   return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure &&
-         a.bounds == b.bounds;
+         a.bounds == b.bounds && a.rm == b.rm;
 }
 
 bool callsSpec(const TaintInfo &T, const Specialization &P, const Specialization &S) {
@@ -439,7 +442,9 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl
     return false;
   if (!seen.insert(&S).second)
     return false;   // a cycle of lifted calls: its bodies are judged where they are first reached
-  if (ownBodyTouchesFenv(*S.F) || readsReachedMode(T, S))
+  // Owner 2026-11-12 (cq-a9ij3): a body of round.dynamic ops taint reaches with the caller's mode (S.rm: _rm, _rmq) takes
+  // that mode alone; the reached-mode reading below stays for a clone taint gives no mode word.
+  if (ownBodyTouchesFenv(*S.F) || (!S.rm && readsReachedMode(T, S)))
     return true;
   // Rule 23 (ruling 2026-11-02): a body with the fenv state (FENV_ACCESS or -frounding-math: strictfp, or
   // a fenv call) that holds a strict op through a callee takes 82's ABI (169's __cq_q_logb_1(x, mode,
@@ -749,7 +754,7 @@ void bindResult(LoweringContext &ctx, const CallBase &CB, Operand r) {
 
 // The classical mode at the builder's point, read afresh (no cache).
 Value *classicalModeNow(LoweringContext &ctx, State &st) {
-  if (st.cloneBound && !st.cloneWritesMode)
+  if (st.cloneBound && !st.cloneWritesMode && st.cloneMode)
     return st.cloneMode;   // E1: the caller's mode, which the clone does not change
   if (!st.cloneBound && !accessesEnv(*ctx.S.F))
     return i32(ctx, 0);    // a function without the fenv state runs in the default environment (169)
@@ -1351,7 +1356,7 @@ bool cacheValid(const State &st, const Instruction &I) {
 
 // The classical dynamic mode at I.
 Value *classicalMode(LoweringContext &ctx, State &st, const Instruction &I) {
-  if (st.cloneBound && !st.cloneWritesMode)
+  if (st.cloneBound && !st.cloneWritesMode && st.cloneMode)
     return st.cloneMode;   // E1: the caller's mode
   if (!st.cloneBound && !accessesEnv(*ctx.S.F))
     return i32(ctx, 0);    // a function without the fenv state runs in the default environment: FE_TONEAREST
@@ -2473,13 +2478,57 @@ bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S) { return carri
 
 std::array<Operand, 2> envArgs(LoweringContext &ctx, CallBase &site) {
   State &st = state(ctx, site);
-  Part c = cur(ctx, st);
-  if (c.mode)
-    unimplemented(kIssueModeClone, &site);
-  Value *mode = classicalMode(ctx, st, site);
-  if (!c.flags)
+  // Owner 2026-11-12 (cq-a9ij3): the callee's mode is a rail (an _rmq clone with 82's ABI) or classical (its plain name).
+  uint8_t rm = 0;
+  for (auto &[G, cs] : ctx.T.calleeCandidates(site, ctx.S))
+    if (cs && cs->rm == 2)
+      rm = 2;
+  Specialization callee{};
+  callee.rm = rm;
+  Operand mode = modeArg(ctx, site, callee);
+  if (!cur(ctx, st).flags)
     setFlags(ctx, st, seed(ctx, st, i32(ctx, 0)));
-  return {Operand{mode, false}, Operand{cur(ctx, st).flags, true}};
+  return {mode, Operand{cur(ctx, st).flags, true}};
+}
+
+// Owner 2026-11-12 (cq-a9ij3; CR §1.4, rule 23): a clone taint gives a mode word (_rm, _rmq) that does not carry 82's
+// environment takes the caller's mode as its one trailing i32.
+bool cloneTakesMode(const TaintInfo &T, const Specialization &S) {
+  return S.rm && !S.isEntry() && S.F && !S.F->isDeclaration() && !S.table && !carriesEnvImpl(T, S);
+}
+
+// The caller's mode for the callee taint gives `site`, at the builder: the MODE handle for an _rmq callee (a classical
+// mode seeded as a rail where eff-fenv holds it classical), else the classical FE_* value (82's plain clone, _rm).
+Operand modeArg(LoweringContext &ctx, CallBase &site, const Specialization &callee) {
+  State &st = state(ctx, site);
+  Part c = cur(ctx, st);
+  if (callee.rm == 2) {
+    if (c.mode)
+      return Operand{c.mode, true};
+    return Operand{seed(ctx, st, classicalMode(ctx, st, site)), true};
+  }
+  if (c.mode)
+    unimplemented(kIssueModeClone, &site);   // taint gives a classical-mode callee where eff-fenv holds a rail
+  return Operand{classicalMode(ctx, st, site), false};
+}
+
+void bindCloneMode(LoweringContext &ctx, Argument *mode) {
+  if (!cloneTakesMode(ctx.T, ctx.S))
+    internalError("eff-fenv: bindCloneMode in a clone that takes no mode word", mode);
+  if (!mode->getType()->isIntegerTy(32))
+    internalError("eff-fenv: a clone's trailing mode parameter is not i32", mode);
+  State &st = state(ctx, ctx.S.F->getParent());
+  if (st.cloneBound)
+    internalError("eff-fenv: a clone's mode bound twice", mode);
+  st.cloneBound = true;
+  st.initial = Part{};
+  if (ctx.S.rm == 2) {
+    // _rmq: the mode is the caller's rail on every path (Role::UserRegister, never freed here).
+    ctx.unc().recordExternal(mode, Role::UserRegister);
+    st.initial.mode = mode;
+  } else {
+    st.cloneMode = mode;   // _rm: the classical mode its round.dynamic ops round in
+  }
 }
 
 void afterCloneCall(LoweringContext &ctx, CallBase &site, Value *flagsOut) {
@@ -2509,7 +2558,7 @@ void bindCloneEnv(LoweringContext &ctx, Argument *mode, Argument *flags) {
     internalError("eff-fenv: bindCloneEnv called twice for one clone", mode);
   ctx.unc().recordExternal(flags, Role::UserRegister);
   st.cloneBound = true;
-  st.cloneMode = mode;
+  st.cloneMode = ctx.S.rm == 2 ? nullptr : mode;
   for (const BasicBlock &BB : *ctx.S.F)
     for (const Instruction &I : BB)
       st.cloneWritesMode |= writesMode(I);
@@ -2519,6 +2568,11 @@ void bindCloneEnv(LoweringContext &ctx, Argument *mode, Argument *flags) {
   // alone, as taint has it, and the first raise makes FLAGS. The caller's rail stays the caller's (UserRegister).
   if (ctx.T.fenvAtEntry(ctx.S) & 2)
     st.initial.flags = flags;   // defined at the clone's entry: on every path
+  if (ctx.S.rm == 2) {
+    // Owner 2026-11-12 (cq-a9ij3): an _rmq clone with 82's ABI: its mode parameter is the caller's rail.
+    ctx.unc().recordExternal(mode, Role::UserRegister);
+    st.initial.mode = mode;
+  }
   st.any = true;
 }
 
@@ -2527,8 +2581,8 @@ Value *cloneExitFlags(LoweringContext &ctx, ReturnInst &ret) {
   if (!st.cloneBound)
     internalError("eff-fenv: cloneExitFlags in a clone whose environment was not bound", &ret);
   Part c = cur(ctx, st);
-  if (c.mode)
-    unimplemented(kIssueModeClone, &ret);
+  if (c.mode && c.mode != st.initial.mode)
+    unimplemented(kIssueModeClone, &ret);   // a mode rail the clone made: 82's ABI returns no mode
   if (!c.flags)
     return seed(ctx, st, i32(ctx, 0));
   return c.flags;

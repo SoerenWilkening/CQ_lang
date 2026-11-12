@@ -52,7 +52,14 @@ namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &
                        std::array<Operand, 2> envArgs(LoweringContext &, llvm::CallBase &site);
                        void afterCloneCall(LoweringContext &, llvm::CallBase &site, llvm::Value *flagsOut);
                        void bindCloneEnv(LoweringContext &, llvm::Argument *mode, llvm::Argument *flags);
-                       llvm::Value *cloneExitFlags(LoweringContext &, llvm::ReturnInst &); }
+                       llvm::Value *cloneExitFlags(LoweringContext &, llvm::ReturnInst &);
+                       // Owner 2026-11-12 (cq-a9ij3; CR §1.4, rule 23): a clone with a mode word (_rm, _rmq) that
+                       // does not carry 82's environment takes the caller's mode as ONE trailing i32 after its
+                       // formals (a classical FE_* value for _rm, the mode rail's handle for _rmq); the caller
+                       // passes modeArg, the clone binds it at its entry (bindCloneMode). No flags either way.
+                       bool cloneTakesMode(const TaintInfo &T, const Specialization &S);
+                       Operand modeArg(LoweringContext &, llvm::CallBase &site, const Specialization &callee);
+                       void bindCloneMode(LoweringContext &, llvm::Argument *mode); }
 namespace cq::conc   { void lowerVolatile(LoweringContext &, llvm::Instruction &);
                        void lowerThreadCall(LoweringContext &, llvm::CallBase &);
                        void lowerSetjmp(LoweringContext &, llvm::CallBase &);
