@@ -943,7 +943,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       call, where one is made, is still made and fails by itself); for a rail `sig` the flag
       `v` of that test by ordinary templates, the load and the store under `v` (ANDed with a
       predicate in scope), the result `select(v, loaded, −1)`, and a bus store of `EINVAL` (22) at
-      `__errno_location()` under `¬v` (ANDed likewise), as a lifted musl body sets `errno`.
+      `__errno_location()` under `¬v` (ANDed likewise), as a lifted musl body sets `errno`. The
+      accessor is the one the module declares or defines for its own `errno` reads
+      (`__errno_location`; `__error` in a Darwin-built module); a module with neither cannot
+      read `errno`, and the store is omitted (host code that reads `errno` itself, `perror`,
+      does not see `EINVAL`: a stated deviation).
       `raise(sig)` loads that cell and calls through the
       loaded address rail by rule 19, as a call of function type `void (i32)` with `sig` as
       its one actual, except that the complement branch (no registered function: the default
