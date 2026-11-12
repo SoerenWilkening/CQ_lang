@@ -477,8 +477,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto leaveUnit = make_scope_exit([&] { enclosing.pop_back(); });
   auto liveEdge = [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); };
   BasicBlock *X = U.multi() ? nullptr : U.cont;
-  if (c == 0)
-    internalError("loops-cutoff: a cutoff of 0 trips", H->getTerminator());
 
   // Sub-loops: a quantum-exit loop is a nested K-loop (its chain seeded by the trip predicate), a classically
   // bounded one (rule 14 case 1 or 3) a rolled classical loop inside each trip (cq-h5uj, classicalSub below).
@@ -2837,10 +2835,10 @@ std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Ta
   }
   if (!n)
     return std::nullopt;
+  // cq-tntm (CR rule 14: "The cutoff is min(K, B) ... `a_K` is kept only when B > K or no bound is known"): a header-tested
+  // loop whose header runs at most once runs no body, B = 0, a known bound (no a_K kept), not "no bound".
   if (minusOne)
     --*n;
-  if (*n == 0)
-    return std::nullopt;
   return n;
 }
 
@@ -2854,9 +2852,7 @@ std::optional<uint64_t> tripBound(const Loop &L, ScalarEvolution &SE) {
     return std::nullopt;
   SmallPtrSet<const BasicBlock *, 8> region;
   if (testRegion(L, region))
-    --n;
-  if (n == 0)
-    return std::nullopt;
+    --n;   // cq-tntm: 0 is a bound (no body runs)
   return n;
 }
 
