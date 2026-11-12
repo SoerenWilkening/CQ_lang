@@ -125,7 +125,9 @@ static uint64_t fxc_masked(int i) {
  * run natively); a direct call the lowered program makes (putchar, putwchar with classical arguments: an ordinary host
  * call) takes it here, the same values: puts, fputs, fflush, putw 0; fputc, putc, putchar (unsigned char)c; fwrite
  * size ? nmemb : 0; fputwc, putwc, putwchar c, or WEOF where musl's wctomb fails in the C locale the bundle runs in
- * (musl wcrtomb.c: c < 0x80, or a byte code unit 0xdf80..0xdfff, else EILSEQ). An _unlocked form is its locked form.
+ * (musl wcrtomb.c: c < 0x80, or a byte code unit 0xdf80..0xdfff, else EILSEQ); and (ruling cq-dbtpi) fclose, remove,
+ * rename, fsetpos, close 0, fseek, setvbuf 0 or -1, raise (its complement branch, cqo_rt.c __cqo_raise) 0 or -1. An
+ * _unlocked form is its locked form.
  * 1 and the value when fxc_name is one of them. */
 static int fxc_output_value(uint64_t *out) {
   const char *n = fxc_name;
@@ -137,6 +139,14 @@ static int fxc_output_value(uint64_t *out) {
   if (l > 9 && !strcmp(b + l - 9, "_unlocked")) b[l - 9] = 0;
   uint64_t a0 = fxc_n > 0 ? fxc_args[0].w[0] : 0;
   if (!strcmp(b, "puts") || !strcmp(b, "fputs") || !strcmp(b, "fflush") || !strcmp(b, "putw")) return *out = 0, 1;
+  /* owner ruling 2026-11-12 cq-dbtpi: musl's success values (fclose.c, remove.c, rename.c, fsetpos.c, unistd/close.c 0;
+   * fseek.c -1 for a whence outside {0, 1, 2}, setvbuf.c -1 for a type outside {0, 1, 2}; raise.c the kernel's tkill,
+   * which refuses a sig outside 0..64: -1) */
+  if (!strcmp(b, "fclose") || !strcmp(b, "remove") || !strcmp(b, "rename") || !strcmp(b, "fsetpos") || !strcmp(b, "close"))
+    return *out = 0, 1;
+  if ((!strcmp(b, "fseek") || !strcmp(b, "setvbuf")) && fxc_n >= 3)
+    return *out = (uint32_t)fxc_args[2].w[0] < 3 ? 0 : UINT64_MAX, 1;
+  if (!strcmp(b, "raise") && fxc_n == 1) return *out = (uint32_t)a0 <= 64 ? 0 : UINT64_MAX, 1;
   if (!strcmp(b, "fputc") || !strcmp(b, "putc") || !strcmp(b, "putchar")) return *out = a0 & 0xff, 1;
   if (!strcmp(b, "fwrite") && fxc_n == 4) return *out = fxc_args[1].w[0] ? fxc_args[2].w[0] : 0, 1;
   if (!strcmp(b, "fputwc") || !strcmp(b, "putwc") || !strcmp(b, "putwchar")) {

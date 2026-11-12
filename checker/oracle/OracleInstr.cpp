@@ -3127,6 +3127,76 @@ public:
     }
   }
 
+  // ---------------------------------------------------------------- reads of a host call's result (ruling cq-dbtpi)
+  // Owner ruling 2026-11-12 cq-dbtpi (BACKEND_ABI 1.11; "as in Q2"): a host-state result (fwide, fopen, tmpfile, ftell,
+  // fileno, open, lseek) or a non-library bodiless callee's keeps the entry's result rail, |0> when the backend defers the
+  // call; an input on which the program READS such a deferred rail is not compared. Whether the program reads the result
+  // is a fact about the C program, decided here, so no lowering can widen it (the lesson of cq-auqs3 for Q2); the lowered
+  // run says which calls it deferred (run.py outputs["deferred_r"]) and only narrows it (compare.py). A direct call of a
+  // bodiless callee (drivers.effect_callees: the stand-in `cqd_fx_<name>`) is a site; its result is read when, on the
+  // sample, the call ran and then an instruction its result reaches by data flow (through every value-computing
+  // instruction: casts, arithmetic, compares, selects, phis, address arithmetic, pure intrinsics) ran that stores,
+  // branches, returns, loads or passes it to a call (a measurement, an output, a store or a branch reached; a return or a
+  // call argument counted as reaching one). Over-approximations, all on the C side: a phi or select that took another
+  // value on the sample, and a value returned or passed to a call that ignores it.
+  DenseSet<const Instruction *> Pristine;  // the program as clang wrote it, before shadows() (hostReads)
+  void notePristine() {
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          Pristine.insert(&I);
+  }
+  static bool readSink(const Instruction *I) {
+    if (auto *CB = dyn_cast<CallBase>(I)) {
+      auto *II = dyn_cast<IntrinsicInst>(CB);
+      return !(II && !CB->getType()->isVoidTy() && CB->doesNotAccessMemory());
+    }
+    return I->getType()->isVoidTy() || isa<LoadInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I) ||
+           I->isTerminator();
+  }
+  void hostReads() {
+    std::vector<CallBase *> sites;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && Pristine.count(CB) && !CB->getType()->isVoidTy() && !CB->use_empty())
+            if (const Function *G = CB->getCalledFunction(); G && G->getName().starts_with("cqd_fx_"))
+              sites.push_back(CB);
+    if (sites.empty())
+      return;
+    MDNode *tag = MDNode::get(C, {});   // as shadows(): not the program's, for trips' exit regions
+    FunctionCallee callH = hook("__cqo_hscall", Void, {I32});
+    FunctionCallee readH = hook("__cqo_hsread", Void, {I32, Ptr});
+    MapVector<Instruction *, SmallVector<unsigned, 2>> sinks;
+    for (unsigned id = 0; id < sites.size(); ++id) {
+      SmallPtrSet<const Value *, 32> seen;
+      SmallVector<Value *, 16> work{sites[id]};
+      while (!work.empty()) {
+        Value *V = work.pop_back_val();
+        for (User *U : V->users()) {
+          auto *I = dyn_cast<Instruction>(U);
+          if (!I || !Pristine.count(I))
+            continue;
+          if (readSink(I)) {
+            auto &v = sinks[I];
+            if (std::find(v.begin(), v.end(), id) == v.end())
+              v.push_back(id);
+          } else if (seen.insert(I).second) {
+            work.push_back(I);
+          }
+        }
+      }
+      IRBuilder<> B(sites[id]->getNextNode());
+      B.CreateCall(callH, {B.getInt32(id)})->setMetadata("cqo.sh", tag);
+    }
+    for (auto &[I, ids] : sinks) {
+      IRBuilder<> B(I);
+      for (unsigned id : ids)
+        B.CreateCall(readH, {B.getInt32(id), str(sites[id]->getCalledFunction()->getName().drop_front(strlen("cqd_fx_")))})
+            ->setMetadata("cqo.sh", tag);
+    }
+  }
+
   // ---------------------------------------------------------------- termination notes
   void notes(Function &F) {
     static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
@@ -3161,10 +3231,16 @@ public:
         CB->setCalledFunction(hook("__cqo_raise", I32, {I32}));
         continue;
       }
-      // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed
+      // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed.
+      // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL at __errno_location(); the runtime calls the
+      // module's own (its address, no call added here) only then, or none when the module defines none.
       if (callee && callee->isDeclaration() && callee->getName() == "signal" && CB->arg_size() == 2 &&
           CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
           CB->getArgOperand(1)->getType()->isPointerTy()) {
+        Function *el = M.getFunction("__errno_location");
+        Value *errFn = el && !el->isDeclaration() && el->arg_empty() && el->getReturnType()->isPointerTy()
+                           ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
+        IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr}), {errFn});
         CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
         continue;
       }
@@ -3296,7 +3372,9 @@ public:
     }
     measureSites();
     phaseReach();
+    notePristine();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
+    hostReads();       // ruling cq-dbtpi: after shadows(), which never sees its hooks
     instrumentRule24();
     if (KI.on) {
       SpecNext = M.getGlobalVariable("__cqo_spec_next");
@@ -3532,7 +3610,9 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
 // (a stand-in effect, drivers.effect_callees, or the host's printing). oracle.py output_results runs it after host_streams.
 namespace outres {
 
-enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws };
+// Sel3: 0 when the int argument `first` is 0, 1 or 2, else -1 (owner ruling 2026-11-12 cq-dbtpi: fseek's whence, musl
+// fseek.c __fseeko_unlocked; setvbuf's type, musl setvbuf.c, _IOFBF 0, _IOLBF 1, _IONBF 2).
+enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3 };
 struct Fn {
   Kind kind;
   unsigned first;
@@ -3553,6 +3633,13 @@ std::optional<Fn> outputFunction(const Function &F) {
       {"vwprintf", {Kind::VWFmt, 0}}, {"vfwprintf", {Kind::VWFmt, 1}},
       {"puts", {Kind::Zero, 0}},      {"fputs", {Kind::Zero, 0}},     {"fflush", {Kind::Zero, 0}},
       {"putw", {Kind::Zero, 0}},
+      // owner ruling 2026-11-12 cq-dbtpi: the C library calls rule 16 recognises by name that are effect entries and no
+      // input calls take musl's success value (musl fclose.c, remove.c, rename.c, fsetpos.c, unistd/close.c: 0 when the
+      // host operation succeeds; fseek.c: -1 for a whence outside {SEEK_SET, SEEK_CUR, SEEK_END}; setvbuf.c: -1 for a
+      // type outside {_IOFBF, _IOLBF, _IONBF}); raise's is cqo_rt.c __cqo_raise's (fx_call.h fxc_output_value)
+      {"fclose", {Kind::Zero, 0}},    {"remove", {Kind::Zero, 0}},    {"rename", {Kind::Zero, 0}},
+      {"fsetpos", {Kind::Zero, 0}},   {"close", {Kind::Zero, 0}},
+      {"fseek", {Kind::Sel3, 2}},     {"setvbuf", {Kind::Sel3, 2}},
       {"fputc", {Kind::UChar, 0}},    {"putc", {Kind::UChar, 0}},     {"putchar", {Kind::UChar, 0}},
       {"fwrite", {Kind::Fwrite, 0}},
       {"fputwc", {Kind::Wc, 0}},      {"putwc", {Kind::Wc, 0}},       {"putwchar", {Kind::Wc, 0}},
@@ -3583,6 +3670,10 @@ std::optional<Fn> outputFunction(const Function &F) {
                ? std::optional(o) : std::nullopt;
   case Kind::Ws:
     return !ft->isVarArg() && argIs(0, true) ? std::optional(o) : std::nullopt;
+  case Kind::Sel3:
+    return !ft->isVarArg() && ft->getNumParams() == o.first + (n == "setvbuf" ? 2 : 1) && argIs(0, true) &&
+                   argIs(o.first, false)
+               ? std::optional(o) : std::nullopt;
   }
   return std::nullopt;
 }
@@ -3757,6 +3848,12 @@ struct Pass : PassInfoMixin<Pass> {
         Value *r = B.CreateCall(e, {null, slot, ConstantInt::get(sizeT, 0), null});
         v = B.CreateSelect(B.CreateICmpEQ(r, ConstantInt::getAllOnesValue(sizeT)), ConstantInt::get(rt, -1, true),
                            ConstantInt::get(rt, 0));
+        break;
+      }
+      case Kind::Sel3: {
+        Value *a = CB->getArgOperand(o.first);
+        v = B.CreateSelect(B.CreateICmpULT(a, ConstantInt::get(a->getType(), 3)), ConstantInt::get(rt, 0),
+                           ConstantInt::get(rt, -1, true));
         break;
       }
       }

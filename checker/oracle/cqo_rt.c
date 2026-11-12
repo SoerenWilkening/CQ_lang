@@ -1418,6 +1418,30 @@ static void __cqo_q2_check(const char *name, uintptr_t a) {
                      name ? name : "", (unsigned long long)a, (unsigned long long)o->lo, (unsigned long long)o->hi);
     out_long(b, (size_t)m);
 }
+/* Owner ruling 2026-11-12 cq-dbtpi: the reads of a host call's result (OracleInstr.cpp hostReads). __cqo_hscall(id) at
+ * the call of site id, __cqo_hsread(id, name) before an instruction its result reaches: the first such read of the
+ * sample after the call logs {"ev":"hsread","name"} (oracle.py: outputs["hsread"]). The table holds the sample's
+ * generation (sh_genp, one per sample) per site; it is mapped before the setup, outside __DATA. A site beyond the
+ * table counts as called. */
+#define HS_MAX 65536
+static uint32_t *hs_tab; /* [HS_MAX] the generation of the site's last call, [HS_MAX + id] of its last logged read */
+__attribute__((constructor(103))) static void hs_init(void) {
+    hs_tab = mmap(0, 2 * HS_MAX * sizeof *hs_tab, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (hs_tab == MAP_FAILED) { fprintf(stderr, "cqo: mmap\n"); raise(SIGKILL); }
+}
+void __cqo_hscall(int32_t id) {
+    if (sample_running() && (uint32_t)id < HS_MAX) hs_tab[id] = *sh_genp;
+}
+void __cqo_hsread(int32_t id, const char *name) {
+    if (trips_only || !sample_running()) return;
+    if ((uint32_t)id < HS_MAX) {
+        if (hs_tab[id] != *sh_genp || hs_tab[HS_MAX + id] == *sh_genp) return;
+        hs_tab[HS_MAX + id] = *sh_genp;
+    }
+    char b[200];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"hsread\",\"name\":\"%.120s\"}", name ? name : "");
+    out_long(b, (size_t)m);
+}
 #define FX_PTR_HOOK(name, p) __cqo_q2_check((name), (uintptr_t)(p))
 /* A direct host call: the stand-in, one source with the evaluator (fx_call.h; rulings Q8). */
 #define FX_LOG(line, n) do { if (sample_running()) out_long(line, n); } while (0)
@@ -1563,24 +1587,52 @@ static void on_timeout(int sig) {
     worker_leave();
 }
 
+/* Owner ruling 2026-11-12 cq-silnj: a signal number is valid when 1 <= sig <= 64 and it is none of 9, 19, 32, 33, 34
+ * (musl's sigaction test plus the kernel's refusal of SIGKILL and SIGSTOP), never by the host's (macOS) numbering. CR rule
+ * 16's signal table: one cell per valid number, SIG_DFL (0) until the program registers a function. A program that calls
+ * signal runs every sample in a worker of its own (oracle.py _ISOLATE), so the cells start at SIG_DFL in each sample. */
+static void (*sig_cell[65])(int);
+static int sig_valid(int32_t s) { return s >= 1 && s <= 64 && s != 9 && s != 19 && s != 32 && s != 33 && s != 34; }
+
 /* The C program's raise(sig) (OracleInstr.cpp notes() sends a direct call of the declared raise here). CR rule 16's
- * signal table: raise calls the function the program registered for sig; the complement (no registered function: the
- * default action or no handler, an invalid sig included) is the effect entry raise with sig as its one field, which §6
- * models on both sides by one stand-in of the name and argument bits (CR 1356-1358), as rt_tape.c does for ours: logged,
- * the stand-in's result, no host call. A handler is the program's when it is neither SIG_DFL, SIG_IGN nor one this
- * runtime installed (on_crash, on_timeout); the host's raise then runs it, as the C program does. */
-/* The C program's signal(sig, h) (OracleInstr.cpp notes()): the host's signal, as the C program makes it, except that a
- * previous handler this runtime installed (on_crash, on_timeout) reads SIG_DFL: the program installed none, and CR rule
- * 16's signal table returns the cell's previous content, 0 (SIG_DFL) for a signal the program never registered. */
+ * signal table: raise calls the function registered for sig (its cell, then 0, as musl's raise returns after the
+ * handler); the complement (no registered function: the default action or no handler, an invalid sig included) is the
+ * effect entry raise with sig as its one field, logged as rt_tape.c logs ours, no host call, its result musl's (owner
+ * ruling 2026-11-12 cq-dbtpi: 0 for 0 <= sig <= 64, else -1; fx_call.h fxc_output_value). A handler installed with
+ * sigaction, outside the cells, is the program's when it is neither SIG_DFL, SIG_IGN nor one this runtime installed
+ * (on_crash, on_timeout); the host's raise then runs it, as the C program does. */
+/* The C program's signal(sig, h) (OracleInstr.cpp notes()): CR rule 16's signal table over ruling cq-silnj's numbers. An
+ * invalid sig returns SIG_ERR, stores EINVAL to the program's errno (sig_errloc: the module's own __errno_location, which
+ * __cqo_signal_errloc passes right before the call and which is called only then, or null when the module defines none;
+ * the host's errno too) and registers nothing; a valid one returns its cell's previous content and
+ * stores h there. Where the host has the signal, h is also installed there, so that a delivery runs it as before. */
+static int32_t *(*sig_errloc)(void);
+void __cqo_signal_errloc(int32_t *(*f)(void)) { sig_errloc = f; }
 void (*__cqo_signal(int32_t sig, void (*h)(int)))(int) {
-    void (*r)(int) = signal(sig, h);
-    if (r == (void (*)(int))on_crash || r == on_timeout) r = SIG_DFL;
+    if (!sig_valid(sig)) {
+        if (sig_errloc) *sig_errloc() = EINVAL;
+        errno = EINVAL;
+        return SIG_ERR;
+    }
+    void (*r)(int) = sig_cell[sig];
+    sig_cell[sig] = h;
+    if (sig < NSIG && sig != SIGKILL && sig != SIGSTOP) signal(sig, h);
     return r;
 }
 
 int32_t __cqo_raise(int32_t sig) {
+    if (sig_valid(sig)) {
+        void (*h)(int) = sig_cell[sig];
+        if (h && h != SIG_IGN && h != SIG_ERR) {
+            struct sigaction cur;
+            if (sig < NSIG && sigaction(sig, 0, &cur) == 0 && !(cur.sa_flags & SA_SIGINFO) && cur.sa_handler == h)
+                return raise(sig);
+            h(sig);
+            return 0;
+        }
+    }
     struct sigaction cur;
-    if (sig > 0 && sigaction(sig, 0, &cur) == 0) {
+    if (sig > 0 && sig < NSIG && sigaction(sig, 0, &cur) == 0) {
         int own = (cur.sa_flags & SA_SIGINFO) ? cur.sa_sigaction == on_crash
                                               : cur.sa_handler == SIG_DFL || cur.sa_handler == SIG_IGN || cur.sa_handler == on_timeout;
         if (!own) return raise(sig);

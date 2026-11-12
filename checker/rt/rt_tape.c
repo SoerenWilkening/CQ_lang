@@ -58,9 +58,10 @@
  * An entry object: "seq","kind":"fmt"|"effect","t","pred","class":"resolved"|"input"|"deferred","performed",
  * "fmt"|"name" (null name: a host address, the first field),"fields":[{"k":"rail","h","w","v"[,"cap"]}|
  * {"k":"lit","w","v"[,"cap"]}], "text" for a format entry (what printf prints for it), "r":{"h","w","v"} for
- * the result form. "cap" is the bytes captured for that field. No sample is dropped for a deferred result (owner
- * ruling 2026-11-12 item 4): the |0> result rail of a deferred call is the only thing not compared, and against the C
- * program no rail is compared directly; what the program computes from it is.
+ * the result form. "cap" is the bytes captured for that field. A deferred entry with a result (its r |0>) whose
+ * predicate read 1 is named in run.py's outputs["deferred_r"]: an input on which the C program reads that callee's
+ * result is not compared (owner ruling 2026-11-12 cq-dbtpi, "as in Q2"; compare.py); against the C program no rail is
+ * compared directly, what the program computes from it is.
  * Values are hex bit patterns ("0x…"). Strings are bytes, each written as the code point U+0000–U+00FF of
  * the same number.
  *

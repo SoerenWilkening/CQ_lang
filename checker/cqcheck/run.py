@@ -56,7 +56,7 @@ RunResult fields (JSON-serializable):
   sample      the sample dict as given
   outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": {...},
               "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
-              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6); "q2" the host calls given a pointer into an object holding a QUANTUM cell (rulings Q2, rt_bus.c cqe__q2_check; it only narrows the C side's decision, compare.py); "host_end", present only when the sample ended in the program's own
+              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6); "q2" the host calls given a pointer into an object holding a QUANTUM cell (rulings Q2, rt_bus.c cqe__q2_check; it only narrows the C side's decision, compare.py); "deferred_r" the names of the entries deferred with a result rail, predicate 1 (ruling cq-dbtpi, _deferred_read; it only narrows the C side's decision); "host_end", present only when the sample ended in the program's own
               exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
@@ -1144,7 +1144,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     meas_chain: List[Tuple[Any, Any]] = []
     sel_z: Dict[Any, int] = {}
     direct_fx: List[dict] = []
-    tape_out, tape_seq = "", []
+    tape_out, tape_seq, deferred_r = "", [], []
     q2: List[dict] = []
     last_exit: Optional[dict] = None
     host_end: Optional[int] = None
@@ -1203,6 +1203,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                 mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
             tape_out, tape_seq = _tape_shot(e)
+            deferred_r = _deferred_read(e)
         elif ev == "effect":
             direct_fx.append(e)
     kept = _kept_of_exit(last_exit) if last_exit is not None else []
@@ -1212,7 +1213,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
     outputs = {"ret": rets, "stdout": stdout + tape_out, "exit": code, "effects": _effects_in_order(direct_fx),
-               "tape": tape_seq, "mem": mem, "objects": objects, "regions": regions, "q2": q2,
+               "tape": tape_seq, "mem": mem, "objects": objects, "regions": regions, "q2": q2, "deferred_r": deferred_r,
                "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
     if host_end is not None:
         outputs["host_end"] = host_end
@@ -2578,11 +2579,20 @@ def _tape_entry(x: dict) -> dict:
 
 
 def _tape_shot(e: dict) -> Tuple[str, List[dict]]:
-    """Of rt_tape.c's end-of-shot event: the text it printed and the event sequence. No sample is dropped for an
-    entry's result (owner ruling 2026-11-12 item 4, CR 1356-1358): an effect entry's result is the stand-in's on both
-    sides (fx_standin.h; the C program's call goes to the same stand-in, drivers.effect_callees), a C library output
-    call's is musl's value on both sides, and a deferred result rail alone is not compared."""
+    """Of rt_tape.c's end-of-shot event: the text it printed and the event sequence. An effect entry's result is the
+    stand-in's on both sides (CR 1356-1358; fx_standin.h; the C program's call goes to the same stand-in,
+    drivers.effect_callees); a C library output call's and those of ruling cq-dbtpi are musl's values on both sides; a
+    deferred result rail the program reads excludes the sample (_deferred_read, compare.py)."""
     return _bytes_text(e.get("stdout", "")), [_tape_entry(x) for x in e.get("events", [])]
+
+
+def _deferred_read(e: dict) -> List[str]:
+    """Owner ruling 2026-11-12 cq-dbtpi (BACKEND_ABI 1.11, "as in Q2"): the names of the effect entries of rt_tape.c's
+    end-of-shot event that the backend deferred with a result rail (the `_<W>` form: the compiler emits it where the
+    program reads the result, its r |0>) and whose predicate read 1 (the C program made the call). It only narrows the C
+    side's decision (oracle.py outputs["hsread"]: the C program read that callee's result), compare.py."""
+    return sorted({x["name"] for x in e.get("events", []) if x.get("kind") == "effect" and x.get("class") == "deferred"
+                   and "r" in x and x.get("pred") == 1 and isinstance(x.get("name"), str)})
 
 
 def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:
@@ -3069,7 +3079,7 @@ def _interned(d: dict) -> dict:
     return d
 
 
-_RUNS_VERSION = "eval-runs-9"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed; replayed calls as uses with skip; rails by name (owner 2026-11-09)
+_RUNS_VERSION = "eval-runs-10"   # cq-dbtpi: deferred_r; cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed; replayed calls as uses with skip; rails by name (owner 2026-11-09)
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX",   # core.c's caps
              "CQE_REPLAY", "CQE_REPLAY_CHECK", "CQE_REPLAY_TAMPER", "CQE_REPLAY_MAX_MB")   # rt_replay.c (cq-kcn5i)
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")

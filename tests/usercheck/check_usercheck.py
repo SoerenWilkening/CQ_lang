@@ -33,6 +33,10 @@ Fails on any of:
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
             literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw); raise with no handler, its field wrong (cq-njo63); signal's previous handler where none was registered (cq-t0xnq). --rv3 runs this group alone
+  dbtpi     owner ruling 2026-11-12 cq-dbtpi (src/dbtpi): a program that reads a deferred fwide's result on every input is
+            not NOT COMPARED (exit 3), one that reads a deferred ftell's on some inputs is not a PASS with that count
+            stated, one that never reads it has an input excluded, or a wrong lowering of the partial one (a wrong value,
+            ftell's entry deferred on every input) is not rejected on the compared inputs. --dbtpi runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -405,6 +409,44 @@ def rv3_undefined(tmp):
     expect("program rv3 vaub (f)", 2, user(d / "vaub.O1.ll", d / "vaub.lowered.ll", "f", light=True))
 
 
+def dbtpi(tmp):
+    """Owner rulings 2026-11-12 cq-dbtpi and "Q2 partial exclusion": a host-state result (fwide, ftell) keeps the entry's
+    result rail, |0> when the call is deferred; an input on which the program reads that rail is not compared, decided on
+    the C program (the call ran and its result was read), our deferral only narrowing it. dall reads a deferred fwide on
+    every input: NOT COMPARED (3); dpart reads a deferred ftell only where x is odd: PASS on the others with the count
+    stated; dunread defers fwide and never reads it: every sample compared. Mutants of dpart, rejected on the compared
+    inputs: the product x * 4 instead of x * 3, and ftell's entry deferred on every input (its predicate a 1 seed: the
+    lowering cannot widen the exclusion; the C program made no call where x is even)."""
+    d = SRC / "dbtpi"
+    run = lambda n, low=None: user(d / f"{n}.O1.ll", low or d / f"{n}.lowered.ll", "f", light=True)
+    code, out = run("dall")
+    expect("program dbtpi dall (f)", 3, (code, out))
+    if code == 3 and "by ruling cq-dbtpi" not in out:
+        fail("program dbtpi dall (f)", f"not excluded by ruling cq-dbtpi:\n{out}")
+    code, out = run("dpart")
+    expect("program dbtpi dpart (f)", 0, (code, out))
+    m = re.search(r"compared (\d+) of (\d+) samples", out)
+    n = re.search(r"(\d+) of \d+ samples not compared \(ruling cq-dbtpi", out)
+    if code == 0 and not (m and n and int(m.group(1)) > 0 and int(n.group(1)) > 0
+                          and int(m.group(1)) + int(n.group(1)) == int(m.group(2))):
+        fail("program dbtpi dpart (f)", f"no partial exclusion stated:\n{out}")
+    code, out = run("dunread")
+    expect("program dbtpi dunread (f)", 0, (code, out))
+    if code == 0 and "not compared" in out:
+        fail("program dbtpi dunread (f)", f"an unread deferred rail excluded samples:\n{out}")
+    text = (d / "dpart.lowered.ll").read_text()
+    muts = {"mul4": re.sub(r"cq_template_mul_i32_hl\(i32 (%\d+), i32 3\)", r"cq_template_mul_i32_hl(i32 \1, i32 4)", text),
+            "always_called": re.sub(r"%(\d+) = call i32 @cqrt_tape_effect_i64_controlled\(i32 %\d+, ",
+                                    r"%one\1 = call i32 @cqrt_alloc_i1(i1 true)\n  %\1 = call i32 "
+                                    r"@cqrt_tape_effect_i64_controlled(i32 %one\1, ", text)}
+    for m_, t in muts.items():
+        if t == text:
+            raise SystemExit(f"dbtpi dpart {m_}: no site in its lowering")
+        p = tmp / f"dbtpi_dpart_{m_}.ll"
+        p.write_text(t)
+        expect(f"mutant dbtpi dpart {m_}", 1, run("dpart", p))
+
+
 def musl_stdout(tmp):
     """Ruling Q6 and the output ruling of 2026-11-12 item 4: a program built against musl's <stdio.h> names the host's
     stream `stdout`, which Darwin calls __stdoutp; both sides bind it to the host's object, so the C program's fprintf
@@ -422,6 +464,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rv3", nargs="*", help="only the src/rv3 group, or these of it")
     ap.add_argument("--musl-stdout", action="store_true", help="only the src/muslstdout test")
+    ap.add_argument("--dbtpi", action="store_true", help="only the src/dbtpi tests (ruling cq-dbtpi)")
     ap.add_argument("--spec", type=Path, default=ROOT.parent / "CQ_spec")
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
@@ -430,6 +473,11 @@ def main():
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
             musl_stdout(Path(t))
         print(f"{len(failures)} failures" if failures else "all muslstdout tests passed")
+        return 1 if failures else 0
+    if a.dbtpi:
+        with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
+            dbtpi(Path(t))
+        print(f"{len(failures)} failures" if failures else "all dbtpi tests passed")
         return 1 if failures else 0
     if a.rv3 is not None:
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
@@ -444,6 +492,7 @@ def main():
         rv3(tmp)
         rv3_undefined(tmp)
         musl_stdout(tmp)
+        dbtpi(tmp)
         for name, entry in PROGRAMS:
             d = tmp / name
             r = subprocess.run([sys.executable, str(CQCC), "-S", str(SRC / f"{name}.c"), "--save-temps", str(d),

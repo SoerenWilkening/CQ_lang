@@ -45,6 +45,9 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
 - ``{"ev":"q2","name","addr","lo","hi"}`` (rulings Q2, owner 2026-11-11; cq-auqs3): a direct host call of ``name``
   given address ``addr`` inside the object [lo, hi) of the program that holds a rail at the call (cqo_rt.c
   __cqo_q2_check). To ``SampleRun.q2`` and side 'c' outputs["q2"] (compare.py), never to ``SampleRun.events``.
+- ``{"ev":"hsread","name"}`` (owner ruling 2026-11-12 cq-dbtpi): the program read the result of a direct call of the
+  bodiless callee ``name`` on this sample (cqo_rt.c __cqo_hsread, OracleInstr.cpp hostReads). To ``SampleRun.hsread``
+  and side 'c' outputs["hsread"] (compare.py), never to ``SampleRun.events``.
 
 The cutoff K (CR §6 at eb8a11a, ruling cq-1di; bead cq-8ay). Every quantum-exit loop and
 quantum-depth recursion stops after K trips, as in the circuit: when the trips begun would exceed K
@@ -415,10 +418,12 @@ def host_streams(text: str) -> str:
 
 
 # Owner ruling 2026-11-12 (item 4): the C library output calls whose result the C program reads take musl's value
-# (OracleInstr.cpp cq-oracle-output-results; the names of pass/lib/eff/tape/Tape.cpp outputFunction).
+# (OracleInstr.cpp cq-oracle-output-results; the names of pass/lib/eff/tape/Tape.cpp outputFunction). Owner ruling
+# 2026-11-12 cq-dbtpi: so do fclose, remove, rename, fsetpos, close (0), fseek and setvbuf (0, or -1 for a whence or type
+# outside {0, 1, 2}).
 _OUTPUT_NAMES = frozenset((
     "printf fprintf dprintf vprintf vfprintf vdprintf wprintf fwprintf vwprintf vfwprintf puts fputs fflush putw fputc putc "
-    "putchar fwrite fputwc putwc putwchar fputws").split())
+    "putchar fwrite fputwc putwc putwchar fputws fclose remove rename fsetpos close fseek setvbuf").split())
 _DECLARED_ANY = re.compile(r'(?m)^declare\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 
@@ -762,6 +767,7 @@ class SampleRun:
     regions: List[Dict[str, Any]] = field(default_factory=list)  # (outputs["regions"])
     k2: List[List[int]] = field(default_factory=list)  # its rail-sized blocks, [n, K2] (outputs["k2"])
     q2: List[Dict[str, Any]] = field(default_factory=list)       # rulings Q2 calls (outputs["q2"], cqo_rt.c)
+    hsread: List[str] = field(default_factory=list)   # ruling cq-dbtpi: host calls whose result was read (outputs["hsread"])
     fenv: Optional[int] = None   # the exception flags at the sample's end (cqo_rt.c; outputs["fenv_flags"], rule 23)
 
 
@@ -1045,9 +1051,9 @@ MEMO_EVENTS = 50_000          # trace events kept per executable's memo
 _MEMO_LOCK = threading.Lock()
 
 
-_RUNS_VERSION = "oracle-runs-4"
+_RUNS_VERSION = "oracle-runs-5"   # ruling cq-dbtpi: hsread
 _RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdout", "effects", "mem", "objects",
-               "regions", "k2", "fenv", "q2")
+               "regions", "k2", "fenv", "q2", "hsread")
 
 
 def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
@@ -1128,6 +1134,9 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[S
             pass
         elif e.get("ev") == "q2":       # rulings Q2 (cqo_rt.c __cqo_q2_check), not a trace event
             runs[i].q2.append({k: e[k] for k in ("name", "addr", "lo", "hi") if k in e})
+        elif e.get("ev") == "hsread":   # ruling cq-dbtpi (cqo_rt.c __cqo_hsread), not a trace event
+            if e.get("name") not in runs[i].hsread:
+                runs[i].hsread.append(e.get("name"))
         elif e.get("ev") == "k2":
             runs[i].k2.append([int(e["n"]), int(e["k2"])])
         elif e.get("ev") == "fenv":
@@ -1296,6 +1305,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
                               "stdout": sr.stdout, "effects": _effects_of(sr),
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
                               "k2": list(sr.k2), "reads": reads, "skips": skips, "q2": list(sr.q2),
+                              "hsread": sorted(sr.hsread),
                               "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"}),
                               **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {}),
                               **({"exit_status": status} if status is not None else {})},

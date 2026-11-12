@@ -186,11 +186,12 @@ stand-ins, drivers.effect_callees), in order; ours hold only entries whose predi
 earlier abort reading 1 (rt_tape.c). Both are compared exactly, args as typed scalars with the bytes
 captured ("cap") and pointer-valued ones relationally (above), against either oracle (rulings Q8).
 Against the reference outputs["tape"], the shot's whole event sequence (name or format, predicate,
-fields, order, performed, text, result; never the evaluator's class), is compared too. A sample
-is never dropped for a deferred entry (owner ruling 2026-11-12 item 4): the |0> result rail of a deferred call
-is the only thing not compared, and what the program computes from it is compared. Against the C oracle a
+fields, order, performed, text, result; never the evaluator's class), is compared too. Against the C oracle a
 sample whose outputs["q2"] is not empty on the C side (rulings Q2: a host callee given a pointer into an object of the
-C program holding a rail, oracle.py) and on ours (run.py: no Q2 deviation of ours, nothing to exclude) is not compared, and a comparison left with none is not equal;
+C program holding a rail, oracle.py) and on ours (run.py: no Q2 deviation of ours, nothing to exclude) is not compared,
+nor one on which the C program reads the result of a bodiless callee (outputs["hsread"]) whose entry ours deferred with a
+result rail (outputs["deferred_r"]; owner ruling 2026-11-12 cq-dbtpi, "as in Q2"; an unread deferred rail excludes
+nothing), and a comparison left with none is not equal;
 against the C oracle on a capped sample (below) the C side's stdout and effects must be a prefix of
 ours (the circuit runs on past the cut). On an ended sample they are compared exactly (owner ruling
 2026-11-02, cq-64lv): every host effect after an abort under a quantum predicate is a tape entry, and
@@ -2234,8 +2235,9 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             registers: Optional[Dict[str, Any]] = None, stats: Optional[Dict[str, Any]] = None) -> List[str]:
     """§6 equality of `ours` and `other` over all samples; the reasons, empty when equal.
 
-    `stats` (optional): filled with "compared" (the samples compared after every exclusion) and "q2" (the samples
-    not compared under rulings Q2, against "c"). When samples were given and none is compared, a reason says so:
+    `stats` (optional): filled with "compared" (the samples compared after every exclusion), "q2" (the samples
+    not compared under rulings Q2, against "c") and "deferred" (those not compared under ruling cq-dbtpi: the program
+    reads a deferred host call's result rail). When samples were given and none is compared, a reason says so:
     a comparison of nothing is never equal (owner rulings 2026-11-11 Q1, 2026-11-12 item 4: the guard).
 
     `registers` (optional, against "c"; drivers.theta_registers of the C program's .O1.ll, beads
@@ -2284,18 +2286,35 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # (cq-auqs3): the C side decides it (outputs["q2"], cqo_rt.c __cqo_q2_check: the real object, a cell holding a
     # rail), so no lowering can widen it. The lowered side's own record (rt_bus.c cqe__q2_check) may only narrow it: an
     # input on which no host call of ours was handed a pointer into an object holding a QUANTUM cell shows no Q2
-    # deviation and is compared. Reach through a global or a stored pointer is not detected. Nothing else excludes a
-    # sample here: a deferred result is compared through what the program computes from it (owner 2026-11-12 item 4).
+    # deviation and is compared. Reach through a global or a stored pointer is not detected.
     q2_keys = [k for k in keys if (r_by[k].outputs or {}).get("q2") and (o_by[k].outputs or {}).get("q2")] \
         if oracle == "c" else []
     if q2_keys:
         keys = [k for k in keys if k not in set(q2_keys)]
+    # Owner ruling 2026-11-12 cq-dbtpi (BACKEND_ABI 1.11, "as in Q2"): a host-state result (fwide, fopen, tmpfile, ftell,
+    # fileno, open, lseek) or a non-library bodiless callee's keeps the entry's result rail, |0> when the backend defers
+    # the call; an input on which the program READS such a deferred rail is not compared and not a PASS. Whether the
+    # program reads the callee's result is decided on the C side (outputs["hsread"], OracleInstr.cpp hostReads: the call
+    # ran and its result reached a store, branch, load, return or call), so no lowering can widen it; our run narrows it
+    # to the callees whose entry it deferred with a result rail, predicate 1 (outputs["deferred_r"], run.py). An unread
+    # deferred rail excludes nothing; a call the backend performed at once is compared through what the program computes
+    # from its result.
+    dr_keys = [k for k in keys if set((r_by[k].outputs or {}).get("hsread") or ())
+               & set((o_by[k].outputs or {}).get("deferred_r") or ())] if oracle == "c" else []
+    if dr_keys:
+        keys = [k for k in keys if k not in set(dr_keys)]
     if stats is not None:
-        stats["compared"], stats["q2"] = len(keys), q2_keys
-    if not keys and q2_keys:
-        reasons.append(f"no sample compared: all {len(q2_keys)} hand a bodiless callee a pointer into an object holding a "
-                       f"QUANTUM cell (rulings Q2; e.g. sample {q2_keys[0]}: "
-                       f"{(r_by[q2_keys[0]].outputs or {}).get('q2', [])[:1]})")
+        stats["compared"], stats["q2"], stats["deferred"] = len(keys), q2_keys, dr_keys
+    if not keys and (q2_keys or dr_keys):
+        why = []
+        if q2_keys:
+            why.append(f"{len(q2_keys)} hand a bodiless callee a pointer into an object holding a QUANTUM cell (rulings Q2; "
+                       f"e.g. sample {q2_keys[0]}: {(r_by[q2_keys[0]].outputs or {}).get('q2', [])[:1]})")
+        if dr_keys:
+            k0 = dr_keys[0]
+            read = sorted(set((r_by[k0].outputs or {}).get("hsread") or ()) & set((o_by[k0].outputs or {}).get("deferred_r") or ()))
+            why.append(f"{len(dr_keys)} read the result rail of a deferred host call (ruling cq-dbtpi; e.g. sample {k0}: {read})")
+        reasons.append("no sample compared: " + "; ".join(why))
 
     real_exits = _real_exits(keys, o_by, r_by, capped, classical_key) if oracle == "c" else set()
 
@@ -2582,7 +2601,8 @@ def _ret(outputs: Any, side: str) -> Any:
     return outputs.get("ret", [])
 
 
-_HOST_KEYS = ("stdout", "effects", "tape", "q2", "mem", "objects", "regions", "ctl_measured", "entered", "host_flags")
+_HOST_KEYS = ("stdout", "effects", "tape", "q2", "mem", "objects", "regions", "ctl_measured", "entered", "host_flags",
+              "deferred_r", "hsread")
 
 
 def _rest(outputs: Any, side: str) -> Any:
