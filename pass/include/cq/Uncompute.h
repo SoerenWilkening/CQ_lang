@@ -65,6 +65,10 @@ public:
   // or the empty block `skip`, both end at `join`, and the arm's blocks are entered through that branch only. A run
   // flag whose events the arm does not reach is read across it without a walk (no other effect).
   void noteClassicalArm(llvm::BasicBlock *join, llvm::BasicBlock *skip);
+  // cq-bqbty (CR rule 6 in a classically bounded loop): the next flushBefore at a point in `block` takes `rail` (a
+  // carried value's header phi, whose clean-up reads its update) as if it were defined there: its update lies past a
+  // classical join of the trip, in a later segment than the header's. Every anchor of the rail must lie in `block`.
+  void flushIn(RailId rail, llvm::BasicBlock *block);
   // Rule 5 sentence 3: the value rail (a seed included) and the control rail of a kept store are kept: Role::Kept,
   // never resolved. Rule 5 sentence 1: a load copy that is the value rail is never un-copied, Role::Kept too.
   void noteKeptStore(llvm::CallInst *store, llvm::Value *value, llvm::Value *ctl);

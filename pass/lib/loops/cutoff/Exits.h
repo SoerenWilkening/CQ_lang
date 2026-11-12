@@ -16,6 +16,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 #include "cq/Predicate.h"
@@ -90,13 +91,16 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 
 // CR rule 14 (`nested K-loops ... inner chain seeded by the outer trip predicate`): a quantum-exit loop L
 // nested in a classically bounded loop's trip (loops-classical), lowered as loops-cutoff lowers a nested
-// K-loop: its K trips unrolled into the current output block under `seed` (an i1 rail: the enclosing trip's
-// predicate & L's header predicate within the trip), its a_K kept per enclosing trip when B > K or no bound
-// is known, every other rail a record of the current Uncompute scope. Binds every phi of its continuation
-// that has an incoming from the unit (cq::LoweringContext::addJoinArm for an incoming not lowered yet) and
-// rebinds its values read after it; the builder stays in the block it was in.
+// K-loop: its K trips unrolled at the builder under `seed` (an i1 rail: the enclosing trip's predicate & L's
+// header predicate within the trip), its a_K kept per enclosing trip when B > K or no bound is known, every
+// other rail a record of the current Uncompute scope. A classical branch of a trip is a real branch (rule 8,
+// cq-kk46l): `segHook` is called with each block it makes (Run, Skip, Join) before code goes into it, with the
+// builder still at the end of the code before it, so that the caller opens a segment there. Binds every phi of
+// its continuation that has an incoming from the unit (cq::LoweringContext::addJoinArm for an incoming not
+// lowered yet) and rebinds its values read after it; the builder is left where the last branch joined.
 // Returns the XOR of the flags of the noreturn arms it took (a rail, nullptr when none or no K-loop encloses L).
-llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed);
+llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed,
+                               const std::function<void(llvm::BasicBlock *)> &segHook);
 
 // CR rule 14 (case 1 or 3 inside a quantum-exit loop's trip, cq-h5uj): a classically bounded loop L of one
 // unrolled trip of a K-loop (a sub-loop of its body or a loop of its exit arm), lowered by loops-classical

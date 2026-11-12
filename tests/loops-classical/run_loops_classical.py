@@ -123,6 +123,14 @@ CALLS = ["lc_call", "lc_libm", "lc_chain"]
 KNEST_PROBE = PROBES / "knest.O1.ll"
 KNEST = ["k_in_c", "k_in_arm", "k_in_c3"]
 # cq-l56v: a case-3 multi-exit loop whose exit arm branches (rule 8 flags, rule 9 selects), nested in a classical trip.
+# cq-bqbty: a rule-6 update past a classical join of the trip.
+R6JOIN_PROBE = PROBES / "r6_join.O1.ll"
+R6JOIN = ["r6_join"]
+# cq-kk46l: a classical branch in a K-loop nested in a classically bounded trip stays a real br in each of the K trip
+# copies (rule 8: no seed of the classical condition).
+KNEST_CBR_PROBE = PROBES / "knest_cbr.O1.ll"
+KNEST_CBR = ["kc_reg", "kc_sel"]
+KNEST_CBR_BR = {"kc_reg": 4, "kc_sel": 4}   # entry -> at least this many conditional br, and no cqrt_alloc_i1 of a value
 C3ARM_PROBE = PROBES / "c3arm.O1.ll"
 C3ARM = ["arm_branch"]
 MXNEST_PROBE = PROBES / "mxnest.O1.ll"
@@ -177,6 +185,10 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
             why.append("no lowered body")
         if SURFACE.search(b):
             why.append("a CQ.h surface call is left")
+        if e in KNEST_CBR_BR:
+            nbr = len(re.findall(r"^  br i1 ", b, re.M))
+            if nbr < KNEST_CBR_BR[e] or re.search(r"@cqrt_alloc_i1\(i1 %", b):
+                why.append(f"{nbr} conditional br or a seed of a classical i1: the classical branch is seeded (rule 8)")
         if e not in MEASURED_SEC6 + NO_REVERSE and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
             why.append("no push/pop: the reverse loop is missing")
         t0 = time.time()
@@ -227,13 +239,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -261,6 +273,8 @@ def main() -> int:
         groups.append((CARRIED_PROBE, CARRIED))
     for g, probe, entries in (("carm", CARM_PROBE, CARM), ("c3nest", C3NEST_PROBE, C3NEST), ("c3two", C3TWO_PROBE, C3TWO),
                                  ("calls", CALLS_PROBE, CALLS), ("knest", KNEST_PROBE, KNEST),
+                                 ("knest_cbr", KNEST_CBR_PROBE, KNEST_CBR),
+                                 ("r6join", R6JOIN_PROBE, R6JOIN),
                                  ("c3arm", C3ARM_PROBE, C3ARM), ("mxnest", MXNEST_PROBE, MXNEST),
                                  ("c3idx", C3IDX_PROBE, C3IDX), ("seed", SEED_PROBE, SEED),
                                  ("exit_edges", EXIT_EDGES_PROBE, EXIT_EDGES), ("exit_arm", EXIT_ARM_PROBE, EXIT_ARM),

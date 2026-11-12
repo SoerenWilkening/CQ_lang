@@ -45,8 +45,10 @@
 // underClassical; a mixed condition's classical factor too, cq-kbygn: tripEdgeFactored): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
 // on the classical paths that reach it, its effects under the quantum part of its predicate alone. What stays a seed
 // rail (rule 7) is a classical term of a predicate read as data outside such a branch: the chain's exit test, a
-// merge's select condition, a term rule 8 cannot factor out (`c || q`), and every classical term of a K-loop that
-// is one node of a classically bounded loop's trip (oneBlock: that loop's reverse replays one block per segment). A read after a top-level loop that
+// merge's select condition and a term rule 8 cannot factor out (`c || q`). In a K-loop that is one node of a classically
+// bounded loop's trip (cq-kk46l) each block such a branch makes (Run, Skip, Join) is a segment of that loop's walk
+// (segHook): its own Uncompute scope, mirrored by the reverse loop on the path that ran it (come-from), and the skip
+// path's |0> seeds are minted in Skip, a record of the Skip segment. A read after a top-level loop that
 // the single-exit forms cannot express takes the multi-exit form's GENERAL EXIT CAPTURE.
 // Not built yet (each stop names its bead): nested loops in the general forms, a classical-bound sub-loop,
 // pointer and aggregate values across the loop, the unit shapes exits::unitOf rejects.
@@ -153,9 +155,10 @@ public:
   Cutoff(LoweringContext &ctx, Analyses &A) : ctx(ctx), A(A) {}
   void lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top);
   std::optional<Pred> seedPred;   // the predicate of the top loop's seed, which every trip rail implies (rule 14)
-  // cq-jws5r: the unit is one node of a classically bounded loop's trip (lowerNestedCutoff from loops-classical), whose
-  // reverse replays one output block per segment: the trips stay in the block they start in, a classical term a seed.
-  bool oneBlock = false;
+  // cq-kk46l: the unit is one node of a classically bounded loop's trip (lowerNestedCutoff from loops-classical), whose
+  // reverse replays its trip segment by segment: called with each block a classical branch of this unit makes (Run,
+  // Skip, Join) before any code goes into it, while the builder is still at the end of the code before it.
+  std::function<void(BasicBlock *)> segHook;
   Value *stopRail() const { return stopped; }   // the last lowerLoop's XOR of its noreturn arms' flags
 
 private:
@@ -276,7 +279,7 @@ private:
     if (p.isBottom())
       internalError("loops-cutoff: a trip predicate conjoined with false", at);
     // A classical term still in p (underClassical branches on the classical paths and hands the quantum part on;
-    // the chain's exit test, a merge and a oneBlock unit keep theirs) is seeded by pred's flag synthesis from its
+    // the chain's exit test and a merge keep theirs) is seeded by pred's flag synthesis from its
     // classical value in this trip (rule 7) and joined by and_i1/or_i1, as rule 8 does for a classical term it
     // cannot factor out. The conjunction with the trip predicate is quantum, so the effects under it are the
     // quantum-predicate forms of rules 16 and 19.
@@ -1215,8 +1218,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             outs.push_back(&I);
         }
     // cq-o5tjh (rule 8, as underClassical): lp's classical part is the branch around S, its quantum part alone the
-    // trip rail's conjunct (no seed of a classical term). A oneBlock unit keeps its classical terms (cq-kk46l).
-    Pred cg = (oneBlock || lp.isBottom()) ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
+    // trip rail's conjunct (no seed of a classical term).
+    Pred cg = lp.isBottom() ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
     Value *trip = conj(q, cg.isTop() ? lp : lp.quantumPart(ctx.T, ctx.S), at);
     Value *g = creachOf(S.getHeader());
     if (!cg.isTop()) {
@@ -1288,11 +1291,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       noStop = z;
     }
     ctx.B().CreateCondBr(g, Run, Skip);
+    if (segHook)
+      segHook(Run);
     ctx.B().SetInsertPoint(Run);
     Value *subStop = exits::lowerClassicalInTrip(ctx, S, trip);
     BasicBlock *ran = ctx.B().GetInsertBlock();
     ctx.B().CreateBr(Join);
     BranchInst::Create(Join, Skip);
+    if (segHook) {
+      segHook(Skip);
+      segHook(Join);
+    }
     ctx.B().SetInsertPoint(Join);
     if (subStop && noStop) {
       PHINode *ph = ctx.B().CreatePHI(subStop->getType(), 2);
@@ -1378,10 +1387,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // with a |0> seed (a classical value: 0) minted before the branch, which the trip reads on a false classical edge
   // only. `phis`: phis outside the part it may bind (a sub-loop's continuation); `flags`: i1 rails the body leaves for
   // the code after it (nullptr where none), |0> on the skip path. The reverse needs no record of the branch: the
-  // uncompute spine places each item of the part under its block's run flag.
+  // uncompute spine places each item of the part under its block's run flag; in a classically bounded loop's trip
+  // (segHook) each block is a segment, mirrored on the path that ran it (cq-kk46l).
   auto underClassical = [&](const Pred &lp, ArrayRef<BasicBlock *> blocks, ArrayRef<PHINode *> phis,
                             ArrayRef<Value **> flags, const std::function<void(const Pred &)> &body) {
-    Pred cg = (oneBlock || lp.isBottom()) ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
+    Pred cg = lp.isBottom() ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
     if (cg.isTop()) {
       body(lp);
       return;
@@ -1425,6 +1435,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     BranchInst *br = ctx.B().CreateCondBr(g, Run, Skip);
     BranchInst::Create(Join, Skip);
     ctx.unc().noteClassicalArm(Join, Skip);
+    if (segHook)
+      segHook(Run);
     ctx.B().SetInsertPoint(Run);
     {
       // A classical reachability value made inside the branch does not reach the code after it: forgotten again.
@@ -1434,8 +1446,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     BasicBlock *ran = ctx.B().GetInsertBlock();
     ctx.B().CreateBr(Join);
-    // The skip path's values, minted where the branch leaves from.
-    ctx.B().SetInsertPoint(br);
+    // The skip path's values, minted where the branch leaves from; in a segment of a classically bounded loop's trip
+    // (segHook), in Skip: a record of the scope its reverse undoes on the skip path only.
+    if (segHook) {
+      segHook(Skip);
+      ctx.B().SetInsertPoint(Skip->getTerminator());
+    } else {
+      ctx.B().SetInsertPoint(br);
+    }
     auto zero = [&](RailType w) -> Value * {
       CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(Cx, w))});
       ctx.unc().recordSeed(z);
@@ -1486,6 +1504,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     SmallVector<Value *, 2> flagSkip;
     for (Value **f : flags)
       flagSkip.push_back(*f ? zero(RailType{Kind::Int, 1}) : nullptr);
+    if (segHook)
+      segHook(Join);
     ctx.B().SetInsertPoint(Join);
     auto phiOf = [&](Value *run, Value *skip, bool rail) {
       PHINode *ph = ctx.B().CreatePHI(run->getType(), 2);
@@ -1545,7 +1565,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         // cq-jws5r: behind a classical condition of the trip the sub-loop is skipped by a real branch. Its continuation's
         // phis are then the unit's value only where it ran: the trip's merge selects it in on the unit's edges (unitPhi,
         // as for a classically bounded sub-loop) over the phi's other incomings.
-        bool branched = !oneBlock && !lpS.isBottom() && !lpS.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont &&
+        bool branched = !lpS.isBottom() && !lpS.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont &&
                         L.contains(SU.cont);
         stopped = nullptr;
         underClassical(branched ? lpS : Pred::top(), unitBlocks, contPhis, {&stopped}, [&](const Pred &lp) {
@@ -1762,7 +1782,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         // alone. What it leaves for the code after it (its continuation's phis, its stop rail and chain end) reads |0>
         // where it was skipped, where every predicate that selects it is false.
         exits::Unit SU = exits::unitOf(*S);
-        bool branched = !oneBlock && !acc.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont;
+        bool branched = !acc.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont;
         SmallVector<BasicBlock *, 16> unitBlocks(S->blocks().begin(), S->blocks().end());
         unitBlocks.append(SU.arm.begin(), SU.arm.end());
         SmallVector<PHINode *, 4> contPhis;
@@ -2461,7 +2481,7 @@ bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p
 }
 
 
-Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
+Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
   Loop *mL = A.LI.getLoopFor(L.getHeader());
@@ -2473,7 +2493,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
   std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.T, ctx.S);
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
-  C.oneBlock = true;
+  C.segHook = segHook;
   C.lowerLoop(*mL, seed, c, !B || *B > K, false);
   return C.stopRail();
 }
