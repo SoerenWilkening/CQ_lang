@@ -150,6 +150,13 @@ class FlatDrivers(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "cq: unimplemented: chk-drivers: a direct host call of variadic"):
             D.effect_wrappers_ir({"v": ("v", "i32", "ptr, ...")})
 
+    def test_effect_callees_fenv_names(self):
+        # cq-muafq: rule 23's fenv functions (C17 7.6) stay real; feof and ferror are stream calls, the stand-in (fx_standin.h
+        # INPUT rows), never the host's on a FILE the C program got from musl
+        t = "".join(f"declare i32 @{n}(ptr)\n  %{i} = call i32 @{n}(ptr null)\n"
+                    for i, n in enumerate(["feof", "ferror", "fesetround", "fetestexcept", "feupdateenv"]))
+        self.assertEqual(sorted(D.effect_callees(t)), ["feof", "ferror"])
+
     def test_wrappers_parse(self):
         all_ = {"a": ("a", "void", "ptr, i32"), "b": ("b", "double", "double, float"), "c": ("c", "x86_fp80", "x86_fp80"),
                 "d": ("d", "ptr", ""), "e": ("e", "i8", "i8 signext, i128")}
