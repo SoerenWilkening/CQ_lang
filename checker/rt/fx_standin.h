@@ -59,6 +59,8 @@ static const cq_fx_ent cq_fx_table[] = {
     /* cq-tgl3i: the scanf family, INPUT calls the host performs (cq_fx_scan below), on the one input stream */
     {"scanf", 'I', "F"},    {"fscanf", 'I', "fF"},  {"vscanf", 'I', "Fv"},  {"vfscanf", 'I', "fFv"},
     {"wscanf", 'I', "G"},   {"fwscanf", 'I', "fG"}, {"vwscanf", 'I', "Gv"}, {"vfwscanf", 'I', "fGv"},
+    /* ruling Q5: every input call consumes from the one stream */
+    {"gets", 'I', "W"},     {"fgetws", 'I', "Wnf"}, {"fgetwc", 'I', "f"},  {"getwc", 'I', "f"},   {"getwchar", 'I', ""},
 };
 
 static inline const cq_fx_ent *cq_fx_find(const char *name) {
@@ -112,23 +114,37 @@ __attribute__((weak)) void cq_fx_stdin_set(const char *b, unsigned long n) {
   cq_fx_in.set = 1;
 }
 
-/* What one INPUT call (fgets, fread, read, fgetc, getc, getchar) does at the stream's position for total length v
- * (fread: v = size * nmemb, the element size apart): take the bytes it consumes, stored the bytes it stores at its
- * buffer (fgets: those and the null character), result its result. C17 7.21.7.2 / 7.21.8.1 / 7.21.7.1, POSIX read. */
-typedef struct { size_t pos, take, stored; uint64_t result; } cq_fx_io;
+/* What one INPUT call (fgets, fread, read, fgetc, getc, getchar, gets, and the wide fgetws, fgetwc, getwc, getwchar)
+ * does at the stream's position for total length v (fread: v = size * nmemb, the element size apart): take the bytes it
+ * consumes, stored the bytes it stores at its buffer (fgets, gets: those and the null character; gets drops the
+ * new-line), result its result. A wide call reads one wide character per byte (the C locale's ASCII; a byte past 0x7f
+ * reads as its own value, the same on both sides) and stores unit = sizeof(wchar_t) bytes per character.
+ * C17 7.21.7.2 / 7.21.8.1 / 7.21.7.1, 7.29.3.1 / 7.29.3.2, C99 gets, POSIX read. */
+typedef struct { size_t pos, take, stored, unit, skip; uint64_t result; } cq_fx_io;
 
 static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t buf, uint64_t size) {
   cq_fx_in_t *s = cq_fx_stream();
   size_t rem = s->n - s->pos;
-  cq_fx_io io = {s->pos, 0, 0, 0};
-  if (!strcmp(e->name, "fgets")) {
+  cq_fx_io io = {s->pos, 0, 0, 1, (size_t)-1, 0};
+  int wide = !strcmp(e->name, "fgetws");
+  if (!strcmp(e->name, "fgets") || wide) {
+    io.unit = wide ? sizeof(wchar_t) : 1;
     if (v == 0) return io;                         /* n <= 0: nothing, null */
     size_t k = 0;
     while (k + 1 < v && k < rem) {
       if (s->b[s->pos + k++] == '\n') break;
     }
     if (k == 0 && v > 1) return io;                /* end of file before any character: null, the buffer as it was */
-    io.take = k, io.stored = k + 1, io.result = buf;
+    io.take = k, io.stored = (k + 1) * io.unit, io.result = buf;
+    return io;
+  }
+  if (!strcmp(e->name, "gets")) {
+    if (!rem) return io;                           /* end of file at once: null, the buffer as it was */
+    size_t k = 0;
+    while (k < rem && s->b[s->pos + k] != '\n') k++;
+    io.take = k < rem ? k + 1 : k;                 /* the new-line is read and not stored */
+    io.skip = k;
+    io.stored = k + 1, io.result = buf;
     return io;
   }
   if (!strcmp(e->name, "fread") || !strcmp(e->name, "read")) {
@@ -136,15 +152,18 @@ static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t
     io.result = !strcmp(e->name, "read") ? io.take : (size ? io.take / size : 0);
     return io;
   }
-  /* fgetc, getc, getchar: the next byte, or EOF */
+  /* fgetc, getc, getchar: the next byte, or EOF; fgetwc, getwc, getwchar: the next character, or WEOF */
+  int w = !strcmp(e->name, "fgetwc") || !strcmp(e->name, "getwc") || !strcmp(e->name, "getwchar");
   io.take = rem ? 1 : 0;
-  io.result = rem ? s->b[s->pos] : (uint64_t)(int64_t)EOF;
+  io.result = rem ? s->b[s->pos] : w ? (uint64_t)(uint32_t)WEOF : (uint64_t)(int64_t)EOF;
   return io;
 }
 
-/* Byte j of what the call stores (fgets ends with the null character). Before cq_fx_input_done. */
+/* Byte j of what the call stores (fgets, gets, fgetws end with the null character). Before cq_fx_input_done. */
 static inline uint8_t cq_fx_input_byte(const cq_fx_io *io, size_t j) {
-  return j < io->take ? cq_fx_stream()->b[io->pos + j] : 0;
+  size_t c = j / io->unit;
+  if (c >= io->take || c == io->skip || j % io->unit) return 0;
+  return cq_fx_stream()->b[io->pos + c];
 }
 
 /* The call consumed its bytes. */
@@ -155,6 +174,8 @@ static inline void cq_fx_input_done(const cq_fx_io *io) { cq_fx_stream()->pos = 
 static inline size_t cq_fx_input_reach(const cq_fx_ent *e, uint64_t v) {
   size_t n = cq_fx_stream()->n;
   if (!strcmp(e->name, "fgets")) return v == 0 ? 0 : (size_t)((v - 1 < n ? v - 1 : n) + 1);
+  if (!strcmp(e->name, "fgetws")) return v == 0 ? 0 : (size_t)((v - 1 < n ? v - 1 : n) + 1) * sizeof(wchar_t);
+  if (!strcmp(e->name, "gets")) return n + 1;
   if (!strcmp(e->name, "fread") || !strcmp(e->name, "read")) return (size_t)(v < n ? v : n);
   return 0;
 }

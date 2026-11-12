@@ -246,6 +246,7 @@ CASES = [
     ("stdin_pred", "stdin_pred", [], "wrong: stdin_pred.always.ll", []),
     ("stdin_scan_getc", "stdin_scan_getc", [], "pass", []),
     ("stdin_eof", "stdin_eof", [], "pass", []),
+    ("stdin_wide", "stdin_wide", [], "pass", []),
     # cq-xdscs (rule 16, BACKEND_ABI §1.11): perror and puts read a string whose first byte is quantum, results unread (no
     # stated deviation): deferred entries performed on the measured string, read up to its first 0 (on x0 = 0: ""), as the
     # C program's call reads it. The mutant passes perror the string's second byte.

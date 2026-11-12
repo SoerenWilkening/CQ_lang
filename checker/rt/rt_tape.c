@@ -650,7 +650,7 @@ static void perform_input(event *e, const cq_fx_ent *ent) {
   int classical = own && !g_in_quantum;
   int cv = e->pred;
   uint64_t size = bi >= 0 && li + 1 < e->nfields && ent->roles[li + 1] == 'n' ? field_low64(&e->fields[li]) : 1;
-  cq_fx_io io = {cq_fx_stream()->pos, 0, 0, 0};
+  cq_fx_io io = {cq_fx_stream()->pos, 0, 0, 1, (size_t)-1, 0};
   if (cv) io = cq_fx_input_plan(ent, (uint64_t)v, addr, size);
   if (bi >= 0 && !(e->pred_known && !cv)) {           /* classical predicate 0: skipped, nothing is touched */
     size_t reach = classical ? io.stored : cq_fx_input_reach(ent, nknown ? (uint64_t)v : (uint64_t)CQ_FX_K2);
