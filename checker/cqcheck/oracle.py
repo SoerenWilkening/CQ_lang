@@ -707,11 +707,14 @@ def _classify(sr: SampleRun) -> None:
 
 
 def _exit_status(sr: SampleRun) -> Optional[int]:
-    """The status of a sample that ended in a noreturn call by a process exit (exit, _exit, _Exit); else None.
-    Read from the notes, which the run cache holds (a longjmp arm or an abort leaves no "wait exited")."""
+    """The status of a sample that ended in a noreturn call by a process exit (exit, _exit, _Exit), or minus the signal
+    of one that ended in abort or a trap (cq-yd85w); else None. Read from the notes, which the run cache holds (a longjmp
+    arm leaves no "wait")."""
     if not sr.outcome.startswith("noreturn:"):
         return None
     wait = next((n for n in reversed(sr.notes) if n.startswith("wait ")), "")
+    if wait.startswith("wait signaled "):
+        return -int(wait.split()[2])   # cq-yd85w: abort or a trap, minus the signal (core.c cqe__host_signal_end)
     return int(wait.split()[2]) if wait.startswith("wait exited ") else None
 
 

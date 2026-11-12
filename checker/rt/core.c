@@ -2595,6 +2595,7 @@ void *realloc(void *p, size_t n) {
 
 #define MAX_EXIT_FNS 64
 static void (*exit_fns[MAX_EXIT_FNS])(void);
+static char exit_fn_user[MAX_EXIT_FNS]; /* cq-yd85w: registered by the program (cqe__user_atexit), not the runtime */
 static int nexit_fns;
 
 int atexit(void (*fn)(void)) {
@@ -2602,8 +2603,15 @@ int atexit(void (*fn)(void)) {
     fprintf(stderr, "cq: chk-core: more than %d atexit handlers\n", MAX_EXIT_FNS);
     abort();
   }
+  exit_fn_user[nexit_fns] = 0;
   exit_fns[nexit_fns++] = fn;
   return 0;
+}
+/* the program's own atexit (run.py host_end_module renames its calls): _exit, _Exit and abort skip these handlers */
+int cqe__user_atexit(void (*fn)(void)) {
+  int r = atexit(fn);
+  exit_fn_user[nexit_fns - 1] = 1;
+  return r;
 }
 
 void cqe__invert_close_all(void) __attribute__((weak)); /* dispatch.c (cq-4593) */
@@ -2617,6 +2625,17 @@ static void run_exit_fns(void) {
     cqe__invert_close_all(); /* BACKEND_ABI 1.13: a region still open at the end of the shot is closed */
   while (nexit_fns > 0)
     exit_fns[--nexit_fns]();
+}
+/* cq-yd85w: _exit, _Exit, abort: the runtime's own handlers (the exit event, the tape's shot, the bus) report the shot;
+ * the program's handlers do not run, as in the C program */
+static void run_runtime_exit_fns(void) {
+  if (cqe__invert_close_all)
+    cqe__invert_close_all();
+  while (nexit_fns > 0) {
+    --nexit_fns;
+    if (!exit_fn_user[nexit_fns])
+      exit_fns[nexit_fns]();
+  }
 }
 
 int __cxa_atexit(void (*)(void *), void *, void *);
@@ -3131,6 +3150,21 @@ __attribute__((noreturn)) static void quick_exit_(int code) {
 }
 void _exit(int code) { quick_exit_(code); }
 void _Exit(int code) { quick_exit_(code); }
+/* cq-yd85w (CR rule 16 noreturn: a classical call with classical arguments is the ordinary host call, the program
+ * ends there): the lowered program's call of the host's abort, or its llvm.trap (run.py host_end_module), ends the
+ * shot as the host would with that signal; the host_end status is minus the signal, as the C oracle's (oracle.py
+ * _exit_status). Not a fatal signal of ours, which stays a failure. */
+__attribute__((noreturn)) void cqe__host_signal_end(int sig) {
+  if (sample_running()) {
+    R->jkind = J_EXIT;
+    R->code = -sig;
+    R->ran_fns = -1;
+    siglongjmp(R->jb, 1);
+  }
+  signal(sig, SIG_DFL);
+  raise(sig);
+  real__exit(128 + sig);
+}
 
 /* -- capture files -- */
 
@@ -3777,7 +3811,9 @@ void cqe__shot_end(void) { shot_finish(0, 1); }
 void cqe__shot_resume(void) {
   if (R->jkind == J_EXIT) {
     cqe__logf("{\"ev\":\"host_end\",\"code\":%d}", R->code); /* rule 16: the program itself made the host exit */
-    shot_finish(R->code, R->ran_fns == 0);
+    if (R->ran_fns < 0)
+      run_runtime_exit_fns(); /* cq-yd85w: _exit, _Exit, abort, a trap: the shot is still reported */
+    shot_finish(R->code < 0 ? 128 - R->code : R->code, R->ran_fns == 0);
     return;
   }
   /* a signal: the C library may be inside a lock; leave the end to the server */

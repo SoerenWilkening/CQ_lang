@@ -707,6 +707,10 @@ static void cqd_sig(int s) {
 /* an `unreachable` instruction reached: C undefined as LLVM defines it, so the sample ends here and is outside the
  * domain (CLAUDE.md Domain, cq-by8qu) */
 void __cqd_ub(void) { C->in = 0; cqd_stop("ub", -1); }
+/* cq-yd85w (CR rule 16 noreturn: abort, _Exit, __builtin_trap, __assert_fail end the program; DECISIONS cq-tdqrq): such a
+ * call ends the sample in the domain, "abort" (abort, a trap, a failed assert) or "exit" (_exit, _Exit, which skip atexit),
+ * as the C program ends there; a signal elsewhere (a trapping division) stays "signal" */
+void __cqd_end(int abrt, int code) { C->in = 0; cqd_stop(abrt ? "abort" : "exit", code); }
 static void cqd_atexit(void) { if (C->in) { C->in = 0; cqd_finish("exit", 0); } }
 
 /* main's frame and everything above it (the setup's locals, which a sample may be passed) */
@@ -1608,7 +1612,7 @@ class Instrumenter:
              "declare void @__cqd_m(i32, ptr, ptr, i64, i32)", "declare void @__cqd_mi(ptr, ptr, i64, i32)",
              "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare i32 @__cqd_regs(ptr, i64)",
              "declare i32 @__cqd_rega(ptr, i64, i32)", "declare void @__cqd_regg(ptr, i64, i32)",
-             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare void @__cqd_ub()", "declare void @__cqd_vacall(i64, i64, i64)", "declare void @__cqd_vacopy(ptr, ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
+             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare void @__cqd_ub()", "declare void @__cqd_end(i32, i32)", "declare void @__cqd_vacall(i64, i64, i64)", "declare void @__cqd_vacopy(ptr, ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
              "@__cqd_afn = internal global ptr null", "@__cqd_rid = internal global i32 0",
              f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)", "declare void @__cqd_fn()"]
@@ -1708,6 +1712,12 @@ class Instrumenter:
         if ins.op == "unreachable":
             return ["call void @__cqd_ub()"], []
         before, after = self.instrument1(f, ins)
+        if ins.op == "call" and ins.callee in _ENDS:
+            # cq-yd85w: the program ends here, in the domain (Obs.ended)
+            code = "i32 0"
+            if _ENDS[ins.callee] == 0 and ins.call_args:
+                code = ins.call_args[0].split()[0] + " " + ins.call_args[0].split()[-1]
+            before = before + [f"call void @__cqd_end(i32 {1 if _ENDS[ins.callee] else 0}, {code})"]
         if ins.op == "call" and ins.callee != "@llvm.va_start.p0":
             info = self.va_call_info(ins)
             if info:
@@ -2566,6 +2576,12 @@ class Obs:
     @property
     def returned(self) -> bool:
         return self.end == "exit"
+
+    @property
+    def ended(self) -> bool:
+        """cq-yd85w: the C program ended by a return, exit, _exit, _Exit, abort, a trap or a failed assert (CR rule 16's
+        noreturn calls): no LLVM-undefined end."""
+        return self.end in ("exit", "abort")
 
 
 # ------------------------------------------------------------------------------------------------
@@ -3575,12 +3591,16 @@ def _in_domain(o: Obs) -> bool:
     return not o.oob or o.cap_ok
 
 
+# cq-yd85w: the noreturn calls that end the program (CR rule 16), 1 abort, 0 exit with its status
+_ENDS = {"@abort": 1, "@llvm.trap": 1, "@__assert_fail": 1, "@__assert_rtn": 1, "@_exit": 0, "@_Exit": 0}
+
+
 def _valid(o: Obs, rows_by_site: Dict[int, List[Row]]) -> bool:
     if o.oob:
         return o.cap_ok and not _ub(o, rows_by_site)
     # an LLVM-undefined operation (a trapping division included) is outside the domain (CLAUDE.md
-    # Domain, cq-f075)
-    return o.returned and not _ub(o, rows_by_site)
+    # Domain, cq-f075); an abort or exit is not undefined and is in it (cq-yd85w, DECISIONS cq-tdqrq)
+    return o.ended and not _ub(o, rows_by_site)
 
 
 def _cap_clean(r) -> bool:

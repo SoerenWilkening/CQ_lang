@@ -563,6 +563,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
+        tot = host_end_module(tot)   # cq-yd85w: after the effect wrappers (no effect entry of its own)
         tot = kept_k2_module(kept_ak_module(ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon))))))
         tot = replay_module(tot, handle_returning_fns(canon))  # cq-kcn5i
         from cqcheck import drivers
@@ -2413,6 +2414,24 @@ def ctl_measures_module(text: str) -> str:
         for name, i in fns.items():
             out.append(f'@.cqd.fn.{i} = private unnamed_addr constant [{len(name) + 1} x i8] c"{name}\\00"')
     return "\n".join(out) + "\n"
+
+
+def host_end_module(text: str) -> str:
+    """cq-yd85w (CR rule 16 noreturn: a classical call with classical arguments is the ordinary host call, the program
+    ends there): the lowered program's call of the host's abort and its llvm.trap end the shot by core.c's
+    cqe__host_signal_end with the signal the host raises (SIGABRT; SIGILL, x86's ud2), so the evaluator reports the
+    shot and its host_end as for exit and _exit; the program's own atexit registers a handler _exit, _Exit and abort
+    skip (cqe__user_atexit). A body the module holds for one of them is code like any other."""
+    import signal as _sg
+    defined = set(re.findall(r'^define [^@]*@([-\w$.]+)\(', text, re.M))
+    out = re.sub(r'\bcall void @llvm\.trap\(\)', f"call void @cqe__host_signal_end(i32 {int(_sg.SIGILL)})", text)
+    if "abort" not in defined:
+        out = re.sub(r'\bcall void @abort\(\)', f"call void @cqe__host_signal_end(i32 {int(_sg.SIGABRT)})", out)
+    if "atexit" not in defined:
+        out = re.sub(r'\bcall i32 @atexit\(', "call i32 @cqe__user_atexit(", out)
+    if out == text:
+        return text
+    return out + "\ndeclare void @cqe__host_signal_end(i32) noreturn\ndeclare i32 @cqe__user_atexit(ptr)\n"
 
 
 def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
