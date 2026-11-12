@@ -3161,10 +3161,16 @@ public:
         CB->setCalledFunction(hook("__cqo_raise", I32, {I32}));
         continue;
       }
-      // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed
+      // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed.
+      // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL at __errno_location(); the runtime calls the
+      // module's own (its address, no call added here) only then, or none when the module defines none.
       if (callee && callee->isDeclaration() && callee->getName() == "signal" && CB->arg_size() == 2 &&
           CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
           CB->getArgOperand(1)->getType()->isPointerTy()) {
+        Function *el = M.getFunction("__errno_location");
+        Value *errFn = el && !el->isDeclaration() && el->arg_empty() && el->getReturnType()->isPointerTy()
+                           ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
+        IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr}), {errFn});
         CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
         continue;
       }

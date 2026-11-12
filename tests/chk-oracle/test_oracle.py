@@ -646,6 +646,30 @@ int effvals(int w, int t, int s) {
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(1), i32(2), i32(40)]},
                                        {"call": 0, "args": [i32(0), i32(0), i32(0)]}]), ["0x31a80", "0x31a80"])
 
+    def test_signal_validity(self):
+        o1 = compile_c("sigvalid", """
+#include <signal.h>
+#include <errno.h>
+static int my_errno, hit;
+int *__errno_location(void) { return &my_errno; }
+static void h(int s) { hit = s; }
+int sigvalid(int s) {
+    my_errno = 0, hit = 0;
+    void (*p)(int) = signal(s, h);
+    int e = my_errno;
+    void (*q)(int) = signal(s, h);
+    int r = raise(s);
+    return (p == SIG_ERR) | (p == SIG_DFL) << 1 | (q == h) << 2 | (e == EINVAL) << 3 | (hit == s) << 4 | (r == 0) << 5
+           | (r == -1) << 6;
+}
+""")
+        sp = spec("sigvalid", "int sigvalid(int)", [("sigvalid", ["int"])])
+        # 19 (macOS SIGCONT), 9, 32, 0: invalid, EINVAL, nothing registered, raise's complement 0 (0: hit == s); 65: -1;
+        # 17 (macOS SIGSTOP), 40 (no macOS signal), 30: valid, registered, raise runs h and returns 0
+        ss = [19, 9, 32, 0, 65, 17, 40, 30]
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(x)]} for x in ss]),
+                         ["0x29", "0x29", "0x29", "0x39", "0x49", "0x36", "0x36", "0x36"])
+
 
 class Cutoff(unittest.TestCase):
     """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
