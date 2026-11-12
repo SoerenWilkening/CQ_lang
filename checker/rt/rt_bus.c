@@ -546,7 +546,10 @@ void cqe__bus_cell_state(uint64_t a, int *q, uint8_t *v, int *known) {
 /* ---- owner ruling 2026-11-11 Q2 (cq-8pjls): a bodiless callee that receives a pointer into an object holding a QUANTUM
  * cell at the call. The object of an address: the __cq_alloc block that holds it (every block the program allocated, in
  * address order, recorded by cqe__q2_alloc: cq_host.c hands them out upward and never reuses one; the table is in __DATA, so a sample's restore puts
- * it back with the arena); for any other address (a global, a host-stack local) the 8 cells from it, an approximation.
+ * it back with the arena). For any other address (a global, a host-stack local) this file knows no extent: the object is
+ * unknown and counts as holding a QUANTUM cell whenever any cell is QUANTUM, never a guessed window (cq-auqs3). This
+ * record only narrows the ruling's decision, which is the C program's (cqo_rt.c __cqo_q2_check, compare.py): an input
+ * excluded on the C side is compared unless this side also logged a call; an unknown object defers to the C side.
  * Reach through a global or a stored pointer is not detected (the ruling's stated limit). */
 
 void cqe_log(const char *json_object);
@@ -573,11 +576,11 @@ void *cqe__q2_alloc(int64_t size, int64_t align) { /* run.py host_effects_module
   return p;
 }
 
-/* Whether the object of address a (above) holds a QUANTUM cell now. */
+/* Whether the object of address a (above) holds a QUANTUM cell now; an unknown object: whether any cell is QUANTUM. */
 int cqe__q2_quantum_object(uint64_t a) {
   if (!cells_quantum)
     return 0;
-  uint64_t lo = a, hi = a + 8;
+  uint64_t lo, hi;
   int l = 0, r = q2_n;
   while (l < r) { /* the last block with q2_lo <= a */
     int m = (l + r) / 2;
@@ -585,6 +588,7 @@ int cqe__q2_quantum_object(uint64_t a) {
     else r = m;
   }
   if (l > 0 && a < q2_hi[l - 1]) lo = q2_lo[l - 1], hi = q2_hi[l - 1];
+  else return 1;
   if (hi - lo <= 4 * cells_cap) {
     for (uint64_t x = lo; x < hi; x++)
       if (cell_find(x)) return 1;
