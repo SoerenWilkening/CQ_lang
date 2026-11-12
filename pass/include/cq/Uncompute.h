@@ -69,6 +69,8 @@ public:
   // carried value's header phi, whose clean-up reads its update) as if it were defined there: its update lies past a
   // classical join of the trip, in a later segment than the header's. Every anchor of the rail must lie in `block`.
   void flushIn(RailId rail, llvm::BasicBlock *block);
+  // The same for these rails alone at `point` (a local flush of them only): their block is no segment's last.
+  void flushRailsBefore(llvm::ArrayRef<RailId> rails, llvm::Instruction *point);
   // Rule 5 sentence 3: the value rail (a seed included) and the control rail of a kept store are kept: Role::Kept,
   // never resolved. Rule 5 sentence 1: a load copy that is the value rail is never un-copied, Role::Kept too.
   void noteKeptStore(llvm::CallInst *store, llvm::Value *value, llvm::Value *ctl);

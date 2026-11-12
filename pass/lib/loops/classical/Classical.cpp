@@ -372,7 +372,9 @@ private:
   DenseMap<const BasicBlock *, BasicBlock *> throughSub;   // a sub-unit's continuation -> the parent segment entering it
   DenseSet<const BasicBlock *> subBlocks;                  // the blocks of the sub-units' regions
   std::vector<std::pair<Instruction *, unsigned>> entering;   // per segment, an entering edge (flushTrips)
-  std::vector<std::pair<RailId, unsigned>> lateR6;   // cq-bqbty: a rule-6 old rail cleaned in a later segment (latchNexts)
+  // cq-bqbty, cq-d4c4m: a rule-6 old rail and the last instruction its clean-up follows (latchNexts): flushTrips places the
+  // clean-up in that instruction's block.
+  std::vector<std::pair<RailId, Instruction *>> lateR6;
   bool tripLocal(Loop &sl, Loop &L);
   // The seeds minted for classical incomings of phis of handles, per (phi, edge source), and a mixed
   // join's value per real edge: shared by the walks of a loop and its sub-loops (a sub-loop's exit edge
@@ -1893,16 +1895,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           internalError("loops-classical: rule 6 on a carried value whose update is not its next rail", cv.orig);
         RailType w = railOf(cv.orig->getType());
         RailId old = ctx.unc().idOf(cv.np);
-        // cq-bqbty: the update lies past a classical join of the trip (planRuleSix: a block dominating the latch at the
-        // header's quantum predicate), in a later segment than the header's. The clean-up of the old rail reads the
-        // update (case 3: also the inverses emitted here), so the per-trip flush of that segment places it.
-        if (BasicBlock *ub = cast<Instruction>(o.v)->getParent(); ub != H) {
-          auto si = segIdx.find(c3 ? cur : ub);
-          if (si == segIdx.end())
-            noteUnbuilt("loops-classical: rule 6 on a carried value whose update is in no segment of the trip", cv.orig);
-          else
-            lateR6.push_back({old, si->second});
-        }
+        // cq-bqbty: the update may lie past a classical join of the trip (planRuleSix: a block dominating the latch at
+        // the header's quantum predicate), in a later segment than the header's, and code after it in its segment may
+        // branch (a memory intrinsic's loop, rule 5's Readers test). The clean-up of the old rail reads the update (case
+        // 3: also the inverses emitted here), so flushTrips places it in the block that holds them.
+        const bool inH = cast<Instruction>(o.v)->getParent() == H;
+        if (!c3)
+          for (unsigned i = 0; i < r->U.size(); ++i)   // the old rail and each intermediate rail of the chain
+            lateR6.push_back({i ? ctx.unc().idOf(ctx.operand(r->U[i - 1]).v) : old, cast<Instruction>(o.v)});
         if (!c3) {
           if (!r->rotated)
             ctx.unc().setRole(ctx.unc().idOf(o.v), Role::UserRegister);
@@ -1929,6 +1929,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           ss.op = "select";
           ss.w = w;
           ctx.unc().cleanupBijective(old, ss, {Operand{aPhi, true}, Operand{inner, true}, Operand{sel, true}});
+          if (!inH)
+            lateR6.push_back({old, cast<Instruction>(inner)});
           keptFinal.insert(sel);
           spine::shared(ctx).carriedFinal.insert(sel);
           nexts.push_back(sel);
@@ -3868,9 +3870,28 @@ void Unit::flushTrips() {
         f();
       }
   };
+  // A rule-6 clean-up whose block is no segment's last (code after it in the segment branched) is placed at that block's
+  // end, alone; one whose block is a segment's last goes with that segment's flush.
+  DenseMap<const BasicBlock *, unsigned> lastOf;
+  for (unsigned i = 0; i < segs.size(); ++i)
+    lastOf[segs[i].bb] = i;
+  {
+    std::vector<std::pair<Instruction *, SmallVector<RailId, 4>>> mid;   // per block end, in lateR6's order
+    for (auto &[g, at] : lateR6) {
+      if (lastOf.count(at->getParent()))
+        continue;
+      Instruction *t = at->getParent()->getTerminator();
+      auto it = find_if(mid, [&](const auto &m) { return m.first == t; });
+      if (it == mid.end())
+        mid.push_back({t, {}}), it = std::prev(mid.end());
+      it->second.push_back(g);
+    }
+    for (auto &[t, gs] : mid)
+      U.flushRailsBefore(gs, t);
+  }
   for (unsigned i = 0; i < segs.size(); ++i) {
-    for (auto &[g, si] : lateR6)
-      if (si == i)
+    for (auto &[g, at] : lateR6)
+      if (at->getParent() == segs[i].bb)
         U.flushIn(g, segs[i].bb);
     U.flushBefore(segs[i].bb->getTerminator());
     finishSubs(i + 1);
