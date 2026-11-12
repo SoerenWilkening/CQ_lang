@@ -42,7 +42,7 @@
 // A trip is any acyclic code (cq-b58q): its quantum branches and switches are its predicates, a classical phi a
 // classical select (rule 9), several latches end a trip on one back edge, several header entries merge a quantum
 // start (rule 9). A purely classical condition stays a classical branch in every trip copy (rule 8, cq-jws5r:
-// underClassical): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
+// underClassical; a mixed condition's classical factor too, cq-kbygn: tripEdgeFactored): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
 // on the classical paths that reach it, its effects under the quantum part of its predicate alone. What stays a seed
 // rail (rule 7) is a classical term of a predicate read as data outside such a branch: the chain's exit test, a
 // merge's select condition, a term rule 8 cannot factor out (`c || q`), and every classical term of a K-loop that
@@ -307,6 +307,68 @@ private:
   // case atoms for a switch: a case edge is its value's equality, the default edge the complement of
   // every case; a computed goto is the switch over its destinations).
   static Pred tripEdge(const BasicBlock *p, const BasicBlock *b) { return exits::tripEdge(p, b); }
+  // cq-kbygn (CR rule 8: "A mixed condition is first factored as `C && Q` on its Boolean function (not its syntax) ...
+  // `C` stays a classical branch around the quantum part"): a quantum condition expanded through and/or/not/select on
+  // i1 into its leaves, each an atom (pred's own expansion of a branch condition).
+  Pred expandCond(const Value *x) {
+    if (auto *ci = dyn_cast<ConstantInt>(x))
+      return ci->isOne() ? Pred::top() : Pred::bottom();
+    if (!isQ(x))
+      return Pred::atom(x);
+    if (auto *bo = dyn_cast<BinaryOperator>(x); bo && bo->getType()->isIntegerTy(1)) {
+      switch (bo->getOpcode()) {
+      case Instruction::And:
+        return expandCond(bo->getOperand(0)) & expandCond(bo->getOperand(1));
+      case Instruction::Or:
+        return expandCond(bo->getOperand(0)) | expandCond(bo->getOperand(1));
+      case Instruction::Xor:
+        if (auto *k = dyn_cast<ConstantInt>(bo->getOperand(1)); k && k->isOne())
+          return !expandCond(bo->getOperand(0));
+        if (auto *k = dyn_cast<ConstantInt>(bo->getOperand(0)); k && k->isOne())
+          return !expandCond(bo->getOperand(1));
+        break;
+      default:
+        break;
+      }
+    }
+    if (auto *si = dyn_cast<SelectInst>(x);
+        si && si->getType()->isIntegerTy(1) && si->getCondition()->getType()->isIntegerTy(1)) {
+      Pred c = expandCond(si->getCondition());
+      return (c & expandCond(si->getTrueValue())) | (!c & expandCond(si->getFalseValue()));
+    }
+    return Pred::atom(x);
+  }
+  // The expansion of a quantum br condition when one of its edges has a classical conjunct (rule 8 factors it), else
+  // nothing: the condition is one atom, its own rail the flag (as pred reads a branch condition).
+  std::optional<Pred> factoredCond(const BranchInst *br) {
+    if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1) || !isQ(br->getCondition()))
+      return std::nullopt;
+    Pred f = expandCond(br->getCondition());
+    if (f.classicalFactor(ctx.T, ctx.S).isTop() && (!f).classicalFactor(ctx.T, ctx.S).isTop())
+      return std::nullopt;
+    return f;
+  }
+  // Is br a test of the innermost loop holding it (an edge out of that loop or a back edge to its header)? Rule 14's
+  // chain reads such a test whole: whether its classical conjunct is a branch around the test waits for CQ_spec (Q10).
+  bool loopTest(const BranchInst *br) {
+    const Loop *l = A.LI.getLoopFor(br->getParent());
+    return l && any_of(successors(br->getParent()),
+                       [&](const BasicBlock *s) { return !l->contains(s) || s == l->getHeader(); });
+  }
+  // The condition under which a trip goes from p to its successor b: a br that is no loop test with a factorable mixed
+  // condition is read on its Boolean function, so its classical factor is a classical term of the trip's predicates,
+  // which underClassical makes a real branch (rule 8); every other edge is tripEdge's.
+  Pred tripEdgeFactored(const BasicBlock *p, const BasicBlock *b) {
+    auto *br = dyn_cast<BranchInst>(p->getTerminator());
+    if (!br || loopTest(br))
+      return tripEdge(p, b);
+    std::optional<Pred> f = factoredCond(br);
+    if (!f)
+      return tripEdge(p, b);
+    return br->getSuccessor(0) == b ? *f : !*f;
+  }
+  // Is the quantum i1 I read whole by a br of the unit (an atom of its trip predicates, computed as data)?
+  bool readWhole(const BranchInst *br) { return loopTest(br) || !factoredCond(br); }
   // The classical part of tripEdge as a classical i1 of the current trip: a quantum condition counts
   // as true. A classical phi's incoming edge is chosen by classical conditions alone (taint: a phi
   // whose choice depends on a quantum condition is quantum), so among edges whose classical part
@@ -320,6 +382,54 @@ private:
     Value *r = arms.back().second;
     for (size_t i = arms.size() - 1; i-- > 0;)
       r = ctx.B().CreateSelect(arms[i].first, arms[i].second, r);
+    return r;
+  }
+  // The merge of a quantum phi of a trip over its arms (trip-local edge predicate, value). cq-o5tjh (CR rule 9: "A
+  // `select` or `phi` whose condition (or choice of incoming edge) is purely classical is a classical `select`/`phi`
+  // over the handles, no gate; ... a literal incoming of a classical `phi` over handles is a seed"): where the choice
+  // among the arms is classical, the classical select chain over the handles (each select a merge, Uncompute U1), its
+  // conditions read from this trip's classical values; else rule 9's select chain, a classical term a seed (rule 8).
+  Value *mergeArms(ArrayRef<std::pair<Pred, Operand>> arms, Type *ty) {
+    RailType w = railOf(ty);
+    // The choice is classical when, at the merge (where some arm's predicate holds, M), every arm's predicate is M & a
+    // classical condition: its classical projection. Where M is false the merge is never read.
+    Pred M = Pred::bottom();
+    for (auto &a : arms)
+      M = M | a.first;
+    std::vector<Pred> cls;
+    for (auto &a : arms) {
+      Pred c = a.first.classicalProjection(ctx.T, ctx.S);
+      Pred d = M & c;
+      if (!((d & !a.first) | (!d & a.first)).isBottom())
+        return selectChain(ctx, arms, w);
+      cls.push_back(c);
+    }
+    if (arms.empty())
+      return selectChain(ctx, arms, w);
+    Value *r = nullptr;
+    for (size_t i = arms.size(); i-- > 0;) {
+      Operand v = arms[i].second;
+      if (!v.handle)
+        v = Operand{seedRail(v.v->getType()->isPointerTy() ? ctx.B().CreatePtrToInt(v.v, ctx.B().getInt64Ty()) : v.v,
+                             v.v->getType()->isPointerTy() ? ctx.B().getInt64Ty() : ty),
+                    true};
+      if (!r) {
+        r = v.v;
+        continue;
+      }
+      if (v.v == r)
+        continue;
+      Value *cond = classicalValue(ctx, cls[i]);
+      if (auto *k = dyn_cast<ConstantInt>(cond)) {
+        if (k->isOne())
+          r = v.v;
+        continue;
+      }
+      Value *sel = ctx.B().CreateSelect(cond, v.v, r);
+      if (auto *si = dyn_cast<Instruction>(sel))
+        ctx.unc().recordMerge(si);
+      r = sel;
+    }
     return r;
   }
 };
@@ -367,8 +477,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto leaveUnit = make_scope_exit([&] { enclosing.pop_back(); });
   auto liveEdge = [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); };
   BasicBlock *X = U.multi() ? nullptr : U.cont;
-  if (c == 0)
-    internalError("loops-cutoff: a cutoff of 0 trips", H->getTerminator());
 
   // Sub-loops: a quantum-exit loop is a nested K-loop (its chain seeded by the trip predicate), a classically
   // bounded one (rule 14 case 1 or 3) a rolled classical loop inside each trip (cq-h5uj, classicalSub below).
@@ -381,6 +489,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     checkTerminator(t);
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional() && !isQ(br->getCondition()))
       classicalTerms = true;
+    if (auto *br = dyn_cast<BranchInst>(t); br && !loopTest(br) && factoredCond(br))
+      classicalTerms = true;   // cq-kbygn: a mixed condition's classical factor
     if (auto *sw = dyn_cast<SwitchInst>(t); sw && !isQ(sw->getCondition()))
       classicalTerms = true;
     if (auto *ib = dyn_cast<IndirectBrInst>(t); ib && !isQ(ib->getAddress()))
@@ -468,7 +578,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
   // Predicates local to one trip (relative to the header), over the body's own branch conditions.
   DenseMap<const BasicBlock *, Pred> local;
-  auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdge(p, b); };
+  auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdgeFactored(p, b); };
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       exits::Unit SU = exits::unitOf(*S);
@@ -1104,8 +1214,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           if (!is_contained(outs, &I))
             outs.push_back(&I);
         }
-    Value *trip = conj(q, lp, at);
+    // cq-o5tjh (rule 8, as underClassical): lp's classical part is the branch around S, its quantum part alone the
+    // trip rail's conjunct (no seed of a classical term). A oneBlock unit keeps its classical terms (cq-kk46l).
+    Pred cg = (oneBlock || lp.isBottom()) ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
+    Value *trip = conj(q, cg.isTop() ? lp : lp.quantumPart(ctx.T, ctx.S), at);
     Value *g = creachOf(S.getHeader());
+    if (!cg.isTop()) {
+      Value *cv = classicalValue(ctx, cg);
+      auto *g0 = dyn_cast<ConstantInt>(g);
+      g = g0 && g0->isOne() ? cv : ctx.B().CreateAnd(g, cv);
+    }
     auto *gc = dyn_cast<ConstantInt>(g);
     if (gc && gc->isZero())
       internalError("loops-cutoff: a sub-loop lowered where the trip's classical path never reaches it", at);
@@ -1494,7 +1612,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           // A trip with a classical branch or switch has no output blocks to join classically (it is
           // straight-line code): the merge is rule 9's select chain over the trip-local edge
-          // predicates, a classical term of them a seed rail (rule 8).
+          // predicates, a classical term of them a seed rail (rule 8), or, where the choice is purely
+          // classical, a classical select over the handles (mergeArms, cq-o5tjh).
           std::vector<std::pair<Pred, Operand>> arms;
           auto up = unitPhi.find(&P);
           bool unitArm = false;
@@ -1512,7 +1631,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             }
             arms.push_back({e, ctx.operand(P.getIncomingValue(i))});
           }
-          set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
+          set(&P, Operand{mergeArms(arms, P.getType()), true});
         }
       lowerInsts(b, q, lpb);
       });
@@ -1638,7 +1757,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         unsigned K = ctx.K(S);
         std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
         unsigned cs = Bs ? unsigned(std::min<uint64_t>(K, *Bs)) : K;
-        lowerLoop(*S, conj(q, acc, b->getTerminator()), cs, false, false);
+        // cq-o5tjh (rule 8, as for a sub-loop of the trip, cq-jws5r): behind a classical condition of this evaluation
+        // the loop of the arm is skipped by a real branch, its chain seeded by the quantum part of the arm's predicate
+        // alone. What it leaves for the code after it (its continuation's phis, its stop rail and chain end) reads |0>
+        // where it was skipped, where every predicate that selects it is false.
+        exits::Unit SU = exits::unitOf(*S);
+        bool branched = !oneBlock && !acc.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont;
+        SmallVector<BasicBlock *, 16> unitBlocks(S->blocks().begin(), S->blocks().end());
+        unitBlocks.append(SU.arm.begin(), SU.arm.end());
+        SmallVector<PHINode *, 4> contPhis;
+        if (branched)
+          for (PHINode &P : SU.cont->phis())
+            contPhis.push_back(&P);
+        stopped = nullptr;
+        underClassical(branched ? acc : Pred::top(), unitBlocks, contPhis, {&stopped, &chainEnd}, [&](const Pred &lp) {
+          lowerLoop(*S, conj(q, branched ? lp : acc, b->getTerminator()), cs, false, false);
+        });
         if (stopped) {
           noteStop(stopped);
           stopped = nullptr;
@@ -1677,7 +1811,33 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             E = E | *e;
             tailArms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
           }
-          if (!tailArms.empty()) {
+          // Rule 9: P's edges from this evaluation's own arm blocks around the loop (pe_arm: a classical branch of the arm
+          // skips it) hold where they are taken; the loop's binding is P's value only on the loop's edges, under the
+          // predicate of reaching its header.
+          std::vector<std::pair<Pred, Operand>> outArms;
+          Loop *own = nullptr;
+          for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+            BasicBlock *u = P.getIncomingBlock(i);
+            if (nestedTailOwner(u))
+              continue;
+            Loop *S = L.contains(u) ? nullptr : (subLoopOf(u) ? subLoopOf(u) : nestedArmOwner(u));
+            if (S && !S->contains(b)) {
+              own = S;
+              continue;
+            }
+            auto e = edgeIn(u, b);
+            if (!e || e->isBottom())
+              continue;
+            outArms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
+          }
+          if (own && !outArms.empty()) {
+            auto it = armLocal.find(own->getHeader());
+            if (it == armLocal.end())
+              internalError("loops-cutoff: a loop of the arm bound a phi it was not lowered for", &P);
+            outArms.insert(outArms.end(), tailArms.begin(), tailArms.end());
+            outArms.push_back({it->second, ctx.operand(&P)});
+            set(&P, Operand{mergeArms(outArms, P.getType()), true});
+          } else if (!tailArms.empty()) {
             tailArms.push_back({!E, ctx.operand(&P)});
             set(&P, Operand{selectChain(ctx, tailArms, railOf(P.getType())), true});
           }
@@ -1703,7 +1863,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           arms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
         }
-        set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
+        set(&P, Operand{mergeArms(arms, P.getType()), true});
       }
       lowerInsts(b, q, lpb);
       });
@@ -1834,7 +1994,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
           if (auto sp = srcPred(P.getIncomingBlock(i)))
             arms.push_back({*sp & edgeCond(P.getIncomingBlock(i), b), ctx.operand(P.getIncomingValue(i))});
-        set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
+        set(&P, Operand{mergeArms(arms, P.getType()), true});
       }
       // Every instruction of the arm runs only where the arm is taken: under the flag.
       f = conj(q, lpb, b->getTerminator());
@@ -1884,8 +2044,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           // (edgeCond), so it is computed whole even where pred factored its condition (`stop || q`).
           bool tripAtom = I.getType()->isIntegerTy(1) && isQ(&I) && any_of(I.users(), [&](const User *u) {
                             auto *br = dyn_cast<BranchInst>(u);
+                            // an arm's edge conditions too; a factored one (cq-kbygn) is read through its leaves
                             return br && br->isConditional() && br->getCondition() == &I &&
-                                   U.contains(L, br->getParent());   // an arm's edge conditions are read whole too
+                                   U.contains(L, br->getParent()) && readWhole(br);
                           });
           if (tripAtom)
             lowerConditionAsData(ctx, I);
@@ -2674,10 +2835,10 @@ std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Ta
   }
   if (!n)
     return std::nullopt;
+  // cq-tntm (CR rule 14: "The cutoff is min(K, B) ... `a_K` is kept only when B > K or no bound is known"): a header-tested
+  // loop whose header runs at most once runs no body, B = 0, a known bound (no a_K kept), not "no bound".
   if (minusOne)
     --*n;
-  if (*n == 0)
-    return std::nullopt;
   return n;
 }
 
@@ -2691,9 +2852,7 @@ std::optional<uint64_t> tripBound(const Loop &L, ScalarEvolution &SE) {
     return std::nullopt;
   SmallPtrSet<const BasicBlock *, 8> region;
   if (testRegion(L, region))
-    --n;
-  if (n == 0)
-    return std::nullopt;
+    --n;   // cq-tntm: 0 is a bound (no body runs)
   return n;
 }
 
