@@ -1970,6 +1970,53 @@ def _k2_cmps(lines: List[str], lo: int, hi: int) -> List[int]:
     return sorted(cand[v] for v in cand if v not in used)
 
 
+# owner ruling 2026-11-12 cq-mrdkr: calloc(n, s) with a rail operand keeps or_i1(overflow, n*s > K2) in a fresh i1 rail
+# (bus/Alloc.cpp lowerCalloc): the umul_overflow template o and the compare g, the fresh rail k, or_i1(o, g, k), then o and
+# g undone at once (their _unc and frees, among the spine's) right before __cq_alloc(K2, align); nothing else touches k
+_K2_FRESH = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cqrt_alloc_i1\(i1 false\)\s*$")
+_K2_OR = re.compile(r"^\s+(?:tail |notail )?call void @cqrt_or_i1\(i32 (%[-\w.$]+), i32 (%[-\w.$]+), i32 (%[-\w.$]+)\)\s*$")
+_K2_OVF = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cq_template_umul_overflow_i64(?:_hl|_lh)?\(")
+
+
+def _k2_ors(lines: List[str], lo: int, hi: int) -> List[Tuple[int, str]]:
+    """(the or_i1 line, k) of every calloc kept predicate k = or_i1(overflow, n*s > K2) in lines[lo:hi] (one function
+    body), kept_k2_module: o a umul_overflow template, g = icmp_ugt_i64_hl(n*s, K2), k = cqrt_alloc_i1(false) right
+    before or_i1(o, g, k); then only the spine's _unc and frees, among them o's and g's _unc and free, up to
+    __cq_alloc(K2, align) of the same K2; and no other line of the body names k."""
+    defs: Dict[str, int] = {}
+    for i in range(lo, hi):
+        d = re.match(r"^\s+(%[-\w.$]+) = ", lines[i])
+        if d:
+            defs[d.group(1)] = i
+    out = []
+    for i in range(lo, hi - 1):
+        f = _K2_FRESH.match(lines[i])
+        o = _K2_OR.match(lines[i + 1]) if f else None
+        if not o or o.group(3) != f.group(1):
+            continue
+        ov, g, k = o.group(1), o.group(2), o.group(3)
+        if ov == g or ov == k or g == k or ov not in defs or g not in defs:
+            continue
+        cmp_ = _K2_CMP.match(lines[defs[g]])
+        if not cmp_ or not _K2_OVF.match(lines[defs[ov]]) or cmp_.group(1) != g:
+            continue
+        j = i + 2
+        undone = {ov: [False, False], g: [False, False]}
+        while j < hi and _K2_SPINE.match(lines[j]) and k not in _AK_TOKEN.findall(lines[j]):
+            toks = _AK_TOKEN.findall(lines[j])
+            for r, st in undone.items():
+                if toks and toks[0] == r:
+                    st[0 if "_unc(" in lines[j] else 1] = True
+            j += 1
+        a = _K2_ALLOC.match(lines[j]) if j < hi else None
+        if not a or a.group(1) != cmp_.group(3) or not all(all(st) for st in undone.values()):
+            continue
+        if any(k in _AK_TOKEN.findall(lines[x]) for x in range(lo, hi) if x not in (i, i + 1)):
+            continue
+        out.append((i + 1, k))
+    return out
+
+
 def kept_k2_module(text: str) -> str:
     """Rule 20's kept overflow predicate n > K2 of a rail-sized allocation, a kept rail CR §6 item 1 names (owner
     2026-11-09, cq-0ldab: identified structurally in the lowered program): a rail `icmp_ugt_i64_hl(n, K2)` followed by
@@ -1979,17 +2026,20 @@ def kept_k2_module(text: str) -> str:
     memory intrinsic whose length is a rail, unpredicated (cq-dl7da): the compare followed by the intrinsic's K2 trips
     (_k2_trips; bus/Intrinsics.cpp quantumTrips with no predicate in scope, Role::KeptOverflow). Each such rail gets the
     exit role n>K2 (rt/core.c cqe__set_kept_k2). A look-alike compare anything reads, or one neither such an allocation
-    nor such trips follow, is not one, whatever it reads at exit."""
+    nor such trips follow, is not one, whatever it reads at exit. Likewise calloc's kept or_i1(overflow, n*s > K2) (owner
+    ruling 2026-11-12 cq-mrdkr; _k2_ors): the C side's n > K2 of a calloc is the saturated product's, so overflow reads 1
+    there too (oracle.py _k2_sites, cqo_rt.c __cqo_calloc_k2)."""
     if "@cq_template_icmp_ugt_i64_hl(" not in text:
         return text
     lines = text.splitlines()
-    marks: Set[int] = set()
+    marks: Dict[int, str] = {}
     start = None
     for i, line in enumerate(lines):
         if line.startswith("define"):
             start = i + 1
         elif line.startswith("}") and start is not None:
-            marks.update(_k2_cmps(lines, start, i))
+            marks.update((c, _K2_CMP.match(lines[c]).group(1)) for c in _k2_cmps(lines, start, i))
+            marks.update(_k2_ors(lines, start, i))
             start = None
     if not marks:
         return text
@@ -1998,7 +2048,7 @@ def kept_k2_module(text: str) -> str:
         out.append(line)
         if i in marks:
             ind = re.match(r"\s+", line).group(0)
-            out.append(f"{ind}call void @cqe__set_kept_k2(i32 {_K2_CMP.match(line).group(1)})")
+            out.append(f"{ind}call void @cqe__set_kept_k2(i32 {marks[i]})")
     out.append("declare void @cqe__set_kept_k2(i32)")
     return "\n".join(out) + "\n"
 
