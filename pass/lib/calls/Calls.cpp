@@ -2218,7 +2218,8 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB) {
     re = tape::lowerRaiseEffect(ctx, CB, pn);
     return SmallVector<Value *, 2>{};
   });
-  // A result the program reads: the entry's rail under the complement, 0 under every candidate flag (|0> there, rule 9).
+  // A result the program reads is musl's value by tape::rewriteDeferredResults (cq-dbtpi), so none is read here unless
+  // the callee is not raise's prototype: then the entry's rail under the complement, 0 under every candidate flag.
   if (!re.empty())
     spine::bindOperand(ctx, &CB, Operand{re[0], true});
 }

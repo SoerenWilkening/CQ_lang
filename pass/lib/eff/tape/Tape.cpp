@@ -587,19 +587,59 @@ enum class OutKind : uint8_t {
   Fwrite,  // fwrite (and _unlocked): size ? nmemb : 0
   Wc,      // fputwc, putwc, putwchar (and _unlocked): wctomb(buf, c) < 0 ? WEOF : c
   Ws,      // fputws (and _unlocked): wcsrtombs(0, &ws, 0, 0) == -1 ? -1 : 0
+  // The other C library calls rule 16 names that are effect entries and no input calls (owner ruling 2026-11-12 on
+  // cq-dbtpi, CR rule 16 Results): musl's value when the host operation succeeds.
+  Status,  // fclose, remove, rename, fsetpos, close: 0
+  Range,   // fseek, fseeko (whence), setvbuf (type): (unsigned)arg > 2 ? -1 : 0; raise (sig): (unsigned)sig > 64 ? -1 : 0
+  Length,  // write: its length
 };
 
 struct OutFn {
   OutKind kind;
-  unsigned first;   // the format (Fmt..VWFmt) or the value argument (UChar, Wc, Ws)
+  unsigned first;   // the format (Fmt..VWFmt) or the value argument (UChar, Wc, Ws, Range, Length)
+  unsigned max = 0; // Range: the largest valid value
 };
 
 // By C name (a Mach-O asm label "\01_n" names n). Decisions by the ruling's criterion and musl's source, beyond the
 // named list: dprintf/vdprintf are vfprintf on an fd FILE (vdprintf.c), the count on success; putw is
 // fwrite(&x, sizeof x, 1, f) - 1 (putw.c), 0; fflush is 0 (fflush.c); an _unlocked form is its locked form.
-// perror and psignal return nothing; fclose, write and the other calls that are not output calls keep their result
-// (ABI 1.11, ruling item 3).
+// perror and psignal return nothing.
+// cq-dbtpi (owner 2026-11-12; CR rule 16 Results), checked against musl b1efda5's source: fclose.c (fflush and the
+// close: 0), remove.c, rename.c (the syscall: 0), fsetpos.c (__fseeko with SEEK_SET: 0), close.c (0); fseek.c
+// __fseeko_unlocked (-1 for a whence other than SEEK_SET 0, SEEK_CUR 1, SEEK_END 2, else 0 when the seek succeeds),
+// setvbuf.c (-1 for a type other than _IOFBF 0, _IOLBF 1, _IONBF 2, else 0); raise.c (tkill: 0 for 0 <= sig <= 64,
+// else EINVAL, -1; rule 16's complement branch, and 0 under every candidate flag, where sig is a valid number since
+// signal registers nothing at an invalid one: so the one value for the whole call); write.c (the syscall: count).
+// A failed host operation is never produced (the ruling's stated deviation). Host-state results (fopen, tmpfile,
+// ftell, fileno, fwide, open, lseek) and every other callee keep the entry's rail (ABI 1.11, Q2).
 std::optional<OutFn> outputFunction(const Function &F) {
+  // The status calls: recognised by name and signature as rule 16's stream calls (streamCallee), raise by protoOf.
+  {
+    StringRef c = F.getName();
+    if (c.starts_with("\01_"))
+      c = c.drop_front(2);
+    static const std::map<std::string, OutFn, std::less<>> status = {
+        {"fclose", {OutKind::Status, 0}},     {"remove", {OutKind::Status, 0}}, {"rename", {OutKind::Status, 0}},
+        {"fsetpos", {OutKind::Status, 0}},    {"close", {OutKind::Status, 0}},
+        {"fseek", {OutKind::Range, 2, 2}},    {"fseeko", {OutKind::Range, 2, 2}},
+        {"setvbuf", {OutKind::Range, 2, 2}},  {"write", {OutKind::Length, 2}},
+    };
+    if (auto it = status.find(c); it != status.end()) {
+      FunctionType *ft = F.getFunctionType();
+      const OutFn &o = it->second;
+      if (!streamCallee(F) || !ft->getReturnType()->isIntegerTy() ||
+          (o.kind != OutKind::Status && (o.first >= ft->getNumParams() || !ft->getParamType(o.first)->isIntegerTy())))
+        return std::nullopt;
+      return o;
+    }
+    if (c == "raise") {
+      FunctionType *ft = F.getFunctionType();
+      if (!hostCallee(F) || ft->isVarArg() || ft->getNumParams() != 1 || !ft->getReturnType()->isIntegerTy(32) ||
+          !ft->getParamType(0)->isIntegerTy(32))
+        return std::nullopt;
+      return OutFn{OutKind::Range, 0, 64};
+    }
+  }
   StringRef n = F.getName();
   if (n.starts_with("\01_"))
     n = n.drop_front(2);
@@ -689,8 +729,8 @@ AllocaInst *entryAlloca(Function &F, Type *ty, uint64_t n, const Twine &name) {
 } // namespace
 
 bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
-  // The C library output calls some specialization defers (rule 16) whose result is read, or (a format) whose format
-  // may write through %n.
+  // The C library calls outputFunction names that some specialization makes effect entries (rule 16; raise: its
+  // complement branch) whose result is read, or (a format) whose format may write through %n.
   SetVector<CallBase *> sites;
   for (const Specialization &S : T.specializations()) {
     if (S.F->isDeclaration() || S.pure)
@@ -699,10 +739,13 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
       for (Instruction &I : bb) {
         auto *CB = dyn_cast<CallBase>(&I);
         const Function *F = CB ? calleeOf(*CB) : nullptr;
-        std::optional<OutFn> o = F && F->isDeclaration() ? outputFunction(*F) : std::nullopt;
+        // hostCallee: a body the bundle has for one of them is never lifted (rule 16; musl rows keep remove, raise).
+        std::optional<OutFn> o = F && hostCallee(*F) ? outputFunction(*F) : std::nullopt;
         if (!o || CB->getFunctionType() != F->getFunctionType())
           continue;
-        if (calls::classify(*CB, T, S) != calls::Class::HostEffect)
+        // raise is always rule 16's signal-table call (calls::lowerRaise): its complement branch is the effect entry.
+        calls::Class k = calls::classify(*CB, T, S);
+        if (k != calls::Class::HostEffect && !(k == calls::Class::Raise && o->kind == OutKind::Range))
           continue;
         bool percentN = isFormat(o->kind) &&
                         formatMayHoldN(CB->getArgOperand(o->first), o->kind == OutKind::WFmt || o->kind == OutKind::VWFmt);
@@ -759,8 +802,18 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
       v = B.CreateCall(e, args);
       break;
     }
-    case OutKind::Zero:
+    case OutKind::Zero: case OutKind::Status:
       v = ConstantInt::get(rt, 0);
+      break;
+    case OutKind::Range: {
+      // A rail argument: icmp and select by the ordinary templates once lowered.
+      Value *a = CB->getArgOperand(o.first);
+      v = B.CreateSelect(B.CreateICmpUGT(a, ConstantInt::get(a->getType(), o.max)), ConstantInt::get(rt, -1, true),
+                         ConstantInt::get(rt, 0));
+      break;
+    }
+    case OutKind::Length:
+      v = B.CreateZExtOrTrunc(CB->getArgOperand(o.first), rt);
       break;
     case OutKind::UChar:
       v = B.CreateZExt(B.CreateTrunc(CB->getArgOperand(0), i8), rt);
