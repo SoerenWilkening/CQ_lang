@@ -376,18 +376,31 @@ _STREAM_NAMES = frozenset((
     # cq-ojgho: the <wchar.h> stream functions (pass/lib/Common.cpp streamName)
     "fwprintf wprintf vfwprintf vwprintf fwscanf wscanf vfwscanf vwscanf fgetwc fgetws fputwc fputws fwide getwc getwchar "
     "putwc putwchar ungetwc open_wmemstream").split())
+# cq-du1gw: the other ISO C and POSIX interfaces CR rule 16 (778-787) names, whose bundle body is never lifted for the
+# call either: malloc, calloc, aligned_alloc, realloc, free; signal, raise; rule 23's fenv functions; rule 24's setjmp,
+# longjmp and pthread_* (pass/lib/Common.cpp hostCallee, cq-rrc52). Only a prefilter for host_streams: the plugin decides.
+_RULE16_NAMES = frozenset((
+    "malloc calloc aligned_alloc realloc free signal raise feclearexcept fegetexceptflag feraiseexcept fesetexceptflag "
+    "fetestexcept fegetround fesetround fegetenv feholdexcept fesetenv feupdateenv setjmp longjmp").split())
+
+
+def _host_name(n: str) -> bool:
+    return n in _STREAM_NAMES or n in _RULE16_NAMES or n.startswith("pthread_")
+
+
 _DEFINED = re.compile(r'(?m)^define\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 
 def host_streams(text: str) -> str:
-    """cq-8bq66 (CR rule 16): the C program with every stream call the module defines made a declaration, so a call of it
+    """cq-8bq66 (CR rule 16): the C program with every stream call (cq-du1gw: every interface rule 16 names, cq::hostCallee)
+    the module defines made a declaration, so a call of it
     by name is the host's function, as on the lowered side, where it is rule 16's host boundary and its body is never
     lifted for the call (BACKEND_ABI §1.11: the backend performs the entry with the host C library). Recognised by name
     and signature as cq-lower does (OracleInstr.cpp, cq-oracle-host-streams). A module that defines none is text as it
     stands. cq-tgl3i: what only those bodies reached goes too (musl's __stdin_FILE, its buffer, its locks: the host
     library's objects, CR rule 16, no named output of the program's, §6 item 1), as it goes from the lowered module."""
     from . import drivers
-    if not {drivers._c_name(n) for n in _DEFINED.findall(text)} & _STREAM_NAMES:
+    if not any(_host_name(drivers._c_name(n)) for n in _DEFINED.findall(text)):
         return text
     plugin, _ = toolchain()
     with tempfile.TemporaryDirectory(prefix="cqo-streams.") as d:
@@ -472,8 +485,9 @@ def _k2_sites(text: str, o1_text: str) -> str:
     """Rulings Q16, CR §6: a rail-sized allocation is made at K2 bytes, and an access at or beyond byte K2 is
     outside the block (cqo_rt.c totalizes it). Each allocation whose size derives, by SSA or through a defined
     callee's parameter, from a cq_theta result, a load (rule 3: every load is a rail) or a call result, goes to
-    the runtime's _k2 entry with K2 as a last argument. A size no such value reaches is classical. An allocator
-    with a body in the module is no such allocation (the pass lowers its body: bus hostAllocKind)."""
+    the runtime's _k2 entry with K2 as a last argument. A size no such value reaches is classical. The four are rule
+    16's by name: a body the module has for one was made a declaration before (host_streams, cq-du1gw), so the guard
+    below only sees a module that bypassed it."""
     import tempfile
     from . import drivers
     with tempfile.NamedTemporaryFile("w", suffix=".ll") as t:
@@ -529,9 +543,13 @@ def _k2_sites(text: str, o1_text: str) -> str:
         end = start + len(drivers._balanced(line, start)) + 2
         lines[li] = line[:m.start()] + f"@{_K2_ALLOC[name]}(" + ", ".join(args + [f"i64 {k2}"]) + ")" + line[end:]
         used.add(name)
-    decls = {"malloc": "declare noalias ptr @__cqo_malloc_k2(i64, i64)", "calloc": "declare noalias ptr @__cqo_calloc_k2(i64, i64, i64)",
-             "aligned_alloc": "declare noalias ptr @__cqo_aligned_alloc_k2(i64, i64, i64)",
-             "realloc": "declare ptr @__cqo_realloc_k2(ptr, i64, i64)"}
+    # cq-yt5lz (CR rule 16 Allocation: "any callee whose declaration carries allockind" is an allocation, its result a
+    # classical address also under a rail size): the stand-ins carry the allockind of what they replace, so the oracle's
+    # taint (cq::computeTaint) still sees the allocation the pass sees
+    decls = {"malloc": 'declare noalias ptr @__cqo_malloc_k2(i64, i64) allockind("alloc,uninitialized")',
+             "calloc": 'declare noalias ptr @__cqo_calloc_k2(i64, i64, i64) allockind("alloc,zeroed")',
+             "aligned_alloc": 'declare noalias ptr @__cqo_aligned_alloc_k2(i64, i64, i64) allockind("alloc,uninitialized,aligned")',
+             "realloc": 'declare ptr @__cqo_realloc_k2(ptr, i64, i64) allockind("realloc")'}
     return "\n".join(lines + [decls[n] for n in sorted(used)]) + "\n"
 
 
@@ -703,11 +721,14 @@ def _classify(sr: SampleRun) -> None:
 
 
 def _exit_status(sr: SampleRun) -> Optional[int]:
-    """The status of a sample that ended in a noreturn call by a process exit (exit, _exit, _Exit); else None.
-    Read from the notes, which the run cache holds (a longjmp arm or an abort leaves no "wait exited")."""
+    """The status of a sample that ended in a noreturn call by a process exit (exit, _exit, _Exit), or minus the signal
+    of one that ended in abort or a trap (cq-yd85w); else None. Read from the notes, which the run cache holds (a longjmp
+    arm leaves no "wait")."""
     if not sr.outcome.startswith("noreturn:"):
         return None
     wait = next((n for n in reversed(sr.notes) if n.startswith("wait ")), "")
+    if wait.startswith("wait signaled "):
+        return -int(wait.split()[2])   # cq-yd85w: abort or a trap, minus the signal (core.c cqe__host_signal_end)
     return int(wait.split()[2]) if wait.startswith("wait exited ") else None
 
 
@@ -1165,11 +1186,15 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     flags of a program that touches the environment (rule 23; run.touches_fenv), else absent}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
-    measured before it (cq-459d); kept/clean: None (the C program has no
+    measured before it (cq-459d), and a phi's "q": True when a quantum predicate is in scope there (cq-xidq); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations, reads, skips = [], [], [], []
     status = _exit_status(sr)
+    phq = False
     for e in sr.events:
+        if e.get("ev") == "phq":
+            phq = True               # cq-xidq: the next phi site is reached with a quantum predicate in scope
+            continue
         if e.get("ev") == "skip":
             # rulings Q3: the measurement sites a branch left, after len(measured) measurements, and whether its
             # condition was quantum (cqo_rt.c __cqo_skip)
@@ -1185,7 +1210,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
             # measure a load copy of it, classical-valued (rule 3: every load is a rail, 207)
             reads.append({"w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         else:
-            rotations.append(dict(e, nmeas=len(measured)))   # the measurements before it (cq-459d)
+            rotations.append(dict(e, nmeas=len(measured), **({"q": True} if phq and e["kind"] == "phi" else {})))
+        phq = False
     return RunResult(side="c", sample=sr.sample,
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": _effects_of(sr),

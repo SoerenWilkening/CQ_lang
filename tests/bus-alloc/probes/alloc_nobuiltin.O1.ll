@@ -156,6 +156,30 @@ define i32 @n_malloc(i32 noundef %0, double noundef %1, i32 noundef %2) local_un
 declare ptr @malloc(i64 noundef) local_unnamed_addr #3
 
 ; Function Attrs: nounwind ssp uwtable
+define i32 @n_malloc_fold(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  %5 = and i32 %4, 3
+  %6 = shl nuw nsw i32 %5, 2
+  %7 = add nuw nsw i32 %6, 4
+  %8 = zext nneg i32 %7 to i64
+  %9 = tail call ptr @malloc(i64 noundef %8) #8
+  %10 = icmp eq ptr %9, null
+  br i1 %10, label %14, label %11
+
+11:                                               ; preds = %3
+  %12 = zext nneg i32 %5 to i64
+  %13 = getelementptr inbounds i32, ptr %9, i64 %12
+  store i32 %2, ptr %13, align 4, !tbaa !6
+  tail call void @free(ptr noundef nonnull %9) #7
+  br label %14
+
+14:                                               ; preds = %3, %11
+  %15 = phi i32 [ %2, %11 ], [ -1, %3 ]
+  %16 = tail call i32 @cq_measure_si32(i32 noundef %15) #7
+  ret i32 %16
+}
+
+; Function Attrs: nounwind ssp uwtable
 define i32 @n_realloc(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
   %5 = tail call dereferenceable_or_null(4) ptr @malloc(i64 noundef 4) #8

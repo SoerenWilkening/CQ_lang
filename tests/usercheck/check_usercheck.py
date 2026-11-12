@@ -32,7 +32,7 @@ Fails on any of:
             with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
-            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf). --rv3 runs this group alone
+            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw). --rv3 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -339,6 +339,19 @@ RV3 = {
     "outptr": [("classical", r"%13 = xor i32 %1, 5", "%13 = xor i32 %1, 6"),
                ("measured", r"%12 = call i32 @cqrt_alloc_i32\(i32 %10\)",
                 "%bad = add i32 %10, 1\n  %12 = call i32 @cqrt_alloc_i32(i32 %bad)")],
+    # cq-xidq (CR rule 12, §6, owner ruling 2026-10-29; rule 2's static collapse): a phase under (c && x > 3), x measured on
+    # the c path only, is in a quantum arm and never global: the lowering without its rz_i1 is rejected
+    "xidq": [("no_phase", r"  call void @cqrt_rz_i1\(i32 %\d+, double 4.000000e-01\)\n", "")],
+    "xidq2": [("no_phase", r"  call void @cqrt_rz_i1\(i32 %\d+, double 4.000000e-01\)\n", "")],
+    # cq-yd85w (CR rule 16 noreturn, DECISIONS cq-tdqrq): the inputs that abort, _Exit, trap or _exit are in the domain and
+    # compared: each end changed is rejected
+    "yd85w": [("abort_exit", r"tail call void @abort\(\) #4", "tail call void @_Exit(i32 6)"),
+              ("exit2_status", r"@_Exit\(i32 noundef 3\)", "@_Exit(i32 noundef 4)"),
+              ("trap_abort", r"tail call void @llvm\.trap\(\)", "tail call void @abort()"),
+              ("uexit_status", r"@_exit\(i32 noundef 5\)", "@_exit(i32 noundef 6)")],
+    # cq-du1gw (CR rule 16, 778-787): fesetround's own body in the module is the host's fesetround on both sides (lowered
+    # by cq-rrc52's pass, nr-E2; green once that pass's Common.cpp is in the tree)
+    "du1gw": [],
     "glob": [("classical", r"%9 = shl nsw i32 %0, 1", "%9 = shl nsw i32 %0, 2"),
              ("measured", r"%8 = call i32 @cqrt_alloc_i32\(i32 %7\)",
               "%bad = add i32 %7, 1\n  %8 = call i32 @cqrt_alloc_i32(i32 %bad)")],
