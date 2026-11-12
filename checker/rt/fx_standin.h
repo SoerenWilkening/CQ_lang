@@ -66,6 +66,16 @@ static const cq_fx_ent cq_fx_table[] = {
     {"ungetc", 'I', "-f"},  {"ungetwc", 'I', "-f"}, {"feof", 'I', "f"},    {"ferror", 'I', "f"},  {"clearerr", 'I', "f"},
     {"getw", 'I', "f"},     {"pread", 'I', "fWn-"}, {"getline", 'I', "LNf"}, {"getdelim", 'I', "LN-f"},
     {"fgetln", 'I', "fN"},
+    /* cq-d4n0n: the _unlocked forms (POSIX getc_unlocked, getchar_unlocked, putc_unlocked, putchar_unlocked, which
+     * pass/lib/Common.cpp streamName lists; musl's other aliases, bodiless under ruling Q6) are their locked form: the
+     * same roles and, through cq_fx_is, the same model (owner ruling 2026-11-12: an _unlocked variant follows its
+     * locked form). tests/rt-tape/test_fx_table.py keeps this table and streamName from drifting apart. */
+    {"getc_unlocked", 'I', "f"},      {"getchar_unlocked", 'I', ""},    {"fgetc_unlocked", 'I', "f"},
+    {"fgets_unlocked", 'I', "Wnf"},   {"fread_unlocked", 'I', "Wnnf"},  {"fgetwc_unlocked", 'I', "f"},
+    {"getwc_unlocked", 'I', "f"},     {"getwchar_unlocked", 'I', ""},   {"fgetws_unlocked", 'I', "Wnf"},
+    {"feof_unlocked", 'I', "f"},      {"ferror_unlocked", 'I', "f"},    {"clearerr_unlocked", 'I', "f"},
+    {"fwrite_unlocked", 'O', "Bnnf"}, {"fputs_unlocked", 'O', "sf"},    {"putchar_unlocked", 'O', "-"},
+    {"putc_unlocked", 'O', "-f"},     {"fputc_unlocked", 'O', "-f"},    {"fflush_unlocked", 'O', "f"},
 };
 
 static inline const cq_fx_ent *cq_fx_find(const char *name) {
@@ -163,7 +173,11 @@ static inline uint8_t cq_fx_io_at(const cq_fx_io *io, size_t k) {
   return s->b[io->pos + k];
 }
 
-static inline int cq_fx_is(const cq_fx_ent *e, const char *a) { return !strcmp(e->name, a); }
+/* e is the function a, or its _unlocked form (cq-d4n0n: the same model). */
+static inline int cq_fx_is(const cq_fx_ent *e, const char *a) {
+  size_t n = strlen(a);
+  return !strncmp(e->name, a, n) && (!e->name[n] || !strcmp(e->name + n, "_unlocked"));
+}
 
 static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t buf, uint64_t size, uint64_t aux) {
   cq_fx_in_t *s = cq_fx_stream();
