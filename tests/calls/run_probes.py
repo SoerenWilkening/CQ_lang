@@ -378,6 +378,11 @@ CASES = [
     # program's fesetround body where the lowered program has rule 23's call by name (return 1 against the body's -1, the
     # mode rail unrecognised as kept): the checker gap is cq-du1gw.
     ("fenv_body_host", "e", [], "lower", [r"call i32 @fegetround\(\)", r"define [^\n]*@fesetround\("]),
+    # cq-ndwfr (rule 23): a strictfp body's 82-ABI clone reached from a caller with no fenv state reads FLAGS (the empty
+    # rail it is passed: fetestexcept is the host part alone, as taint has it); a fact one arm of a quantum branch makes a
+    # rail (fesetround under the predicate) is a rail in the sibling arm the spine runs after it (rules 9, 23).
+    ("fenv_clone_empty_flags", "e", [], "pass", [r"call i32 @fetestexcept\(i32 32\)"]),
+    ("fenv_sibling_arm_mode", "e", [], "pass", [r"cq_template_fdiv_f64_\w*rmq\w*\("]),
 ]
 
 

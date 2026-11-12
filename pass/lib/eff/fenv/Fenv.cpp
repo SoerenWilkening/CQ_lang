@@ -2514,7 +2514,11 @@ void bindCloneEnv(LoweringContext &ctx, Argument *mode, Argument *flags) {
     for (const Instruction &I : BB)
       st.cloneWritesMode |= writesMode(I);
   st.initial = Part{};
-  st.initial.flags = flags;   // defined at the clone's entry: on every path
+  // cq-ndwfr (rule 23): where every caller's flags are classical (taint's entry fact; a caller without the fenv state
+  // passes an empty flags rail, 169), the rail holds no quantum bit and FLAGS starts empty: a read is the host part
+  // alone, as taint has it, and the first raise makes FLAGS. The caller's rail stays the caller's (UserRegister).
+  if (ctx.T.fenvAtEntry(ctx.S) & 2)
+    st.initial.flags = flags;   // defined at the clone's entry: on every path
   st.any = true;
 }
 

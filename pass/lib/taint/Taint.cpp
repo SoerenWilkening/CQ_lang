@@ -2407,6 +2407,15 @@ void Analyzer::analyze(SpecState &S) {
       fenvCur = BB->isEntryBlock() ? fenvstate::kIdentity : 0;
       for (const BasicBlock *Pr : predecessors(BB))
         fenvCur |= S.fenvOut.lookup(Pr);
+      // cq-ndwfr (rules 9, 23): the arms of a quantum branch run one after another, and a fact one arm makes a rail
+      // (fesetround under the predicate: MODE' = select(p, r, MODE)) is a rail where a sibling arm reads it. A block
+      // under a quantum predicate joins the state of every block that shares one of its quantum branches.
+      if (auto it = S.cdt.find(BB); it != S.cdt.end() && !it->second.empty())
+        for (const BasicBlock *O : fi.rpo) {
+          auto jt = O == BB ? S.cdt.end() : S.cdt.find(O);
+          if (jt != S.cdt.end() && any_of(jt->second, [&](const BasicBlock *t) { return is_contained(it->second, t); }))
+            fenvCur |= S.fenvOut.lookup(O);
+        }
       for (const Instruction &CI : *BB) {
         Instruction &I = const_cast<Instruction &>(CI);
         curUser = &I;
@@ -3463,6 +3472,8 @@ bool TaintInfo::listedRoot(const llvm::Function &F) const {
 }
 
 bool TaintInfo::loadsBus(const Specialization &S) const { return stateOf(needImpl(impl), S)->busLoadT; }
+
+uint8_t TaintInfo::fenvAtEntry(const Specialization &S) const { return stateOf(needImpl(impl), S)->fenvIn & 3; }
 
 bool TaintInfo::noTwinByEffects(const Specialization &S) const {
   const SpecState *SS = stateOf(needImpl(impl), S);
