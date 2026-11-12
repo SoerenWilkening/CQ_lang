@@ -42,7 +42,7 @@
 // A trip is any acyclic code (cq-b58q): its quantum branches and switches are its predicates, a classical phi a
 // classical select (rule 9), several latches end a trip on one back edge, several header entries merge a quantum
 // start (rule 9). A purely classical condition stays a classical branch in every trip copy (rule 8, cq-jws5r:
-// underClassical): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
+// underClassical; a mixed condition's classical factor too, cq-kbygn: tripEdgeFactored): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
 // on the classical paths that reach it, its effects under the quantum part of its predicate alone. What stays a seed
 // rail (rule 7) is a classical term of a predicate read as data outside such a branch: the chain's exit test, a
 // merge's select condition, a term rule 8 cannot factor out (`c || q`), and every classical term of a K-loop that
@@ -307,6 +307,68 @@ private:
   // case atoms for a switch: a case edge is its value's equality, the default edge the complement of
   // every case; a computed goto is the switch over its destinations).
   static Pred tripEdge(const BasicBlock *p, const BasicBlock *b) { return exits::tripEdge(p, b); }
+  // cq-kbygn (CR rule 8: "A mixed condition is first factored as `C && Q` on its Boolean function (not its syntax) ...
+  // `C` stays a classical branch around the quantum part"): a quantum condition expanded through and/or/not/select on
+  // i1 into its leaves, each an atom (pred's own expansion of a branch condition).
+  Pred expandCond(const Value *x) {
+    if (auto *ci = dyn_cast<ConstantInt>(x))
+      return ci->isOne() ? Pred::top() : Pred::bottom();
+    if (!isQ(x))
+      return Pred::atom(x);
+    if (auto *bo = dyn_cast<BinaryOperator>(x); bo && bo->getType()->isIntegerTy(1)) {
+      switch (bo->getOpcode()) {
+      case Instruction::And:
+        return expandCond(bo->getOperand(0)) & expandCond(bo->getOperand(1));
+      case Instruction::Or:
+        return expandCond(bo->getOperand(0)) | expandCond(bo->getOperand(1));
+      case Instruction::Xor:
+        if (auto *k = dyn_cast<ConstantInt>(bo->getOperand(1)); k && k->isOne())
+          return !expandCond(bo->getOperand(0));
+        if (auto *k = dyn_cast<ConstantInt>(bo->getOperand(0)); k && k->isOne())
+          return !expandCond(bo->getOperand(1));
+        break;
+      default:
+        break;
+      }
+    }
+    if (auto *si = dyn_cast<SelectInst>(x);
+        si && si->getType()->isIntegerTy(1) && si->getCondition()->getType()->isIntegerTy(1)) {
+      Pred c = expandCond(si->getCondition());
+      return (c & expandCond(si->getTrueValue())) | (!c & expandCond(si->getFalseValue()));
+    }
+    return Pred::atom(x);
+  }
+  // The expansion of a quantum br condition when one of its edges has a classical conjunct (rule 8 factors it), else
+  // nothing: the condition is one atom, its own rail the flag (as pred reads a branch condition).
+  std::optional<Pred> factoredCond(const BranchInst *br) {
+    if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1) || !isQ(br->getCondition()))
+      return std::nullopt;
+    Pred f = expandCond(br->getCondition());
+    if (f.classicalFactor(ctx.T, ctx.S).isTop() && (!f).classicalFactor(ctx.T, ctx.S).isTop())
+      return std::nullopt;
+    return f;
+  }
+  // Is br a test of the innermost loop holding it (an edge out of that loop or a back edge to its header)? Rule 14's
+  // chain reads such a test whole: whether its classical conjunct is a branch around the test waits for CQ_spec (Q10).
+  bool loopTest(const BranchInst *br) {
+    const Loop *l = A.LI.getLoopFor(br->getParent());
+    return l && any_of(successors(br->getParent()),
+                       [&](const BasicBlock *s) { return !l->contains(s) || s == l->getHeader(); });
+  }
+  // The condition under which a trip goes from p to its successor b: a br that is no loop test with a factorable mixed
+  // condition is read on its Boolean function, so its classical factor is a classical term of the trip's predicates,
+  // which underClassical makes a real branch (rule 8); every other edge is tripEdge's.
+  Pred tripEdgeFactored(const BasicBlock *p, const BasicBlock *b) {
+    auto *br = dyn_cast<BranchInst>(p->getTerminator());
+    if (!br || loopTest(br))
+      return tripEdge(p, b);
+    std::optional<Pred> f = factoredCond(br);
+    if (!f)
+      return tripEdge(p, b);
+    return br->getSuccessor(0) == b ? *f : !*f;
+  }
+  // Is the quantum i1 I read whole by a br of the unit (an atom of its trip predicates, computed as data)?
+  bool readWhole(const BranchInst *br) { return loopTest(br) || !factoredCond(br); }
   // The classical part of tripEdge as a classical i1 of the current trip: a quantum condition counts
   // as true. A classical phi's incoming edge is chosen by classical conditions alone (taint: a phi
   // whose choice depends on a quantum condition is quantum), so among edges whose classical part
@@ -381,6 +443,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     checkTerminator(t);
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional() && !isQ(br->getCondition()))
       classicalTerms = true;
+    if (auto *br = dyn_cast<BranchInst>(t); br && !loopTest(br) && factoredCond(br))
+      classicalTerms = true;   // cq-kbygn: a mixed condition's classical factor
     if (auto *sw = dyn_cast<SwitchInst>(t); sw && !isQ(sw->getCondition()))
       classicalTerms = true;
     if (auto *ib = dyn_cast<IndirectBrInst>(t); ib && !isQ(ib->getAddress()))
@@ -468,7 +532,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
   // Predicates local to one trip (relative to the header), over the body's own branch conditions.
   DenseMap<const BasicBlock *, Pred> local;
-  auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdge(p, b); };
+  auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdgeFactored(p, b); };
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       exits::Unit SU = exits::unitOf(*S);
@@ -1884,8 +1948,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           // (edgeCond), so it is computed whole even where pred factored its condition (`stop || q`).
           bool tripAtom = I.getType()->isIntegerTy(1) && isQ(&I) && any_of(I.users(), [&](const User *u) {
                             auto *br = dyn_cast<BranchInst>(u);
+                            // an arm's edge conditions too; a factored one (cq-kbygn) is read through its leaves
                             return br && br->isConditional() && br->getCondition() == &I &&
-                                   U.contains(L, br->getParent());   // an arm's edge conditions are read whole too
+                                   U.contains(L, br->getParent()) && readWhole(br);
                           });
           if (tripAtom)
             lowerConditionAsData(ctx, I);

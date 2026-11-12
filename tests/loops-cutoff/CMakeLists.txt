@@ -149,6 +149,15 @@ add_test(NAME loops-cutoff-trip-cbr
           --br-in pf_nested=8 --br-in pg_abort=8 --br-in ph_measure=8
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_cbr.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-kbygn (CR rule 8 with rule 14): a mixed branch condition `C && Q` inside a K-trip is factored on its Boolean function,
+# its classical factor a `br` in every trip copy (no seed), also where -O1 joined it with a sub-loop's guard. Each entry
+# §6-checked against its C program.
+add_test(NAME loops-cutoff-trip-factor
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          --br-in pa_mixed=4 --br-in pb_nested=8
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_factor.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-7jd1z (CR rules 8, 9, 13 with rule 14): a quantum switch's case atom carried to a classical join is a phi in the
 # scrutinee's own type (musl wcsrtombs: the exit hub of a K-loop behind a classical bound test); switches in a K-trip on
 # a narrowed and a widened scrutinee, a default arm, two cases sharing a successor. Each entry §6-checked.
