@@ -2,9 +2,10 @@
 
 drivers.txt is input data (CLAUDE.md "Reading the spec"): one line per example,
 
-    NN_name|prototypes|call;call[|setup]
+    NN_name|prototypes|call;call[|setup][|roots=f,g][|stdin="..."]
 
-where the optional fourth field is C run in `main` before the calls. The spec tooling README names
+where the optional fourth field is C run in `main` before the calls, roots= the rule 27 root list, and stdin= a C
+string literal, the input stream both sides read (ruling Q5; absent: fx_standin.h's default). The spec tooling README names
 two driver objects that a call may pass without defining them, `coef` and `icoef`
 (`static const double coef[4]={1,2,3,4}; static const int icoef[4]={1,2,3,4}` "when used"); the
 DriverSpec's setup carries their definitions when a call references them, ahead of the line's own
@@ -84,6 +85,7 @@ class DriverLine:
     calls: List[str]
     setup: str          # the fourth field, "" when absent
     roots: List[str] = field(default_factory=list)   # the fifth field, roots=f[,g]: the rule 27 root list the example links
+    stdin: Optional[str] = None   # a trailing field stdin="<C string literal>": the input stream (ruling Q5), as C source
 
 
 def _split_top(s: str, sep: str) -> List[str]:
@@ -161,10 +163,21 @@ def read_drivers_txt(path: Optional[Path] = None) -> Dict[str, DriverLine]:
     for raw in path.read_text().splitlines():
         if not raw.strip():
             continue
-        # The optional fifth field ends the line; the setup before it may hold a C `|`.
-        rm = re.search(r"\|roots=([^|]*)$", raw.rstrip())
-        roots = [r.strip() for r in rm.group(1).split(",") if r.strip()] if rm else []
-        parts = (raw.rstrip()[:rm.start()] if rm else raw).split("|", 3)
+        # The optional trailing fields end the line, roots=... and stdin="..." in either order; the setup before them may
+        # hold a C `|`.
+        rest, roots, stdin = raw.rstrip(), [], None
+        while True:
+            rm = re.search(r"\|roots=([^|]*)$", rest)
+            sm = re.search(r'\|stdin=("(?:[^"\\\n]|\\.)*")$', rest)
+            if rm:
+                roots = [r.strip() for r in rm.group(1).split(",") if r.strip()]
+                rest = rest[:rm.start()]
+            elif sm:
+                stdin = sm.group(1)
+                rest = rest[:sm.start()]
+            else:
+                break
+        parts = rest.split("|", 3)
         if len(parts) < 3:
             unimplemented(f"drivers.txt line with {len(parts)} fields: {raw!r}")
         name, protos, calls = parts[0], parts[1], parts[2]
@@ -177,6 +190,7 @@ def read_drivers_txt(path: Optional[Path] = None) -> Dict[str, DriverLine]:
             calls=[c.strip() for c in _split_top(calls, ";") if c.strip()],
             setup=setup.strip(),
             roots=roots,
+            stdin=stdin,
         )
     return lines
 
@@ -1370,8 +1384,8 @@ def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[st
 
 
 # cq-tgl3i (CR rule 16, BACKEND_ABI §1.11): the scanf family is a stream call by name, performed with the host C library on
-# both sides, never a stand-in: checker/oracle/fx_call.h cqd_in_<name> runs the host's vfscanf / vfwscanf on the checker's
-# empty input (fx_standin.h cq_fx_scan) and logs the call as the evaluator logs the lowered program's INPUT entry. A direct
+# both sides, never a stand-in: checker/oracle/fx_call.h cqd_in_<name> runs the host's vfscanf / vfwscanf on the one input
+# stream (fx_standin.h cq_fx_scan, ruling Q5) and logs the call as the evaluator logs the lowered program's INPUT entry. A direct
 # call of a variadic one carries its number of arguments first (the log's fields are the call's arguments, as the entry's);
 # any other use goes to cqd_in_<name>_a, which logs the arguments its format consumes. A v-form keeps its signature.
 _SCANS_VAR = {"scanf": "ptr", "wscanf": "ptr", "fscanf": "ptr, ptr", "fwscanf": "ptr, ptr"}
@@ -1556,6 +1570,13 @@ def _is_function_proto(item: str) -> bool:
     return "{" not in item and "=" not in item and "(" in item and not item.startswith("extern ")
 
 
+def stdin_setup(literal: str) -> str:
+    """The setup statement that makes a C string literal the input stream of both sides (ruling Q5): fx_standin.h's
+    cq_fx_stdin_set, run once before any sample, so every sample starts from its first byte (the post-setup state)."""
+    return (f"extern void cq_fx_stdin_set(const char *, unsigned long); "
+            f"cq_fx_stdin_set({literal}, sizeof({literal}) - 1);")
+
+
 def build_driver_spec(line: DriverLine, mod: Optional[Module] = None) -> DriverSpec:
     mod = mod or read_module(o1_path(line.example))
     protos = {p.name: p for p in (parse_proto(t) for t in line.protos if _is_function_proto(t))}
@@ -1565,6 +1586,8 @@ def build_driver_spec(line: DriverLine, mod: Optional[Module] = None) -> DriverS
            {m.group(1) for c in line.calls for a in parse_call(c)[1] for m in [_OBJECT_BASE.match(a)] if m}
     implicit = [o for o in IMPLICIT_OBJECTS if o in used and not re.search(r"\b" + o + r"\b", line.setup)]
     setup = " ".join([IMPLICIT_OBJECTS[o] for o in implicit] + ([line.setup] if line.setup else []))
+    if line.stdin is not None:   # ruling Q5: the line's input stream, set once before any sample (fx_standin.h)
+        setup = stdin_setup(line.stdin) + (" " + setup if setup else "")
     calls = []
     for c in line.calls:
         fn, args = parse_call(c)
