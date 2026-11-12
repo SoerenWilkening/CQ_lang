@@ -439,6 +439,29 @@ def entries_bundle(text: str) -> List[Path]:
     return _bundle_files() if [n for n in need if n not in defined and f'"{n}"' not in defined] else []
 
 
+def _internalize_bundle(path: Path, triple: str) -> None:
+    """The bundle's definitions the program holds (musl's vsnprintf, memcpy, ...) made internal after the
+    instrumentation: external, they interpose on the host C library the oracle runtime calls (cqo_rt.c note()'s
+    vsnprintf ran musl's instrumented body on the runtime's own buffer, outside every object of the program: its stores
+    dropped, the status notes garbage). The program reaches them by its own calls as before; the instrumentation (and
+    its taint) ran on the module as linked. Nothing changes for a module that defines no bundle symbol."""
+    names = set()
+    for b in _bundle_files():
+        names |= set(_bundle_info(Path(b))[0])
+    if "-apple-" in triple:
+        names = {n[1:] for n in names if n.startswith("_")}
+    text = path.read_text()
+    defined = {n.strip('"') for n in re.findall(r'(?m)^define\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(', text)}
+    defined |= {n.strip('"') for n in re.findall(r'(?m)^@("[^"]*"|[-A-Za-z$._0-9]+) = (?!(?:private|internal)\b)', text)}
+    if not defined & names:
+        return
+    keep = sorted(defined - names)
+    lst = path.with_name("public.txt")
+    lst.write_text("".join(n + "\n" for n in keep))
+    _run([_tool("opt"), "-S", "-passes=internalize", f"-internalize-public-api-file={lst}", str(path), "-o", str(path)],
+         "internalizing the bundle's definitions in the oracle program")
+
+
 def bundle_key(files: Sequence[Path]) -> str:
     """A cache-key part for the bundle files actually linked: their paths and contents."""
     return "\0".join(f"{b}:{_bundle_info(Path(b))[1]}" for b in files)
@@ -635,6 +658,7 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         # the same objects by address alone, for a sample that ends before its outputs (BEFORE_CALL)
         (d / "prog.inst.ll").write_text(inst + drivers.out_globals_ir(text, inst, "__cqo_out_table", "__cqo_out_object",
                                                                        "__cqo_out_object", tag=".t"))
+        _internalize_bundle(d / "prog.inst.ll", triple)
         _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.inst.ll"),
               "-o", str(d / "prog.o")], "compiling the instrumented program")
 
