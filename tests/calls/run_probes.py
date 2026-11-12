@@ -370,6 +370,9 @@ CASES = [
     ("fe3", "fe3", [], "pass", []),
     ("fe2", "fe2", [], "pass", []),
     ("fe6", "fe6", [], "pass", []),
+    # cq-ntvv (CR §1.4: only an internal function with no remaining use is dropped): an exported original whose only in-module
+    # call was retargeted to its clone stays, its own body.
+    ("extern_original_kept", "e", [], "pass", [r"define i32 @inner\(i32 noundef %0, i32 noundef %1\)"]),
 ]
 
 
