@@ -139,15 +139,115 @@ static StringRef cName(const Function &F) {
   return n;
 }
 
-// A function whose C name rule 16 lists is that interface when its prototype is the one LLVM's TargetLibraryInfo knows
-// for the name; a name TargetLibraryInfo knows with another prototype is the program's own function of that name; one
-// it does not know (lseek, getline, fesetround, signal, pthread_create, ...) is recognised by name.
+// cq-o1swj (CR 778-779, rule 16: "recognised by name and signature"): the prototypes of the interfaces rule 16 names that
+// LLVM's TargetLibraryInfo does not know, from the ISO C / POSIX declarations as musl's headers write them (stdio.h,
+// wchar.h, unistd.h, signal.h, fenv.h, setjmp.h, pthread.h). One letter per type, the result first, then each
+// parameter, a trailing '.' for "...": i i32 (int, unsigned, wchar_t, wint_t, clockid_t), l i64 (size_t, ssize_t,
+// off_t), p ptr (every pointer, va_list, jmp_buf, a function pointer), v void; the two handle types whose class the
+// platform's headers choose: t pthread_t (musl unsigned long, the Darwin SDK a pointer: i64 or ptr), k pthread_key_t
+// (musl unsigned, the Darwin SDK unsigned long: i32 or i64). rule 24's pthread_* is the closed list of POSIX <pthread.h>
+// functions (musl's pthread.h less the _GNU_SOURCE _np extensions and the cleanup macros), never a prefix.
+static const char *protoOf(StringRef n) {
+  static const std::pair<const char *, const char *> protos[] = {
+      // <stdio.h> (C17 7.21, POSIX.1-2017)
+      {"freopen", "pppp"}, {"tmpnam", "pp"}, {"getline", "lppp"}, {"getdelim", "lppip"}, {"dprintf", "iip."},
+      {"vdprintf", "iipp"}, {"fmemopen", "pplp"}, {"open_memstream", "ppp"}, {"renameat", "iipip"},
+      {"tempnam", "ppp"},
+      // <unistd.h>
+      {"close", "ii"}, {"lseek", "llil"},
+      // <wchar.h> (C17 7.29, POSIX.1-2017)
+      {"fwprintf", "ipp."}, {"wprintf", "ip."}, {"vfwprintf", "ippp"}, {"vwprintf", "ipp"}, {"fwscanf", "ipp."},
+      {"wscanf", "ip."}, {"vfwscanf", "ippp"}, {"vwscanf", "ipp"}, {"fgetwc", "ip"}, {"fgetws", "ppip"},
+      {"fputwc", "iip"}, {"fputws", "ipp"}, {"fwide", "ipi"}, {"getwc", "ip"}, {"getwchar", "i"}, {"putwc", "iip"},
+      {"putwchar", "ii"}, {"ungetwc", "iip"}, {"open_wmemstream", "ppp"},
+      // <signal.h>
+      {"signal", "pip"}, {"raise", "ii"},
+      // <fenv.h> (C17 7.6)
+      {"feclearexcept", "ii"}, {"fegetexceptflag", "ipi"}, {"feraiseexcept", "ii"}, {"fesetexceptflag", "ipi"},
+      {"fetestexcept", "ii"}, {"fegetround", "i"}, {"fesetround", "ii"}, {"fegetenv", "ip"}, {"feholdexcept", "ip"},
+      {"fesetenv", "ip"}, {"feupdateenv", "ip"},
+      // <setjmp.h>
+      {"setjmp", "ip"}, {"longjmp", "vpi"},
+      // <pthread.h> (POSIX.1-2017)
+      {"pthread_create", "ipppp"}, {"pthread_detach", "it"}, {"pthread_exit", "vp"}, {"pthread_join", "itp"},
+      {"pthread_self", "t"}, {"pthread_equal", "itt"}, {"pthread_setcancelstate", "iip"},
+      {"pthread_setcanceltype", "iip"}, {"pthread_testcancel", "v"}, {"pthread_cancel", "it"},
+      {"pthread_getschedparam", "itpp"}, {"pthread_setschedparam", "itip"}, {"pthread_setschedprio", "iti"},
+      {"pthread_once", "ipp"}, {"pthread_mutex_init", "ipp"}, {"pthread_mutex_lock", "ip"},
+      {"pthread_mutex_unlock", "ip"}, {"pthread_mutex_trylock", "ip"}, {"pthread_mutex_timedlock", "ipp"},
+      {"pthread_mutex_destroy", "ip"}, {"pthread_mutex_consistent", "ip"}, {"pthread_mutex_getprioceiling", "ipp"},
+      {"pthread_mutex_setprioceiling", "ipip"}, {"pthread_cond_init", "ipp"}, {"pthread_cond_destroy", "ip"},
+      {"pthread_cond_wait", "ipp"}, {"pthread_cond_timedwait", "ippp"}, {"pthread_cond_broadcast", "ip"},
+      {"pthread_cond_signal", "ip"}, {"pthread_rwlock_init", "ipp"}, {"pthread_rwlock_destroy", "ip"},
+      {"pthread_rwlock_rdlock", "ip"}, {"pthread_rwlock_tryrdlock", "ip"}, {"pthread_rwlock_timedrdlock", "ipp"},
+      {"pthread_rwlock_wrlock", "ip"}, {"pthread_rwlock_trywrlock", "ip"}, {"pthread_rwlock_timedwrlock", "ipp"},
+      {"pthread_rwlock_unlock", "ip"}, {"pthread_spin_init", "ipi"}, {"pthread_spin_destroy", "ip"},
+      {"pthread_spin_lock", "ip"}, {"pthread_spin_trylock", "ip"}, {"pthread_spin_unlock", "ip"},
+      {"pthread_barrier_init", "ippi"}, {"pthread_barrier_destroy", "ip"}, {"pthread_barrier_wait", "ip"},
+      {"pthread_key_create", "ipp"}, {"pthread_key_delete", "ik"}, {"pthread_getspecific", "pk"},
+      {"pthread_setspecific", "ikp"}, {"pthread_attr_init", "ip"}, {"pthread_attr_destroy", "ip"},
+      {"pthread_attr_getguardsize", "ipp"}, {"pthread_attr_setguardsize", "ipl"}, {"pthread_attr_getstacksize", "ipp"},
+      {"pthread_attr_setstacksize", "ipl"}, {"pthread_attr_getdetachstate", "ipp"},
+      {"pthread_attr_setdetachstate", "ipi"}, {"pthread_attr_getstack", "ippp"}, {"pthread_attr_setstack", "ippl"},
+      {"pthread_attr_getscope", "ipp"}, {"pthread_attr_setscope", "ipi"}, {"pthread_attr_getschedpolicy", "ipp"},
+      {"pthread_attr_setschedpolicy", "ipi"}, {"pthread_attr_getschedparam", "ipp"},
+      {"pthread_attr_setschedparam", "ipp"}, {"pthread_attr_getinheritsched", "ipp"},
+      {"pthread_attr_setinheritsched", "ipi"}, {"pthread_mutexattr_destroy", "ip"},
+      {"pthread_mutexattr_getprioceiling", "ipp"}, {"pthread_mutexattr_getprotocol", "ipp"},
+      {"pthread_mutexattr_getpshared", "ipp"}, {"pthread_mutexattr_getrobust", "ipp"},
+      {"pthread_mutexattr_gettype", "ipp"}, {"pthread_mutexattr_init", "ip"},
+      {"pthread_mutexattr_setprioceiling", "ipi"}, {"pthread_mutexattr_setprotocol", "ipi"},
+      {"pthread_mutexattr_setpshared", "ipi"}, {"pthread_mutexattr_setrobust", "ipi"},
+      {"pthread_mutexattr_settype", "ipi"}, {"pthread_condattr_init", "ip"}, {"pthread_condattr_destroy", "ip"},
+      {"pthread_condattr_setclock", "ipi"}, {"pthread_condattr_setpshared", "ipi"},
+      {"pthread_condattr_getclock", "ipp"}, {"pthread_condattr_getpshared", "ipp"},
+      {"pthread_rwlockattr_init", "ip"}, {"pthread_rwlockattr_destroy", "ip"},
+      {"pthread_rwlockattr_setpshared", "ipi"}, {"pthread_rwlockattr_getpshared", "ipp"},
+      {"pthread_barrierattr_destroy", "ip"}, {"pthread_barrierattr_getpshared", "ipp"},
+      {"pthread_barrierattr_init", "ip"}, {"pthread_barrierattr_setpshared", "ipi"}, {"pthread_atfork", "ippp"},
+      {"pthread_getconcurrency", "i"}, {"pthread_setconcurrency", "ii"}, {"pthread_getcpuclockid", "itp"}};
+  for (const auto &[name, sig] : protos)
+    if (n == name)
+      return sig;
+  return nullptr;
+}
+
+static bool typeFits(Type *t, char c) {
+  switch (c) {
+  case 'i': return t->isIntegerTy(32);
+  case 'l': return t->isIntegerTy(64);
+  case 'p': return t->isPointerTy();
+  case 'v': return t->isVoidTy();
+  case 't': return t->isIntegerTy(64) || t->isPointerTy();
+  case 'k': return t->isIntegerTy(32) || t->isIntegerTy(64);
+  default: return false;
+  }
+}
+
+static bool protoFits(const FunctionType *FT, StringRef sig) {
+  bool va = sig.consume_back(".");
+  if (sig.empty() || FT->isVarArg() != va || FT->getNumParams() + 1 != sig.size() ||
+      !typeFits(FT->getReturnType(), sig[0]))
+    return false;
+  for (unsigned i = 0; i < FT->getNumParams(); ++i)
+    if (!typeFits(FT->getParamType(i), sig[i + 1]))
+      return false;
+  return true;
+}
+
+// A function whose C name rule 16 lists is that interface when its prototype is the interface's (cq-o1swj, CR 778-779
+// "by name and signature"): the one LLVM's TargetLibraryInfo knows for the name, or for a name it does not know (lseek,
+// getline, fesetround, signal, pthread_create, ...) protoOf's. Any other prototype, and a name in neither, is the
+// program's own function of that name. Linkage is not read: CR names no linkage condition, and a module whose library
+// bodies are internalized (the musl rows) still has rule 16's interfaces.
 static bool listedInterface(const Function &F) {
   LibFunc lf;
-  if (libFuncOf(F, lf))
-    return true;
   static const TargetLibraryInfoImpl names{Triple()};
-  return !names.getLibFunc(cName(F), lf);
+  StringRef n = cName(F);
+  if (names.getLibFunc(n, lf))
+    return libFuncOf(F, lf);
+  const char *sig = protoOf(n);
+  return sig && protoFits(F.getFunctionType(), sig);
 }
 
 bool streamCallee(const Function &F) {
@@ -158,7 +258,7 @@ bool streamCallee(const Function &F) {
 
 // cq-rrc52 (CR rule 16): the ISO C and POSIX interfaces rule 16 names besides the stream calls: malloc, calloc,
 // aligned_alloc, realloc, free; signal, raise; rule 23's fenv functions (C17 7.6); rule 24's setjmp, longjmp and
-// pthread_*.
+// pthread_* (cq-o1swj: the POSIX <pthread.h> functions protoOf lists, a closed list, not a prefix).
 static bool rule16Name(StringRef n) {
   static const char *names[] = {"malloc",          "calloc",        "aligned_alloc",   "realloc",        "free",
                                 "signal",          "raise",         "feclearexcept",   "fegetexceptflag", "feraiseexcept",
@@ -167,7 +267,7 @@ static bool rule16Name(StringRef n) {
   for (const char *x : names)
     if (n == x)
       return true;
-  return n.starts_with("pthread_");
+  return n.starts_with("pthread_") && protoOf(n);
 }
 
 // "A body the bundle has for one of them is never lifted for the call" (CR rule 16).
