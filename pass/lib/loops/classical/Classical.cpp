@@ -372,6 +372,7 @@ private:
   DenseMap<const BasicBlock *, BasicBlock *> throughSub;   // a sub-unit's continuation -> the parent segment entering it
   DenseSet<const BasicBlock *> subBlocks;                  // the blocks of the sub-units' regions
   std::vector<std::pair<Instruction *, unsigned>> entering;   // per segment, an entering edge (flushTrips)
+  std::vector<std::pair<RailId, unsigned>> lateR6;   // cq-bqbty: a rule-6 old rail cleaned in a later segment (latchNexts)
   bool tripLocal(Loop &sl, Loop &L);
   // The seeds minted for classical incomings of phis of handles, per (phi, edge source), and a mixed
   // join's value per real edge: shared by the walks of a loop and its sub-loops (a sub-loop's exit edge
@@ -1873,13 +1874,20 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         nexts.push_back(o.v);
       } else if (const R6 *r = r6Of(cv.orig)) {
         Operand u = ctx.operand(r->U.back());
-        if (!o.handle || !u.handle || o.v != u.v || !isa<Instruction>(o.v) ||
-            cast<Instruction>(o.v)->getParent() != H)
-          internalError("loops-classical: rule 6 on a carried value whose update is not its next rail in the "
-                        "header's segment",
-                        cv.orig);
+        if (!o.handle || !u.handle || o.v != u.v || !isa<Instruction>(o.v))
+          internalError("loops-classical: rule 6 on a carried value whose update is not its next rail", cv.orig);
         RailType w = railOf(cv.orig->getType());
         RailId old = ctx.unc().idOf(cv.np);
+        // cq-bqbty: the update lies past a classical join of the trip (planRuleSix: a block dominating the latch at the
+        // header's quantum predicate), in a later segment than the header's. The clean-up of the old rail reads the
+        // update (case 3: also the inverses emitted here), so the per-trip flush of that segment places it.
+        if (BasicBlock *ub = cast<Instruction>(o.v)->getParent(); ub != H) {
+          auto si = segIdx.find(c3 ? cur : ub);
+          if (si == segIdx.end())
+            noteUnbuilt("loops-classical: rule 6 on a carried value whose update is in no segment of the trip", cv.orig);
+          else
+            lateR6.push_back({old, si->second});
+        }
         if (!c3) {
           if (!r->rotated)
             ctx.unc().setRole(ctx.unc().idOf(o.v), Role::UserRegister);
@@ -3846,6 +3854,9 @@ void Unit::flushTrips() {
       }
   };
   for (unsigned i = 0; i < segs.size(); ++i) {
+    for (auto &[g, si] : lateR6)
+      if (si == i)
+        U.flushIn(g, segs[i].bb);
     U.flushBefore(segs[i].bb->getTerminator());
     finishSubs(i + 1);
   }

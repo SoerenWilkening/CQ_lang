@@ -391,6 +391,7 @@ struct Uncompute::Impl {
   // to S when S is being lowered): some path from D does not pass S.
   // cq-jws5r: join block -> the empty block of its skip edge, for each classical arm a loop module noted (flagAt).
   DenseMap<const BasicBlock *, const BasicBlock *> armJoins;
+  DenseMap<RailId, BasicBlock *> flushAt;   // cq-bqbty (flushIn): a rail a local flush in this block takes
   // The block whose conditional branch enters the noted arm that ends at join b, and the arm's first block; nullptr
   // where b is no such join (any more: an item wrapped since may have split it).
   BasicBlock *armBranch(BasicBlock *b, BasicBlock *&first) const {
@@ -2074,6 +2075,8 @@ struct Uncompute::Impl {
       return;
     }
     BasicBlock *D = const_cast<BasicBlock *>(defBlock(g));
+    if (BasicBlock *at = flushAt.lookup(g); at && c.mode == Mode::Local && c.point->getParent() == at)
+      D = at;   // cq-bqbty: flushIn
     SmallVector<Instruction *, 12> as = anchors(g);
     for (RailId o : readersOf(g))
       itemEndsOf(o, as);
@@ -3716,6 +3719,8 @@ void Uncompute::noteSourceBlock(const BasicBlock *bb) { impl->srcBlock = bb; }
 
 void Uncompute::noteClassicalArm(BasicBlock *join, BasicBlock *skip) { impl->armJoins[join] = skip; }
 
+void Uncompute::flushIn(RailId rail, BasicBlock *block) { impl->flushAt[rail] = block; }
+
 void Uncompute::noteCarried(Value *phi) { impl->rails[impl->lookup(phi, "noteCarried", phi)].carried = true; }
 
 void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
@@ -4033,7 +4038,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
         deferred.push_back(g);
       continue;
     }
-    if (!I.resolvable(g) || !I.rails[g].exitsDone.empty() || I.defBlock(g) != P)
+    if (!I.resolvable(g) || !I.rails[g].exitsDone.empty() || (I.defBlock(g) != P && I.flushAt.lookup(g) != P))
       continue;
     bool ok = true;
     for (Instruction *a : I.anchors(g))

@@ -123,6 +123,9 @@ CALLS = ["lc_call", "lc_libm", "lc_chain"]
 KNEST_PROBE = PROBES / "knest.O1.ll"
 KNEST = ["k_in_c", "k_in_arm", "k_in_c3"]
 # cq-l56v: a case-3 multi-exit loop whose exit arm branches (rule 8 flags, rule 9 selects), nested in a classical trip.
+# cq-bqbty: a rule-6 update past a classical join of the trip.
+R6JOIN_PROBE = PROBES / "r6_join.O1.ll"
+R6JOIN = ["r6_join"]
 C3ARM_PROBE = PROBES / "c3arm.O1.ll"
 C3ARM = ["arm_branch"]
 MXNEST_PROBE = PROBES / "mxnest.O1.ll"
@@ -227,13 +230,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "r6join", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "r6join", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -261,6 +264,7 @@ def main() -> int:
         groups.append((CARRIED_PROBE, CARRIED))
     for g, probe, entries in (("carm", CARM_PROBE, CARM), ("c3nest", C3NEST_PROBE, C3NEST), ("c3two", C3TWO_PROBE, C3TWO),
                                  ("calls", CALLS_PROBE, CALLS), ("knest", KNEST_PROBE, KNEST),
+                                 ("r6join", R6JOIN_PROBE, R6JOIN),
                                  ("c3arm", C3ARM_PROBE, C3ARM), ("mxnest", MXNEST_PROBE, MXNEST),
                                  ("c3idx", C3IDX_PROBE, C3IDX), ("seed", SEED_PROBE, SEED),
                                  ("exit_edges", EXIT_EDGES_PROBE, EXIT_EDGES), ("exit_arm", EXIT_ARM_PROBE, EXIT_ARM),
