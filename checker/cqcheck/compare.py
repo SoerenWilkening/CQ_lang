@@ -187,9 +187,10 @@ earlier abort reading 1 (rt_tape.c). Both are compared exactly, args as typed sc
 captured ("cap") and pointer-valued ones relationally (above), against either oracle (rulings Q8).
 Against the reference outputs["tape"], the shot's whole event sequence (name or format, predicate,
 fields, order, performed, text, result; never the evaluator's class), is compared too. A sample
-with outputs["deviation"] true (a deferred entry whose result the program reads: rt_tape.c) is rule 16's
-stated deviation: excluded from the C-oracle comparison on that input (rulings Q8), the reference
-comparison stands;
+is never dropped for a deferred entry (owner ruling 2026-11-12 item 4): the |0> result rail of a deferred call
+is the only thing not compared, and what the program computes from it is compared. Against the C oracle a
+sample whose outputs["q2"] is not empty (rulings Q2: a host callee given a pointer into an object holding a
+QUANTUM cell, run.py) is not compared, and a comparison left with none is not equal;
 against the C oracle on a capped sample (below) the C side's stdout and effects must be a prefix of
 ours (the circuit runs on past the cut). On an ended sample they are compared exactly (owner ruling
 2026-11-02, cq-64lv): every host effect after an abort under a quantum predicate is a tape entry, and
@@ -2228,8 +2229,12 @@ def _call_key(sample: Any) -> Hashable:
 
 def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             classical_key: Optional[Callable[[Any], Hashable]] = None,
-            registers: Optional[Dict[str, Any]] = None) -> List[str]:
+            registers: Optional[Dict[str, Any]] = None, stats: Optional[Dict[str, Any]] = None) -> List[str]:
     """§6 equality of `ours` and `other` over all samples; the reasons, empty when equal.
+
+    `stats` (optional): filled with "compared" (the samples compared after every exclusion) and "q2" (the samples
+    not compared under rulings Q2, against "c"). When samples were given and none is compared, a reason says so:
+    a comparison of nothing is never equal (owner rulings 2026-11-11 Q1, 2026-11-12 item 4: the guard).
 
     `registers` (optional, against "c"; drivers.theta_registers of the C program's .O1.ll, beads
     cq-ia96, cq-yzuc): the register web and seed sources of each cq_theta site, which tell CR rule
@@ -2272,9 +2277,19 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if cap is not None:
                 r_by[k] = _truncate(r_by[k], cap)      # a cut inside a cq_invert region closes it (cq-088c)
 
-    # rulings Q8: rule 16's stated deviation is excluded from the C-oracle comparison on that input
-    if oracle == "c":
-        keys = [k for k in keys if not _deviated(o_by[k])]
+    # rulings Q2 (owner 2026-11-11): an input on which a bodiless callee receives a pointer into an object that holds a
+    # QUANTUM cell at the call is not compared against the C program (rt_bus.c cqe__q2_check; reach through a global or
+    # a stored pointer is not detected). Nothing else excludes a sample here: a deferred result is compared through what
+    # the program computes from it (owner 2026-11-12 item 4).
+    q2_keys = [k for k in keys if (o_by[k].outputs or {}).get("q2")] if oracle == "c" else []
+    if q2_keys:
+        keys = [k for k in keys if k not in set(q2_keys)]
+    if stats is not None:
+        stats["compared"], stats["q2"] = len(keys), q2_keys
+    if not keys and q2_keys:
+        reasons.append(f"no sample compared: all {len(q2_keys)} hand a bodiless callee a pointer into an object holding a "
+                       f"QUANTUM cell (rulings Q2; e.g. sample {q2_keys[0]}: "
+                       f"{(o_by[q2_keys[0]].outputs or {}).get('q2', [])[:1]})")
 
     real_exits = _real_exits(keys, o_by, r_by, capped, classical_key) if oracle == "c" else set()
 
@@ -2551,7 +2566,7 @@ def _ret(outputs: Any, side: str) -> Any:
     return outputs.get("ret", [])
 
 
-_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured", "entered", "host_flags")
+_HOST_KEYS = ("stdout", "effects", "tape", "q2", "mem", "objects", "regions", "ctl_measured", "entered", "host_flags")
 
 
 def _rest(outputs: Any, side: str) -> Any:
@@ -2650,9 +2665,6 @@ def _fields_match(ours: List[Any], other: List[Any]) -> bool:
     return True
 
 
-def _deviated(o: RunResult) -> bool:
-    """Rule 16's stated deviation (module docstring)."""
-    return bool((o.outputs or {}).get("deviation"))
 
 
 _EXITS = ("exit", "_exit", "_Exit")

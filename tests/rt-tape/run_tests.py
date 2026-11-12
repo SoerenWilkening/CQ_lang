@@ -471,13 +471,14 @@ def scenarios(clang, work):
             return "classes %s" % classes(shot)
         if lines(trace) != [("x=%d\n", "end"), ("putchar", "end"), ("end\n", "end")]:
             return "lines %s" % lines(trace)
-        if int(shot["events"][1]["r"]["v"], 16) != 0 or not shot["deviation"]:
-            return "deferred result %s deviation %s" % (shot["events"][1]["r"], shot["deviation"])
+        # owner ruling 2026-11-12 item 4: the deferred result is |0>, and no sample is flagged for it
+        if int(shot["events"][1]["r"]["v"], 16) != 0 or "deviation" in shot:
+            return "deferred result %s shot keys %s" % (shot["events"][1]["r"], sorted(shot))
         return None if shot["stdout"] == "x=3\nend\n" else "stdout %r" % shot["stdout"]
     check("defer_field", clean(defer_field))
     check("resolved_then_deferred", clean(lambda tr, sh: None if (
         classes(sh) == [("first\n", "resolved", True), ("putchar", "resolved", True), ("%d\n", "deferred", True)]
-        and lines(tr) == [("first\n", "call"), ("putchar", "call"), ("%d\n", "end")] and not sh["deviation"])
+        and lines(tr) == [("first\n", "call"), ("putchar", "call"), ("%d\n", "end")] and "deviation" not in sh)
         else "classes %s lines %s" % (classes(sh), lines(tr))))
     check("pred_copy", ok_shot([("one\n", True), ("zero\n", False)], b"one\n"))
     check("pred_copy_changed", violation_of("predicate rail .* changed"))
@@ -529,7 +530,7 @@ def scenarios(clang, work):
         return None if lines(trace) == [("fgets", "call")] else "lines %s" % lines(trace)
     check("input_pred_q", clean(input_pred_q))
     check("input_ident_q", clean(lambda tr, sh: None if (classes(sh) == [("fgets", "deferred", True)] and not tap(tr, "qstore")
-                                                         and sh["deviation"]) else "classes %s" % classes(sh)))
+                                                         and "deviation" not in sh) else "classes %s" % classes(sh)))
 
     def read_fread_getc(trace, shot):
         p = tap(trace, "probe")[0]
