@@ -405,13 +405,32 @@ def rv3_undefined(tmp):
     expect("program rv3 vaub (f)", 2, user(d / "vaub.O1.ll", d / "vaub.lowered.ll", "f", light=True))
 
 
+def musl_stdout(tmp):
+    """Ruling Q6 and the output ruling of 2026-11-12 item 4: a program built against musl's <stdio.h> names the host's
+    stream `stdout`, which Darwin calls __stdoutp; both sides bind it to the host's object, so the C program's fprintf
+    writes the host's stdout (no SIGSEGV on a zeroed stand-in) and the lowered tape's entry is that text. A changed
+    format is still caught."""
+    d = SRC / "muslstdout"
+    o1, low = d / "muslstdout.O1.ll", d / "muslstdout.lowered.ll"
+    expect("program muslstdout (f)", 0, user(o1, low, "f", light=True))
+    p = tmp / "muslstdout_format.ll"
+    p.write_text(low.read_text().replace('c"%d|\\00"', 'c"%d;\\00"', 1))
+    expect("mutant muslstdout format", 1, user(o1, p, "f", light=True))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rv3", nargs="*", help="only the src/rv3 group, or these of it")
+    ap.add_argument("--musl-stdout", action="store_true", help="only the src/muslstdout test")
     ap.add_argument("--spec", type=Path, default=ROOT.parent / "CQ_spec")
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
     spec = a.spec.resolve()
+    if a.musl_stdout:
+        with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
+            musl_stdout(Path(t))
+        print(f"{len(failures)} failures" if failures else "all muslstdout tests passed")
+        return 1 if failures else 0
     if a.rv3 is not None:
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
             rv3(Path(t), a.rv3)
@@ -424,6 +443,7 @@ def main():
         tmp = Path(t)
         rv3(tmp)
         rv3_undefined(tmp)
+        musl_stdout(tmp)
         for name, entry in PROGRAMS:
             d = tmp / name
             r = subprocess.run([sys.executable, str(CQCC), "-S", str(SRC / f"{name}.c"), "--save-temps", str(d),
