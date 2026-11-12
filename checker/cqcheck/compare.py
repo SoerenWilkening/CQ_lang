@@ -2385,7 +2385,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             groups: Dict[Tuple[int, Any], List[int]] = {}
             miss = []
             for i, before in extra:
-                if ms[i].get("site") is None or (ms[i].get("fn") in anywhere and ms[i].get("fn") not in here):
+                # rulings Q8: a copy read through a select whose condition reads 1 and which is no carried advance
+                # measures another register (run.py: the select is followed only where its condition reads 0)
+                if ms[i].get("site") is None or ms[i].get("sel_other") or \
+                        (ms[i].get("fn") in anywhere and ms[i].get("fn") not in here):
                     miss.append(i)
                 else:
                     groups.setdefault((before, ms[i]["site"]), []).append(i)
@@ -2413,7 +2416,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         hs = [o_by[k].measured[i].get("h") for i in bad]
         return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and the C run did not leave "
                 f"their site by quantum conditions alone at that point (rulings Q3: only CR rule 2's unconditional execution "
-                f"in a quantum arm, a trip behind a quantum exit or a _ctl predicate may be extra)"]
+                f"in a quantum arm, a trip behind a quantum exit or a _ctl predicate may be extra; rulings Q8: a copy measures the site's "
+                f"register only through carried selects followed where their condition reads 0)"]
 
     for gk, ks in groups.items():
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"

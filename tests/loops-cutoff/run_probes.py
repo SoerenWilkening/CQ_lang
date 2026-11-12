@@ -59,6 +59,21 @@ MUTANTS = {
          r"(  %[\w.]+ = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32[^\n]*\n"
          r"  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)", r"\2\1"),
     ],
+    # rulings Q8: the last trip copy measures a select of its own making, select(!a_3, x0, v_4's register): where trip 4 is
+    # reached its condition reads 0 and the value is the site's; where it is not (an extra), it reads 1 and the copy measures
+    # x0, another register. The old static rule (any three-rail select followed to its third operand) accepted it.
+    "me_carried": [
+        ("measure_carried", "own_select", r"(?s)  (%38) = call i32 @cqrt_measure_i32\(i32 (%36)\), !cq.measure !6\n(.*?)"
+         r"(  call void @cq_template_select_i32_unc\(i32 %37, )",
+         r"  %q.one = call i32 @cqrt_alloc_i1(i1 true)\n  %q.n = call i32 @cqrt_alloc_i1(i1 false)\n"
+         r"  call void @cqrt_and_i1(i32 %32, i32 %q.one, i32 %q.n)\n  call void @cqrt_and_i1(i32 %q.one, i32 %q.one, i32 %q.n)\n"
+         r"  %q.s = call i32 @cq_template_select_i32(i32 %q.n, i32 %5, i32 \2)\n"
+         r"  call void @cqrt_and_i1(i32 %q.one, i32 %q.one, i32 %q.n)\n  call void @cqrt_and_i1(i32 %32, i32 %q.one, i32 %q.n)\n"
+         r"  call void @cqrt_free(i32 %q.n)\n  call void @cqrt_free(i32 %q.one)\n"
+         r"  \1 = call i32 @cqrt_measure_i32(i32 %q.s), !cq.measure !6\n\3"
+         # v_4's register, no longer measured, is uncomputed once its last reader (the after-loop select) is undone
+         r"  call void @cq_template_select_i32_unc(i32 %36, i32 %22, i32 %6, i32 %26)\n  call void @cqrt_free(i32 %36)\n\4"),
+    ],
 }
 _ALL = ("wrong_value", "hoist_trips")      # mutants applied at every match, not the first only
 NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer
