@@ -40,10 +40,11 @@ Both modes then apply the same recipe (bundle/recipe.json) to the linked module,
 The result entries (owner ruling 2026-11-12 item 5, cq-cdf9z; bundle/src/cq_count.c): recipe.json "entries" lists
 them. They are external functions under reserved names __cq_count_*, defined in both modes and exported by version 1.
 They are NOT kept alive by llvm.used (that would link and lower printf_core into every program that links the
-bundle, the corpus examples among them). The keep-alive contract is the name list: a consumer that may insert a
-call to one after the link makes the program DECLARE that name before the link (so `llvm-link --only-needed` pulls
-its body, and the bundle rule links the bundle), and keeps it through any internalize/globaldce strip (e.g. adds
-it to -internalize-public-api-list).
+bundle, the corpus examples among them). The keep-alive contract is driver/cq_entries.py's: a consumer that links a
+program for the pass (which inserts calls to the entries after the link) declares the entries the program needs
+before the link, in a unit naming them in @llvm.compiler.used (so `llvm-link --only-needed` pulls their bodies and
+the bundle rule links the bundle), and keeps them through any internalize/globaldce strip (e.g. adds them to
+-internalize-public-api-list).
 
 Nothing is written into the checkouts; generated headers and objects go to a temporary directory (or --work).
 """

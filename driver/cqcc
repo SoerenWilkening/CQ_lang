@@ -51,6 +51,11 @@ llvm-link would otherwise rename source_filename, reorder declarations and appen
 metadata). A weak or linkonce definition in U is a body, not a declaration. Names are compared as
 llvm-nm prints them (Mach-O mangled) on both sides.
 
+Before the bundle rule, the result entries (owner ruling 2026-11-12; bundle/recipe.json "entries"): when U calls a
+C library output function whose result the pass computes by a bundle entry (driver/cq_entries.py), the entry's
+declaration is linked into U from a unit that also lists it in @llvm.compiler.used (as for the libm names), so U
+declares a bundle symbol, the entry's body is linked and kept. U is unchanged otherwise.
+
 A failing step exits with that step's status and writes no output. A failing --cq-check still writes
 the output and exits with cqcheck user's status.
 """
@@ -62,6 +67,9 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cq_entries  # noqa: E402  (driver/cq_entries.py: the result entries a program needs before its link)
 
 ROOT = Path(__file__).resolve().parents[1]
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
@@ -302,18 +310,27 @@ def main(argv) -> int:
         else:
             run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
         bundle = bundle_files()
+        # The result entries (owner ruling 2026-11-12, cq-cdf9z, cq-m7ftq; driver/cq_entries.py): a deferred output
+        # call's result is a call the pass inserts after this link, to a bundle entry. A unit declaring the entries
+        # the program's output calls may need, with an @llvm.compiler.used naming them (llvm-link drops an unused
+        # declaration), makes the bundle needed and --only-needed pulls their bodies. A program with none is left
+        # as it was.
+        entries = cq_entries.decls(linked.read_text()) if bundle else []
         libm = libm_decls(linked, bundle, tmp) if bundle else {}
-        if bundle and (libm or bundle_needed(linked, bundle, tmp)):
+        if bundle and (libm or entries or bundle_needed(linked, bundle, tmp)):
             # Rule 18: a math intrinsic is lifted from the libm body the bundle has; its declaration makes it needed.
             extra = []
-            if libm:
-                text = Path(linked).read_text()
-                head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
-                used = ", ".join(f"ptr @{n}" for n in libm)
-                unit = work / "libm.ll"
-                unit.write_text(head + "".join(libm.values()) + f"@llvm.compiler.used = appending global [{len(libm)} x ptr] "
+            text = Path(linked).read_text()
+            head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
+            for stem, decl_lines, names in (("libm", list(libm.values()), list(libm)),
+                                            ("entries", [d + "\n" for d in entries], cq_entries.names(entries))):
+                if not names:
+                    continue
+                used = ", ".join(f"ptr @{n}" for n in names)
+                unit = work / f"{stem}.ll"
+                unit.write_text(head + "".join(decl_lines) + f"@llvm.compiler.used = appending global [{len(names)} x ptr] "
                                 f'[{used}], section "llvm.metadata"\n')
-                extra = [unit]
+                extra.append(unit)
             run([tool("llvm-link"), "-S", linked, *extra, "--only-needed", *bundle, "-o", linked],
                 "llvm-link with the injection bundle")
 
