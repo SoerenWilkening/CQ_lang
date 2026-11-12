@@ -369,6 +369,9 @@ RV3 = {
     "d4n0n": [],
     "d4n0n2": [("hash", r"%4 = tail call i32 @getchar_unlocked\(\)",
                 "%unl = tail call i32 @getchar_unlocked()\n  %4 = add i32 0, 1896232989")],
+    # cq-ggcbc (CR 1356-1358): a bodiless `__` callee (__srget) is the stand-in on the C side too, never the host's
+    "ggcbc": [("plus", r"%4 = tail call i32 @__srget\(ptr noundef null\) #2",
+               "%srg = tail call i32 @__srget(ptr noundef null) #2\n  %4 = add i32 %srg, 256")],
     "glob": [("classical", r"%9 = shl nsw i32 %0, 1", "%9 = shl nsw i32 %0, 2"),
              ("measured", r"%8 = call i32 @cqrt_alloc_i32\(i32 %7\)",
               "%bad = add i32 %7, 1\n  %8 = call i32 @cqrt_alloc_i32(i32 %bad)")],
