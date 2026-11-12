@@ -65,6 +65,19 @@ int n_malloc(unsigned x0, double th, int v) {
     free(a);
     return cq_measure(r);
 }
+/* cq-yt5lz: n_malloc's original shape: r = a[x & 3] folds to v, so the value returned on either side of a == NULL is
+   classical (rule 2: no measurement); the oracle's K2 stand-in for the rail-size malloc must stay an allocation */
+int n_malloc_fold(unsigned x0, double th, int v) {
+    unsigned x = x0;
+    cq_theta(&x, th);
+    int *a = malloc(((x & 3) + 1) * sizeof(int));
+    if (a == NULL)
+        return cq_measure(-1);
+    a[x & 3] = v;
+    int r = a[x & 3];
+    free(a);
+    return cq_measure(r);
+}
 /* realloc to a rail size */
 int n_realloc(unsigned x0, double th, int v) {
     unsigned x = x0;

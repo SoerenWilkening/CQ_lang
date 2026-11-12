@@ -529,9 +529,13 @@ def _k2_sites(text: str, o1_text: str) -> str:
         end = start + len(drivers._balanced(line, start)) + 2
         lines[li] = line[:m.start()] + f"@{_K2_ALLOC[name]}(" + ", ".join(args + [f"i64 {k2}"]) + ")" + line[end:]
         used.add(name)
-    decls = {"malloc": "declare noalias ptr @__cqo_malloc_k2(i64, i64)", "calloc": "declare noalias ptr @__cqo_calloc_k2(i64, i64, i64)",
-             "aligned_alloc": "declare noalias ptr @__cqo_aligned_alloc_k2(i64, i64, i64)",
-             "realloc": "declare ptr @__cqo_realloc_k2(ptr, i64, i64)"}
+    # cq-yt5lz (CR rule 16 Allocation: "any callee whose declaration carries allockind" is an allocation, its result a
+    # classical address also under a rail size): the stand-ins carry the allockind of what they replace, so the oracle's
+    # taint (cq::computeTaint) still sees the allocation the pass sees
+    decls = {"malloc": 'declare noalias ptr @__cqo_malloc_k2(i64, i64) allockind("alloc,uninitialized")',
+             "calloc": 'declare noalias ptr @__cqo_calloc_k2(i64, i64, i64) allockind("alloc,zeroed")',
+             "aligned_alloc": 'declare noalias ptr @__cqo_aligned_alloc_k2(i64, i64, i64) allockind("alloc,uninitialized,aligned")',
+             "realloc": 'declare ptr @__cqo_realloc_k2(ptr, i64, i64) allockind("realloc")'}
     return "\n".join(lines + [decls[n] for n in sorted(used)]) + "\n"
 
 

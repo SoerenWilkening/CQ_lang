@@ -50,6 +50,7 @@ NOBUILTIN = {
     "n_calloc_both": [("4096", "16")],
     "n_calloc_wide": [("4096", "16")],
     "n_malloc": [("4096", "16")],
+    "n_malloc_fold": [("4096", "16")],   # cq-yt5lz: the result classical over a == NULL, no measurement
     "n_realloc": [("4", "16"), ("4096", "16")],
 }
 # Rule 5 In-place form: entry -> does its body hold the form's swaps at i32?
