@@ -420,10 +420,10 @@ def host_streams(text: str) -> str:
 # Owner ruling 2026-11-12 (item 4): the C library output calls whose result the C program reads take musl's value
 # (OracleInstr.cpp cq-oracle-output-results; the names of pass/lib/eff/tape/Tape.cpp outputFunction). Owner ruling
 # 2026-11-12 cq-dbtpi: so do fclose, remove, rename, fsetpos, close (0), fseek and setvbuf (0, or -1 for a whence or type
-# outside {0, 1, 2}).
+# outside {0, 1, 2}), fseeko as fseek, write its count (CR rule 16).
 _OUTPUT_NAMES = frozenset((
     "printf fprintf dprintf vprintf vfprintf vdprintf wprintf fwprintf vwprintf vfwprintf puts fputs fflush putw fputc putc "
-    "putchar fwrite fputwc putwc putwchar fputws fclose remove rename fsetpos close fseek setvbuf").split())
+    "putchar fwrite fputwc putwc putwchar fputws fclose remove rename fsetpos close fseek setvbuf fseeko write raise").split())
 _DECLARED_ANY = re.compile(r'(?m)^declare\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 
@@ -442,7 +442,10 @@ def output_results(text: str) -> str:
     write. A module that declares no such function is text as it stands."""
     from . import drivers
     names = {drivers._c_name(n) for n in _DECLARED_ANY.findall(text)}
-    if not {n[:-len("_unlocked")] if n.endswith("_unlocked") else n for n in names} & _OUTPUT_NAMES:
+    # ruling cq-dbtpi: rule 24's mutex calls, musl's internal __pthread_mutex_* names among them, are no-ops returning 0
+    # (OracleInstr.cpp noopMutexes, the pass's cq::rule24Mutex)
+    if not ({n[:-len("_unlocked")] if n.endswith("_unlocked") else n for n in names} & _OUTPUT_NAMES
+            or any(n.startswith(("pthread_mutex_", "__pthread_mutex_")) for n in names)):
         return text
     plugin, _ = toolchain()
     with tempfile.TemporaryDirectory(prefix="cqo-outres.") as d:

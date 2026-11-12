@@ -3232,16 +3232,45 @@ public:
         continue;
       }
       // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed.
-      // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL at __errno_location(); the runtime calls the
-      // module's own (its address, no call added here) only then; a module with none gets no errno effect, as the pass
-      // (calls/Calls.cpp errnoAddress) stores none there.
+      // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL through the module's errno accessor; the runtime
+      // calls it (its address, no call added here) only then; a module with none gets no errno effect.
       if (callee && callee->isDeclaration() && callee->getName() == "signal" && CB->arg_size() == 2 &&
           CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
           CB->getArgOperand(1)->getType()->isPointerTy()) {
-        Function *el = M.getFunction("__errno_location");
-        Value *errFn = el && el->arg_empty() && el->getReturnType()->isPointerTy()
-                           ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
-        IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr}), {errFn});
+        // Owner ruling 2026-11-12 (signal's EINVAL store): through whichever accessor the module declares or defines for
+        // its own errno reads, __errno_location (musl, glibc) or __error (Darwin; here the stand-in's wrapper
+        // cqd_fx___error, drivers.effect_callees, whose result is the C oracle's errno cell, fx_call.h FX_ERRNO_CELL),
+        // recognised by name and signature int *(void); with both, each one the module calls, __errno_location first,
+        // or __errno_location alone when it calls neither; neither present: no store (the pass's rule,
+        // calls/Calls.cpp errnoAddresses)
+        auto accessor = [&](std::initializer_list<StringRef> names) -> Function * {
+          for (StringRef n : names)
+            if (Function *f = M.getFunction(n); f && f->arg_empty() && !f->isVarArg() && f->getReturnType()->isPointerTy())
+              return f;
+          return nullptr;
+        };
+        auto called = [](Function *f) {
+          for (const User *u : f->users())
+            if (auto *c = dyn_cast<CallBase>(u); c && c->getCalledOperand() == f)
+              return true;
+          return false;
+        };
+        SmallVector<Function *, 2> acc;
+        for (Function *f : {accessor({"__errno_location"}), accessor({"cqd_fx___error", "__error"})})
+          if (f)
+            acc.push_back(f);
+        if (acc.size() == 2 && (called(acc[0]) || called(acc[1]))) {
+          SmallVector<Function *, 2> used;
+          for (Function *f : acc)
+            if (called(f))
+              used.push_back(f);
+          acc = used;
+        } else if (acc.size() == 2) {
+          acc.pop_back();
+        }
+        Constant *null = ConstantPointerNull::get(cast<PointerType>(Ptr));
+        IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr, Ptr}),
+                                   {acc.size() > 0 ? (Value *)acc[0] : null, acc.size() > 1 ? (Value *)acc[1] : null});
         CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
         continue;
       }
@@ -3630,7 +3659,10 @@ namespace outres {
 
 // Sel3: 0 when the int argument `first` is 0, 1 or 2, else -1 (owner ruling 2026-11-12 cq-dbtpi: fseek's whence, musl
 // fseek.c __fseeko_unlocked; setvbuf's type, musl setvbuf.c, _IOFBF 0, _IOLBF 1, _IONBF 2).
-enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3 };
+// Length: the count argument `first` (write.c: the syscall's count when it succeeds).
+// Sig64: raise, 0 for 0 <= sig <= 64, else -1 (raise.c: the kernel's tkill; a registered handler runs and raise
+// returns 0, and signal registers none at an invalid number: one value for the whole call, as the pass computes it).
+enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3, Length, Sig64 };
 struct Fn {
   Kind kind;
   unsigned first;
@@ -3658,6 +3690,10 @@ std::optional<Fn> outputFunction(const Function &F) {
       {"fclose", {Kind::Zero, 0}},    {"remove", {Kind::Zero, 0}},    {"rename", {Kind::Zero, 0}},
       {"fsetpos", {Kind::Zero, 0}},   {"close", {Kind::Zero, 0}},
       {"fseek", {Kind::Sel3, 2}},     {"setvbuf", {Kind::Sel3, 2}},
+      // CR rule 16 names these two too (K1's pass, eff/tape/Tape.cpp): fseeko is __fseeko (fseek.c weak_alias), as
+      // fseek; write's result is its count (unistd/write.c, the syscall when it succeeds)
+      {"fseeko", {Kind::Sel3, 2}},    {"write", {Kind::Length, 2}},
+      {"raise", {Kind::Sig64, 0}},
       {"fputc", {Kind::UChar, 0}},    {"putc", {Kind::UChar, 0}},     {"putchar", {Kind::UChar, 0}},
       {"fwrite", {Kind::Fwrite, 0}},
       {"fputwc", {Kind::Wc, 0}},      {"putwc", {Kind::Wc, 0}},       {"putwchar", {Kind::Wc, 0}},
@@ -3691,6 +3727,13 @@ std::optional<Fn> outputFunction(const Function &F) {
   case Kind::Sel3:
     return !ft->isVarArg() && ft->getNumParams() == o.first + (n == "setvbuf" ? 2 : 1) && argIs(0, true) &&
                    argIs(o.first, false)
+               ? std::optional(o) : std::nullopt;
+  case Kind::Sig64:
+    return !ft->isVarArg() && ft->getNumParams() == 1 && ft->getReturnType()->isIntegerTy(32) &&
+                   ft->getParamType(0)->isIntegerTy(32)
+               ? std::optional(o) : std::nullopt;
+  case Kind::Length:
+    return !ft->isVarArg() && ft->getNumParams() == 3 && argIs(0, false) && argIs(1, true) && argIs(2, false)
                ? std::optional(o) : std::nullopt;
   }
   return std::nullopt;
@@ -3781,8 +3824,35 @@ bool copyHostVaLists(Module &M) {
   return true;
 }
 
+// Owner ruling 2026-11-12 cq-dbtpi: musl's internal __pthread_mutex_* names are rule 24's no-op mutex calls returning
+// 0, as pthread_mutex_* are (CR rule 24): no host call, no effect. The names are the pass's own list (cq::rule24Mutex,
+// pass/lib/Common.cpp, linked into this plugin), so the two cannot drift; the pass lowers them so in eff/conc/Conc.cpp.
+// Every call of a declared one is replaced by 0 and removed. Returns whether it changed M.
+bool noopMutexes(Module &M) {
+  SmallVector<CallBase *, 8> calls;
+  for (Function &G : M)
+    for (Instruction &I : instructions(G)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
+      if (!F || !F->isDeclaration() || isa<InvokeInst>(CB))
+        continue;
+      StringRef n = F->getName();
+      if (n.starts_with("\01_"))
+        n = n.drop_front(2);
+      if (cq::rule24Mutex(n) && (CB->getType()->isVoidTy() || CB->getType()->isIntegerTy()))
+        calls.push_back(CB);
+    }
+  for (CallBase *CB : calls) {
+    if (!CB->getType()->isVoidTy())
+      CB->replaceAllUsesWith(ConstantInt::get(CB->getType(), 0));
+    CB->eraseFromParent();
+  }
+  return !calls.empty();
+}
+
 struct Pass : PassInfoMixin<Pass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    bool mutexes = noopMutexes(M);
     SmallVector<CallBase *, 16> sites;
     for (Function &G : M)
       for (Instruction &I : instructions(G)) {
@@ -3796,7 +3866,7 @@ struct Pass : PassInfoMixin<Pass> {
       }
     // after the counts, which read the caller's own va_list (musl copies it)
     if (sites.empty())
-      return copyHostVaLists(M) ? PreservedAnalyses::none() : PreservedAnalyses::all();
+      return copyHostVaLists(M) || mutexes ? PreservedAnalyses::none() : PreservedAnalyses::all();
     LLVMContext &C = M.getContext();
     PointerType *ptr = PointerType::get(C, 0);
     Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);
@@ -3866,6 +3936,15 @@ struct Pass : PassInfoMixin<Pass> {
         Value *r = B.CreateCall(e, {null, slot, ConstantInt::get(sizeT, 0), null});
         v = B.CreateSelect(B.CreateICmpEQ(r, ConstantInt::getAllOnesValue(sizeT)), ConstantInt::get(rt, -1, true),
                            ConstantInt::get(rt, 0));
+        break;
+      }
+      case Kind::Length:
+        v = B.CreateZExtOrTrunc(CB->getArgOperand(o.first), rt);
+        break;
+      case Kind::Sig64: {
+        Value *a = CB->getArgOperand(0);
+        v = B.CreateSelect(B.CreateICmpULE(a, ConstantInt::get(a->getType(), 64)), ConstantInt::get(rt, 0),
+                           ConstantInt::get(rt, -1, true));
         break;
       }
       case Kind::Sel3: {

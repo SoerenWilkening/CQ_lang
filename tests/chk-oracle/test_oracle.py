@@ -646,6 +646,22 @@ int effvals(int w, int t, int s) {
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(1), i32(2), i32(40)]},
                                        {"call": 0, "args": [i32(0), i32(0), i32(0)]}]), ["0x31a80", "0x31a80"])
 
+    def test_write_fseeko(self):
+        # CR rule 16 (K1's list): write's result is its count (musl write.c), fseeko's is fseek's (fseek.c __fseeko)
+        o1 = compile_c("wrfso", """
+#include <stdio.h>
+#include <unistd.h>
+int wrfso(int w, int n) {
+    char buf[64];
+    FILE *f = (FILE *)buf;
+    long c = write(-5, "abcdefgh", (size_t)n);
+    return (int)c | fseeko(f, 3, w) << 8 | fseeko(f, 3, w + 3) << 16;
+}
+""")
+        sp = spec("wrfso", "int wrfso(int, int)", [("wrfso", ["int", "int"])])
+        # count 7, fseeko 0 for a whence of 1, -1 for 4
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(1), i32(7)]}]), [i32(7 | 0xffff0000)])
+
     def test_signal_validity(self):
         o1 = compile_c("sigvalid", """
 #include <signal.h>
@@ -707,6 +723,77 @@ define i32 @sigerrno(i32 %s) {
             got.append((rr.outputs["ret"][0]["v"]["v"],
                         [(m["name"], int(m["v"], 16)) for m in rr.outputs["mem"] if "err_cell" in m["name"]]))
         self.assertEqual(got, [("0x1", [("err_cell", 22)]), ("0x1", [("err_cell", 22)]), ("0x0", [("err_cell", 0)])])
+
+
+    def test_mutex_noops(self):
+        # cq-dbtpi: rule 24's mutex calls, musl's internal __pthread_mutex_* among them, are no-ops returning 0, no effect
+        o1 = compile_c("mtxnoop", """
+#include <pthread.h>
+int __pthread_mutex_lock(void *), __pthread_mutex_trylock(void *), __pthread_mutex_timedlock(void *, const void *),
+    __pthread_mutex_unlock(void *);
+int mtxnoop(int k) {
+    char m[64] = {0};                 /* no mutex the host made */
+    int r = __pthread_mutex_lock(m) | __pthread_mutex_trylock(m) << 1 | __pthread_mutex_timedlock(m, 0) << 2
+            | __pthread_mutex_unlock(m) << 3;
+    r |= (pthread_mutex_lock((pthread_mutex_t *)m) != 0) << 4 | (pthread_mutex_unlock((pthread_mutex_t *)m) != 0) << 5;
+    return r + k;
+}
+""")
+        sp = spec("mtxnoop", "int mtxnoop(int)", [("mtxnoop", ["int"])])
+        rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(0)]})
+        self.assertEqual((rr.outputs["ret"][0]["v"]["v"], rr.outputs["effects"]), ("0x0", []))
+
+
+    def test_signal_errno_darwin(self):
+        # owner ruling 2026-11-12 (signal's EINVAL store): a Darwin-built program reads errno through __error(); after an
+        # invalid signal it reads EINVAL there, after a valid one what it wrote
+        o1 = compile_c("sigerrdw", """
+#include <signal.h>
+#include <errno.h>
+static void h(int s) { (void)s; }
+int sigerrdw(int s) {
+    errno = 7;
+    void (*r)(int) = signal(s, h);
+    return (r == SIG_ERR) | errno << 4;
+}
+""")
+        self.assertIn("@__error(", o1.read_text())
+        sp = spec("sigerrdw", "int sigerrdw(int)", [("sigerrdw", ["int"])])
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(x)]} for x in (19, 0, 5)]),
+                         ["0x161", "0x161", "0x70"])
+        # an errno accessor's call is no host effect (fx_call.h): none logged
+        self.assertEqual(oracle.run_sample(o1, sp, {"call": 0, "args": [i32(19)]}).outputs["effects"], [])
+
+    def test_signal_errno_both_accessors(self):
+        # the ruling's rule with both accessors: through each one the module calls, __errno_location first; neither
+        # called: __errno_location alone
+        def mod(call_error):
+            return ("""target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+@cell = global i32 0, align 4
+define ptr @__errno_location() noinline {
+  ret ptr @cell
+}
+declare ptr @__error()
+declare ptr @signal(i32, ptr)
+define i32 @both(i32 %s) {
+  %r = call ptr @signal(i32 %s, ptr null)
+  %a = load i32, ptr @cell, align 4
+""" + ("""  %p = call ptr @__error()
+  %b = load i32, ptr %p, align 4
+""" if call_error else "  %b = add i32 0, 0\n") + """  %s1 = shl i32 %b, 8
+  %v = or i32 %a, %s1
+  ret i32 %v
+}
+""")
+        sp = spec("both", "int both(int)", [("both", ["int"])])
+        got = []
+        for call_error in (True, False):
+            o1 = TMP / f"both{int(call_error)}.O1.ll"
+            o1.write_text(mod(call_error))
+            got += rets(o1, sp, [{"call": 0, "args": [i32(19)]}])
+        # __errno_location is defined but never called: with __error called, the store goes through __error alone
+        self.assertEqual(got, ["0x1600", "0x16"])
 
 
 class Cutoff(unittest.TestCase):
