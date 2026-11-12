@@ -329,6 +329,23 @@ void cqd_out_meas_fn(const char *fn, int site) {
   snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_fn\",\"fn\":\"%s\",\"site\":%d}", fn, site);
   cqe_log(b);
 }
+/* rulings Q8: a three-rail select some measurement's register is read through: whether its condition rail reads 0 at the
+   select (cqd_out_sel), and, before the measurement, the selects its register is read through in order with whether each
+   is a carried advance (cqd_out_meas_chain) */
+__attribute__((weak)) const void *cqe_rail(int h);
+__attribute__((weak)) int cqe__val_iszero(const void *v);
+__attribute__((weak)) int cqe__exists(int h);
+void cqd_out_sel(int id, int h) {
+  char b[120];
+  int z = !(cqe_rail && cqe__val_iszero && cqe__exists && cqe__exists(h)) || cqe__val_iszero(cqe_rail(h));
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"sel\",\"id\":%d,\"z\":%d}", id, z);
+  cqe_log(b);
+}
+void cqd_out_meas_chain(int id, int chained) {
+  char b[120];
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_chain\",\"id\":%d,\"c\":%d}", id, chained);
+  cqe_log(b);
+}
 static void cqd_out_regions(void) {
   char b[160];
   unsigned long long sp = (unsigned long long)__builtin_frame_address(0);
@@ -568,8 +585,8 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
+        tot += hret_names_ir(handle_returning_fns(canon))   # before the write: lowered.steps.ll is built from the file (cq-xazgw)
         (tmp / "lowered.tot.ll").write_text(tot)
-        tot += hret_names_ir(handle_returning_fns(canon))
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
         raise BuildError(f"cq: unimplemented: {e}")
@@ -1114,6 +1131,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     ctl_measured: List[int] = []
     meas_fn: Optional[str] = None
     meas_site: Optional[int] = None
+    meas_chain: List[Tuple[Any, Any]] = []
+    sel_z: Dict[Any, int] = {}
     direct_fx: List[dict] = []
     tape_out, tape_seq, deviation = "", [], False
     last_exit: Optional[dict] = None
@@ -1133,6 +1152,16 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                 measured[-1]["fn"], meas_fn = meas_fn, None
                 if meas_site is not None:
                     measured[-1]["site"], meas_site = meas_site, None
+            # rulings Q8: follow the selects the register is read through only while their condition reads 0; at one reading
+            # 1 the copy measures that select's own result: the site's carried rail only for a carried advance (`c`)
+            for sid, chained in meas_chain:
+                if sid not in sel_z:
+                    break
+                if sel_z[sid]:
+                    if not chained:
+                        measured[-1]["sel_other"] = True
+                    break
+            meas_chain = []
         elif ev == "ret":
             rets.append({"call": e.get("call"), "fn": e.get("fn"),
                          "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")})
@@ -1153,6 +1182,10 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                 ctl_measured.append(e.get("h"))
             elif e.get("table") == "meas_fn":
                 meas_fn, meas_site = e.get("fn"), e.get("site")
+            elif e.get("table") == "sel":
+                sel_z[e.get("id")] = 0 if e.get("z") else 1
+            elif e.get("table") == "meas_chain":
+                meas_chain.append((e.get("id"), e.get("c")))
             else:
                 mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
@@ -2284,6 +2317,7 @@ _MEASURE = re.compile(r"^(\s+)%[-\w.$\"]+ = call \S+ @cqrt_measure_\w+\(i32 (%[-
 _SELECT3 = re.compile(r"^\s+(%[-\w.$\"]+) = call \S+ @cq_template_select_[a-z0-9]+\(i32 %[-\w.$\"]+, "
                       r"i32 %[-\w.$\"]+, i32 (%[-\w.$\"]+)\)")
 _COPY = re.compile(r"@cqrt_copy_[a-z0-9]+\(i32 (%[-\w.$\"]+), i32 (%[-\w.$\"]+)\)")
+_SELECT_COND = re.compile(r"^\s+%[-\w.$\"]+ = call \S+ @cq_template_select_[a-z0-9]+\(i32 (%[-\w.$\"]+), ")
 
 
 # §1.4's clone grammar without its _ctl word, read right to left: the C function a clone is the lowering of.
@@ -2304,14 +2338,17 @@ def _canon(line: str, operand: str = "", result: str = "") -> str:
     return re.sub(r"%[-\w.$\"]+", name, re.sub(r", !cq\.measure !\d+", "", line))
 
 
-def measure_site_classes(text: str) -> Dict[int, int]:
+def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, str, bool]]]] = None) -> Dict[int, int]:
     """Line index of each cqrt_measure call of the lowered module -> its call-site class (cq-47f8h, owner 2026-11-07:
     measurements are identified by call site). The pass unrolls a K-loop's body, one measure call per trip (cq-9kcq);
     the copies are one site of the C program. Two calls of one function and one width are copies of one site when
     the six instructions before them, or the six after them, read alike with SSA names erased (the measured rail and
     the result kept apart: the data flow through the measurement is part of the shape) (the first copy has another prologue and the last another epilogue, the middle ones
     both), and they measure one register (cq-v8cn7: `root`, through a kept copy and rule 14's carried select; the
-    shape alone does not tell which register is measured); the classes are the closure of that relation."""
+    shape alone does not tell which register is measured); the classes are the closure of that relation.
+    `chains` (rulings Q8), when given, receives for each measurement line the three-rail selects `root` reads it through,
+    in order: (line, condition operand, carried advance: its result is another three-rail select's previous operand).
+    The classes stay static; per sample the trace tells where the select may be followed (ctl_measures_module)."""
     lines = text.splitlines()
     parent: Dict[int, int] = {}
 
@@ -2332,6 +2369,7 @@ def measure_site_classes(text: str) -> Dict[int, int]:
     for a, b in bodies:
         definer: Dict[str, str] = {}
         carried: Dict[str, str] = {}         # a rule-14 carried advance select(a_j, next, prev): its prev
+        carried_at: Dict[str, Tuple[int, str]] = {}   # ... its line and condition
         copied: Dict[str, List[Tuple[int, str]]] = {}   # a rail -> (line, source) of each copy_<W> into it
         for i in range(a, b):
             m = re.match(r"^\s+(%[-\w.$\"]+) = (?:call \S+ )?@?(\w+)?", lines[i])
@@ -2341,11 +2379,16 @@ def measure_site_classes(text: str) -> Dict[int, int]:
             s = _SELECT3.match(lines[i])
             if s:
                 carried[s.group(1)] = s.group(2)
+                cnd = _SELECT_COND.match(lines[i])
+                if cnd:
+                    carried_at[s.group(1)] = (i, cnd.group(1))
             cp = _COPY.search(lines[i])
             if cp:
                 copied.setdefault(cp.group(2), []).append((i, cp.group(1)))
 
-        def root(v: str, at: int) -> str:
+        chained_prev = set(carried.values())
+
+        def root(v: str, at: int, chain: Optional[List[Tuple[int, str, bool]]] = None) -> str:
             """cq-v8cn7: the register a measurement at line `at` reads, through rule 2's / §1.4's kept copy
             (copy_<W>(h, t); measure(t)) and rule 14's carried advance select(a_j, next, prev) (CR rule 14: "every
             carried value advances by a select on a_j"): one register over the trips, a different one for any other."""
@@ -2356,6 +2399,8 @@ def measure_site_classes(text: str) -> Dict[int, int]:
                 if srcs:
                     v = srcs[-1]
                 elif v in carried:
+                    if chain is not None and v in carried_at:
+                        chain.append((*carried_at[v], v in chained_prev))
                     v = carried[v]
                 else:
                     break
@@ -2368,7 +2413,10 @@ def measure_site_classes(text: str) -> Dict[int, int]:
             parent[i] = i
             w = re.search(r"@cqrt_measure_(\w+)\(", lines[i]).group(1)
             res = re.match(r"^\s+(%[-\w.$\"]+) =", lines[i]).group(1)
-            d = root(m.group(2), i)
+            ch: List[Tuple[int, str, bool]] = []
+            d = root(m.group(2), i, ch)
+            if chains is not None and ch:
+                chains[i] = ch
             pre =tuple(_canon(x, m.group(2), res) for x in lines[max(a + 1, i - _MEAS_WINDOW):i])
             suf = tuple(_canon(x, m.group(2), res) for x in lines[i + 1:min(b, i + 1 + _MEAS_WINDOW)])
             for k in (("pre", w, d, pre) if len(pre) == _MEAS_WINDOW else None,
@@ -2391,7 +2439,9 @@ def ctl_measures_module(text: str) -> str:
     fns: Dict[str, int] = {}
     in_ctl = used = False
     fn = None
-    sites = measure_site_classes(text)
+    chains: Dict[int, List[Tuple[int, str, bool]]] = {}
+    sites = measure_site_classes(text, chains)
+    sel_cond = {ln: c for ch in chains.values() for ln, c, _ in ch}
     for ln_i, line in enumerate(text.splitlines()):
         if line.startswith("define"):
             in_ctl = bool(re.search(r"@\S*_ctl(?:_unc)?\(", line))
@@ -2404,10 +2454,17 @@ def ctl_measures_module(text: str) -> str:
             out.append(f"{m.group(1)}call void @cqd_out_ctl_measure(i32 {m.group(2)})")
             used = True
         elif m and fn:
+            for ln, _, chained in chains.get(ln_i, ()):
+                out.append(f"{m.group(1)}call void @cqd_out_meas_chain(i32 {ln}, i32 {int(chained)})")
             out.append(f"{m.group(1)}call void @cqd_out_meas_fn(ptr @.cqd.fn.{fns.setdefault(fn, len(fns))}, i32 {sites.get(ln_i, -1)})")
         out.append(line)
+        if ln_i in sel_cond:   # rulings Q8: the select's condition, right after it (the select line's number is its id)
+            out.append(f"  call void @cqd_out_sel(i32 {ln_i}, i32 {sel_cond[ln_i]})")
     if used:
         out.append("declare void @cqd_out_ctl_measure(i32)")
+    if sel_cond:
+        out.append("declare void @cqd_out_sel(i32, i32)")
+        out.append("declare void @cqd_out_meas_chain(i32, i32)")
     if fns:
         out.append("declare void @cqd_out_meas_fn(ptr, i32)")
         for name, i in fns.items():

@@ -65,7 +65,7 @@ def rets(o1, sp, samples):
 
 def _no_mem(outputs):
     """outputs without the memory and address tables (asserted on their own, FlatMemory below)."""
-    return {k: v for k, v in outputs.items() if k not in ("mem", "objects", "regions", "k2", "reads")}
+    return {k: v for k, v in outputs.items() if k not in ("mem", "objects", "regions", "k2", "reads", "skips")}
 
 
 class Totalization(unittest.TestCase):
@@ -892,23 +892,84 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertEqual(len(rr.measured), gates, smp)
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
+    def test_static_collapse(self):
+        """CR rule 2, 406-408 (cq-ndtt, cq-g72r): collapse is static. A value measured on some classical paths only stays a
+        rail after the join, also on the samples that measured it (a later cq_measure of what is computed from it is a
+        measurement); measured on every path, it collapses. Measuring a classical merge measures the merge, not the
+        incoming it chose (kq: t * 7 is a measurement on both paths)."""
+        o1 = compile_c("static_collapse", """
+int pm_join(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = x + 7, r = 0;
+    if (c) r = cq_measure(y); return r + cq_measure(y * 3); }
+int both(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = x + 7, r;
+    if (c) r = cq_measure(y); else r = 2 * cq_measure(y); return r + cq_measure(y * 3); }
+int kq(int a, double th, int c) { int x = a; cq_theta(&x, th); int t = x & 6, y;
+    if (c) y = t; else y = x | 1; int r = cq_measure(y); return r + cq_measure(t * 7); }
+int pm_ret(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = 3 * x + 1;
+    if (c) return cq_measure(y); int z = y ^ 5; return cq_measure(x) + cq_measure(z & 1); }
+""")
+        sp = spec("static_collapse", "int pm_join(int,double,int);int both(int,double,int);int kq(int,double,int);"
+                  "int pm_ret(int,double,int)",
+                  [("pm_join", ["int", "double", "int"]), ("both", ["int", "double", "int"]),
+                   ("kq", ["int", "double", "int"]), ("pm_ret", ["int", "double", "int"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        for smp, gates, reads in [(S(0, i32(5), HALF, i32(1)), 2, 0), (S(0, i32(5), HALF, i32(0)), 1, 0),
+                                  (S(1, i32(5), HALF, i32(1)), 1, 1), (S(1, i32(5), HALF, i32(0)), 1, 1),
+                                  (S(2, i32(5), HALF, i32(1)), 2, 0), (S(2, i32(5), HALF, i32(0)), 2, 0),
+                                  # measured on one path only: a reader after it on that path still collapses
+                                  (S(3, i32(5), HALF, i32(0)), 1, 1), (S(3, i32(5), HALF, i32(1)), 1, 0)]:
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+
+    def test_vector_lane(self):
+        """cq-d1cd (CR rule 2: cq_measure of a value that never was a rail is that value): a vector is lowered lane by lane;
+        a lane computed from classical lanes alone is no rail, so its cq_measure is a read."""
+        o1 = compile_c("vec_lane", """
+#include <fenv.h>
+#pragma STDC FENV_ACCESS ON
+typedef double v2 __attribute__((vector_size(16)));
+double vec_op(double x0, double c, double th) { double x = x0; cq_theta(&x, th);
+    v2 a = {x, c}; v2 b = {c, 3.0}; v2 r = a / b; return cq_measure(r[0]) + cq_measure(r[1]); }
+double vec_q(double x0, double c, double th) { double x = x0; cq_theta(&x, th);
+    v2 a = {x, c}; v2 b = {c, x}; v2 r = a / b; return cq_measure(r[0]) + cq_measure(r[1]); }
+""")
+        sp = spec("vec_lane", "double vec_op(double,double,double);double vec_q(double,double,double)",
+                  [("vec_op", ["double", "double", "double"]), ("vec_q", ["double", "double", "double"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        for smp, gates, reads in [(S(0, f64(1.5), f64(2.0), HALF), 1, 1), (S(1, f64(1.5), f64(2.0), HALF), 2, 0)]:
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+
     def test_measure_in_a_loop_body(self):
         """Owner, cq-2z29a, cq-47f8h: a loop-carried value with a rail incoming is a rail. What is computed from the measured rail alone is a read on the
-        later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement."""
+        later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement.
+        The carried incoming is collapsed with the measured phi only under rule 2's static test (CR 406-408)."""
         o1 = compile_c("loopbody", """
 int body(unsigned x0, double t) { unsigned v = x0; cq_theta(&v, t); int n = 0; while (v & 1) { n += cq_measure(v); v >>= 1; } return n; }
 int qexit(unsigned x0, unsigned y0, double t) { unsigned x = x0, y = y0; cq_theta(&x, t); cq_theta(&y, t); int n = 0;
     while ((x & 1) && !(y & 1)) { n += cq_measure(x); x >>= 1; } return n; }
+unsigned carried(unsigned x0, unsigned w0, double th, unsigned k) { unsigned x = x0, w = w0; cq_theta(&x, th); cq_theta(&w, th);
+    unsigned v = x, m = 0; while (x > k) { m += cq_measure(v); v = w; x >>= 1; } return m; }
 """)
-        sp = spec("loopbody", "int body(unsigned,double);int qexit(unsigned,unsigned,double)",
-                  [("body", ["unsigned", "double"]), ("qexit", ["unsigned", "unsigned", "double"])])
+        sp = spec("loopbody", "int body(unsigned,double);int qexit(unsigned,unsigned,double);"
+                  "unsigned carried(unsigned,unsigned,double,unsigned)",
+                  [("body", ["unsigned", "double"]), ("qexit", ["unsigned", "unsigned", "double"]),
+                   ("carried", ["unsigned", "unsigned", "double", "unsigned"])])
         S = lambda c, *a: {"call": c, "args": list(a)}
         for smp, gates, reads in [(S(0, i32(1), HALF), 1, 0), (S(0, i32(3), HALF), 1, 1), (S(0, i32(7), HALF), 1, 2),
                                   (S(1, i32(1), i32(0), HALF), 1, 0), (S(1, i32(3), i32(0), HALF), 2, 0),
-                                  (S(1, i32(7), i32(0), HALF), 3, 0)]:
+                                  (S(1, i32(7), i32(0), HALF), 3, 0),
+                                  # rulings Q8 witness: trip 1 measures x0 through v's phi, but x0 is read unmeasured by x's
+                                  # phi and the exit test, so it is not collapsed through the carried incoming (x stays a rail,
+                                  # the exit test quantum); v, with that rail among its incomings, is a rail in every trip
+                                  (S(2, i32(7), i32(9), HALF, i32(0)), 3, 0)]:
             ev = oracle.trace_sample(o1, sp, smp)
             got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
             self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+        # the exit test of `carried` stays quantum after trip 1 measured x0 through v
+        ev = oracle.trace_sample(o1, sp, S(2, i32(7), i32(9), HALF, i32(0)))
+        self.assertTrue(any(e["ev"] == "skip" and e["q"] for e in ev), ev)
 
 
 class ExitRead(unittest.TestCase):
@@ -1284,6 +1345,32 @@ int go(int x) { putchar(x); int r = ext_unknown(x); char b[8] = {0}; fgets(b, 8,
         self.assertEqual(rr.outputs["effects"][2]["args"][0]["p"], 1)
         ret = rr.outputs["ret"][0]["v"]
         self.assertNotEqual(ret["v"], "0xffffffff")   # fgets stored the stand-in's line
+
+class Horizon(unittest.TestCase):
+    """cq-jumn (CR 1351-1352, rulings Q3 part 1): a C program that would end early (exit) on a trip beyond K is stopped at the
+    cutoff first: the sample is capped after K trips and never reaches the exit, so nothing after the horizon is compared
+    (tests/loops-cutoff/probes/noexit.c na_exit's sample x = 0x806c50ff exits in trip 5)."""
+
+    def test_exit_beyond_k(self):
+        o1 = compile_c("horizon", """
+#include <stdlib.h>
+int na_exit(int x0, double th) {
+  int x = x0; cq_theta(&x, th);
+  int i = 0, acc = 0;
+  while ((x >> i) & 1) {
+    if (((x >> (i + 8)) & 1) != 0) { cq_phi(0.25); exit(3); }
+    acc += i + 2;
+    i++;
+  }
+  return cq_measure(acc);
+}
+""")
+        sp = spec("horizon", "int na_exit(int,double)", [("na_exit", ["int", "double"])])
+        r = oracle.run_samples(o1, sp, [{"call": 0, "args": [i32(0), HALF], "subst": {"na_exit:0": i32(0x806c50ff)}},
+                                        {"call": 0, "args": [i32(0), HALF], "subst": {"na_exit:0": i32(0x0103)}}])
+        self.assertTrue(r[0].outcome.startswith("cap:"), (r[0].outcome, r[0].loops))
+        self.assertTrue(any(l["capped"] and l["n"] == 4 for l in r[0].loops), r[0].loops)
+        self.assertFalse(r[1].outcome.startswith("cap:"), r[1].outcome)  # exit(3) in trip 1: within K, ends early
 
 
 if __name__ == "__main__":

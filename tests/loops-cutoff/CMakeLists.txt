@@ -137,6 +137,20 @@ add_test(NAME loops-cutoff-measure-cbr
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in h=4 --measures-in g=1
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_cbr.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# rulings Q8, Q9: a body cq_measure of a carried value whose next value is unrelated (trip j measures the carried rail of
+# trip j); run_probes.py MUTANTS: a copy measuring another register through a select of its own making is rejected.
+add_test(NAME loops-cutoff-measure-carried
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in measure_carried=4
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_carried.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# rulings Q3 (2026-11-11): a measurement behind a classical branch on an earlier outcome; run_probes.py MUTANTS: the
+# measurement hoisted above that branch is rejected.
+add_test(NAME loops-cutoff-measure-outcome
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in meas_behind_outcome=2
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_outcome.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in every trip copy (the arm
 # C does not take emits nothing; the taken arm's effects sit under the trip predicate alone), in a clone, a _ctl clone
 # and a twin; a sub-loop, a noreturn arm and a measurement behind one. Each entry §6-checked against its C program.

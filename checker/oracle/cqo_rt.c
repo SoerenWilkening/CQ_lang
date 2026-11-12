@@ -621,10 +621,13 @@ uint32_t __cqo_sh_j(uint32_t a, uint32_t b, uint32_t c) {
     uint32_t d[3] = {a, b, c};
     return sh_new(d, 3, 0);
 }
-/* a classical merge of a rail (OracleInstr.cpp, classical merges): the chosen incoming's node, else
- * (a constant incoming) a fresh node over the quantum incomings computed so far, else SH_OPAQUE */
+/* a classical merge of a rail (OracleInstr.cpp, classical merges): a fresh node over the chosen
+ * incoming's node, else (a constant incoming) a fresh node over the quantum incomings computed so far,
+ * else SH_OPAQUE. The merge is a value of its own (cq-ndtt, cq-g72r: rule 2's static collapse is per
+ * value; measuring the merge does not measure the incoming it chose on this sample), classical when the
+ * chosen incoming is. */
 uint32_t __cqo_sh_nz(uint32_t s, uint32_t inc) {
-    if (s) return s;
+    if (s) return __cqo_sh_v(s, 0, 0);
     return inc ? __cqo_sh_v(inc, 0, 0) : SH_OPAQUE;
 }
 /* a frame slot of a quantum value: node + 1, 0 when not computed in this activation */
@@ -656,17 +659,29 @@ static int sh_classical(uint32_t n) {
 }
 
 /* cq_measure of a value with node n: a classical read when n is classical (no gate), else a
- * measurement that makes n classical from here on. __cqo_site reads the verdict. */
+ * measurement. __cqo_site reads the verdict. CR rule 2, 406-408 (cq-ndtt): collapse is STATIC.
+ * `every` (OracleInstr.cpp, the site's static answer for the frame's specialization) says whether the
+ * measured value is measured on every path of its function: then n is classical from here on (the
+ * outcome is n itself); otherwise n stays a rail and only the outcome is classical (the circuit
+ * measures a basis copy of it, rule 2), a fresh measured node over n. Returns the outcome's node. */
 static int sh_uniform(uintptr_t p, uint64_t len, uint32_t *node, uint32_t *ep);
 static void sh_pin(uint32_t n);
-void __cqo_sh_measure(uint32_t n) {
+static int sh_pending_collapse;
+uint32_t __cqo_sh_measure(uint32_t n, int32_t every) {
     sh_pending_read = sh_classical(n);
-    if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
+    sh_pending_collapse = every != 0;
+    if (sh_pending_read) return n;
+    if (every) {
+        if (n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
+        return n;
+    }
+    return sh_new(&n, 1, SH_MEASURED);
 }
 
-/* The incoming a measured loop-carried value took this trip: the same rail, measured with it. */
-void __cqo_sh_mark(uint32_t n) {
-    if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
+/* The incoming a measured loop-carried value took this trip: the same rail, measured with it (only
+ * when that measurement collapses and the incoming passes the same static test, cq-ndtt). */
+void __cqo_sh_mark(uint32_t n, int32_t every) {
+    if (!sh_pending_read && sh_pending_collapse && every && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
 }
 
 /* memory cells, one per byte, open addressing; a cell of another generation is empty */
@@ -856,6 +871,24 @@ void __cqo_enter(const char *fn) {
     char f[300], line[340];
     jsonstr(f, sizeof f, fn);
     snprintf(line, sizeof line, "{\"ev\":\"enter\",\"fn\":%s}", f);
+    out_line(trace_fd, line);
+}
+
+/* Rulings Q3 (2026-11-11, part 2): a conditional branch whose taken successor no longer reaches the measurement sites
+ * `s` (OracleInstr.cpp Shadow::skips) logs them with whether its condition is quantum (its node not classical, rule 2's
+ * static collapse). compare.py accepts an extra measurement of ours at a site only where the C run left its path by
+ * quantum conditions alone. */
+void __cqo_skip(uint32_t node, const char *const *s, int32_t n) {
+    if (trips_only || n <= 0) return;
+    char line[4000];
+    int q = !sh_classical(node);
+    int at = snprintf(line, sizeof line, "{\"ev\":\"skip\",\"q\":%d,\"s\":[", q);
+    for (int32_t i = 0; i < n && at < (int)sizeof line - 400; ++i) {
+        char f[300];
+        jsonstr(f, sizeof f, s[i]);
+        at += snprintf(line + at, sizeof line - at, "%s%s", i ? "," : "", f);
+    }
+    snprintf(line + at, sizeof line - at, "]}");
     out_line(trace_fd, line);
 }
 
