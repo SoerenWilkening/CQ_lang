@@ -484,11 +484,32 @@ _TLS_DEF = ('@__cq_locale = internal global [6 x ptr] zeroinitializer, align 8\n
 _EXTERN_DATA = re.compile(r'^@("[^"]*"|[-A-Za-z$._0-9]+) = external (?:[a-z_]+ )*?(?:global|constant) ([^\n]*?)(, align \d+)?$', re.M)
 
 
+def host_standard_streams(text: str) -> str:
+    """Ruling Q6 (2026-11-11): the bundle defines no stdin, stdout or stderr; the standard streams are the host library's
+    objects (CR rule 16, BACKEND_ABI §1.11), and the owner's output ruling of 2026-11-12 (item 4) has the C reference
+    perform the write on the host. A program compiled against musl's <stdio.h> names them `stdin`, `stdout`, `stderr`
+    (`FILE *const`); a host that does not define those names but defines Darwin's `__stdinp`, `__stdoutp`, `__stderrp` (the
+    same object, a `FILE *`) is linked by the host's name, on both sides: the C program's host fprintf gets the host's
+    stream (a zeroed stand-in object made it fprintf(NULL)), and the lowered program's bus load reads it at its host
+    address (example 99), so its tape field is the host's stream (rt_tape.c stream_text). A name the host defines stays."""
+    from cqcheck import oracle
+    for name in ("stdin", "stdout", "stderr"):
+        decl = re.search(r'^@' + name + r' = external [^\n]*$', text, re.M)
+        host = f"__{name}p"
+        if not decl or oracle._host_defines(name) or not oracle._host_defines(host):
+            continue
+        if re.search(r'^@' + host + r' = ', text, re.M):
+            text = text[:decl.start()] + text[decl.end() + 1:]
+        text = re.sub(r'@' + name + r'(?![-A-Za-z$._0-9])', '@' + host, text)
+    return text
+
+
 def define_undefined_data(text: str) -> str:
     """A whole program defines its data: an external global the host C library does not define (a library's bundle-provided
     object) would stop both links. It is a zeroed object on both sides (__cq_tp: _TLS_DEF; [0 x T], an unsized extern:
-    4096 bytes, as a driver object)."""
+    4096 bytes, as a driver object). The standard streams are the host's (host_standard_streams)."""
     from cqcheck import oracle
+    text = host_standard_streams(text)
 
     def define(m: "re.Match[str]") -> str:
         name, ty = m.group(1).strip('"'), m.group(2)
