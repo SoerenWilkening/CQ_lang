@@ -29,14 +29,16 @@ static char fxc_in[80]; /* ruling Q5: an INPUT call's "in" field (fx_standin.h c
 void cqd_fxc_begin(const char *name) { fxc_name = name, fxc_n = 0; }
 void cqd_fxc_int(uint64_t lo, uint64_t hi, unsigned bits, const char *token) {
 #ifdef FX_PTR_HOOK
-  /* a 64-bit word where host addresses lie is a pointer the callee may follow (a long, __cq_syscall's arguments) */
+  /* rulings Q2: a 64-bit word where host addresses lie may be a pointer the callee follows (a long, __cq_syscall's
+   * arguments); it is one only when it is the address of a byte of a live object of the C program (cqo_rt.c
+   * __cqo_q2_check, which decides): an integer that merely looks like an address excludes nothing (cq-auqs3) */
   if (bits == 64 && lo >= (UINT64_C(1) << 32) && lo < (UINT64_C(1) << 47)) FX_PTR_HOOK(fxc_name, (uintptr_t)lo);
 #endif
   if (fxc_n < FXC_MAX) fxc_args[fxc_n++] = (fxc_arg){{lo, hi}, bits, token, 0};
 }
 void cqd_fxc_ptr(const void *p) {
 #ifdef FX_PTR_HOOK
-  FX_PTR_HOOK(fxc_name, p); /* the lowered side: rulings Q2 (fx_lowered.c) */
+  FX_PTR_HOOK(fxc_name, p); /* rulings Q2: cqo_rt.c (decides), fx_lowered.c (narrows) */
 #endif
   if (fxc_n < FXC_MAX) fxc_args[fxc_n++] = (fxc_arg){{(uint64_t)(uintptr_t)p, 0}, 64, "i64", 1};
 }

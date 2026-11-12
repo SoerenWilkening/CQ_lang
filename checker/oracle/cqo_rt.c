@@ -1377,6 +1377,38 @@ void __cqo_fx_end(void) {
     out_long(fxline, fxn);
     fx_on = 0;
 }
+/* Rulings Q2 (owner 2026-11-11, cq-auqs3): a bodiless callee (a direct host call, fx_call.h) given a pointer into an
+ * object of the C program that holds a rail at the call. The object is the real one (the object table: the allocas,
+ * byval copies, va areas, heap blocks and globals, find_obj); no object, no event. A cell holds a rail when its
+ * shadow node (rule 2 above: a value the circuit holds as a rail) is not classical. A cell made QUANTUM only by an
+ * implicit write (a classical value stored under a quantum condition: sh_gm, not the cell) is not seen here: such a
+ * sample is compared. Logged as {"ev":"q2","name","addr","lo","hi"}: oracle.py outputs["q2"], the ruling's decision
+ * (compare.py), which no lowering can widen. Reach through a global or a stored pointer is not followed (the
+ * ruling's stated limit). */
+static int q2_rail_cell(uintptr_t lo, uintptr_t hi) {
+    if (!sh_ncells || sh_nn < 2) return 0;
+    if (hi - lo <= ((uintptr_t)1 << 16)) {
+        for (uintptr_t x = lo; x < hi; ++x) {
+            uint32_t n = sh_get(x);
+            if (n && !sh_classical(n)) return 1;
+        }
+        return 0;
+    }
+    for (size_t i = 0; i < SH_CELLS; ++i)
+        if (sh_c[i].gen == *sh_genp && sh_c[i].a >= lo && sh_c[i].a < hi && sh_c[i].node && !sh_classical(sh_c[i].node))
+            return 1;
+    return 0;
+}
+static void __cqo_q2_check(const char *name, uintptr_t a) {
+    if (!a || trips_only || !sample_running()) return;
+    const obj *o = find_obj(a);
+    if (!o || !q2_rail_cell(o->lo, o->hi)) return;
+    char b[256];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"q2\",\"name\":\"%.120s\",\"addr\":\"0x%llx\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+                     name ? name : "", (unsigned long long)a, (unsigned long long)o->lo, (unsigned long long)o->hi);
+    out_long(b, (size_t)m);
+}
+#define FX_PTR_HOOK(name, p) __cqo_q2_check((name), (uintptr_t)(p))
 /* A direct host call: the stand-in, one source with the evaluator (fx_call.h; rulings Q8). */
 #define FX_LOG(line, n) do { if (sample_running()) out_long(line, n); } while (0)
 #define CQ_FX_REALLOC __cqo_realloc /* ruling Q5: getline's buffer and fgetln's line are heap objects of the program */

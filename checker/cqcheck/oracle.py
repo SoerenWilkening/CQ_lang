@@ -42,6 +42,9 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
   (CR §1.3: the tape entries before an abort flag reading 1 are performed).
   Both go to ``SampleRun.effects`` and ``SampleRun.stdout`` and side 'c' outputs["effects"] and
   outputs["stdout"] (compare.py, Host output), never to ``SampleRun.events``.
+- ``{"ev":"q2","name","addr","lo","hi"}`` (rulings Q2, owner 2026-11-11; cq-auqs3): a direct host call of ``name``
+  given address ``addr`` inside the object [lo, hi) of the program that holds a rail at the call (cqo_rt.c
+  __cqo_q2_check). To ``SampleRun.q2`` and side 'c' outputs["q2"] (compare.py), never to ``SampleRun.events``.
 
 The cutoff K (CR §6 at eb8a11a, ruling cq-1di; bead cq-8ay). Every quantum-exit loop and
 quantum-depth recursion stops after K trips, as in the circuit: when the trips begun would exceed K
@@ -758,6 +761,7 @@ class SampleRun:
     objects: List[Dict[str, Any]] = field(default_factory=list)  # its address table (outputs["objects"])
     regions: List[Dict[str, Any]] = field(default_factory=list)  # (outputs["regions"])
     k2: List[List[int]] = field(default_factory=list)  # its rail-sized blocks, [n, K2] (outputs["k2"])
+    q2: List[Dict[str, Any]] = field(default_factory=list)       # rulings Q2 calls (outputs["q2"], cqo_rt.c)
     fenv: Optional[int] = None   # the exception flags at the sample's end (cqo_rt.c; outputs["fenv_flags"], rule 23)
 
 
@@ -1041,9 +1045,9 @@ MEMO_EVENTS = 50_000          # trace events kept per executable's memo
 _MEMO_LOCK = threading.Lock()
 
 
-_RUNS_VERSION = "oracle-runs-3"
+_RUNS_VERSION = "oracle-runs-4"
 _RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdout", "effects", "mem", "objects",
-               "regions", "k2", "fenv")
+               "regions", "k2", "fenv", "q2")
 
 
 def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
@@ -1122,6 +1126,8 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[S
             runs[i].regions.append(e)
         elif e.get("ev") == "allocs":
             pass
+        elif e.get("ev") == "q2":       # rulings Q2 (cqo_rt.c __cqo_q2_check), not a trace event
+            runs[i].q2.append({k: e[k] for k in ("name", "addr", "lo", "hi") if k in e})
         elif e.get("ev") == "k2":
             runs[i].k2.append([int(e["n"]), int(e["k2"])])
         elif e.get("ev") == "fenv":
@@ -1282,7 +1288,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": _effects_of(sr),
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
-                              "k2": list(sr.k2), "reads": reads, "skips": skips,
+                              "k2": list(sr.k2), "reads": reads, "skips": skips, "q2": list(sr.q2),
                               "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"}),
                               **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {}),
                               **({"exit_status": status} if status is not None else {})},

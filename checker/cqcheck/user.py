@@ -70,8 +70,9 @@ from cqcheck.contracts import DriverSpec
 PASS_STATUS, FAIL_STATUS, ERROR_STATUS, NOT_COMPARED_STATUS = 0, 1, 2, 3
 # rulings Q2 (owner 2026-11-11): the checker's detection is an approximation, and the report says so
 Q2_LIMIT = ("rulings Q2: an input on which a bodiless callee receives a pointer into an object holding a QUANTUM cell at "
-            "the call is not compared (the object: its __cq_alloc block, else the 8 cells at the pointer); reach through "
-            "a global or a stored pointer is not detected")
+            "the call is not compared (decided on the C program: the object is the real one, a cell holds a rail; the "
+            "lowered run may only narrow it); reach through a global or a stored pointer is not detected, nor a cell "
+            "made QUANTUM only by a store under a quantum condition")
 MAIN_RENAMED = "__cqu_main"
 OBJ_BYTES = 4096
 FILL_ELEMENTS = 64    # the quantum inputs behind a pointer parameter (module docstring)
