@@ -653,10 +653,13 @@ bool measuredHere(Shared &sh, Value *h) {
   auto m = sh.measured.find(h);
   if (m == sh.measured.end() || !sh.cur || !sh.isQ)
     return false;
-  // The instruction being lowered is the measurement itself, already emitted: the builder is past it (the write-backs and
-  // settles that run after a measurement, rule 2's "right after the measurement", 65).
-  if (m->second.at == sh.cur)
-    return true;
+  // The instruction being lowered is the measurement itself, already emitted here: the builder is past it (the write-backs
+  // and settles that run after a measurement, rule 2's "right after the measurement", 65). Not the same site's
+  // measurement of an earlier K-loop trip, whose outcome does not reach this trip (me_cbr: behind a classical branch).
+  if (m->second.at == sh.cur) {
+    auto *mc = dyn_cast<Instruction>(m->second.outcome);
+    return mc && outAvailable(sh, mc);
+  }
   return cq::measuredBefore(sh.isQ, m->second.v, sh.cur->getParent(), sh.cur, m->second.at);
 }
 
