@@ -171,6 +171,17 @@ CASES = [
     ("meas_table_t", "n", [], "pass", [
         r"define internal void @__cq_q_inner_1_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call i32 @cqrt_pop\(\)"
         r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)"]),
+    # cq-md33a (§1.4, rule 18): _t measures both its formal and a rail that is not a formal. The formal's measurement leaves no
+    # rule-18 twin, so no measured copy is pushed (mintSites is empty) and _t_unc pops only what _t pushed: nothing (f), or the
+    # register cq_theta minted, listed and pushed with its count at the return, which _t_unc pops as count then handles (g).
+    ("meas_table_both", "f", [], "pass", [
+        r"define internal i32 @__cq_q_both_1_t\((?:(?!\n}\n)(?!cqrt_push|__cq_mints_push)[\s\S])*\n}\n",
+        r"define internal void @__cq_q_both_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  ret void\n}\n"]),
+    ("meas_table_both", "g", [], "pass", [
+        r"define internal i32 @__cq_q_bothrot_1_t\((?:(?!\n}\n)(?!cqrt_push\()[\s\S])*call void @__cq_mints_push\(ptr %\d+\)\n"
+        r"  %\d+ = call i32 @cqrt_alloc_i32\(i32 %\d+\)\n  ret i32 %\d+\n}\n",
+        r"define internal void @__cq_q_bothrot_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  %4 = call i32 @cqrt_pop\(\)\n"
+        r"(?:(?!\n}\n)[\s\S])*call i32 @cqrt_pop\(\)\n  %\d+ = sub i32 %\d+, 1\n"]),
     # Every formal of _t is a rail, so a branch on one is quantum: the measurement under it is tainted and _t has no twin (rule 18),
     # in a K-loop (f) and in an arm (g).
     ("meas_table_t_paths", "f", [], "pass", [r"define internal void @__cq_q_sumin_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
