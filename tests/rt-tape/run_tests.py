@@ -532,8 +532,12 @@ def scenarios(clang, work):
             return "classes %s" % classes(shot)
         return None if lines(trace) == [("fgets", "call")] else "lines %s" % lines(trace)
     check("input_pred_q", clean(input_pred_q))
-    check("input_ident_q", clean(lambda tr, sh: None if (classes(sh) == [("fgets", "deferred", True)] and not tap(tr, "qstore")
-                                                         and sh["deviation"]) else "classes %s" % classes(sh)))
+    # owner ruling 2026-11-12 (cq-cyjua): an INPUT call with a quantum stream rail is never deferred: performed at the
+    # call on the one stream, its stores quantum (fgets(b, 3): "7 " and the null character)
+    check("input_ident_q", clean(lambda tr, sh: None if (
+        classes(sh) == [("fgets", "input", True)] and not sh["deviation"]
+        and [(e["write"], e["b"]) for e in tap(tr, "qstore")] == [(1, STREAM[0]), (1, STREAM[1]), (1, 0)])
+        else "classes %s qstores %s" % (classes(sh), tap(tr, "qstore"))))
 
     def read_fread_getc(trace, shot):
         p = tap(trace, "probe")[0]

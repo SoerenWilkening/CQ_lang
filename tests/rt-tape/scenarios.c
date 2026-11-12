@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
     li64(t, (uint64_t)(uintptr_t)stdin);
     int32_t r1 = eff64(q1(1), t, "fgets", 3);
     if (cqe_rail(r1)->w[0] != (uint64_t)(uintptr_t)a) cqe_fail("TEST: r under c = 1");
-  } else if (!strcmp(s, "input_ident_q")) { /* a truly quantum stream: deferred, nothing stored */
+  } else if (!strcmp(s, "input_ident_q")) { /* a truly quantum stream: performed at once, quantum stores (cq-cyjua) */
     cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();
     static char b[8] = "ZZZZZZZ";
@@ -272,7 +272,7 @@ int main(int argc, char **argv) {
     li32(t, 3);
     wr("i64", t, q64p(stdin));
     int32_t r = eff64(i1(1), t, "fgets", 3);
-    if (cqe_rail(r)->w[0] != 0 || b[0] != 'Z') cqe_fail("TEST: the deferred input acted");
+    if (cqe_rail(r)->w[0] != (uint64_t)(uintptr_t)b || b[0] != 'Z') cqe_fail("TEST: fgets result, or a host write");
   } else if (!strcmp(s, "read_fread_getc")) {   /* ruling Q5: one stream, consumed in call order, then end of file */
     cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();

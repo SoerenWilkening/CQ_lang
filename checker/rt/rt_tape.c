@@ -945,17 +945,18 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, int32_t n,
     cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));
   e->complete = 1;
   capture_event(e);
-  int ident_quantum = 0;
-  if (ent)
-    for (int i = 0; ent->roles[i] && i < e->nfields; i++)
-      if (ent->roles[i] == 'f' && e->fields[i].k == F_RAIL && !e->fields[i].known) ident_quantum = 1;
-  if (ent && cq_fx_scan(ent) && !ident_quantum) {
+  /* owner ruling 2026-11-12 (cq-cyjua): an INPUT call is never deferred, also when its FILE, descriptor or other
+   * identifying argument is a quantum rail: on a basis input it is performed at once on the one stream (ruling Q5) and
+   * consumes what the C program consumes; such a field is not classical-valued, so its stores are quantum. The cross-stream
+   * consumption of a real backend (one host call per value of the identifying rail) is not modelled. A call that is no
+   * INPUT call with such an argument is deferred as before (advance). */
+  if (ent && cq_fx_scan(ent)) {
     perform_scan(e, ent);
     effect_line(e, "call");
     advance();
     return e->r;
   }
-  if (ent && ent->cls == 'I' && !ident_quantum) {
+  if (ent && ent->cls == 'I') {
     perform_input(e, ent);
     effect_line(e, "call");
     advance();
