@@ -257,6 +257,7 @@ private:
   // whose operand is V. A rail read before its measurement keeps its taint (cq-r6bc, open). A
   // rule 14 exit read wins: the carried value merged over a quantum exit trip stays quantum.
   bool measuredRead(const Value *V);
+  llvm::DenseMap<const Function *, bool> hasMeasureCall;
   void computeExitQ(SpecState &S);
   Lanes L(const Value *V);
   bool setL(const Value *V, const Lanes &l);
@@ -712,6 +713,8 @@ bool Analyzer::exitRead(const Value *V) {
   return false;
 }
 
+static const Value *terminatorCondition(const Instruction *T);
+
 bool Analyzer::measuredRead(const Value *V) {
   if (!curUser || curUser->getFunction() != cur->F)
     return false;
@@ -728,35 +731,103 @@ bool Analyzer::measuredRead(const Value *V) {
   // classical collapse does not apply to it, so a later read of it is still quantum.
   if (cur->ctl)
     return false;
-  // Rules 2, 14 (owner, cq-2z29a): a loop-carried value with a rail among its incoming values is a rail in every trip. Rule 2's "computed only
-  // from measured rails and classical values" speaks of a value whose every operand is such; a phi with a rail incoming is not.
-  if (auto *P = dyn_cast<PHINode>(V))
-    if (const Loop *Lp = fn(cur->F).LI->getLoopFor(P->getParent()); Lp && Lp->getHeader() == P->getParent())
-      return false;
-  SmallVector<const CallBase *, 2> meas;
-  for (const User *U : V->users())
-    if (auto *CB = dyn_cast<CallBase>(U))
-      if (CB != curUser && CB->getFunction() == cur->F && isMeasure(CB->getCalledFunction()) &&
-          CB->arg_size() >= 1 && CB->getArgOperand(0) == V)
-        meas.push_back(CB);
-  if (meas.empty())
-    return false;
-  const DominatorTree &DT = *fn(cur->F).DT;
-  bool any = false;
-  for (const Use &U : V->uses()) {
-    if (U.getUser() != curUser)
-      continue;
-    any = true;
-    bool dom = false;
-    for (const CallBase *M : meas)
-      if (DT.dominates(M, U)) {
-        dom = true;
-        break;
-      }
-    if (!dom)
-      return false;
+  // Nothing to do in a function with no measurement (the common case).
+  auto hm = hasMeasureCall.find(cur->F);
+  if (hm == hasMeasureCall.end()) {
+    bool any = false;
+    for (const Instruction &I : instructions(*cur->F))
+      if (auto *c = dyn_cast<CallInst>(&I); c && isMeasure(c->getCalledFunction()))
+        any = true;
+    hm = hasMeasureCall.try_emplace(cur->F, any).first;
   }
-  return any;
+  if (!hm->second)
+    return false;
+  // The points curUser reads V at: a phi's incoming edge is the end of its block (Use-based), any other user is itself.
+  SmallVector<std::pair<const BasicBlock *, const Instruction *>, 2> points;
+  for (const Use &U : V->uses())
+    if (U.getUser() == curUser) {
+      if (auto *P = dyn_cast<PHINode>(curUser))
+        points.push_back({P->getIncomingBlock(U), nullptr});
+      else
+        points.push_back({curUser->getParent(), curUser});
+    }
+  if (points.empty())
+    return false;
+  const Instruction *user = curUser;
+  curUser = nullptr;   // the raw taint of what the predicate reads (a branch condition, a source)
+  auto raw = [&](const Value *x) { return anyLane(L(x)); };
+  // CR rule 2 (cq-8nj3o, cq-yjbwv): "a value computed only from measured rails and classical values is classical", and
+  // "collapse is static": a source is measured when it is measured on every path reaching each point (measuredBefore, which
+  // the spine's rail outcome asks too). A rail computed before the measurement of its sources collapses too; a merge is
+  // computed from its incoming values and the conditions that choose among them (its flags). Rules 2, 14 (owner, cq-2z29a): a
+  // loop-carried value with a rail among its incoming values is a rail in every trip. A rule 14 exit read wins.
+  enum : uint8_t { No, Classical, Measured, Busy };
+  DenseMap<const Value *, uint8_t> memo;
+  std::function<uint8_t(const Value *)> cls = [&](const Value *x) -> uint8_t {
+    if (isa<Constant>(x) || isa<BasicBlock>(x) || isa<MetadataAsValue>(x) || isa<InlineAsm>(x))
+      return Classical;
+    auto mi = memo.find(x);
+    if (mi != memo.end())
+      return mi->second == Busy ? No : mi->second;
+    memo[x] = Busy;
+    uint8_t r = [&]() -> uint8_t {
+      if (!raw(x))
+        return Classical;
+      auto *I = dyn_cast<Instruction>(x);
+      if (I && I->getFunction() == cur->F && isa<PHINode>(I))
+        if (const Loop *Lp = fn(cur->F).LI->getLoopFor(I->getParent()); Lp && Lp->getHeader() == I->getParent())
+          return No;
+      if (all_of(points, [&](const auto &p) { return measuredBefore(raw, x, p.first, p.second); }))
+        return Measured;
+      if (!I || I->getFunction() != cur->F)
+        return No;
+      curUser = user;
+      bool ex = exitRead(x);
+      curUser = nullptr;
+      if (ex)
+        return No;
+      SmallVector<const Value *, 8> srcs;
+      if (auto *P = dyn_cast<PHINode>(I)) {
+        const BasicBlock *J = P->getParent();
+        SmallPtrSet<const BasicBlock *, 8> terms;
+        auto addCdt = [&](const BasicBlock *b) {
+          if (auto it = cur->cdt.find(b); it != cur->cdt.end())
+            terms.insert(it->second.begin(), it->second.end());
+        };
+        addCdt(J);
+        for (unsigned k = 0; k < P->getNumIncomingValues(); ++k) {
+          srcs.push_back(P->getIncomingValue(k));
+          const BasicBlock *B = P->getIncomingBlock(k);
+          addCdt(B);
+          if (cur->taintedTerm.count(B))
+            terms.insert(B);
+        }
+        for (const BasicBlock *T : terms)   // the result is order-free: every source must be classical or measured
+          if (const Value *c = terminatorCondition(T->getTerminator()))
+            srcs.push_back(c);
+      } else if (isa<BinaryOperator>(I) || isa<CmpInst>(I) || isa<CastInst>(I) || isa<SelectInst>(I) || isa<FreezeInst>(I) ||
+                 isa<UnaryOperator>(I) ||
+                 (isa<IntrinsicInst>(I) && !I->mayReadOrWriteMemory() && !isa<ConstrainedFPIntrinsic>(I))) {
+        for (const Use &u : I->operands())
+          srcs.push_back(u.get());
+      } else {
+        return No;
+      }
+      uint8_t c = Classical;
+      for (const Value *s : srcs) {
+        uint8_t k = cls(s);
+        if (k == No)
+          return No;
+        c = std::max(c, k);
+      }
+      return c;
+    }();
+    memo[x] = r;
+    return r;
+  };
+  bool res = cls(V) == Measured;
+  curUser = user;
+  return res;
 }
 
 // The loops of S whose header is control dependent on a tainted terminator inside the loop.
@@ -3112,6 +3183,173 @@ bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Valu
       continue;
     if (!next(b))
       return false;
+  }
+  return true;
+}
+
+bool measuredBefore(function_ref<bool(const Value *)> isQuantum, const Value *v, const BasicBlock *bb, const Instruction *at,
+                    const Instruction *also) {
+  auto strip = [](const Value *x) {
+    while (auto *f = dyn_cast<FreezeInst>(x))
+      x = f->getOperand(0);
+    return x;
+  };
+  const Value *root = strip(v);
+  if (!bb || (!isa<Argument>(root) && !isa<Instruction>(root)))
+    return false;
+  const Function &F = *bb->getParent();
+  const auto *defI = dyn_cast<Instruction>(root);
+  if ((defI && defI->getFunction() != &F) || (!defI && cast<Argument>(root)->getParent() != &F))
+    return false;
+  if (also && also->getFunction() != &F)
+    also = nullptr;
+  auto isM = [&](const Instruction *I) {
+    if (I == also)
+      return true;
+    auto *c = dyn_cast<CallInst>(I);
+    return c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cq_measure") &&
+           c->arg_size() == 1 && strip(c->getArgOperand(0)) == root;
+  };
+  SmallPtrSet<const BasicBlock *, 8> mblocks;
+  for (const Instruction &I : instructions(F))
+    if (isM(&I))
+      mblocks.insert(I.getParent());
+  if (mblocks.empty())
+    return false;
+  const BasicBlock *D = defI ? defI->getParent() : &F.getEntryBlock();
+  // One block from `from` up to `stop` (exclusive; nullptr: its end): 0 the point is reached first, 1 a measurement is, 2 neither.
+  auto scan = [&](const BasicBlock *b, const Instruction *from, const Instruction *stop) -> int {
+    for (const Instruction *I = from; I && I != stop; I = I->getNextNode()) {
+      if (b == bb && I == at)
+        return 0;
+      if (isM(I))
+        return 1;
+    }
+    return !stop && b == bb && !at ? 0 : 2;
+  };
+  auto quantumBranch = [&](const BasicBlock *b) {
+    const Instruction *t = b->getTerminator();
+    if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+      return isQuantum(br->getCondition());
+    if (auto *sw = dyn_cast<SwitchInst>(t))
+      return isQuantum(sw->getCondition());
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return isQuantum(ib->getAddress());   // rule 13: a switch on the address
+    return false;
+  };
+  std::optional<PostDominatorTree> PDT;
+  DenseMap<const BasicBlock *, unsigned> walk;
+  // Does the region of the quantum branch b (up to its post-dominator) measure v on every path through it before the point?
+  // As measuredOnEveryPath: only a block the region reaches through quantum branches counts (cq-jws5r), a classical branch inside
+  // it is passed at its post-dominator.
+  auto regionMeasures = [&](const BasicBlock *b) {
+    if (!PDT)
+      PDT.emplace(const_cast<Function &>(F));
+    const BasicBlock *J = PDT->getNode(b) && PDT->getNode(b)->getIDom() ? PDT->getNode(b)->getIDom()->getBlock() : nullptr;
+    SmallPtrSet<const BasicBlock *, 16> reg;
+    SmallVector<const BasicBlock *, 16> w(succ_begin(b), succ_end(b));
+    while (!w.empty()) {
+      const BasicBlock *x = w.pop_back_val();
+      if (x == J || x == b || !reg.insert(x).second)
+        continue;
+      for (const BasicBlock *s : successors(x))
+        w.push_back(s);
+    }
+    // The point inside the region: its arms run one after the other in the walk order (Walker::plan, FnInfo::walk), so a
+    // measurement every path through the region runs, in a block linearized before the point's, comes before it (rule 2: a
+    // measurement inside a quantum arm runs unconditionally at its program point; one rail measured in several arms is one
+    // measurement).
+    const bool inside = reg.count(bb);
+    if (inside && walk.empty()) {
+      // The spine's L (spine/Construct.cpp Walker::plan): reverse post-order with successors visited last to first, a dead
+      // end before its live siblings (cq-172vi), and of a quantum terminator's successors those reaching no __cq_invert_end
+      // first (rule 17, cq-asfn).
+      // invert::blocksReachingInvertEnd, computed here: taint is linked into the checker's oracle without eff-invert.
+      SmallPtrSet<const BasicBlock *, 16> toEnd;
+      {
+        SmallVector<const BasicBlock *, 8> w;
+        for (const BasicBlock &x : F)
+          for (const Instruction &I : x)
+            if (auto *c = dyn_cast<CallBase>(&I); c && c->getCalledFunction() &&
+                                                   c->getCalledFunction()->getName() == "__cq_invert_end" &&
+                                                   toEnd.insert(&x).second)
+              w.push_back(&x);
+        while (!w.empty())
+          for (const BasicBlock *p : predecessors(w.pop_back_val()))
+            if (toEnd.insert(p).second)
+              w.push_back(p);
+      }
+      taint_detail::DeadEnds dead(F);
+      auto order = [&](const BasicBlock *x) {
+        SmallVector<const BasicBlock *, 4> o(succ_begin(x), succ_end(x));
+        std::stable_partition(o.begin(), o.end(), [&](const BasicBlock *y) { return dead.isDeadEnd(y); });
+        if (!toEnd.empty() && o.size() > 1 && quantumBranch(x))
+          std::stable_partition(o.begin(), o.end(), [&](const BasicBlock *y) { return !toEnd.count(y); });
+        return o;
+      };
+      std::vector<const BasicBlock *> post;
+      SmallPtrSet<const BasicBlock *, 32> vis;
+      std::vector<std::pair<const BasicBlock *, SmallVector<const BasicBlock *, 4>>> stack;
+      const BasicBlock *E = &F.getEntryBlock();
+      vis.insert(E);
+      stack.push_back({E, order(E)});
+      while (!stack.empty()) {
+        auto &[x, k] = stack.back();
+        if (k.empty()) {
+          post.push_back(x);
+          stack.pop_back();
+          continue;
+        }
+        const BasicBlock *y = k.pop_back_val();
+        if (vis.insert(y).second)
+          stack.push_back({y, order(y)});
+      }
+      unsigned n = 0;
+      for (auto it = post.rbegin(); it != post.rend(); ++it)
+        walk[*it] = n++;
+    }
+    SmallPtrSet<const BasicBlock *, 16> sure;
+    SmallVector<const BasicBlock *, 16> ws(succ_begin(b), succ_end(b));
+    while (!ws.empty()) {
+      const BasicBlock *x = ws.pop_back_val();
+      if (x == J || x == b || !reg.count(x) || !sure.insert(x).second)
+        continue;
+      if (mblocks.count(x) && (!inside || walk.lookup(x) < walk.lookup(bb)))
+        return true;
+      const Instruction *t = x->getTerminator();
+      if (t->getNumSuccessors() > 1 && !quantumBranch(x))
+        if (auto *n = PDT->getNode(x); n && n->getIDom() && n->getIDom()->getBlock()) {
+          ws.push_back(n->getIDom()->getBlock());
+          continue;
+        }
+      for (const BasicBlock *s2 : successors(x))
+        ws.push_back(s2);
+    }
+    return false;
+  };
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> work;
+  // The end of b reached unmeasured: its successors, unless b is a quantum branch whose region measures v.
+  auto leave = [&](const BasicBlock *b) {
+    if (quantumBranch(b) && regionMeasures(b))
+      return;
+    for (const BasicBlock *s : successors(b))
+      if (seen.insert(s).second)
+        work.push_back(s);
+  };
+  switch (scan(D, defI ? defI->getNextNode() : &D->front(), nullptr)) {
+  case 0: return false;
+  case 1: return true;
+  default: leave(D);
+  }
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    // D again: a new instance of v from its definition on, which this walk already follows; only the part before it is read.
+    int r = scan(b, &b->front(), b == D ? defI : nullptr);
+    if (r == 0)
+      return false;
+    if (r == 2 && b != D)
+      leave(b);
   }
   return true;
 }

@@ -25,6 +25,15 @@ namespace cq {
 // measuring call). A branch isQuantum holds of is no choice: its arms all run.
 bool measuredOnEveryPath(llvm::function_ref<bool(const llvm::Value *)> isQuantum, const llvm::Value *v,
                          const llvm::Instruction *also = nullptr);
+// CR rule 2, "Collapse is static" (cq-8nj3o, cq-yjbwv): is v measured on EVERY path reaching the point just before `at` in `bb`
+// (`at` nullptr: the end of `bb`)? Every path of the source function from v's definition (an argument: the entry) to that point
+// passes a cq_measure of v (or `also`, a measuring call) first. A measurement inside a quantum arm runs unconditionally at its
+// program point, so a quantum branch (isQuantum of its condition) whose region measures v on every path through it passes the
+// measurement for a point outside the region, and for a point inside it when the measuring block is linearized before the
+// point's (the spine's walk order); a classical branch is a choice. Taint (a read's taint) and the spine (a rail's
+// outcome at the instruction lowered) both decide by this one predicate.
+bool measuredBefore(llvm::function_ref<bool(const llvm::Value *)> isQuantum, const llvm::Value *v,
+                    const llvm::BasicBlock *bb, const llvm::Instruction *at, const llvm::Instruction *also = nullptr);
 struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false;
                         std::vector<uint64_t> bounds; bool isEntry() const;
                         // Rule 19: the own symbol or its _pure clone, the form its twin recomputes through: an integer
