@@ -945,11 +945,20 @@ struct Uncompute::Impl {
     // cq-dw87k: a clean-up under a guard that does not cover every path leaves x's plain item, which reads what it reads, on the
     // other paths: x is still a garbage reader of g.
     bool cleaned = rails[x].cleanup && (rails[x].cleanup->alts.empty() || rails[x].cleanup->everyPath);
-    if (depth > 64 || cleaned || rails[x].role != Role::Garbage || rails[x].released)
+    if (depth > 64 || (cleaned && !viaCleanups) || rails[x].role != Role::Garbage || rails[x].released)
       return false;
     if (auto f = failed.find(x); f != failed.end() && f->second <= depth)
       return false;
-    for (RailId y : itemReads(x))
+    // viaCleanups (cq-4wbdf): x cleaned by rule 6 itself is freed by its clean-up, which reads the image and the
+    // inverse's operands: they outlive x's uncompute in turn. A clean-up the plain rule drops once x is resolved (a
+    // garbage operand reading x) is x's plain item instead.
+    if (cleaned) {
+      viaCleanups = false;
+      if (any_of(rails[x].cleanup->reads, [&](RailId z) { return garbageReads(z, x); }))
+        cleaned = false;
+      viaCleanups = true;
+    }
+    for (RailId y : cleaned ? rails[x].cleanup->reads : itemReads(x))
       if (y == g || garbageReadsAt(y, g, depth + 1, failed))
         return true;
     auto [f, ins] = failed.try_emplace(x, depth);
@@ -962,16 +971,33 @@ struct Uncompute::Impl {
   // in another block), so the decision waits until the old rail itself is resolved.
   void pruneCleanups(const SmallVectorImpl<RailId> *only = nullptr) {
     syncPhiHits();   // cq-igqp: before any placement
-    // To a fixed point: dropping one clean-up makes its rail plain garbage again, which may now be a
-    // garbage reader of an earlier clean-up's operand (164's clone: %6 = %7 - %3 kept while %7's own
-    // clean-up through the result was still there, then %7's dropped: a cycle).
-    for (bool again = true; again;) {
-      again = false;
-      for (RailId g = 0; g < rails.size(); ++g)
+    for (;;) {
+      // To a fixed point: dropping one clean-up makes its rail plain garbage again, which may now be a
+      // garbage reader of an earlier clean-up's operand (164's clone: %6 = %7 - %3 kept while %7's own
+      // clean-up through the result was still there, then %7's dropped: a cycle).
+      for (bool again = true; again;) {
+        again = false;
+        for (RailId g = 0; g < rails.size(); ++g)
+          if ((!only || is_contained(*only, g)) && pruneOne(g))
+            again = true;
+      }
+      // cq-4wbdf (CR rule 6: "when the old value is still needed to uncompute other rails, those are uncomputed
+      // first"; "the old value is kept only when no such point exists"): a cycle that runs through another rail's
+      // clean-up. g = sext q cleaned against s = g + a, s cleaned against s + m, m a garbage select whose item reads
+      // g through its condition: g's clean-up needs s, s's needs m, m's uncompute needs g. No order places all three.
+      // Once nothing else drops, the first such clean-up (rail order) gives way to g's plain item, one at a time, the
+      // plain fixed point again after each: the others may hold then.
+      viaCleanups = true;
+      bool dropped = false;
+      for (RailId g = 0; g < rails.size() && !dropped; ++g)
         if ((!only || is_contained(*only, g)) && pruneOne(g))
-          again = true;
+          dropped = true;
+      viaCleanups = false;
+      if (!dropped)
+        return;
     }
   }
+  mutable bool viaCleanups = false;   // garbageReads walks through a cleaned rail's clean-up (pruneCleanups' second phase)
   bool pruneOne(RailId g) {
     Rail &r = rails[g];
     if (!r.cleanup || r.released)
