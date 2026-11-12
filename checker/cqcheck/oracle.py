@@ -376,18 +376,31 @@ _STREAM_NAMES = frozenset((
     # cq-ojgho: the <wchar.h> stream functions (pass/lib/Common.cpp streamName)
     "fwprintf wprintf vfwprintf vwprintf fwscanf wscanf vfwscanf vwscanf fgetwc fgetws fputwc fputws fwide getwc getwchar "
     "putwc putwchar ungetwc open_wmemstream").split())
+# cq-du1gw: the other ISO C and POSIX interfaces CR rule 16 (778-787) names, whose bundle body is never lifted for the
+# call either: malloc, calloc, aligned_alloc, realloc, free; signal, raise; rule 23's fenv functions; rule 24's setjmp,
+# longjmp and pthread_* (pass/lib/Common.cpp hostCallee, cq-rrc52). Only a prefilter for host_streams: the plugin decides.
+_RULE16_NAMES = frozenset((
+    "malloc calloc aligned_alloc realloc free signal raise feclearexcept fegetexceptflag feraiseexcept fesetexceptflag "
+    "fetestexcept fegetround fesetround fegetenv feholdexcept fesetenv feupdateenv setjmp longjmp").split())
+
+
+def _host_name(n: str) -> bool:
+    return n in _STREAM_NAMES or n in _RULE16_NAMES or n.startswith("pthread_")
+
+
 _DEFINED = re.compile(r'(?m)^define\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 
 def host_streams(text: str) -> str:
-    """cq-8bq66 (CR rule 16): the C program with every stream call the module defines made a declaration, so a call of it
+    """cq-8bq66 (CR rule 16): the C program with every stream call (cq-du1gw: every interface rule 16 names, cq::hostCallee)
+    the module defines made a declaration, so a call of it
     by name is the host's function, as on the lowered side, where it is rule 16's host boundary and its body is never
     lifted for the call (BACKEND_ABI §1.11: the backend performs the entry with the host C library). Recognised by name
     and signature as cq-lower does (OracleInstr.cpp, cq-oracle-host-streams). A module that defines none is text as it
     stands. cq-tgl3i: what only those bodies reached goes too (musl's __stdin_FILE, its buffer, its locks: the host
     library's objects, CR rule 16, no named output of the program's, §6 item 1), as it goes from the lowered module."""
     from . import drivers
-    if not {drivers._c_name(n) for n in _DEFINED.findall(text)} & _STREAM_NAMES:
+    if not any(_host_name(drivers._c_name(n)) for n in _DEFINED.findall(text)):
         return text
     plugin, _ = toolchain()
     with tempfile.TemporaryDirectory(prefix="cqo-streams.") as d:

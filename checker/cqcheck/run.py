@@ -857,11 +857,13 @@ _FP_TOK = re.compile(r"\b(half|bfloat|float|double|x86_fp80|fp128|ppc_fp128)\b")
 _FP_INST = re.compile(r"^\s+%\S+ = (fadd|fsub|fmul|fdiv|frem|fcmp|fptrunc|fpext|sitofp|uitofp|fptosi|fptoui)\b")
 _CALLEE = re.compile(r"\bcall\b[^@]*@(\"?)([-\w.$]+)\1\(")
 _FENV_DECL = re.compile(r"^declare\b[^@]*@\"?(fe[\w.$]*)\"?\(")
+_FENV_DEF = re.compile(r"^define\b[^@]*@\"?(fe[\w.$]*)\"?\(")
 
 
 def touches_fenv(text: str) -> bool:
     """The oracle's touchesFenv on a module's text: a strictfp function, a constrained intrinsic, or a
-    declared fe* function about exceptions, rounding or the environment."""
+    declared fe* function about exceptions, rounding or the environment, or a defined rule-23 fenv function (cq-du1gw:
+    the host's for the call, as oracle.host_streams makes it)."""
     for line in text.splitlines():
         if line.startswith(("define", "declare", "attributes")) and re.search(r"\bstrictfp\b", line):
             return True
@@ -870,6 +872,13 @@ def touches_fenv(text: str) -> bool:
         m = _FENV_DECL.match(line)
         if m and any(k in m.group(1) for k in ("except", "round", "env")):
             return True
+        # cq-du1gw (CR rule 16, 778-787): a body the module has for one of rule 23's fenv functions is never lifted for
+        # the call, which is the host's (oracle.host_streams makes it a declaration on both sides)
+        m = _FENV_DEF.match(line)
+        if m:
+            from cqcheck.oracle import _RULE16_NAMES
+            if m.group(1) in _RULE16_NAMES:
+                return True
     return False
 
 

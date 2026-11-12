@@ -3303,10 +3303,12 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
     bool changed = false;
     SmallPtrSet<Function *, 32> taken;
     for (Function &F : M)
-      if (!F.isDeclaration() && !cq::streamCallee(F) && F.hasAddressTaken())
+      if (!F.isDeclaration() && !cq::hostCallee(F) && F.hasAddressTaken())
         taken.insert(&F);
+    // cq-du1gw: every ISO C and POSIX interface rule 16 names (CR 778-787: the stream calls, malloc and its family, signal,
+    // raise, rule 23's fenv functions, rule 24's setjmp, longjmp and pthread_*), as cq-lower's cq::hostCallee recognises it
     for (Function &F : M)
-      if (!F.isDeclaration() && cq::streamCallee(F)) {
+      if (!F.isDeclaration() && cq::hostCallee(F)) {
         LLVMContext &C = M.getContext();
         F.deleteBody();
         F.setLinkage(GlobalValue::ExternalLinkage);
