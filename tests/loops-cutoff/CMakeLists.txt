@@ -144,9 +144,10 @@ add_test(NAME loops-cutoff-measure-carried
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in measure_carried=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_carried.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-# rulings Q3 part 2 (cq-nmzv3, cq-qotkl, review R1 and R2): a classical conjunct decides a skip classically; a site behind a classical branch inside a skipped quantum arm. run_probes.py MUTANTS:
+# rulings Q3 part 2 (cq-nmzv3, cq-qotkl, review R1 and R2): a classical conjunct decides a skip classically; a quantum
+# branch's arms measured in sequence; a site behind a classical branch inside a skipped quantum arm. run_probes.py MUTANTS:
 # the classical guards dropped are rejected.
-foreach(p q3_conjunct q3_phantom)
+foreach(p q3_conjunct q3_arms q3_phantom)
   add_test(NAME loops-cutoff-${p}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
             --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
