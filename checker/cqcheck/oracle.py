@@ -423,7 +423,7 @@ def host_streams(text: str) -> str:
 # outside {0, 1, 2}), fseeko as fseek, write its count (CR rule 16).
 _OUTPUT_NAMES = frozenset((
     "printf fprintf dprintf vprintf vfprintf vdprintf wprintf fwprintf vwprintf vfwprintf puts fputs fflush putw fputc putc "
-    "putchar fwrite fputwc putwc putwchar fputws fclose remove rename fsetpos close fseek setvbuf fseeko write").split())
+    "putchar fwrite fputwc putwc putwchar fputws fclose remove rename fsetpos close fseek setvbuf fseeko write raise").split())
 _DECLARED_ANY = re.compile(r'(?m)^declare\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 

@@ -3631,7 +3631,9 @@ namespace outres {
 // Sel3: 0 when the int argument `first` is 0, 1 or 2, else -1 (owner ruling 2026-11-12 cq-dbtpi: fseek's whence, musl
 // fseek.c __fseeko_unlocked; setvbuf's type, musl setvbuf.c, _IOFBF 0, _IOLBF 1, _IONBF 2).
 // Length: the count argument `first` (write.c: the syscall's count when it succeeds).
-enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3, Length };
+// Sig64: raise, 0 for 0 <= sig <= 64, else -1 (raise.c: the kernel's tkill; a registered handler runs and raise
+// returns 0, and signal registers none at an invalid number: one value for the whole call, as the pass computes it).
+enum class Kind : uint8_t { Fmt, VFmt, WFmt, VWFmt, Zero, UChar, Fwrite, Wc, Ws, Sel3, Length, Sig64 };
 struct Fn {
   Kind kind;
   unsigned first;
@@ -3662,6 +3664,7 @@ std::optional<Fn> outputFunction(const Function &F) {
       // CR rule 16 names these two too (K1's pass, eff/tape/Tape.cpp): fseeko is __fseeko (fseek.c weak_alias), as
       // fseek; write's result is its count (unistd/write.c, the syscall when it succeeds)
       {"fseeko", {Kind::Sel3, 2}},    {"write", {Kind::Length, 2}},
+      {"raise", {Kind::Sig64, 0}},
       {"fputc", {Kind::UChar, 0}},    {"putc", {Kind::UChar, 0}},     {"putchar", {Kind::UChar, 0}},
       {"fwrite", {Kind::Fwrite, 0}},
       {"fputwc", {Kind::Wc, 0}},      {"putwc", {Kind::Wc, 0}},       {"putwchar", {Kind::Wc, 0}},
@@ -3695,6 +3698,10 @@ std::optional<Fn> outputFunction(const Function &F) {
   case Kind::Sel3:
     return !ft->isVarArg() && ft->getNumParams() == o.first + (n == "setvbuf" ? 2 : 1) && argIs(0, true) &&
                    argIs(o.first, false)
+               ? std::optional(o) : std::nullopt;
+  case Kind::Sig64:
+    return !ft->isVarArg() && ft->getNumParams() == 1 && ft->getReturnType()->isIntegerTy(32) &&
+                   ft->getParamType(0)->isIntegerTy(32)
                ? std::optional(o) : std::nullopt;
   case Kind::Length:
     return !ft->isVarArg() && ft->getNumParams() == 3 && argIs(0, false) && argIs(1, true) && argIs(2, false)
@@ -3905,6 +3912,12 @@ struct Pass : PassInfoMixin<Pass> {
       case Kind::Length:
         v = B.CreateZExtOrTrunc(CB->getArgOperand(o.first), rt);
         break;
+      case Kind::Sig64: {
+        Value *a = CB->getArgOperand(0);
+        v = B.CreateSelect(B.CreateICmpULE(a, ConstantInt::get(a->getType(), 64)), ConstantInt::get(rt, 0),
+                           ConstantInt::get(rt, -1, true));
+        break;
+      }
       case Kind::Sel3: {
         Value *a = CB->getArgOperand(o.first);
         v = B.CreateSelect(B.CreateICmpULT(a, ConstantInt::get(a->getType(), 3)), ConstantInt::get(rt, 0),
