@@ -14,8 +14,10 @@ int probe(int x) {
   cq_measure(r);
   return 0;
 }
-// The count is lifted (a clone of the entry reading the va_list's rails); fails until cq-f0rb6 (a callee whose quantum
-// input arrives only through memory is called as its own C symbol).
+// The count is the lowered __cq_count_vsnprintf reached with no quantum argument: its own symbol (rule 19, 162: the all-zero
+// clone coincides with it), which reads the va_list's rails from the bus. cq-f0rb6: musl vfprintf's va_copy of that va_list
+// is memcpy(d, s, 24) (rule 16, 109), a bus copy, never the host intrinsic.
 // CHECK-COUNT __cq_q_h_00: @cqrt_tape_effect_i32 0
 // CHECK __cq_q_h_00: @cqrt_tape_effect_controlled(
-// CHECK __cq_q_h_00: @__cq_q___cq_count_vsnprintf
+// CHECK __cq_q_h_00: = call i32 @__cq_count_vsnprintf(ptr null, i64 0, ptr @.str, ptr %{{ap}})
+// CHECK-COUNT __cq_vfprintf: @llvm.va_copy 0

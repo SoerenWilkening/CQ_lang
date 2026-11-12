@@ -13,6 +13,6 @@ int probe(int x) {
   return 0;
 }
 // CHECK-COUNT probe: @cqrt_tape_effect_i32 0
-// The lifted entry: fails until cq-f0rb6 (clang passes ws through a slot; a callee whose quantum input arrives only
-// through memory is called as its own C symbol).
-// CHECK probe: @__cq_q___cq_count_wcsrtombs
+// The count is the lowered __cq_count_wcsrtombs reached with no quantum argument: its own symbol (rule 19, 162), reading ws
+// from the slot on the bus; its result is the handle (rule 19 Results: zero-extended to the C i64).
+// CHECK probe: = call i64 @__cq_count_wcsrtombs(ptr null, ptr %{{slot}}, i64 0, ptr null)

@@ -279,9 +279,16 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return qArg || qRes ? Class::TemplateIntrinsic : Class::Classical;
     case Intrinsic::trap: case Intrinsic::ubsantrap: case Intrinsic::debugtrap:
       return qPred ? Class::Noreturn : Class::Classical;
-    case Intrinsic::vastart: case Intrinsic::vaend: case Intrinsic::vacopy:
-      // A variadic clone is specialised per call-site arity (CR §1.4); in an entry with nothing
-      // quantum in the va_list the intrinsics stay classical.
+    case Intrinsic::vacopy:
+      // Rule 16 (109): va_copy(d, s) is memcpy(d, s, 24), so rule 22 decides as for memcpy: classical only when both
+      // va_lists are host-resident objects, in the own symbol too (cq-f0rb6: musl vfprintf's va_copy of the caller's
+      // bus-resident va_list into its bus-resident ap2; a host copy of host bytes the bus never sees).
+      if (nonClassicalObject(T, S, CB.getArgOperand(0)) || nonClassicalObject(T, S, CB.getArgOperand(1)))
+        return Class::Varargs;
+      [[fallthrough]];
+    case Intrinsic::vastart: case Intrinsic::vaend:
+      // A variadic clone is specialised per call-site arity (CR §1.4). In the own symbol va_start stays the
+      // intrinsic (it fills ap with host bytes, rule 16) and va_end is nothing.
       return qArg || qPred || !S.isEntry() ? Class::Varargs : Class::Classical;
     default:
       break;
