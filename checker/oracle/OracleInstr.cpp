@@ -3232,15 +3232,24 @@ public:
         continue;
       }
       // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed.
-      // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL at __errno_location(); the runtime calls the
-      // module's own (its address, no call added here) only then; a module with none gets no errno effect, as the pass
-      // (calls/Calls.cpp errnoAddress) stores none there.
+      // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL through the module's errno accessor; the runtime
+      // calls it (its address, no call added here) only then; a module with none gets no errno effect.
       if (callee && callee->isDeclaration() && callee->getName() == "signal" && CB->arg_size() == 2 &&
           CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
           CB->getArgOperand(1)->getType()->isPointerTy()) {
-        Function *el = M.getFunction("__errno_location");
-        Value *errFn = el && el->arg_empty() && el->getReturnType()->isPointerTy()
-                           ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
+        // Owner ruling 2026-11-12 (signal's EINVAL store): through whichever accessor the module declares or defines for
+        // its own errno reads, __errno_location (musl, glibc) or __error (Darwin; here the stand-in's wrapper
+        // cqd_fx___error, drivers.effect_callees, whose result is the C oracle's errno cell, fx_call.h FX_ERRNO_CELL);
+        // neither: no store
+        auto accessor = [&](StringRef n) -> Function * {
+          Function *f = M.getFunction(n);
+          return f && f->arg_empty() && f->getReturnType()->isPointerTy() ? f : nullptr;
+        };
+        Function *el = accessor("__errno_location");
+        for (StringRef n : {"cqd_fx___error", "__error", "\x01___error"})
+          if (!el)
+            el = accessor(n);
+        Value *errFn = el ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
         IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr}), {errFn});
         CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
         continue;

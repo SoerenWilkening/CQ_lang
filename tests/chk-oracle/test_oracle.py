@@ -744,6 +744,25 @@ int mtxnoop(int k) {
         self.assertEqual((rr.outputs["ret"][0]["v"]["v"], rr.outputs["effects"]), ("0x0", []))
 
 
+    def test_signal_errno_darwin(self):
+        # owner ruling 2026-11-12 (signal's EINVAL store): a Darwin-built program reads errno through __error(); after an
+        # invalid signal it reads EINVAL there, after a valid one what it wrote
+        o1 = compile_c("sigerrdw", """
+#include <signal.h>
+#include <errno.h>
+static void h(int s) { (void)s; }
+int sigerrdw(int s) {
+    errno = 7;
+    void (*r)(int) = signal(s, h);
+    return (r == SIG_ERR) | errno << 4;
+}
+""")
+        self.assertIn("@__error(", o1.read_text())
+        sp = spec("sigerrdw", "int sigerrdw(int)", [("sigerrdw", ["int"])])
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(x)]} for x in (19, 0, 5)]),
+                         ["0x161", "0x161", "0x70"])
+
+
 class Cutoff(unittest.TestCase):
     """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
     recursion stops after K trips; the cq-arch T2 records in outputs["loops"]."""
