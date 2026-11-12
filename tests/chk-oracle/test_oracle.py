@@ -1346,6 +1346,32 @@ int go(int x) { putchar(x); int r = ext_unknown(x); char b[8] = {0}; fgets(b, 8,
         ret = rr.outputs["ret"][0]["v"]
         self.assertNotEqual(ret["v"], "0xffffffff")   # fgets stored the stand-in's line
 
+class Horizon(unittest.TestCase):
+    """cq-jumn (CR 1351-1352, rulings Q3 part 1): a C program that would end early (exit) on a trip beyond K is stopped at the
+    cutoff first: the sample is capped after K trips and never reaches the exit, so nothing after the horizon is compared
+    (tests/loops-cutoff/probes/noexit.c na_exit's sample x = 0x806c50ff exits in trip 5)."""
+
+    def test_exit_beyond_k(self):
+        o1 = compile_c("horizon", """
+#include <stdlib.h>
+int na_exit(int x0, double th) {
+  int x = x0; cq_theta(&x, th);
+  int i = 0, acc = 0;
+  while ((x >> i) & 1) {
+    if (((x >> (i + 8)) & 1) != 0) { cq_phi(0.25); exit(3); }
+    acc += i + 2;
+    i++;
+  }
+  return cq_measure(acc);
+}
+""")
+        sp = spec("horizon", "int na_exit(int,double)", [("na_exit", ["int", "double"])])
+        r = oracle.run_samples(o1, sp, [{"call": 0, "args": [i32(0), HALF], "subst": {"na_exit:0": i32(0x806c50ff)}},
+                                        {"call": 0, "args": [i32(0), HALF], "subst": {"na_exit:0": i32(0x0103)}}])
+        self.assertTrue(r[0].outcome.startswith("cap:"), (r[0].outcome, r[0].loops))
+        self.assertTrue(any(l["capped"] and l["n"] == 4 for l in r[0].loops), r[0].loops)
+        self.assertFalse(r[1].outcome.startswith("cap:"), r[1].outcome)  # exit(3) in trip 1: within K, ends early
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
