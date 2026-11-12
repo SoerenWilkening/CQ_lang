@@ -81,6 +81,7 @@
 #include <mach/mach_vm.h>
 
 #include "cqe.h"
+#define CQ_FX_BUS_STORE /* this file defines cq_fx_bus_store: the bus */
 #include "fx_standin.h"
 #include "rt_tape.h"
 
@@ -221,8 +222,8 @@ typedef struct {
   int nva;
   capture *vcap;         /* the va_list and argument slots as read (their tape rails) */
   int nvcap;
-  int has_in;            /* ruling Q5: an INPUT call performed at the call, in_pos the stream offset it read from */
-  size_t in_pos, in_take;
+  int has_in;            /* ruling Q5: an INPUT call performed at the call; in_s its "in" field (fx_standin.h) */
+  char in_s[80];
 } event;
 
 typedef struct { field *f; int n, cap; } pendlist;
@@ -237,8 +238,6 @@ static int g_registered_exit;
 static int g_front;               /* the first event advance() has not resolved */
 static int g_blocked;             /* an event was deferred or an abort read 1: nothing later resolves */
 static int g_abort_seen;
-static int g_in_quantum;          /* ruling Q5: an INPUT call that was not classical consumed (or not): the stream position
-                                   * depends on the quantum inputs, and so does what every later call reads */
 
 static const cqe_tape_bus *g_bus;
 void cqe_tape_set_bus(const cqe_tape_bus *bus) { g_bus = bus; }
@@ -636,36 +635,51 @@ static void set_result(event *e, uint64_t x, int known) {
  * the fields, and the stream position: no earlier call that was not classical), else qstore of every cell the call can
  * reach from any position (cq_fx_input_reach, so the slots a shot allocates do not vary with the quantum inputs), the
  * byte where this basis input stores one. ABI §1.11's K2 read and its consumption on every branch are not modelled. */
+static void tape_store(uint64_t addr, uint8_t byte, int write, int classical) {
+  if (!g_bus) { cqe_fail("tape: an input call's bus store with no bus linked"); return; }
+  if (classical) g_bus->cstore(addr, byte);
+  else g_bus->qstore(addr, byte, write);
+}
+
+/* The bus as the direct input calls of the lowered module see it (fx_call.h, after a call that was not classical). */
+void cq_fx_bus_store(uint64_t addr, uint8_t byte, int write, int classical) {
+  if (!g_bus) { if (write) *(uint8_t *)(uintptr_t)addr = byte; return; }
+  if (classical) { if (write) g_bus->cstore(addr, byte); }
+  else g_bus->qstore(addr, byte, write);
+}
+
+static int tape_peek(uint64_t addr, uint8_t *byte) { return peek(addr, byte); }
+
 static void perform_input(event *e, const cq_fx_ent *ent) {
-  int bi = -1, li = -1;
+  int bi = -1, li = -1, ai = -1, Li = -1, Ni = -1;
   for (int i = 0; ent->roles[i]; i++) {
-    if (ent->roles[i] == 'W') bi = i;
-    if (ent->roles[i] == 'n' && li < 0) li = i;
+    char r = ent->roles[i];
+    if (r == 'W') bi = i;
+    if (r == 'n' && li < 0) li = i;
+    if (r == '-' && ai < 0) ai = i;
+    if (r == 'L') Li = i;
+    if (r == 'N') Ni = i;
   }
   int nknown = 1;
   int64_t v = 0;
   if (bi >= 0 && li >= 0 && li < e->nfields) v = length_of(e, ent->roles, li, &nknown);
   uint64_t addr = bi >= 0 && bi < e->nfields ? field_low64(&e->fields[bi]) : 0;
+  uint64_t aux = ai >= 0 && ai < e->nfields ? field_low64(&e->fields[ai]) : 0;
+  uint64_t lpa = Li >= 0 && Li < e->nfields ? field_low64(&e->fields[Li]) : 0;
+  uint64_t npa = Ni >= 0 && Ni < e->nfields ? field_low64(&e->fields[Ni]) : 0;
   int own = e->pred_known && fields_known(e);
-  int classical = own && !g_in_quantum;
+  int classical = own && !cq_fx_stream()->quantum;
   int cv = e->pred;
   uint64_t size = bi >= 0 && li + 1 < e->nfields && ent->roles[li + 1] == 'n' ? field_low64(&e->fields[li]) : 1;
-  cq_fx_io io = {cq_fx_stream()->pos, 0, 0, 1, (size_t)-1, 0};
-  if (cv) io = cq_fx_input_plan(ent, (uint64_t)v, addr, size);
-  if (bi >= 0 && !(e->pred_known && !cv)) {           /* classical predicate 0: skipped, nothing is touched */
-    size_t reach = classical ? io.stored : cq_fx_input_reach(ent, nknown ? (uint64_t)v : (uint64_t)CQ_FX_K2);
-    for (size_t j = 0; j < reach; j++) {
-      int write = j < io.stored;
-      uint8_t byte = write ? cq_fx_input_byte(&io, j) : 0;
-      if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); return; }
-      if (classical) g_bus->cstore(addr + j, byte);
-      else g_bus->qstore(addr + j, byte, write);
-    }
-  }
-  if (!own) g_in_quantum = 1;
-  e->has_in = cv != 0, e->in_pos = io.pos, e->in_take = io.take;
-  cq_fx_input_done(&io);
-  set_result(e, cv ? io.result : 0, classical);
+  cq_fx_io io = cq_fx_input_plan(ent, (uint64_t)v, addr, size, aux);
+  uint64_t r = 0;
+  if (!(e->pred_known && !cv))                       /* classical predicate 0: skipped, nothing is touched */
+    r = cq_fx_input_apply(ent, &io, addr, bi >= 0, (uint64_t)v, nknown, classical, cv, lpa, npa, tape_peek, tape_store);
+  if (!own) cq_fx_stream()->quantum = 1;
+  e->has_in = cv != 0;
+  cq_fx_in_json(e->in_s, sizeof e->in_s, &io);
+  if (cv) cq_fx_input_done(&io);
+  set_result(e, r, classical);
   e->cls = C_INPUT;
   e->performed = !(e->pred_known && !cv);
 }
@@ -680,17 +694,6 @@ static void perform_input(event *e, const cq_fx_ent *ent) {
  * classical (the stream position too, perform_input), else qstore under the predicate of every cell a scan from any
  * position of the stream changes (so the slots a shot allocates do not vary with the quantum inputs). The result rail
  * is the call's result under the predicate, |0> when it reads 0. */
-#define SCAN_BUF ((size_t)CQ_FX_K2 + 64)
-
-/* The two runs from position pos into a and b (n pointers each, refilled); the result and what the first run took. */
-static int scan_twice(int wide, const void *fmt, uint8_t **a, uint8_t **b, size_t n, size_t pos, size_t *took) {
-  size_t t2;
-  for (size_t k = 0; k < n; k++) memset(a[k], 0x00, SCAN_BUF), memset(b[k], 0xFF, SCAN_BUF);
-  int r = cq_fx_scan_host(wide, fmt, (void *const *)a, pos, took);
-  (void)cq_fx_scan_host(wide, fmt, (void *const *)b, pos, &t2);
-  return r;
-}
-
 static void perform_scan(event *e, const cq_fx_ent *ent) {
   int fi = (int)(strpbrk(ent->roles, "FG") - ent->roles);
   int wide = ent->roles[fi] == 'G', va = ent->roles[fi + 1] == 'v';
@@ -699,8 +702,8 @@ static void perform_scan(event *e, const cq_fx_ent *ent) {
   e->cls = C_INPUT;
   e->performed = !(e->pred_known && !cv);
   if (!e->performed || fi >= e->nfields || !e->fields[fi].cap.done) {   /* classical predicate 0: skipped */
-    if (!own) g_in_quantum = 1;
-    set_result(e, 0, own && !g_in_quantum);
+    if (!own) cq_fx_stream()->quantum = 1;
+    set_result(e, 0, own && !cq_fx_stream()->quantum);
     return;
   }
   const capture *fc = &e->fields[fi].cap;
@@ -720,46 +723,18 @@ static void perform_scan(event *e, const cq_fx_ent *ent) {
   size_t given = va ? (size_t)e->nva : (size_t)(e->nfields > fi + 1 ? e->nfields - fi - 1 : 0);
   if (va)
     for (int k = 0; k < e->nva; k++) own &= e->va[k].known;
-  int classical = own && !g_in_quantum;
-  size_t n = need > given ? need : given;
-  uint8_t **a = calloc(n + 1, sizeof *a), **b = calloc(n + 1, sizeof *b);
-  for (size_t k = 0; k < n; k++) a[k] = malloc(SCAN_BUF), b[k] = malloc(SCAN_BUF);
-  uint8_t **reach = NULL;   /* not classical: the cells a scan from any position changes */
-  if (!classical) {
-    size_t total = cq_fx_stream()->n, t;
-    reach = calloc(n + 1, sizeof *reach);
-    for (size_t k = 0; k < n; k++) reach[k] = calloc(SCAN_BUF, 1);
-    for (size_t p = 0; p <= total; p++) {
-      (void)scan_twice(wide, fmt, a, b, n, p, &t);
-      for (size_t k = 0; k < n; k++)
-        for (size_t j = 0; j < SCAN_BUF; j++) reach[k][j] |= !(a[k][j] == 0 && b[k][j] == 0xFF);
-    }
-  }
-  size_t pos = cq_fx_stream()->pos, took = 0;
-  int r = 0;
-  if (cv) r = scan_twice(wide, fmt, a, b, n, pos, &took);
-  for (size_t k = 0; k < given && k < n; k++) {
-    const field *p = va ? &e->va[k] : &e->fields[fi + 1 + k];
-    uint64_t addr = field_low64(p);
-    for (size_t j = 0; j < SCAN_BUF; j++) {
-      int write = cv && !(a[k][j] == 0 && b[k][j] == 0xFF);   /* this basis input's scan wrote it */
-      if (classical ? !write : !reach[k][j]) continue;
-      if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); goto done; }
-      if (classical) g_bus->cstore(addr + j, a[k][j]);
-      else g_bus->qstore(addr + j, write ? a[k][j] : 0, write);
-    }
-  }
-done:
-  if (!own) g_in_quantum = 1;
-  e->has_in = cv != 0, e->in_pos = pos, e->in_take = took;
-  cq_fx_stream()->pos = pos + took;
-  for (size_t k = 0; k < n; k++) {
-    free(a[k]), free(b[k]);
-    if (reach) free(reach[k]);
-  }
-  free(a);
-  free(b);
-  free(reach);
+  int classical = own && !cq_fx_stream()->quantum;
+  uint64_t *dst = calloc(given + 1, sizeof *dst);
+  for (size_t k = 0; k < given; k++) dst[k] = field_low64(va ? &e->va[k] : &e->fields[fi + 1 + k]);
+  cq_fx_at at = cq_fx_here();
+  int eof = cq_fx_stream()->eof, hit = 0;
+  size_t took = 0;
+  int r = cq_fx_scan_apply(wide, fmt, dst, given, need, classical, cv, at, tape_store, &took, &hit);
+  free(dst);
+  if (!own) cq_fx_stream()->quantum = 1;
+  e->has_in = cv != 0;
+  cq_fx_scan_json(e->in_s, sizeof e->in_s, at, took, eof);
+  if (cv) cq_fx_scan_done(at, took, hit);
   if (wide) free(fmt);
   free(parse);
   set_result(e, cv ? (uint64_t)(int64_t)r : 0, classical);
@@ -970,17 +945,18 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, int32_t n,
     cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));
   e->complete = 1;
   capture_event(e);
-  int ident_quantum = 0;
-  if (ent)
-    for (int i = 0; ent->roles[i] && i < e->nfields; i++)
-      if (ent->roles[i] == 'f' && e->fields[i].k == F_RAIL && !e->fields[i].known) ident_quantum = 1;
-  if (ent && cq_fx_scan(ent) && !ident_quantum) {
+  /* owner ruling 2026-11-12 (cq-cyjua): an INPUT call is never deferred, also when its FILE, descriptor or other
+   * identifying argument is a quantum rail: on a basis input it is performed at once on the one stream (ruling Q5) and
+   * consumes what the C program consumes; such a field is not classical-valued, so its stores are quantum. The cross-stream
+   * consumption of a real backend (one host call per value of the identifying rail) is not modelled. A call that is no
+   * INPUT call with such an argument is deferred as before (advance). */
+  if (ent && cq_fx_scan(ent)) {
     perform_scan(e, ent);
     effect_line(e, "call");
     advance();
     return e->r;
   }
-  if (ent && ent->cls == 'I' && !ident_quantum) {
+  if (ent && ent->cls == 'I') {
     perform_input(e, ent);
     effect_line(e, "call");
     advance();
@@ -1480,7 +1456,7 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
     sb_puts(b, "}");
   }
   sb_puts(b, "]");
-  if (e->has_in) sb_printf(b, ",\"in\":[%zu,%zu]", e->in_pos, e->in_take);   /* ruling Q5 (fx_standin.h) */
+  if (e->has_in) sb_puts(b, e->in_s);   /* ruling Q5 (fx_standin.h) */
   if (e->k == E_FMT) {
     sbuf t = {0};
     sb_reserve(&t, 0);

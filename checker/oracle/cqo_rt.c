@@ -1368,6 +1368,7 @@ void __cqo_fx_end(void) {
 }
 /* A direct host call: the stand-in, one source with the evaluator (fx_call.h; rulings Q8). */
 #define FX_LOG(line, n) do { if (sample_running()) out_long(line, n); } while (0)
+#define CQ_FX_REALLOC __cqo_realloc /* ruling Q5: getline's buffer and fgetln's line are heap objects of the program */
 #include "fx_call.h"
 
 /* The named outputs in memory (CR §6 item 1; drivers.py "Driver objects"): one object's bytes, a little-endian

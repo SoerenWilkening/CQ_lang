@@ -9,7 +9,9 @@ what it must give:
   - "fatal: <text>": cq-lower stops with that error (an unimplemented shape, never a silent output);
   - "reject: <regex>": the lowered module with every line matching the regex deleted is a wrong program, and the §6 run
     must say so (exit 1): the checker's model of what those lines do, kept honest;
-  - "wrong: <file>": probes/<file> is a frozen wrong lowering of the probe, and the §6 run must say so (exit 1).
+  - "wrong: <file>": probes/<file> is a frozen wrong lowering of the probe, and the §6 run must say so (exit 1);
+  - "frozen: <file>": probes/<file> is a frozen lowering of a shape cq-lower does not emit for the probe today, and the
+    §6 run must accept it (exit 0): the checker's model of that shape, kept honest.
 Outputs go to build/tests/calls/out/.
 """
 import argparse
@@ -258,6 +260,17 @@ CASES = [
     ("stdin_scan_getc", "stdin_scan_getc", [], "pass", []),
     ("stdin_eof", "stdin_eof", [], "pass", []),
     ("stdin_wide", "stdin_wide", [], "pass", []),
+    # cq-wjysl (ruling Q5): ungetc/ungetwc push back into the one stream; getline/getdelim allocate and consume a line,
+    # fgetln returns it; feof sees the stream's end, clearerr clears it, getw reads 4 bytes, pread reads at an offset and
+    # consumes nothing. cq-cyjua: a direct input call after a quantum-controlled one shares the stream's state and stores
+    # quantum (a frozen lowering: cq-lower makes it a tape entry); an input call whose FILE* is a quantum rail is never
+    # deferred (owner ruling 2026-11-12).
+    ("stdin_unget", "stdin_unget", [], "pass", []),
+    ("stdin_getline", "stdin_getline", [], "pass", []),
+    ("stdin_feof", "stdin_feof", [], "pass", []),
+    ("stdin_direct", "stdin_direct", [], "pass", []),
+    ("stdin_direct", "stdin_direct", [], "frozen: stdin_direct.direct.ll", []),
+    ("stdin_ident", "stdin_ident", [], "pass", []),
     # cq-xdscs (rule 16, BACKEND_ABI §1.11): perror and puts read a string whose first byte is quantum, results unread (no
     # stated deviation): deferred entries performed on the measured string, read up to its first 0 (on x0 = 0: ""), as the
     # C program's call reads it. The mutant passes perror the string's second byte.
@@ -436,6 +449,13 @@ def main() -> int:
                 why.append("cq-lower: " + r.stderr.strip()[:400])
         elif r.returncode != 0:
             why.append("cq-lower: " + r.stderr.strip()[:400])
+        elif expect.startswith("frozen: "):
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered",
+                                str(PROBES / expect[len("frozen: "):]), "--entry", entry,
+                                *(["--samples", str(SAMPLES[probe])] if probe in SAMPLES else [])],
+                               capture_output=True, text=True, cwd=ROOT / "checker")
+            if c.returncode != 0:
+                why.append(f"§6 exited {c.returncode}, expected the frozen lowering accepted: " + c.stdout.strip()[-400:])
         elif expect.startswith("wrong: "):
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered",
                                 str(PROBES / expect[len("wrong: "):]), "--entry", entry,

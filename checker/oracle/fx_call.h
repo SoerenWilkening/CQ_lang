@@ -24,7 +24,7 @@ static fxc_arg fxc_args[FXC_MAX];
 static int fxc_n;
 static char fxc_line[1 << 17];
 static size_t fxc_len;
-static long long fxc_in_pos = -1, fxc_in_take; /* ruling Q5: an INPUT call's stream offset and the bytes it took, or -1 */
+static char fxc_in[80]; /* ruling Q5: an INPUT call's "in" field (fx_standin.h cq_fx_in_json), or empty */
 
 void cqd_fxc_begin(const char *name) { fxc_name = name, fxc_n = 0; }
 void cqd_fxc_int(uint64_t lo, uint64_t hi, unsigned bits, const char *token) {
@@ -97,35 +97,52 @@ static uint64_t fxc_log(const cq_fx_ent *e) {
     fxc_put("}");
   }
   fxc_put("]");
-  if (fxc_in_pos >= 0) {   /* ruling Q5, as rt_tape.c's entry_json */
-    snprintf(b, sizeof b, ",\"in\":[%lld,%lld]", fxc_in_pos, fxc_in_take);
-    fxc_put(b);
-    fxc_in_pos = -1;
-  }
+  fxc_put(fxc_in);   /* ruling Q5, as rt_tape.c's entry_json */
+  fxc_in[0] = 0;
   fxc_put("}");
   FX_LOG(fxc_line, fxc_len);
   return h;
 }
 
+/* ruling Q5: host memory as an input call reads and writes it. A direct call (the C program's; the lowered module's
+ * own) writes host bytes, but on the lowered side once a call that was not classical moved the stream (its quantum mark,
+ * set only by rt_tape.c) the bytes depend on the quantum inputs, so they go to the bus as quantum stores
+ * (cq_fx_bus_store: rt_tape.c's on the lowered side). */
+static int fxc_peek(uint64_t addr, uint8_t *byte) { *byte = *(const uint8_t *)(uintptr_t)addr; return 1; }
+static void fxc_store(uint64_t addr, uint8_t byte, int write, int classical) {
+  if (classical) { if (write) *(uint8_t *)(uintptr_t)addr = byte; }
+  else cq_fx_bus_store(addr, byte, write, 0);
+}
+
+static uint64_t fxc_masked(int i) {
+  uint64_t x = fxc_args[i].w[0];
+  return fxc_args[i].bits < 64 ? x & ((UINT64_C(1) << fxc_args[i].bits) - 1) : x;
+}
+
 uint64_t cqd_fxc_done(unsigned rbits) {
   const cq_fx_ent *e = cq_fx_find(fxc_name);
   if (!e || e->cls != 'I') return cq_fx_result(fxc_log(e), rbits);
-  /* ruling Q5: what the C function consumes of the one input stream at its position, logged with the call */
-  int bi = -1, li = -1;
+  /* ruling Q5: what the C function consumes of the one input stream at its state, logged with the call */
+  int bi = -1, li = -1, ai = -1, Li = -1, Ni = -1;
   for (int i = 0; e->roles[i]; i++) {
-    if (e->roles[i] == 'W') bi = i;
-    if (e->roles[i] == 'n' && li < 0) li = i;
+    char r = e->roles[i];
+    if (r == 'W') bi = i;
+    if (r == 'n' && li < 0) li = i;
+    if (r == '-' && ai < 0) ai = i;
+    if (r == 'L') Li = i;
+    if (r == 'N') Ni = i;
   }
   uint64_t v = bi >= 0 && li >= 0 && li < fxc_n ? fxc_length(e->roles, li) : 0;
   uint64_t addr = bi >= 0 && bi < fxc_n ? fxc_args[bi].w[0] : 0;
   uint64_t size = bi >= 0 && li + 1 < fxc_n && e->roles[li + 1] == 'n' ? fxc_args[li].w[0] : 1;
-  cq_fx_io io = cq_fx_input_plan(e, v, addr, size);
-  fxc_in_pos = (long long)io.pos, fxc_in_take = (long long)io.take;
+  uint64_t aux = ai >= 0 && ai < fxc_n ? fxc_masked(ai) : 0;
+  uint64_t lpa = Li >= 0 && Li < fxc_n ? fxc_args[Li].w[0] : 0, npa = Ni >= 0 && Ni < fxc_n ? fxc_args[Ni].w[0] : 0;
+  cq_fx_io io = cq_fx_input_plan(e, v, addr, size, aux);
+  cq_fx_in_json(fxc_in, sizeof fxc_in, &io);
   fxc_log(e);
-  if (bi >= 0)
-    for (size_t j = 0; j < io.stored; j++) ((unsigned char *)(uintptr_t)addr)[j] = cq_fx_input_byte(&io, j);
+  uint64_t r = cq_fx_input_apply(e, &io, addr, bi >= 0, v, 1, !cq_fx_stream()->quantum, 1, lpa, npa, fxc_peek, fxc_store);
   cq_fx_input_done(&io);
-  return io.result;
+  return r;
 }
 
 /* cq-tgl3i: the scanf family (fx_standin.h cq_fx_scan): drivers.route_scans sends the C program's call of scanf, fscanf,
@@ -135,6 +152,7 @@ uint64_t cqd_fxc_done(unsigned rbits) {
  * the lowered program makes of it, and performed by the host C library on the one input stream from its position
  * (cq_fx_scan_host_va, ruling Q5), which advances by what the scan took; its conversions write through the program's own
  * pointers. The log follows the scan, so that it carries the offset and the bytes taken. */
+static int fxc_scan_nv(int wide, const void *fmt);
 static int fxc_scan(const char *name, int wide, int has_f, const void *f, const void *fmt, int nv, va_list ap,
                     const void *va_addr) {
   cqd_fxc_begin(name);
@@ -148,9 +166,25 @@ static int fxc_scan(const char *name, int wide, int has_f, const void *f, const 
     for (int i = 0; i < nv; i++) cqd_fxc_ptr(va_arg(cp, void *));
     va_end(cp);
   }
-  size_t pos, took;
-  int r = cq_fx_scan_host_va(wide, fmt, ap, &pos, &took);
-  fxc_in_pos = (long long)pos, fxc_in_take = (long long)took;
+  cq_fx_at at;
+  size_t took;
+  int eof, r;
+  if (!cq_fx_stream()->quantum) {
+    r = cq_fx_scan_host_va(wide, fmt, ap, &at, &took, &eof);
+  } else {   /* the lowered side after a call that was not classical: the backend's scan, its stores quantum (above) */
+    size_t n = (size_t)fxc_scan_nv(wide, fmt), given = va_addr ? n : (size_t)nv;
+    uint64_t *dst = (uint64_t *)calloc(given + 1, sizeof *dst);
+    va_list cp;
+    va_copy(cp, ap);
+    for (size_t i = 0; i < given; i++) dst[i] = (uint64_t)(uintptr_t)va_arg(cp, void *);
+    va_end(cp);
+    int hit;
+    at = cq_fx_here(), eof = cq_fx_stream()->eof;
+    r = cq_fx_scan_apply(wide, fmt, dst, given, n, 0, 1, at, fxc_store, &took, &hit);
+    cq_fx_scan_done(at, took, hit);
+    free(dst);
+  }
+  cq_fx_scan_json(fxc_in, sizeof fxc_in, at, took, eof);
   fxc_log(cq_fx_find(name));
   return r;
 }
