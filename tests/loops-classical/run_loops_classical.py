@@ -126,6 +126,9 @@ KNEST = ["k_in_c", "k_in_arm", "k_in_c3"]
 # cq-bqbty: a rule-6 update past a classical join of the trip.
 R6JOIN_PROBE = PROBES / "r6_join.O1.ll"
 R6JOIN = ["r6_join"]
+# cq-d4c4m: a rule-6 update whose block is not its segment's last (a memset loop after it).
+R6MID_PROBE = PROBES / "r6_mid.O1.ll"
+R6MID = ["r6_mid_join", "r6_mid_head"]
 # cq-kk46l: a classical branch in a K-loop nested in a classically bounded trip stays a real br in each of the K trip
 # copies (rule 8: no seed of the classical condition).
 KNEST_CBR_PROBE = PROBES / "knest_cbr.O1.ll"
@@ -239,13 +242,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -275,6 +278,7 @@ def main() -> int:
                                  ("calls", CALLS_PROBE, CALLS), ("knest", KNEST_PROBE, KNEST),
                                  ("knest_cbr", KNEST_CBR_PROBE, KNEST_CBR),
                                  ("r6join", R6JOIN_PROBE, R6JOIN),
+                                 ("r6mid", R6MID_PROBE, R6MID),
                                  ("c3arm", C3ARM_PROBE, C3ARM), ("mxnest", MXNEST_PROBE, MXNEST),
                                  ("c3idx", C3IDX_PROBE, C3IDX), ("seed", SEED_PROBE, SEED),
                                  ("exit_edges", EXIT_EDGES_PROBE, EXIT_EDGES), ("exit_arm", EXIT_ARM_PROBE, EXIT_ARM),

@@ -3747,6 +3747,31 @@ void Uncompute::noteClassicalArm(BasicBlock *join, BasicBlock *skip) { impl->arm
 
 void Uncompute::flushIn(RailId rail, BasicBlock *block) { impl->flushAt[rail] = block; }
 
+void Uncompute::flushRailsBefore(ArrayRef<RailId> gs, Instruction *point) {
+  if (!point || !point->getParent())
+    internalError("uncompute: flushRailsBefore needs an instruction in a block");
+  Impl &I = *impl;
+  I.syncPhiHits();
+  BasicBlock *P = point->getParent();
+  SmallVector<RailId, 16> cands;
+  for (RailId g : gs) {
+    if (g >= I.rails.size() || I.rails[g].ownedBy != kNone || I.frozen(g) || I.rails[g].deferred != kNone ||
+        !I.resolvable(g) || !I.rails[g].exitsDone.empty())
+      continue;
+    if (any_of(I.anchors(g), [&](Instruction *a) {
+          return a->getParent() != P || !cq::comesBefore(a, point) ||
+                 (!isa<CallBase>(a) && !I.emitted.count(a) && !I.isMergeHandle(a));
+        }))
+      continue;
+    I.flushAt[g] = P;
+    cands.push_back(g);
+  }
+  I.pruneCleanups(&cands);
+  Impl::Ctx c{Impl::Mode::Local, point, nullptr};
+  I.resolve(cands, c);
+  I.wrapLocal();
+}
+
 void Uncompute::noteCarried(Value *phi) { impl->rails[impl->lookup(phi, "noteCarried", phi)].carried = true; }
 
 void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
