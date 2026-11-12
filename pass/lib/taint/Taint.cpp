@@ -200,6 +200,58 @@ bool isFenvCall(StringRef n) {
   return false;
 }
 
+// Rule 23 (eff-fenv's envOp, read the same way): does I hold or change the environment itself? A raising
+// (fpexcept.strict) constrained op, a <fenv.h> call, a rounding intrinsic, or an indirect call.
+bool envOpT(const Instruction &I) {
+  auto *CB = dyn_cast<CallBase>(&I);
+  if (!CB)
+    return false;
+  if (auto *CI = dyn_cast<ConstrainedFPIntrinsic>(CB)) {
+    std::optional<fp::ExceptionBehavior> eb = CI->getExceptionBehavior();
+    return eb && *eb == fp::ebStrict;
+  }
+  if (auto *II = dyn_cast<IntrinsicInst>(CB))
+    return II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding;
+  const Function *G = CB->getCalledFunction();
+  if (!G)
+    return !CB->isInlineAsm();
+  return hostCallee(*G) && isFenvCall(G->getName());
+}
+
+// A constrained op rounding in the dynamic mode (eff-fenv's dynamicOp).
+bool dynamicOpT(const Instruction &I) {
+  auto *CI = dyn_cast<ConstrainedFPIntrinsic>(&I);
+  if (!CI)
+    return false;
+  std::optional<RoundingMode> rm = CI->getRoundingMode();
+  return rm && *rm == RoundingMode::Dynamic;
+}
+
+// Through direct calls of bodies: does F (itself or a callee) hold an instruction `pred` accepts?
+bool bodyHolds(const Function &F, bool (*pred)(const Instruction &), SmallPtrSetImpl<const Function *> &seen) {
+  if (F.isDeclaration() || !seen.insert(&F).second)
+    return false;
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB) {
+      if (pred(I))
+        return true;
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (const Function *G = CB->getCalledFunction(); G && !hostCallee(*G) && bodyHolds(*G, pred, seen))
+          return true;
+    }
+  return false;
+}
+// Rule 23: F holds or changes the environment, itself or through a callee (82's ABI; a caller holding the fenv state).
+bool touchesEnvT(const Function &F) {
+  SmallPtrSet<const Function *, 8> seen;
+  return bodyHolds(F, envOpT, seen);
+}
+// Rule 23: F rounds in the dynamic mode, itself or through a callee.
+bool readsModeT(const Function &F) {
+  SmallPtrSet<const Function *, 8> seen;
+  return bodyHolds(F, dynamicOpT, seen);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------------------------
@@ -239,8 +291,11 @@ private:
   bool eventPrecedes(const CallBase &CB);
   void propagateEvents();
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
-                     std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {}, bool plain = false, bool table = false);
+                     std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {}, bool plain = false, bool table = false,
+                     uint8_t rm = 0);
   void analyze(SpecState &S);
+  // Rule 23, §1.4 (owner 2026-11-12, cq-a9ij3): the mode word of a call of G from cur at the current point.
+  uint8_t modeWord(const Function *G);
 
   // Per-value access within cur.
   //
@@ -307,7 +362,7 @@ private:
   // objects, its own formals' provenance) although no final call reaches it. The analysis therefore runs a
   // second time from nothing, each call taking at once the key the first run ended with (CalleeMemo): only
   // the specializations the program reaches contribute.
-  struct CalleeMemo { std::vector<Lanes> formal; bool ctl; std::vector<uint64_t> bounds; };
+  struct CalleeMemo { std::vector<Lanes> formal; bool ctl; std::vector<uint64_t> bounds; uint8_t rm = 0; };
   std::map<std::tuple<std::string, const CallBase *, const Function *>, CalleeMemo> calleeMemo;
   void solve();
   void computeReachable();
@@ -616,7 +671,8 @@ std::string lanesStr(const Lanes &l) {
 static SmallVector<unsigned, 4> intFields(const Argument *A);
 
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
-                             std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain, bool table) {
+                             std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain, bool table,
+                             uint8_t rm) {
   // Rule 18, §1.4: a clone exists once per taint mask of its scalar formals, and a quantum scalar formal is one rail. Byte
   // lanes of an integer actual (x & 4095) never split a mask digit: its whole field is the rail, so calls whose actuals
   // differ only in their quantum bytes reach one clone.
@@ -653,6 +709,8 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   for (unsigned i = 0; i < formal.size(); ++i)
     key += lanesStr(formal[i]) + ",";
   key += "|" + std::to_string(ctl) + std::to_string(pure) + std::to_string(plain) + (table ? "t" : "");
+  if (rm)
+    key += rm == 1 ? "|rm" : "|rmq";
   for (size_t i = 0; i < bounds.size(); ++i)
     key += ":b" + std::to_string(boundFormals[i]) + "=" + std::to_string(bounds[i]);
   auto it = st.byKey.find(key);
@@ -669,7 +727,11 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   S->declared = F->isDeclaration();
   S->plain = plain;
   S->table = table;
-  bool zero = !ctl && !pure && !plain && !table && S->bounds.empty();
+  S->rm = rm;
+  // Rule 23 (cq-a9ij3): an _rmq clone's mode is the caller's rail on every path of its body.
+  if (rm == 2)
+    S->fenvIn |= 1;
+  bool zero = !ctl && !pure && !plain && !table && !rm && S->bounds.empty();
   for (const Lanes &l : S->formal)
     zero = zero && l.none();
   S->inPlace = zero && !S->declared;
@@ -1713,6 +1775,25 @@ std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
 
 
 
+// CR rule 23 and §1.4 (owner 2026-11-12, cq-a9ij3). A body of round.dynamic ops (itself or through a callee) reached from
+// a caller that holds the fenv state with a mode other than the literal 0 takes that mode as its one trailing parameter:
+// `_rmq` when the mode is a rail at the call (taint's MODE fact), else `_rm` when the caller holds the state (it holds or
+// changes the environment itself or through a callee: a non-default literal or a run-time classical mode; or it is
+// itself passed a mode, an `_rm`/`_rmq` clone, whose calls of such bodies pass the mode on). A body with a strict op or a
+// fenv call, itself or through a callee, has 82's ABI: its plain name carries a classical mode, `_rmq` a mode rail.
+uint8_t Analyzer::modeWord(const Function *G) {
+  if (!G || G->isDeclaration() || hostCallee(*G))
+    return 0;
+  bool strict = touchesEnvT(*G);
+  if (!strict && !readsModeT(*G))
+    return 0;
+  if (fenvNow() & 1)
+    return 2;
+  if (strict)
+    return 0;
+  return cur->rm || touchesEnvT(*cur->F) ? 1 : 0;
+}
+
 void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool viaIntrinsic) {
   // Key of the callee specialization from the actuals' lanes (rule 18). A pointer actual is one scalar digit.
   std::vector<Lanes> formal;
@@ -1740,6 +1821,8 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
     anyQ = anyQ || l.any();
   }
   bool underQ = blockCT(CB.getParent()) || cur->ctl;
+  // Rule 23, §1.4 (cq-a9ij3): the mode word; a call with one is never the in-place own symbol.
+  uint8_t rm = viaIntrinsic ? 0 : modeWord(G);
   // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
   // actuals give now (lanes only rise during the fixed point).
   if (!calleeMemo.empty()) {
@@ -1749,10 +1832,13 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
       bool covers = true;
       for (unsigned i = 0; i < formal.size() && covers; ++i)
         covers = m.formal[i].size() == formal[i].size() && !formal[i].test(m.formal[i]);
-      bool inPlace = !plain && !m.ctl && m.bounds.empty() &&
+      covers = covers && (rm == m.rm || m.rm == 2);   // the MODE fact only rises
+      if (covers)
+        rm = m.rm;
+      bool inPlace = !plain && !m.ctl && m.bounds.empty() && !m.rm &&
                      llvm::none_of(m.formal, [](const Lanes &l) { return l.any(); });
       if (covers && !inPlace) {
-        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds, {}, plain);
+        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds, {}, plain, false, m.rm);
         recordCallee(CB, C);
         if (!CB.getType()->isVoidTy())
           setL(&CB, C->declared ? allLanes(lanesOf(CB.getType())) : C->ret);
@@ -1763,7 +1849,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
         formal = m.formal;
     }
   }
-  if (!anyQ && !underQ && !plain) {
+  if (!anyQ && !underQ && !plain && !rm) {
     // Classical call: the in-place specialization of the callee (the function's own symbol, §1.4).
     std::vector<Lanes> z;
     for (Type *T : tys)
@@ -1780,7 +1866,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   // test reads the callee's specialization without the flag.
   bool ctl = false;
   if (underQ) {
-    SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain);
+    SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain, false, rm);
     // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter). §1.4 _ctl, rule 5:
     // a bus access under a quantum predicate is the _controlled form, a load included ("no bus access is hoisted or
     // speculated"), so a callee that loads takes the predicate. A measurement is no template either: rule 19's controlled
@@ -1805,7 +1891,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
     bounds.clear();
     boundFormals.clear();
   }
-  SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals, plain);
+  SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals, plain, false, rm);
   recordCallee(CB, C);
   if (!CB.getType()->isVoidTy()) {
     Lanes r = C->ret;
@@ -2463,6 +2549,9 @@ void Analyzer::transfer(Instruction &I) {
       // reads that rail, also where the body leaves the lane classical (a small struct coerced to an integer, rule 26).
       if (cur->inPlace && V->getType()->isIntegerTy() && cur->ret.any() && orInto(cur->ret, allLanes(cur->ret.size())))
         st.changed = true;
+      // §1.4 (owner 2026-11-12, cq-a9ij3): every result of an _rmq clone is a rail.
+      if (cur->rm == 2 && orInto(cur->ret, allLanes(cur->ret.size())))
+        st.changed = true;
     }
     return;
   }
@@ -2619,7 +2708,7 @@ void Analyzer::run() {
         continue;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
-          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->ctl, C->bounds};
+          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->ctl, C->bounds, C->rm};
     }
     resetAnalysis();
     solve();
@@ -2704,7 +2793,7 @@ void Analyzer::solve() {
       z.push_back(l);
       tys.push_back(A.getType());
     }
-    SpecState *RS = getSpec(F, z, tys, R.ctl, R.pure, R.bounds);
+    SpecState *RS = getSpec(F, z, tys, R.ctl, R.pure, R.bounds, {}, false, false, R.rm);
     RS->reachable = RS->isRoot = true;
   }
 
@@ -3029,6 +3118,7 @@ void Analyzer::finish() {
     P.boundFormals = S->boundFormals;
     P.plain = S->plain;
     P.table = S->table;
+    P.rm = S->rm;
     st.published.push_back(P);
     st.publishedState.push_back(S);
   };
@@ -3355,7 +3445,7 @@ bool measuredBefore(function_ref<bool(const Value *)> isQuantum, const Value *v,
 }
 
 bool Specialization::isEntry() const {
-  if (!F || F->isDeclaration() || ctl || pure || plain || table || !bounds.empty())
+  if (!F || F->isDeclaration() || ctl || pure || plain || table || rm || !bounds.empty())
     return false;
   return mask.find('1') == std::string::npos;
 }
@@ -3769,6 +3859,7 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     C.ctl = P.ctl;
     C.pure = P.pure;
     C.table = P.table;
+    C.rm = P.rm;
     if (P.F->isDeclaration()) {
       // Rule 27: the declared clone is the table clone, every scalar actual a handle.
       C.mask = std::string(P.mask.size(), '1');

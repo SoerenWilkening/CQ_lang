@@ -543,6 +543,10 @@ std::string cloneName(const CloneSpec &s) {
   std::string n = "__cq_q_" + s.fn + "_" + s.mask;
   for (size_t i = 0; i < s.bounds.size(); ++i)
     n += (i == 0 ? "_b" : "_") + std::to_string(s.bounds[i]);
+  if (s.rm == 1)
+    n += "_rm";
+  else if (s.rm == 2)
+    n += "_rmq";
   if (s.table)
     n += "_t";
   if (s.ctl)
@@ -565,6 +569,13 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
   if (n && t[n - 1] == "pure") { s.pure = true; --n; }
   if (n && t[n - 1] == "ctl") { s.ctl = true; --n; }
   if (n > 1 && t[n - 1] == "t" && (isMask(t[n - 2]) || t[n - 2] == "v")) { s.table = true; --n; }
+  // §1.4 (owner 2026-11-12, cq-a9ij3): the mode words, after the mask or the bounds.
+  if (n > 1 && (t[n - 1] == "rm" || t[n - 1] == "rmq") &&
+      (isMask(t[n - 2]) || t[n - 2] == "v" || allDigits(t[n - 2]) ||
+       (t[n - 2].size() > 1 && t[n - 2][0] == 'b' && allDigits(t[n - 2].drop_front())))) {
+    s.rm = t[n - 1] == "rm" ? 1 : 2;
+    --n;
+  }
   if (n == 0)
     return std::nullopt;
   // Bounds: "<mask>_b<N>{_<N>}". Walk back over all-digit tokens to a "b<N>" token preceded by a mask.

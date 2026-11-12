@@ -97,7 +97,8 @@ CASES = [
                                               r"@cq_template_select_i32_lh"]),
     ("host_unguarded", "hc_both", [], "pass", [r"call i32 @cq_template_select_i32_ll"]),
     # cq-57ju (rule 23): round.dynamic ops reached from a caller with the fenv state carry its mode.
-    ("fenv_reached_mode", "md_up", [], "pass", [r"call \{ i32, i32 \} @__cq_q_third_1\(i32 %\d+, i32 2048, i32 %\d+\)",
+    # Owner 2026-11-12 (cq-a9ij3, CR §1.4): such a body is the _rm clone, the mode its one trailing parameter, no flags.
+    ("fenv_reached_mode", "md_up", [], "pass", [r"call i32 @__cq_q_third_1_rm\(i32 %\d+, i32 2048\)",
                                                 r"cq_template_fdiv_f64_hl_rm\("]),
     ("fenv_reached_mode", "md_plain", [], "pass", []),
     # cq-4e6m (rule 23): the reached mode is the LOWERED chain's: `other` holds the fenv state and calls third but
@@ -439,6 +440,17 @@ CASES = [
     # cq-c07bk (rules 8, 9, 23): the arm the spine linearizes first calls a dynamic-mode body with classical arguments; the
     # later arm's fesetround under the predicate does not reach it: the call is the own symbol, as it stands.
     ("fenv_later_arm_mode", "e", [], "pass", [r"call double @nx\(double"]),
+    # cq-a9ij3 (owner 2026-11-12; CR §1.4, rule 23): the mode words. A round.dynamic body reached with a classical mode
+    # other than the literal 0 is _rm (classical data included: never the own symbol), with a mode rail _rmq (every result a
+    # rail; the all-zero mask still a clone); a body with 82's ABI keeps its plain name for a classical mode and takes _rmq
+    # for a rail (fenv_rmq_strict's e is the bead's reproducer: fenv_later_arm_mode with its arms swapped).
+    ("fenv_rm_modes", "rm_zero", [], "pass", [r"call double @__cq_q_third_0_rm\(double %\d+, i32 2048\)"]),
+    ("fenv_rm_modes", "rmq_q", [], "pass", [r"call i32 @__cq_q_third_1_rmq\(i32 %\d+, i32 %\d+\)",
+                                            r"cq_template_fdiv_f64_hl_rmq\("]),
+    ("fenv_rm_modes", "rmq_zero", [], "pass", [r"call i32 @__cq_q_third_0_rmq\(double %\d+, i32 %\d+\)"]),
+    ("fenv_rmq_strict", "e", [], "pass", [r"call \{ i32, i32 \} @__cq_q_nx_0_rmq\(double %\d+, i32 %\d+, i32 %\d+\)",
+                                          r"cq_template_fmul_f64_ll_rmq\("]),
+    ("fenv_rmq_strict", "eq", [], "pass", [r"call \{ i32, i32 \} @__cq_q_nx_1_rmq\(i32 %\d+, i32 %\d+, i32 %\d+\)"]),
 ]
 
 
