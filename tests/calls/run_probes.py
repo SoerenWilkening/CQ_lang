@@ -396,6 +396,10 @@ CASES = [
     # cq-xc6us (rules 16, 19): a table clone of a variadic function takes the block ptr, at both kinds of pointer.
     ("vaD", "vaD", [], "pass", [r"call i32 %\d+\(i32 %\d+, ptr %\d+, i32 4\)", r"call void %\d+\(i32 %\d+, i32 %\d+, ptr %\d+, i32 4\)"]),
     ("vaC", "vaC", [], "pass", [r"call i32 %\d+\(i32 %\d+, ptr %\d+, i32 4\)"]),
+    # cq-f0rb6 (rules 16, 19, 22): va_copy in an own symbol (vget, no quantum argument) of the caller's bus-resident va_list is
+    # memcpy(d, s, 24), a bus copy, never the host intrinsic (the evaluator's bus is host memory, so only the form shows it).
+    ("va_copy_own", "va_copy_own", [], "pass",
+     [r"define internal fastcc i32 @vget\(ptr noundef %0\)[^}]*?call i32 @cqrt_qram_load_i8_hl\([^}]*?\n}"]),
     ("vaF", "vaF", [], "pass", [r"call i32 %\d+\(i32 %\d+, i32 %\d+, ptr %\d+, i32 4\)"]),
     # cq-qmqch (rules 5, 18, §6 item 1): a plain store to a host-resident object is a memory version change, so `cal` writes
     # memory: no twin, its results are KEPT by the caller, which §6 names.
