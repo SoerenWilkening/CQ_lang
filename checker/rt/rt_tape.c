@@ -53,13 +53,14 @@
  *   {"ev":"effect", <an entry object below>, "when":"call"|"end"}           one per entry whose predicate read 1
  *        with no earlier abort reading 1: what the C program does at this call. "call" lines precede
  *        "end" lines; "seq" gives the sequence order.
- *   {"ev":"tape","op":"shot","aborted","abort_seq","stdout","deviation",
+ *   {"ev":"tape","op":"shot","aborted","abort_seq","stdout",
  *    "events":[{"seq","kind":"abort","f","fv"} | <an entry object>]}        one line at the end of the shot
  * An entry object: "seq","kind":"fmt"|"effect","t","pred","class":"resolved"|"input"|"deferred","performed",
  * "fmt"|"name" (null name: a host address, the first field),"fields":[{"k":"rail","h","w","v"[,"cap"]}|
  * {"k":"lit","w","v"[,"cap"]}], "text" for a format entry (what printf prints for it), "r":{"h","w","v"} for
- * the result form. "cap" is the bytes captured for that field. "deviation" is true when a deferred entry
- * that the program reads the result of would have been performed: rule 16's stated deviation (ruling Q8).
+ * the result form. "cap" is the bytes captured for that field. No sample is dropped for a deferred result (owner
+ * ruling 2026-11-12 item 4): the |0> result rail of a deferred call is the only thing not compared, and against the C
+ * program no rail is compared directly; what the program computes from it is.
  * Values are hex bit patterns ("0x…"). Strings are bytes, each written as the code point U+0000–U+00FF of
  * the same number.
  *
@@ -782,9 +783,34 @@ static void advance(void) {
   }
 }
 
+/* Owner ruling 2026-11-11 Q2: an effect entry hands the host a pointer the backend reads no buffer through (a callee it
+ * does not know, or an argument of a known one that is no buffer, string, format or va_list role): rt_bus.c logs it
+ * when the object at that address holds a QUANTUM cell at the call. A field is a candidate when it is a classical-valued
+ * 64-bit word (a pointer is an i64 field). */
+/* rt_bus.c's, looked up at run time: a test runtime may link this file without rt_bus.c */
+static void (*q2_check_fn(void))(const char *, uint64_t) {
+  static void (*fn)(const char *, uint64_t);
+  static int looked;
+  if (!looked) looked = 1, fn = (void (*)(const char *, uint64_t))dlsym(RTLD_DEFAULT, "cqe__q2_check");
+  return fn;
+}
+static void q2_fields(const event *e) {
+  void (*cqe__q2_check)(const char *, uint64_t) = q2_check_fn();
+  if (e->k != E_EFFECT || !cqe__q2_check) return;
+  const cq_fx_ent *ent = cq_fx_find(e->str);
+  for (int i = 0; i < e->nfields; i++) {
+    const field *f = &e->fields[i];
+    char role = ent && i < (int)strlen(ent->roles) ? ent->roles[i] : '-';
+    if (strchr("WBspFGv", role) || f->v.bits != 64 || (f->k == F_RAIL && !f->known)) continue;
+    if (field_low64(f) < (UINT64_C(1) << 32) || field_low64(f) >= (UINT64_C(1) << 47)) continue; /* fx_standin.h: no address */
+    cqe__q2_check(e->str ? e->str : "(host address)", field_low64(f));
+  }
+}
+
 /* Past g_blocked a format entry is deferred when it completes. */
 static void entry_complete(event *e) {
   e->complete = 1;
+  q2_fields(e);
   capture_event(e);
   advance();
   if (e->cls == C_NONE && g_blocked) e->cls = C_DEFERRED;
@@ -1511,7 +1537,7 @@ static void check_rails(const event *e, int i) {
 static void shot(void) {
   sbuf b = {0}, text = {0};
   sb_reserve(&text, 0);
-  int aborted = 0, abort_seq = -1, deviation = 0;
+  int aborted = 0, abort_seq = -1;
   for (int ti = 0; ti < g_ntapes; ti++) {
     if (!g_tape_pend[ti].n) continue;
     if (g_tape_last[ti] >= 0 && g_ev[g_tape_last[ti]].k == E_FMT) take_pending(ti, &g_ev[g_tape_last[ti]]);
@@ -1544,10 +1570,7 @@ static void shot(void) {
     if (e->cls == C_NONE || e->cls == C_DEFERRED) {
       e->cls = C_DEFERRED;
       e->performed = e->pred && !aborted;
-      if (e->performed) {
-        effect_line(e, "end");
-        if (e->r) deviation = 1;
-      }
+      if (e->performed) effect_line(e, "end");
     }
     sb_puts(&b, "{");
     entry_json(&b, e, NULL);
@@ -1566,8 +1589,7 @@ static void shot(void) {
       free(t.p);
     }
   }
-  sb_printf(&b, "],\"aborted\":%s,\"abort_seq\":%d,\"deviation\":%s,\"stdout\":", aborted ? "true" : "false", abort_seq,
-            deviation ? "true" : "false");
+  sb_printf(&b, "],\"aborted\":%s,\"abort_seq\":%d,\"stdout\":", aborted ? "true" : "false", abort_seq);
   sb_json_str(&b, text.p, text.n);
   sb_puts(&b, "}");
   free(text.p);

@@ -36,6 +36,7 @@
  * control; host is 1 when every cell of the access is HOST after it. At the end of the shot
  * {"ev":"cells","q":[[addr,byte],...]} lists the QUANTUM cells by address. __cqe_out_mem logs one named output
  * read from the bus: {"ev":"out_mem","name":..,"w":"i<8*bytes>","v":..}, with no rail and no measurement. */
+#include <dlfcn.h>
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <stdint.h>
@@ -540,6 +541,68 @@ void cqe__bus_cell_state(uint64_t a, int *q, uint8_t *v, int *known) {
   *q = 0;
   host_read(a, 1, v);
   *known = 1;
+}
+
+/* ---- owner ruling 2026-11-11 Q2 (cq-8pjls): a bodiless callee that receives a pointer into an object holding a QUANTUM
+ * cell at the call. The object of an address: the __cq_alloc block that holds it (every block the program allocated, in
+ * address order, recorded by cqe__q2_alloc: cq_host.c hands them out upward and never reuses one; the table is in __DATA, so a sample's restore puts
+ * it back with the arena); for any other address (a global, a host-stack local) the 8 cells from it, an approximation.
+ * Reach through a global or a stored pointer is not detected (the ruling's stated limit). */
+
+void cqe_log(const char *json_object);
+#define Q2_BLOCKS 16384
+static uint64_t q2_lo[Q2_BLOCKS], q2_hi[Q2_BLOCKS];
+static int q2_n, q2_full;
+
+void *cqe__q2_alloc(int64_t size, int64_t align) { /* run.py host_effects_module sends __cq_alloc here */
+  static void *(*alloc)(int64_t, int64_t);
+  if (!alloc) alloc = (void *(*)(int64_t, int64_t))dlsym(RTLD_DEFAULT, "__cq_alloc"); /* bundle/host/cq_host.c */
+  if (!alloc) {
+    fprintf(stderr, "cq: rt_bus: __cq_alloc without bundle/host/cq_host.c\n");
+    abort();
+  }
+  void *p = alloc(size, align);
+  if (p && size > 0) {
+    if (q2_n < Q2_BLOCKS && (!q2_n || (uint64_t)(uintptr_t)p >= q2_hi[q2_n - 1])) {
+      q2_lo[q2_n] = (uint64_t)(uintptr_t)p, q2_hi[q2_n] = (uint64_t)(uintptr_t)p + (uint64_t)size;
+      q2_n++;
+    } else {
+      q2_full = 1;
+    }
+  }
+  return p;
+}
+
+/* Whether the object of address a (above) holds a QUANTUM cell now. */
+int cqe__q2_quantum_object(uint64_t a) {
+  if (!cells_quantum)
+    return 0;
+  uint64_t lo = a, hi = a + 8;
+  int l = 0, r = q2_n;
+  while (l < r) { /* the last block with q2_lo <= a */
+    int m = (l + r) / 2;
+    if (q2_lo[m] <= a) l = m + 1;
+    else r = m;
+  }
+  if (l > 0 && a < q2_hi[l - 1]) lo = q2_lo[l - 1], hi = q2_hi[l - 1];
+  if (hi - lo <= 4 * cells_cap) {
+    for (uint64_t x = lo; x < hi; x++)
+      if (cell_find(x)) return 1;
+    return 0;
+  }
+  for (size_t i = 0; i < cells_cap; i++)
+    if (cells[i].used && cells[i].quantum && cells[i].addr >= lo && cells[i].addr < hi) return 1;
+  return 0;
+}
+
+/* Logs the Q2 event of a call of `name` given address a, when a's object holds a QUANTUM cell (run.py outputs["q2"]). */
+void cqe__q2_check(const char *name, uint64_t a) {
+  if (!a || !cqe__q2_quantum_object(a))
+    return;
+  char b[256];
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"q2\",\"name\":\"%.120s\",\"addr\":\"0x%llx\"}", name ? name : "",
+           (unsigned long long)a);
+  cqe_log(b);
 }
 
 uint8_t cqe__bus_host_byte(uint64_t a) {

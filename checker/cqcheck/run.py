@@ -55,8 +55,8 @@ RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
   sample      the sample dict as given
   outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": {...},
-              "deviation": bool, "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
-              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6), "deviation" rule 16's stated deviation; "host_end", present only when the sample ended in the program's own
+              "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
+              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6); "q2" the host calls given a pointer into an object holding a QUANTUM cell (rulings Q2, rt_bus.c cqe__q2_check); "host_end", present only when the sample ended in the program's own
               exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
@@ -1144,7 +1144,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     meas_chain: List[Tuple[Any, Any]] = []
     sel_z: Dict[Any, int] = {}
     direct_fx: List[dict] = []
-    tape_out, tape_seq, deviation = "", [], False
+    tape_out, tape_seq = "", []
+    q2: List[dict] = []
     last_exit: Optional[dict] = None
     host_end: Optional[int] = None
     for e in events:
@@ -1196,10 +1197,12 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                 sel_z[e.get("id")] = 0 if e.get("z") else 1
             elif e.get("table") == "meas_chain":
                 meas_chain.append((e.get("id"), e.get("c")))
+            elif e.get("table") == "q2":           # rulings Q2: a host callee given a pointer into a QUANTUM object
+                q2.append({"name": e.get("name"), "addr": e.get("addr")})
             else:
                 mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
-            tape_out, tape_seq, deviation = _tape_shot(e)
+            tape_out, tape_seq = _tape_shot(e)
         elif ev == "effect":
             direct_fx.append(e)
     kept = _kept_of_exit(last_exit) if last_exit is not None else []
@@ -1209,7 +1212,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
     outputs = {"ret": rets, "stdout": stdout + tape_out, "exit": code, "effects": _effects_in_order(direct_fx),
-               "tape": tape_seq, "deviation": deviation, "mem": mem, "objects": objects, "regions": regions,
+               "tape": tape_seq, "mem": mem, "objects": objects, "regions": regions, "q2": q2,
                "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
     if host_end is not None:
         outputs["host_end"] = host_end
@@ -2511,7 +2514,11 @@ def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
             text = re.sub(rf"@{name}(?=\()", f"@__cqe_fx_{name}", text)
     text = drivers.route_scans(text)   # cq-tgl3i: a direct scanf-family call, the host's on the one input stream (fx_call.h, ruling Q5)
     callees = drivers.effect_callees(text, frozenset(defined) | frozenset(HOST_EFFECTS))
-    return drivers.rename_effects(text, callees) + drivers.effect_wrappers_ir(callees)
+    text = drivers.rename_effects(text, callees)
+    # rulings Q2 (2026-11-11): every __cq_alloc block is recorded (rt_bus.c cqe__q2_alloc), so a host call's pointer
+    # argument is resolved to its object; __cq_alloc is the bundle's (drivers._REAL), never a stand-in
+    text = re.sub(r"@__cq_alloc(?=\()", "@cqe__q2_alloc", text)
+    return text + drivers.effect_wrappers_ir(callees)
 
 
 def _fx_arg(f: dict) -> dict:
@@ -2568,18 +2575,12 @@ def _tape_entry(x: dict) -> dict:
     return out
 
 
-def _tape_shot(e: dict) -> Tuple[str, List[dict], bool]:
-    """Of rt_tape.c's end-of-shot event: the text it printed, the event sequence, and rule 16's deviation."""
-    # rulings Q8: an entry for a function the C oracle runs for real (drivers._REAL: libm's, say) has the stand-in's
-    # result here, resolved at the call or deferred (|0>): the program's read of it is the same stated deviation
-    return (_bytes_text(e.get("stdout", "")), [_tape_entry(x) for x in e.get("events", [])],
-            bool(e.get("deviation")) or any(x.get("kind") == "effect" and x.get("performed") and "r" in x
-                                            and _drv_real(x.get("name")) for x in e.get("events", [])))
-
-
-def _drv_real(name: Optional[str]) -> bool:
-    from cqcheck import drivers
-    return bool(name) and bool(drivers._REAL.match(name))
+def _tape_shot(e: dict) -> Tuple[str, List[dict]]:
+    """Of rt_tape.c's end-of-shot event: the text it printed and the event sequence. No sample is dropped for an
+    entry's result (owner ruling 2026-11-12 item 4, CR 1356-1358): an effect entry's result is the stand-in's on both
+    sides (fx_standin.h; the C program's call goes to the same stand-in, drivers.effect_callees), a C library output
+    call's is musl's value on both sides, and a deferred result rail alone is not compared."""
+    return _bytes_text(e.get("stdout", "")), [_tape_entry(x) for x in e.get("events", [])]
 
 
 def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:

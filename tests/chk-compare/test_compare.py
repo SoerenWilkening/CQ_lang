@@ -1693,13 +1693,30 @@ class HostOutput(unittest.TestCase):
         self.check(self.ours(fx=fx(0, 0)), self.c(fx=fx(0x8000, 1)), "c", False, "host effects differ")
         self.check(self.ours(fx=fx(0x7000, 0)), self.c(fx=fx(0x8000, 0)), "c", False, "host effects differ")
 
-    def test_deviation_excluded_against_c_only(self):
-        # rulings Q8: rule 16's stated deviation
+    def test_deviation_flag_drops_nothing(self):
+        # owner ruling 2026-11-12 item 4: no sample is dropped for a deferred result; a stale flag is ignored
         ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
         dev = [dataclasses.replace(r, outputs=dict(r.outputs, deviation=True)) for r in ours]
-        self.assertTrue(compare(dev, self.c(), QKEY, "c").equal)
+        self.assertFalse(compare(dev, self.c(), QKEY, "c").equal)
         self.assertFalse(compare(ours, self.c(), QKEY, "c").equal)
-        self.check(dev, self.ours(side="r"), "ref", False)
+
+    def test_q2_not_compared_against_c_only(self):
+        # rulings Q2: a sample whose host callee got a pointer into a QUANTUM object is not compared against C; when that
+        # leaves none, the comparison is not equal (the guard); the reference comparison stands
+        import cqcheck.compare as cmp
+        ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
+        hit = [{"name": "gmtime_r", "addr": "0x200000000010"}]
+        q2 = [dataclasses.replace(r, outputs=dict(r.outputs, q2=hit)) for r in ours]
+        st = {}
+        reasons = cmp.compare(q2, self.c(), "c", classical_key=QKEY, stats=st)
+        self.assertEqual(st["compared"], 0)
+        self.assertEqual(len(st["q2"]), len(q2))
+        self.assertTrue(any("no sample compared" in x for x in reasons), reasons)
+        one = [q2[0]] + list(self.ours()[1:])
+        st = {}
+        self.assertEqual(cmp.compare(one, self.c(), "c", classical_key=QKEY, stats=st), [])
+        self.assertEqual(st["compared"], len(one) - 1)
+        self.check(q2, self.ours(side="r"), "ref", False)
 
     def test_pointer_field_relational(self):
         # CR §6: host addresses differ per run; a pointer into one object reads as (object, offset)

@@ -1300,7 +1300,7 @@ class HostClone(unittest.TestCase):
 class HostOutput(unittest.TestCase):
     """cq-e4jk: outputs["stdout"] is the process's output followed by the tape's end-of-shot text;
     outputs["effects"] the {"ev":"effect"} lines in the C program's order (run._effects_in_order);
-    outputs["tape"] the shot's event sequence; outputs["deviation"] rule 16's stated deviation."""
+    outputs["tape"] the shot's event sequence; no "deviation" (owner ruling 2026-11-12 item 4)."""
 
     def test_tape_shot_and_effect_events(self):
         fmt = {"seq": 0, "kind": "fmt", "t": 1, "pred": 1, "class": "deferred", "performed": True, "fmt": "big %d\n",
@@ -1312,7 +1312,7 @@ class HostOutput(unittest.TestCase):
         rais = {"seq": 3, "kind": "effect", "t": 1, "pred": 1, "class": "input", "performed": True, "name": "fgets",
                 "fields": [{"k": "rail", "h": 9, "w": "i32", "v": "0x1e"}], "r": {"h": 12, "w": "i64", "v": "0x0"}}
         shot = {"ev": "tape", "op": "shot", "aborted": False, "abort_seq": -1, "stdout": "big 5\n\u00c3\u00a9",
-                "deviation": True, "events": [fmt, rm, off, rais, {"seq": 4, "kind": "abort", "f": 3, "fv": "0x0"}]}
+                "events": [fmt, rm, off, rais, {"seq": 4, "kind": "abort", "f": 3, "fv": "0x0"}]}
         direct = {"ev": "effect", "seq": -1, "kind": "effect", "class": "host", "pred": 1, "performed": True, "when": "call",
                   "name": "unlink", "fields": [{"k": "lit", "w": "i64", "v": "0x2000", "cap": "/a"}]}
         ev = [dict(rais, ev="effect", when="call"), direct, dict(fmt, ev="effect", when="end"),
@@ -1325,7 +1325,8 @@ class HostOutput(unittest.TestCase):
             {"name": "remove", "args": [{"w": "i64", "v": "0x1000", "cap": "/tmp/cq_x"}]},
             {"name": "fgets", "args": [{"w": "i32", "v": "0x1e"}]},
             {"name": "unlink", "args": [{"w": "i64", "v": "0x2000", "cap": "/a"}]}])
-        self.assertTrue(r.outputs["deviation"])
+        self.assertNotIn("deviation", r.outputs)
+        self.assertEqual(r.outputs["q2"], [])
         from cqcheck.compare import _tape_read   # cq-92sw6: kept packed, read back as compared
         self.assertEqual(r.outputs["tape"]["n"], 5)
         tape = _tape_read(r)

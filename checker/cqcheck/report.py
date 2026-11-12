@@ -230,7 +230,7 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
         dest.unlink()
     src = Path(ex.o1)
     text = src.read_text()
-    bundle = oracle.bundle_for(text)
+    bundle = oracle.bundle_for(text) or oracle.entries_bundle(text)   # owner ruling 2026-11-12: the result entries
     # cached by (plugin, toolchain, K, input, the bundle linked into it): every file the run leaves
     # and its result
     # (the paths too: opt writes its input's path into the module, and messages name them)
@@ -269,8 +269,19 @@ def _lower_uncached(ex: Example, src: Path, bundle: List[Path], dest: Path) -> T
         decls = dest.parent / f"{ex.base}.libm.ll"
         libm = oracle.bundle_libm_decls(src.read_text(), bundle)
         decls.write_text(libm)
-        r = _run([str(LLVM_BIN / "llvm-link"), "-S", str(src), *([str(decls)] if libm else []), "--only-needed", *map(str, bundle),
-                  "-o", str(linked)])
+        # owner ruling 2026-11-12 (cq-cdf9z; driver/cq_entries.py): the result entries the pass's rewriteDeferredResults
+        # calls after this link, declared in a unit that names them in @llvm.compiler.used, linked before the bundle
+        ce = oracle._entries_mod()
+        text = src.read_text()
+        ents = ce.decls(text)
+        entf = dest.parent / f"{ex.base}.entries.ll"
+        if ents:
+            head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
+            used = ", ".join(f"ptr @{n}" for n in ce.names(ents))
+            entf.write_text(head + "".join(d + "\n" for d in ents) + f"@llvm.compiler.used = appending global "
+                            f'[{len(ents)} x ptr] [{used}], section "llvm.metadata"\n')
+        r = _run([str(LLVM_BIN / "llvm-link"), "-S", str(src), *([str(decls)] if libm else []), *([str(entf)] if ents else []),
+                  "--only-needed", *map(str, bundle), "-o", str(linked)])
         if r.returncode != 0:
             return None, f"llvm-link with the injection bundle exited {r.returncode}: {_first_error_line(r.stderr)}"
         src = linked

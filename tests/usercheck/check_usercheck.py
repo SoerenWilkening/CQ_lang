@@ -102,6 +102,11 @@ def unit(spec_root):
                                 ("verdict differs", [oob, "sample {}: returns 1 != 2"], 1)):
         got = U.verdict(reasons)
         (ok if got == want else fail)(f"unit {name}", f"{got}" + ("" if got == want else f", want {want}"))
+    # the guard (owner rulings 2026-11-11 Q1, 2026-11-12 item 4): zero compared samples is never PASS, whatever the reasons
+    for name, reasons, compared, want in (("guard none compared", [], 0, 3), ("guard none compared, reasons", [oob], 0, 3),
+                                          ("guard some compared", [], 5, 0)):
+        got = U.verdict(reasons, compared)
+        (ok if got == want else fail)(f"unit {name}", f"{got}" + ("" if got == want else f", want {want}"))
     spec = DriverSpec(example="00_user_f", protos=["int f(int);"], setup="",
                       calls=[{"fn": "f", "args": [{"ctype": "int", "quantum": False}]}])
     smp = [{"call": 0, "args": ["0x00000000"]}]

@@ -3847,7 +3847,7 @@ def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True
     for p in sorted(Path(example_dir).glob("*.O1.ll")):
         h.update(p.read_bytes())
         # the injection bundle files the C oracle links into it (cq-sl4s); nothing when none is linked
-        bundle = _oracle.bundle_for(p.read_text())
+        bundle = _oracle.bundle_for(p.read_text()) or _oracle.entries_bundle(p.read_text())
         if bundle:
             h.update(_oracle.bundle_key(bundle).encode())
     # the drivers.txt line (its argument values are the baselines, samples 0 .. ncalls-1) and the C
