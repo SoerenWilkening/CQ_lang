@@ -383,6 +383,9 @@ CASES = [
     # rail (fesetround under the predicate) is a rail in the sibling arm the spine runs after it (rules 9, 23).
     ("fenv_clone_empty_flags", "e", [], "pass", [r"call i32 @fetestexcept\(i32 32\)"]),
     ("fenv_sibling_arm_mode", "e", [], "pass", [r"cq_template_fdiv_f64_\w*rmq\w*\("]),
+    # cq-c07bk (rules 8, 9, 23): the arm the spine linearizes first calls a dynamic-mode body with classical arguments; the
+    # later arm's fesetround under the predicate does not reach it: the call is the own symbol, as it stands.
+    ("fenv_later_arm_mode", "e", [], "pass", [r"call double @nx\(double"]),
 ]
 
 

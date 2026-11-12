@@ -47,6 +47,9 @@ struct FnInfo {
   cq::taint_detail::DeadEnds dead;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
   std::vector<const llvm::BasicBlock *> rpo;
+  // The spine's walk order L (spine/Construct.cpp Walker::plan: reverse post-order, successors visited last to first),
+  // the order in which a quantum branch's arms are linearized (rules 8, 9; cq-ndwfr).
+  llvm::DenseMap<const llvm::BasicBlock *, unsigned> walk;
   // cq-z6q1: per (loop header, exiting block), whether SCEV computes the exit's count (exitCountKnown).
   std::map<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>, bool> exitKnown;
   // cq-s7c4: per (classical disjunct of a quantum exit test, exit polarity), exitCondCountKnown.

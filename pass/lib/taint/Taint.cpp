@@ -438,6 +438,28 @@ FnInfo &Analyzer::fn(const Function *F) {
   ReversePostOrderTraversal<Function *> RPOT(&MF);
   for (BasicBlock *BB : RPOT)
     info->rpo.push_back(BB);
+  {
+    std::vector<const BasicBlock *> post;
+    SmallPtrSet<const BasicBlock *, 32> seen;
+    std::vector<std::pair<const BasicBlock *, unsigned>> stack;
+    const BasicBlock *E = &MF.getEntryBlock();
+    seen.insert(E);
+    stack.push_back({E, E->getTerminator()->getNumSuccessors()});
+    while (!stack.empty()) {
+      auto &[b, k] = stack.back();
+      if (k == 0) {
+        post.push_back(b);
+        stack.pop_back();
+        continue;
+      }
+      const BasicBlock *s = b->getTerminator()->getSuccessor(--k);
+      if (seen.insert(s).second)
+        stack.push_back({s, s->getTerminator()->getNumSuccessors()});
+    }
+    unsigned n = 0;
+    for (auto it = post.rbegin(); it != post.rend(); ++it)
+      info->walk[*it] = n++;
+  }
   // Direct control dependence (Ferrante et al.): for an edge A -> S of a branching A, every block on
   // the post-dominator tree path from S up to (excluding) ipdom(A) is control dependent on A.
   //
@@ -2407,13 +2429,17 @@ void Analyzer::analyze(SpecState &S) {
       fenvCur = BB->isEntryBlock() ? fenvstate::kIdentity : 0;
       for (const BasicBlock *Pr : predecessors(BB))
         fenvCur |= S.fenvOut.lookup(Pr);
-      // cq-ndwfr (rules 9, 23): the arms of a quantum branch run one after another, and a fact one arm makes a rail
-      // (fesetround under the predicate: MODE' = select(p, r, MODE)) is a rail where a sibling arm reads it. A block
-      // under a quantum predicate joins the state of every block that shares one of its quantum branches.
-      if (auto it = S.cdt.find(BB); it != S.cdt.end() && !it->second.empty())
+      // cq-ndwfr, cq-c07bk (rules 8, 9, 23): in a function with a quantum branch the spine emits the blocks along one
+      // walk L, the arms of a quantum branch one after another, a block whose classical factor is not established
+      // entered from the block before it in L behind a classical guard (spine/Construct.cpp). eff-fenv's state is
+      // read over those output paths: a fact an earlier block makes a rail (fesetround under a predicate: MODE' =
+      // select(p, r, MODE)) is a rail at the start of every later block (a merge over handles). A block joins the
+      // state at the end of every block before it in L that does not reach it in the CFG.
+      if (S.taintedTerm.size())
         for (const BasicBlock *O : fi.rpo) {
-          auto jt = O == BB ? S.cdt.end() : S.cdt.find(O);
-          if (jt != S.cdt.end() && any_of(jt->second, [&](const BasicBlock *t) { return is_contained(it->second, t); }))
+          if (O == BB || fi.walk.lookup(O) >= fi.walk.lookup(BB) || !S.fenvOut.lookup(O))
+            continue;
+          if (!isPotentiallyReachable(O, BB, nullptr, fi.DT.get(), fi.LI.get()))
             fenvCur |= S.fenvOut.lookup(O);
         }
       for (const Instruction &CI : *BB) {
