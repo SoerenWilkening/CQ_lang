@@ -191,7 +191,10 @@ sample whose outputs["q2"] is not empty on the C side (rulings Q2: a host callee
 C program holding a rail, oracle.py) and on ours (run.py: no Q2 deviation of ours, nothing to exclude) is not compared,
 nor one on which the C program reads the result of a bodiless callee (outputs["hsread"]) whose entry ours deferred with a
 result rail (outputs["deferred_r"]; owner ruling 2026-11-12 cq-dbtpi, "as in Q2"; an unread deferred rail excludes
-nothing), and a comparison left with none is not equal;
+nothing). Such an input stays in the run (owner ruling 2026-11-12 "verdict for excluded inputs", CR §6): what reads
+the lowered run alone is judged on it (our violations, uncomputation among them; the frees; the leak rule), the rest is
+skipped; with no input compared and no such violation there is no reason, and stats["compared"] is 0 (the caller's
+PASS (STRUCTURE ONLY), never a PASS);
 against the C oracle on a capped sample (below) the C side's stdout and effects must be a prefix of
 ours (the circuit runs on past the cut). On an ended sample they are compared exactly (owner ruling
 2026-11-02, cq-64lv): every host effect after an abort under a quantum predicate is a tape entry, and
@@ -1968,7 +1971,35 @@ def _final_flags(ent: Dict[str, Any], o: RunResult, c: RunResult, cut: bool) -> 
 _LEAKS_NAMED = 1000   # leaked rails a reason names one by one; it counts every one
 
 
-def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
+def _dirty_frees(k: str, side: str, rr: RunResult) -> List[str]:
+    """CR §0, rulings ("Every _unc must leave 0"): a free is legal iff the rail is classical-valued or reads 0 (never
+    non-zero across the samples: each sample is checked). Reads one run alone."""
+    why = []
+    for c in rr.clean or []:
+        if "freed" in c:
+            continue           # the compact trace's summary of the sample's frees (run.py)
+        known = c.get("known")
+        if not (known is not None and _int(known)) and _int(c.get("v")) != 0:
+            why.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} not in a known basis state")
+    return why
+
+
+def _lowered_only(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
+    """The checks of an excluded input (owner ruling 2026-11-12 "verdict for excluded inputs"; CR §6 after the two
+    excluded input kinds), besides our violations (uncomputation among them: core.c's _unc check), which the caller
+    reports: the frees and the leak rule, each a FAIL. Everything compared against the C program's values is skipped.
+    The leak rule's allowances that are facts of the C program's run on the input, not values compared (a cut or end,
+    `cut`; a recursion), are read as on a compared input; the one compared value among them, the C program's final
+    flags (rule 23's final flags rail), is not: a live i32 rail of exception bits only is allowed as that rail
+    (`_final_flags`, `excluded`). A real host exit (_real_exits) is the lowered run's own: ours ended in a host call
+    with no abort flag reading 1 (whether the C program exits alike is a comparison against C, skipped)."""
+    why = _dirty_frees(k, "our", o)
+    if (o.outputs or {}).get("host_end") is None or _flag_on(o):
+        why += _leaks(k, o, c, cut, excluded=True)
+    return [f"{w} (an input excluded from the comparison against C; checked on the lowered run alone)" for w in why]
+
+
+def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, excluded: bool = False) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
     rec = any(r["loop"].endswith(":recursion") for r in _loops(c))
     flagged = any(e.get("role") == "fenv_flags" for e, _ in kept_mod.leaves(o.kept))
@@ -1994,7 +2025,7 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
             fenv[role] = fenv.get(role, 0) + n
         elif role == "garbage" and row.get("w") == "i1":
             ok = n if cut or (rec and not _int(row.get("v"))) else 0
-        elif role == "garbage" and row.get("w") == "i32" and not flagged and _final_flags(row, o, c, cut):
+        elif role == "garbage" and row.get("w") == "i32" and not flagged and _final_flags(row, o, c, cut or excluded):
             flagged = True
             ok = 1
         if ok < n:
@@ -2237,8 +2268,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
 
     `stats` (optional): filled with "compared" (the samples compared after every exclusion), "q2" (the samples
     not compared under rulings Q2, against "c") and "deferred" (those not compared under ruling cq-dbtpi: the program
-    reads a deferred host call's result rail). When samples were given and none is compared, a reason says so:
-    a comparison of nothing is never equal (owner rulings 2026-11-11 Q1, 2026-11-12 item 4: the guard).
+    reads a deferred host call's result rail). An excluded sample is still judged on what reads the lowered run alone
+    (_lowered_only; owner ruling 2026-11-12 "verdict for excluded inputs"): when every sample is excluded and none shows
+    such a violation the reasons are empty and stats["compared"] is 0, which the caller reports as PASS (STRUCTURE
+    ONLY), never as a PASS (the guard of the owner rulings 2026-11-11 Q1 and 2026-11-12 item 4 lives there now).
 
     `registers` (optional, against "c"; drivers.theta_registers of the C program's .O1.ll, beads
     cq-ia96, cq-yzuc): the register web and seed sources of each cq_theta site, which tell CR rule
@@ -2289,8 +2322,6 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # deviation and is compared. Reach through a global or a stored pointer is not detected.
     q2_keys = [k for k in keys if (r_by[k].outputs or {}).get("q2") and (o_by[k].outputs or {}).get("q2")] \
         if oracle == "c" else []
-    if q2_keys:
-        keys = [k for k in keys if k not in set(q2_keys)]
     # Owner ruling 2026-11-12 cq-dbtpi (BACKEND_ABI 1.11, "as in Q2"): a host-state result (fwide, fopen, tmpfile, ftell,
     # fileno, open, lseek) or a non-library bodiless callee's keeps the entry's result rail, |0> when the backend defers
     # the call; an input on which the program READS such a deferred rail is not compared and not a PASS. Whether the
@@ -2299,31 +2330,30 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # to the callees whose entry it deferred with a result rail, predicate 1 (outputs["deferred_r"], run.py). An unread
     # deferred rail excludes nothing; a call the backend performed at once is compared through what the program computes
     # from its result.
-    dr_keys = [k for k in keys if set((r_by[k].outputs or {}).get("hsread") or ())
+    q2_set = set(q2_keys)
+    dr_keys = [k for k in keys if k not in q2_set and set((r_by[k].outputs or {}).get("hsread") or ())
                & set((o_by[k].outputs or {}).get("deferred_r") or ())] if oracle == "c" else []
-    if dr_keys:
-        keys = [k for k in keys if k not in set(dr_keys)]
+    # Owner ruling 2026-11-12 "verdict for excluded inputs" (CR §6 after the two excluded input kinds): an excluded input
+    # stays in the run. What reads the lowered run alone is judged on it below (our violations, uncomputation included;
+    # the frees; the leak rule); only what needs the C reference is skipped on it. A comparison that compared no input
+    # and found no such violation returns no reason: the caller reads stats["compared"] == 0 as PASS (STRUCTURE ONLY).
+    excluded = q2_set | set(dr_keys)
+    all_keys = keys
+    keys = [k for k in all_keys if k not in excluded]
     if stats is not None:
         stats["compared"], stats["q2"], stats["deferred"] = len(keys), q2_keys, dr_keys
-    if not keys and (q2_keys or dr_keys):
-        why = []
-        if q2_keys:
-            why.append(f"{len(q2_keys)} hand a bodiless callee a pointer into an object holding a QUANTUM cell (rulings Q2; "
-                       f"e.g. sample {q2_keys[0]}: {(r_by[q2_keys[0]].outputs or {}).get('q2', [])[:1]})")
-        if dr_keys:
-            k0 = dr_keys[0]
-            read = sorted(set((r_by[k0].outputs or {}).get("hsread") or ()) & set((o_by[k0].outputs or {}).get("deferred_r") or ()))
-            why.append(f"{len(dr_keys)} read the result rail of a deferred host call (ruling cq-dbtpi; e.g. sample {k0}: {read})")
-        reasons.append("no sample compared: " + "; ".join(why))
 
     real_exits = _real_exits(keys, o_by, r_by, capped, classical_key) if oracle == "c" else set()
 
     # per sample: violations, outputs, measured values, frees
     meas_opts: Dict[str, List[Tuple[FrozenSet[int], FrozenSet[int]]]] = {}
-    for k in keys:
+    for k in all_keys:
         o, r = o_by[k], r_by[k]
         if o.violations:
             reasons.append(f"sample {k}: violations on our side: {o.violations}")
+        if k in excluded:
+            reasons += _lowered_only(k, o, r, capped[k] or ended[k])
+            continue
         if r.violations:
             reasons.append(f"sample {k}: violations on the oracle side (a spec issue if it is the reference): "
                            f"{r.violations}")
@@ -2342,15 +2372,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             meas_opts[k], why = _meas_options(k, o, r, capped[k] or ended[k], nan_eq)
             reasons += why
         for side, rr in (("our", o), ("oracle", r)) if oracle == "ref" else (("our", o),):
-            for c in rr.clean or []:
-                if "freed" in c:
-                    continue           # the compact trace's summary of the sample's frees (run.py)
-                # rulings ("Every _unc must leave 0"): legal iff the rail is classical-valued or reads 0
-                # (never non-zero across the samples: each sample is checked here)
-                known = c.get("known")
-                if not (known is not None and _int(known)) and _int(c.get("v")) != 0:
-                    reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "
-                                   f"not in a known basis state")
+            reasons += _dirty_frees(k, side, rr)
         if oracle == "c" and k not in real_exits:
             reasons += _leaks(k, o, r_by[k], capped[k] or ended[k])
         if oracle == "c" and ended[k]:

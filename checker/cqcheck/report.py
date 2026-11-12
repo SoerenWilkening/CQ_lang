@@ -13,7 +13,9 @@ One Verdict per example (contracts.Verdict):
   comments, blank lines, ``; ModuleID`` and ``source_filename`` are dropped and the ``declare`` lines
   are sorted (their order carries no meaning).
 
-Each of ``s6``, ``c_oracle`` and ``verifier`` is one of PASS, FAIL, ERROR or NOT_RUN. Only PASS is
+Each of ``s6``, ``c_oracle`` and ``verifier`` is one of PASS, FAIL, ERROR or NOT_RUN; ``c_oracle`` may also be
+STRUCTURE_ONLY (PASS (STRUCTURE ONLY): every input excluded under rulings Q2 or cq-dbtpi, none compared against the C
+program, no violation on the lowered run alone; owner ruling 2026-11-12, CR §6), which is not PASS. Only PASS is
 green. ERROR means the check could not be decided (no lowered module, a checker module that is not
 built yet, an exception): it is never green. NOT_RUN appears only when the caller asked for one
 oracle (``--oracle ref|c``); it is not green either.
@@ -61,6 +63,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from cqcheck.contracts import Verdict, to_json
 
 PASS, FAIL, ERROR, NOT_RUN = "pass", "fail", "error", "not-run"
+# owner ruling 2026-11-12 "verdict for excluded inputs" (CR §6): a C-oracle check that compared no input (every one excluded
+# under rulings Q2 or cq-dbtpi) and found no violation on the lowered run alone; counted apart from PASS, never as one
+STRUCTURE_ONLY = "pass-structure-only"
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LLVM_BIN = Path("/usr/local/opt/llvm@19/bin")      # CLAUDE.md Pins
@@ -497,9 +502,19 @@ def _compare(ours_results, other_results, against: str, spec, o1: Optional[Path]
     if o1 is not None:
         from cqcheck import drivers as D
         extra["registers"] = D.theta_registers(D.read_module(Path(o1)))
+    stats: Dict[str, Any] = {}
     reasons = list(sibling("compare", "compare")(ours_results, other_results, against,
-                                                 classical_key=key, **extra))
-    return (PASS, []) if not reasons else (FAIL, [f"{against}: {r}" for r in reasons])
+                                                 classical_key=key, stats=stats, **extra))
+    # owner ruling 2026-11-12 "verdict for excluded inputs": the excluded count and reason are stated; a check that
+    # compared none is STRUCTURE_ONLY, never PASS
+    notes = [f"{against}: {len(stats[k])} of {len(other_results)} samples not compared ({why})"
+             for k, why in (("q2", "rulings Q2"), ("deferred", "ruling cq-dbtpi")) if stats.get(k)]
+    if reasons:
+        return FAIL, [f"{against}: {r}" for r in reasons] + notes
+    if stats.get("compared") == 0 and (stats.get("q2") or stats.get("deferred")):
+        return STRUCTURE_ONLY, notes + [f"{against}: PASS (STRUCTURE ONLY): no sample compared, no violation on the "
+                                        f"lowered run alone"]
+    return PASS, notes
 
 
 def _prebuild(ex: Example, ours: Path, need_ref_run: bool) -> None:
@@ -733,7 +748,9 @@ def format_table(verdicts: Sequence[Verdict]) -> str:
     lines = ["  ".join(c.ljust(w) for c, w in zip(r[:5], widths)) + "  " + r[5] for r in rows]
     n = len(verdicts)
     counts = {k: sum(1 for v in verdicts if getattr(v, k) == PASS) for k in ("s6", "c_oracle", "verifier")}
+    so = sum(1 for v in verdicts if v.c_oracle == STRUCTURE_ONLY)
     lines.append(f"{n} examples: s6 pass {counts['s6']}, c_oracle pass {counts['c_oracle']}, "
+                 + (f"c_oracle PASS (STRUCTURE ONLY) {so} (not pass), " if so else "") +
                  f"verifier pass {counts['verifier']}, green {sum(1 for v in verdicts if green(v))}, "
                  f"uncovered {sum(1 for v in verdicts if state(v) == UNCOVERED)} (all three pass, every uncovered "
                  f"target listed; not green), "

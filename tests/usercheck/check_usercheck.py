@@ -34,7 +34,9 @@ Fails on any of:
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
             literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw); raise with no handler, its field wrong (cq-njo63); signal's previous handler where none was registered (cq-t0xnq). --rv3 runs this group alone
   dbtpi     owner ruling 2026-11-12 cq-dbtpi (src/dbtpi): a program that reads a deferred fwide's result on every input is
-            not NOT COMPARED (exit 3), one that reads a deferred ftell's on some inputs is not a PASS with that count
+            not PASS (STRUCTURE ONLY) (exit 3), or a planted dirty free or leak in its lowering is not rejected (exit 1:
+            the lowered run alone is judged on excluded inputs, owner ruling 2026-11-12 "verdict for excluded inputs";
+            dall_dirty_free, dall_leak), one that reads a deferred ftell's on some inputs is not a PASS with that count
             stated, one that never reads it has an input excluded, or a wrong lowering of the partial one (a wrong value,
             ftell's entry deferred on every input) is not rejected on the compared inputs. --dbtpi runs this group alone
   fenvq2    rulings Q2 for CR rule 23's calls with an object operand (src/fenvq2, musl's fenv_t and fexcept_t, musl's no-op
@@ -417,7 +419,9 @@ def dbtpi(tmp):
     """Owner rulings 2026-11-12 cq-dbtpi and "Q2 partial exclusion": a host-state result (fwide, ftell) keeps the entry's
     result rail, |0> when the call is deferred; an input on which the program reads that rail is not compared, decided on
     the C program (the call ran and its result was read), our deferral only narrowing it. dall reads a deferred fwide on
-    every input: NOT COMPARED (3); dpart reads a deferred ftell only where x is odd: PASS on the others with the count
+    every input: PASS (STRUCTURE ONLY) (3), and with a planted fault in its lowering FAIL (1): the frees and the leak rule
+    read the lowered run alone and are judged on excluded inputs (owner ruling 2026-11-12 "verdict for excluded inputs";
+    dall_dirty_free frees x's rail, not in a known basis state; dall_leak leaves a garbage copy of x live); dpart reads a deferred ftell only where x is odd: PASS on the others with the count
     stated; dunread defers fwide and never reads it: every sample compared. Mutants of dpart, rejected on the compared
     inputs: the product x * 4 instead of x * 3, and ftell's entry deferred on every input (its predicate a 1 seed: the
     lowering cannot widen the exclusion; the C program made no call where x is even)."""
@@ -425,8 +429,21 @@ def dbtpi(tmp):
     run = lambda n, low=None: user(d / f"{n}.O1.ll", low or d / f"{n}.lowered.ll", "f", light=True)
     code, out = run("dall")
     expect("program dbtpi dall (f)", 3, (code, out))
-    if code == 3 and "by ruling cq-dbtpi" not in out:
-        fail("program dbtpi dall (f)", f"not excluded by ruling cq-dbtpi:\n{out}")
+    if code == 3 and ("by ruling cq-dbtpi" not in out or "PASS (STRUCTURE ONLY)" not in out):
+        fail("program dbtpi dall (f)", f"not excluded by ruling cq-dbtpi, or not PASS (STRUCTURE ONLY):\n{out}")
+    ret = "  %11 = call i32 @cqrt_measure_i32(i32 %10), !cq.measure !6\n  ret i32 %11\n"
+    text = (d / "dall.lowered.ll").read_text()
+    if text.count(ret) != 1:
+        raise SystemExit("dbtpi dall: no return site in its lowering")
+    for m_, add, why in (("dirty_free", "  call void @cqrt_free(i32 %5)\n", "not in a known basis state"),
+                         ("leak", "  %lk = call i32 @cqrt_alloc_i32(i32 0)\n  call void @cqrt_copy_i32(i32 %5, i32 %lk)\n",
+                          "a leak; cq-tt2j")):
+        p = tmp / f"dbtpi_dall_{m_}.ll"
+        p.write_text(text.replace(ret, ret.replace("  ret ", add + "  ret ")))
+        got = user(d / "dall.O1.ll", p, "f", samples=16, light=True)
+        expect(f"mutant dbtpi dall_{m_}", 1, got)
+        if got[0] == 1 and (why not in got[1] or "checked on the lowered run alone" not in got[1]):
+            fail(f"mutant dbtpi dall_{m_}", f"rejected, but not by the lowered-only check:\n{got[1][-800:]}")
     code, out = run("dpart")
     expect("program dbtpi dpart (f)", 0, (code, out))
     m = re.search(r"compared (\d+) of (\d+) samples", out)

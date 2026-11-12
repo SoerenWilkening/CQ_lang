@@ -49,9 +49,12 @@ Exit status: 0 when the lowered program is §6-equal to the C program on every c
 it differs (the reasons are printed), 2 when the check could not be decided (bad arguments, an
 internal error of the checker, no sample in the C program's domain, or a gate matching out of the
 comparison's search budget with no other difference: undecided, never 'differs', cq-sujz decision 6):
-never green. 3 when no sample was compared after every exclusion (NOT COMPARED: rulings Q2 and cq-dbtpi, the guard of
-the owner rulings 2026-11-11 Q1 and 2026-11-12 item 4): never green either. A run that compared some is judged on those
-and states how many it did not compare, with the reason (owner ruling 2026-11-12, Q2 partial exclusion).
+never green. 3 when every sample was excluded (rulings Q2 and cq-dbtpi) and the lowered run alone shows no violation on
+any of them: PASS (STRUCTURE ONLY) (owner ruling 2026-11-12 "verdict for excluded inputs", CR §6), counted apart from
+PASS and never as one; a row with zero compared samples is never a plain PASS. An excluded sample stays in the run: our
+violations (uncomputation among them), the frees and the leak rule are judged on it and a violation there is a FAIL;
+only what needs the C program is skipped (compare._lowered_only). A run that compared some is judged on those and
+states how many it did not compare, with the reason (owner ruling 2026-11-12, Q2 partial exclusion).
 """
 from __future__ import annotations
 
@@ -68,7 +71,7 @@ from typing import Dict, List, Optional, Tuple
 
 from cqcheck.contracts import DriverSpec
 
-PASS_STATUS, FAIL_STATUS, ERROR_STATUS, NOT_COMPARED_STATUS = 0, 1, 2, 3
+PASS_STATUS, FAIL_STATUS, ERROR_STATUS, STRUCTURE_ONLY_STATUS = 0, 1, 2, 3
 # rulings Q2 (owner 2026-11-11): the checker's detection is an approximation, and the report says so
 Q2_LIMIT = ("rulings Q2: an input on which a bodiless callee receives a pointer into an object holding a QUANTUM cell at "
             "the call is not compared (decided on the C program: the object is the real one, a cell holds a rail; the "
@@ -468,14 +471,13 @@ def _unidentified_extras(reasons: List[str], chosen: List[dict], samples: List[d
 
 
 def verdict(reasons: List[str], compared: Optional[int] = None) -> int:
-    """The status of a comparison's reasons: not compared (3) when `compared` (compare's stats) is 0, whatever the
-    reasons (the guard: a verdict with zero compared samples is never PASS); pass with none; undecided (2) when every
-    one is a gate matching out of its search budget (no difference found, none ruled out: cq-sujz decision 6);
-    differs (1) otherwise."""
-    if compared == 0:
-        return NOT_COMPARED_STATUS
+    """The status of a comparison's reasons: pass with none, PASS (STRUCTURE ONLY) (3) instead when `compared`
+    (compare's stats) is 0 (the guard: a verdict with zero compared samples is never PASS; owner ruling 2026-11-12
+    "verdict for excluded inputs": the reasons then come from the lowered run alone, and any is a FAIL); undecided (2)
+    when every one is a gate matching out of its search budget (no difference found, none ruled out: cq-sujz decision
+    6); differs (1) otherwise."""
     if not reasons:
-        return PASS_STATUS
+        return STRUCTURE_ONLY_STATUS if compared == 0 else PASS_STATUS
     if all(_OUT_OF_BUDGET.search(r) for r in reasons):
         return ERROR_STATUS
     return FAIL_STATUS
@@ -596,11 +598,11 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         lines.append(f"cqcheck user: {nq2} of {len(chosen)} samples not compared ({Q2_LIMIT})")
     if ndr:
         lines.append(f"cqcheck user: {ndr} of {len(chosen)} samples not compared ({DEFERRED_READ})")
-    if status == NOT_COMPARED_STATUS:
-        lines.append(f"cqcheck user: NOT COMPARED: no sample was compared ({len(chosen)} run, {nq2} excluded by rulings Q2, "
-                     f"{ndr} by ruling cq-dbtpi); never a PASS")
-        lines += [f"  c: {r}" for r in reasons]
-        return NOT_COMPARED_STATUS, lines
+    if status == STRUCTURE_ONLY_STATUS:
+        lines.append(f"cqcheck user: PASS (STRUCTURE ONLY): no sample was compared against the C program ({len(chosen)} "
+                     f"run, {nq2} excluded by rulings Q2, {ndr} by ruling cq-dbtpi); the lowered run alone shows no "
+                     f"violation, leak or dirty free on any of them; not a PASS")
+        return STRUCTURE_ONLY_STATUS, lines
     if status == ERROR_STATUS:
         lines.append(f"cqcheck user: UNDECIDED: the gate matching against the C program ran out of its "
                      f"search budget on {len(reasons)} classical group(s) and found no difference "
@@ -608,8 +610,10 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         lines += [f"  c: {r}" for r in reasons]
         return ERROR_STATUS, lines
     if reasons:
-        lines.append(f"cqcheck user: FAIL: the lowered program differs from the C program "
-                     f"({len(reasons)} reasons)")
+        lines.append(f"cqcheck user: FAIL: the lowered program differs from the C program ({len(reasons)} reasons)"
+                     if stats.get("compared") else
+                     f"cqcheck user: FAIL: the lowered run alone violates a check on inputs not compared against the C "
+                     f"program ({len(reasons)} reasons; owner ruling 2026-11-12, verdict for excluded inputs)")
         lines += [f"  c: {r}" for r in reasons]
         return FAIL_STATUS, lines
     lines.append(f"cqcheck user: PASS: §6-equal to the C program on every compared sample ({stats.get('compared')} compared)")
@@ -617,7 +621,8 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
 
 
 def main(o1: str, lowered: str, entry: str, samples: Optional[int], light: bool = False) -> int:
-    """cq-arch Z1: the C-oracle check of one program; the exit status (0 pass, 1 fail, 2 error)."""
+    """cq-arch Z1: the C-oracle check of one program; the exit status (0 pass, 1 fail, 2 error, 3 PASS (STRUCTURE
+    ONLY))."""
     if light:
         from cqcheck import sampling as _s
         _s.LIGHT = True

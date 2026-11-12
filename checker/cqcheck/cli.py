@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import dataclasses
 import importlib
 import os
 import subprocess
@@ -109,7 +110,10 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
             unc = report.uncovered(v) if ok else []
             # cq-g8md: accepted by the gate (no comparison failed) with its uncovered targets listed,
             # but UNCOVERED, never green (owner ruling 2026-11-01)
-            print(f"{('UNCOVERED ' if unc else 'ok  ') if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} "
+            # owner ruling 2026-11-12: PASS (STRUCTURE ONLY) is reported apart from PASS and from FAIL
+            so = not ok and v.c_oracle == report.STRUCTURE_ONLY and report.requested_accepted(
+                dataclasses.replace(v, c_oracle=report.PASS))
+            print(f"{('UNCOVERED ' if unc else 'ok  ') if ok else 'STRUCTURE-ONLY' if so else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} "
                   f"verifier={v.verifier}" + (f"  {len(unc)} uncovered target(s)" if unc else "")
                   + ("" if ok or not v.reasons else f"  {v.reasons[0][:200]}"), flush=True)
             for u in unc:
