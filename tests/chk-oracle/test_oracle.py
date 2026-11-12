@@ -921,6 +921,26 @@ int pm_ret(int a, double t, int c) { int x = a; cq_theta(&x, t); int y = 3 * x +
             got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
             self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
 
+    def test_vector_lane(self):
+        """cq-d1cd (CR rule 2: cq_measure of a value that never was a rail is that value): a vector is lowered lane by lane;
+        a lane computed from classical lanes alone is no rail, so its cq_measure is a read."""
+        o1 = compile_c("vec_lane", """
+#include <fenv.h>
+#pragma STDC FENV_ACCESS ON
+typedef double v2 __attribute__((vector_size(16)));
+double vec_op(double x0, double c, double th) { double x = x0; cq_theta(&x, th);
+    v2 a = {x, c}; v2 b = {c, 3.0}; v2 r = a / b; return cq_measure(r[0]) + cq_measure(r[1]); }
+double vec_q(double x0, double c, double th) { double x = x0; cq_theta(&x, th);
+    v2 a = {x, c}; v2 b = {c, x}; v2 r = a / b; return cq_measure(r[0]) + cq_measure(r[1]); }
+""")
+        sp = spec("vec_lane", "double vec_op(double,double,double);double vec_q(double,double,double)",
+                  [("vec_op", ["double", "double", "double"]), ("vec_q", ["double", "double", "double"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        for smp, gates, reads in [(S(0, f64(1.5), f64(2.0), HALF), 1, 1), (S(1, f64(1.5), f64(2.0), HALF), 2, 0)]:
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+
     def test_measure_in_a_loop_body(self):
         """Owner, cq-2z29a, cq-47f8h: a loop-carried value with a rail incoming is a rail. What is computed from the measured rail alone is a read on the
         later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement."""

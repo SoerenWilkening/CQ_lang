@@ -55,6 +55,7 @@
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/VectorUtils.h"
 #include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -1428,6 +1429,34 @@ public:
       }
       if (I->getType()->isVoidTy() || !carried(I))
         return;
+      // cq-d1cd (CR rule 2, "cq_measure of a value that never was a rail is that value"): a vector is lowered lane by lane, so
+      // a lane computed from classical lanes alone is no rail, though the vector is one value to taint.
+      if (auto *EE = dyn_cast<ExtractElementInst>(I))
+        if (auto *ci = dyn_cast<ConstantInt>(EE->getIndexOperand()); ci && ci->getValue().ult(64) && !specs.empty()) {
+          // the frame's specialization answers (a lane may be classical in one and a rail in another)
+          std::vector<int32_t> rail(In.KI.on ? In.KI.N + 1 : 1, 0);
+          rail[0] = 1;
+          bool any = false, all = true;
+          for (const cq::Specialization *S : specs) {
+            bool r = !laneClassical(EE->getVectorOperand(), ci->getZExtValue(), 0,
+                                    [&](const Value *v) { return T.isQuantum(v, *S) || extra.count(v); });
+            any |= r, all &= r;
+            if (In.KI.on)
+              if (auto id = In.KI.idOf.find(S); id != In.KI.idOf.end())
+                rail[id->second] = r;
+          }
+          if (!all) {
+            Value *n = node(B, {get(EE->getVectorOperand()), get(EE->getIndexOperand())});
+            if (!any || !In.KI.on) {
+              sh[I] = any ? n : zero();
+            } else {
+              auto *c = B.CreateCall(h("__cqo_sh_pick", I32, {I32, I32, I32}), {n, zero(), B.getInt32(1)});
+              In.railLoads.push_back({c, &F, std::move(rail), 2});
+              sh[I] = c;
+            }
+            return;
+          }
+        }
       if (auto *Sel = dyn_cast<SelectInst>(I))
         if (q(Sel) && !carried(Sel->getCondition()) && !Sel->getCondition()->getType()->isVectorTy()) {
           // a classical choice between rails: the chosen rail itself (a classical merge, as a phi's)
@@ -1445,6 +1474,63 @@ public:
       for (Value *op : I->operands())
         deps.push_back(get(op));
       sh[I] = node(B, deps);
+    }
+
+    // Lane i of vector value V is computed from classical values alone: a constant lane, a classical scalar inserted there, or a
+    // lane-wise operation (arithmetic, compare, cast, a lane-wise intrinsic such as a constrained fp op, a select on a classical
+    // scalar condition) over classical lanes i of its operands, through insertelement and shufflevector.
+    bool laneClassical(const Value *V, uint64_t i, unsigned depth, function_ref<bool(const Value *)> carried) {
+      if (depth > 32)
+        return false;
+      if (isa<Constant>(V) || !(isa<Instruction>(V) || isa<Argument>(V)))
+        return true;
+      if (auto *J = dyn_cast<Instruction>(V); J && !orig.count(J))
+        return false;
+      if (!carried(V))
+        return true;
+      auto *VT = dyn_cast<FixedVectorType>(V->getType());
+      if (!VT || i >= VT->getNumElements())
+        return false;
+      if (auto *IE = dyn_cast<InsertElementInst>(V)) {
+        auto *ci = dyn_cast<ConstantInt>(IE->getOperand(2));
+        if (!ci)
+          return false;
+        if (ci->getZExtValue() == i)
+          return isa<Constant>(IE->getOperand(1)) || !carried(IE->getOperand(1));
+        return laneClassical(IE->getOperand(0), i, depth + 1, carried);
+      }
+      if (auto *SV = dyn_cast<ShuffleVectorInst>(V)) {
+        int m = SV->getMaskValue(i);
+        if (m < 0)
+          return true;
+        unsigned n = cast<FixedVectorType>(SV->getOperand(0)->getType())->getNumElements();
+        return (unsigned)m < n ? laneClassical(SV->getOperand(0), m, depth + 1, carried)
+                               : laneClassical(SV->getOperand(1), m - n, depth + 1, carried);
+      }
+      auto lanes = [&](const User *U, unsigned nops) {
+        for (unsigned k = 0; k < nops; ++k) {
+          const Value *o = U->getOperand(k);
+          if (o->getType()->isMetadataTy())
+            continue;
+          if (o->getType()->isVectorTy() ? !laneClassical(o, i, depth + 1, carried) : carried(o))
+            return false;
+        }
+        return true;
+      };
+      if (isa<BinaryOperator>(V) || isa<UnaryOperator>(V) || isa<CmpInst>(V) || isa<SelectInst>(V))
+        return lanes(cast<User>(V), cast<User>(V)->getNumOperands());
+      if (auto *C = dyn_cast<CastInst>(V);
+          C && C->getSrcTy()->isVectorTy() &&
+          cast<FixedVectorType>(C->getSrcTy())->getNumElements() == VT->getNumElements())
+        return lanes(C, 1);
+      if (auto *II = dyn_cast<IntrinsicInst>(V); II && (isa<ConstrainedFPIntrinsic>(II) ||
+                                                        isTriviallyVectorizable(II->getIntrinsicID())))
+        if (all_of(II->args(), [&](const Use &a) {
+              return !a->getType()->isVectorTy() ||
+                     cast<FixedVectorType>(a->getType())->getNumElements() == VT->getNumElements();
+            }))
+          return lanes(II, II->arg_size());
+      return false;
     }
 
     bool lossless(CastInst *C) {
