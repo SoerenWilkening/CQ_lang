@@ -3239,18 +3239,38 @@ public:
           CB->getArgOperand(1)->getType()->isPointerTy()) {
         // Owner ruling 2026-11-12 (signal's EINVAL store): through whichever accessor the module declares or defines for
         // its own errno reads, __errno_location (musl, glibc) or __error (Darwin; here the stand-in's wrapper
-        // cqd_fx___error, drivers.effect_callees, whose result is the C oracle's errno cell, fx_call.h FX_ERRNO_CELL);
-        // neither: no store
-        auto accessor = [&](StringRef n) -> Function * {
-          Function *f = M.getFunction(n);
-          return f && f->arg_empty() && f->getReturnType()->isPointerTy() ? f : nullptr;
+        // cqd_fx___error, drivers.effect_callees, whose result is the C oracle's errno cell, fx_call.h FX_ERRNO_CELL),
+        // recognised by name and signature int *(void); with both, each one the module calls, __errno_location first,
+        // or __errno_location alone when it calls neither; neither present: no store (the pass's rule,
+        // calls/Calls.cpp errnoAddresses)
+        auto accessor = [&](std::initializer_list<StringRef> names) -> Function * {
+          for (StringRef n : names)
+            if (Function *f = M.getFunction(n); f && f->arg_empty() && !f->isVarArg() && f->getReturnType()->isPointerTy())
+              return f;
+          return nullptr;
         };
-        Function *el = accessor("__errno_location");
-        for (StringRef n : {"cqd_fx___error", "__error", "\x01___error"})
-          if (!el)
-            el = accessor(n);
-        Value *errFn = el ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
-        IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr}), {errFn});
+        auto called = [](Function *f) {
+          for (const User *u : f->users())
+            if (auto *c = dyn_cast<CallBase>(u); c && c->getCalledOperand() == f)
+              return true;
+          return false;
+        };
+        SmallVector<Function *, 2> acc;
+        for (Function *f : {accessor({"__errno_location"}), accessor({"cqd_fx___error", "__error"})})
+          if (f)
+            acc.push_back(f);
+        if (acc.size() == 2 && (called(acc[0]) || called(acc[1]))) {
+          SmallVector<Function *, 2> used;
+          for (Function *f : acc)
+            if (called(f))
+              used.push_back(f);
+          acc = used;
+        } else if (acc.size() == 2) {
+          acc.pop_back();
+        }
+        Constant *null = ConstantPointerNull::get(cast<PointerType>(Ptr));
+        IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr, Ptr}),
+                                   {acc.size() > 0 ? (Value *)acc[0] : null, acc.size() > 1 ? (Value *)acc[1] : null});
         CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
         continue;
       }

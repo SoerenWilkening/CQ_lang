@@ -761,6 +761,39 @@ int sigerrdw(int s) {
         sp = spec("sigerrdw", "int sigerrdw(int)", [("sigerrdw", ["int"])])
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(x)]} for x in (19, 0, 5)]),
                          ["0x161", "0x161", "0x70"])
+        # an errno accessor's call is no host effect (fx_call.h): none logged
+        self.assertEqual(oracle.run_sample(o1, sp, {"call": 0, "args": [i32(19)]}).outputs["effects"], [])
+
+    def test_signal_errno_both_accessors(self):
+        # the ruling's rule with both accessors: through each one the module calls, __errno_location first; neither
+        # called: __errno_location alone
+        def mod(call_error):
+            return ("""target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+@cell = global i32 0, align 4
+define ptr @__errno_location() noinline {
+  ret ptr @cell
+}
+declare ptr @__error()
+declare ptr @signal(i32, ptr)
+define i32 @both(i32 %s) {
+  %r = call ptr @signal(i32 %s, ptr null)
+  %a = load i32, ptr @cell, align 4
+""" + ("""  %p = call ptr @__error()
+  %b = load i32, ptr %p, align 4
+""" if call_error else "  %b = add i32 0, 0\n") + """  %s1 = shl i32 %b, 8
+  %v = or i32 %a, %s1
+  ret i32 %v
+}
+""")
+        sp = spec("both", "int both(int)", [("both", ["int"])])
+        got = []
+        for call_error in (True, False):
+            o1 = TMP / f"both{int(call_error)}.O1.ll"
+            o1.write_text(mod(call_error))
+            got += rets(o1, sp, [{"call": 0, "args": [i32(19)]}])
+        # __errno_location is defined but never called: with __error called, the store goes through __error alone
+        self.assertEqual(got, ["0x1600", "0x16"])
 
 
 class Cutoff(unittest.TestCase):

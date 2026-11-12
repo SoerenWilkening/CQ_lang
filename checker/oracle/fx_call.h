@@ -163,9 +163,15 @@ uint64_t cqd_fxc_done(unsigned rbits) {
   if (fxc_output_value(&ov)) { fxc_log(e); return rbits < 64 && rbits ? ov & ((UINT64_C(1) << rbits) - 1) : ov; }
 #ifdef FX_ERRNO_CELL
   /* owner ruling 2026-11-12 (signal's EINVAL store): a Darwin-built module reads errno through __error(), the cell
-   * __cqo_signal stores EINVAL into; the C oracle gives the call that cell (cqo_rt.c), logged as the stand-in is */
-  if (!strcmp(fxc_name, "__error") && fxc_n == 0 && rbits == 64) { fxc_log(e); return (uint64_t)(uintptr_t)FX_ERRNO_CELL(); }
+   * __cqo_signal stores EINVAL into; the C oracle gives the call that cell (cqo_rt.c); no host effect (below) */
+  if (!strcmp(fxc_name, "__error") && fxc_n == 0 && rbits == 64) return (uint64_t)(uintptr_t)FX_ERRNO_CELL();
 #endif
+  /* An errno accessor (__error, a bodiless __errno_location: int *(void)) returns the address of the thread's errno and
+   * has no observable effect: what is stored there and read back is the program's own memory, compared as such (its
+   * reads reach outputs and measurements). It is no host effect on either side (CR 1368-1369 compare effects; how often
+   * a compiler or the pass calls the accessor is no behaviour of the C program), so it is not logged. */
+  if ((!strcmp(fxc_name, "__error") || !strcmp(fxc_name, "__errno_location")) && fxc_n == 0 && rbits == 64)
+    return cq_fx_result(cq_fx_begin(fxc_name), rbits);
   if (!e || e->cls != 'I') return cq_fx_result(fxc_log(e), rbits);
   /* ruling Q5: what the C function consumes of the one input stream at its state, logged with the call */
   int bi = -1, li = -1, ai = -1, Li = -1, Ni = -1;

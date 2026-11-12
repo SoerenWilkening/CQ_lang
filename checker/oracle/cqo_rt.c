@@ -1445,7 +1445,9 @@ void __cqo_hsread(int32_t id, const char *name) {
 /* Owner ruling 2026-11-12 (signal's EINVAL store, clarifying cq-silnj): a Darwin-built module's errno is the cell its
  * __error() returns. The stand-in returns null for a pointer (fx_standin.h cq_fx_result), where no store lands, so the C
  * oracle gives __error one zeroed 4-byte heap object of the program per sample (an object of the table: its reads and
- * writes are the program's), which __cqo_signal's EINVAL store reaches through the same call. */
+ * writes are the program's), which __cqo_signal's EINVAL store reaches through the same call. With the stand-in's null,
+ * every errno access of such a program was outside every object, so the sampler kept no sample that touches errno
+ * (outside the domain: probe sig_error se_rail compared 1). */
 static void *errno_cell(void) {
     static void *cell;
     static uint32_t gen;
@@ -1613,16 +1615,17 @@ static int sig_valid(int32_t s) { return s >= 1 && s <= 64 && s != 9 && s != 19 
  * sigaction, outside the cells, is the program's when it is neither SIG_DFL, SIG_IGN nor one this runtime installed
  * (on_crash, on_timeout); the host's raise then runs it, as the C program does. */
 /* The C program's signal(sig, h) (OracleInstr.cpp notes()): CR rule 16's signal table over ruling cq-silnj's numbers. An
- * invalid sig returns SIG_ERR, stores EINVAL to the program's errno (sig_errloc: the module's own errno accessor,
- * __errno_location or Darwin's __error, which __cqo_signal_errloc passes right before the call and which is called only
- * then: a Darwin libc touches errno only on failure) and registers nothing. A module with neither accessor gets no errno
+ * invalid sig returns SIG_ERR, stores EINVAL to the program's errno (sig_errloc: the module's own errno accessors,
+ * __errno_location and/or Darwin's __error, which __cqo_signal_errloc passes right before the call; an accessor call is
+ * no host effect, fx_call.h) and registers nothing. A module with neither accessor gets no errno
  * effect at all (owner ruling 2026-11-12, signal's EINVAL store: nothing in it can read errno); a valid one returns its cell's previous content and
  * stores h there. Where the host has the signal, h is also installed there, so that a delivery runs it as before. */
-static int32_t *(*sig_errloc)(void);
-void __cqo_signal_errloc(int32_t *(*f)(void)) { sig_errloc = f; }
+static int32_t *(*sig_errloc[2])(void);
+void __cqo_signal_errloc(int32_t *(*f)(void), int32_t *(*g)(void)) { sig_errloc[0] = f, sig_errloc[1] = g; }
 void (*__cqo_signal(int32_t sig, void (*h)(int)))(int) {
     if (!sig_valid(sig)) {
-        if (sig_errloc) *sig_errloc() = EINVAL;
+        for (int i = 0; i < 2; i++)
+            if (sig_errloc[i]) *sig_errloc[i]() = EINVAL;
         return SIG_ERR;
     }
     void (*r)(int) = sig_cell[sig];
