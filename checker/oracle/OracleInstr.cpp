@@ -523,6 +523,36 @@ public:
   DenseMap<const Function *, BitVector> msiteReach;
   BitVector msiteTaken;
   bool msiteAny = false;
+  // cq-xidq (CR rule 12, §6's global phases, owner ruling 2026-10-29): the functions that reach a cq_phi, directly, by a direct
+  // call or through any call by pointer. Their calls pass the caller's quantum scope on (Shadow::phaseScope).
+  DenseSet<const Function *> phiReach;
+  void phaseReach() {
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (Function &F : M) {
+        if (F.isDeclaration() || isDriverFn(F) || phiReach.count(&F))
+          continue;
+        for (Instruction &I : instructions(F))
+          if (auto *CB = dyn_cast<CallBase>(&I)) {
+            const Function *G = CB->getCalledFunction();
+            if (CB->isInlineAsm())
+              continue;
+            if (!G || G->getName() == "cq_phi" || phiReach.count(G)) {
+              phiReach.insert(&F), changed = true;
+              break;
+            }
+          }
+      }
+    }
+    // the driver enters with no predicate in scope: a frame reads what its caller set last (the setup may have left one)
+    FunctionCallee set = hook("__cqo_qs_set", Void, {I32});
+    for (Function &F : M)
+      if (!F.isDeclaration() && isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          if (auto *CB = dyn_cast<CallBase>(&I))
+            if (const Function *G = CB->getCalledFunction(); G && phiReach.count(G))
+              IRBuilder<>(CB).CreateCall(set, {ConstantInt::get(I32, 0)});
+  }
   void measureSites() {
     std::vector<Function *> fns;
     for (Function &F : M)
@@ -803,6 +833,84 @@ public:
           }
         }
         B.CreateCall(h("__cqo_skip", In.Void, {I32, In.Ptr, I32}), {get(cond), list, n});
+      }
+    }
+    // cq-xidq (CR rule 12: "Inside a `_ctl` clone or a callee reached from a quantum arm it is `rz_i1(pred, θ)`"; §6: a
+    // phase is global when its predicate is constant once the classical arguments and the outcomes of the measurements
+    // executed before it are fixed; owner ruling 2026-10-29: "inside a _ctl clone or a quantum arm it is not global").
+    // Quantum is rule 2's static collapse (CR 406-408): a branch whose condition's node is not classical. A cq_phi block is
+    // in a quantum arm when a branch it is control dependent on (transitively) last decided with a quantum condition in
+    // this frame; a frame is in one when the call that made it was (a call by a quantum pointer included). Such a reach
+    // logs `phq` before its site event, and compare keys it as no outcome-global phase (oracle.py, compare._c_sites).
+    void phaseScope(const std::vector<BasicBlock *> &order) {
+      if (!In.phiReach.count(&F))
+        return;
+      std::vector<CallBase *> need;
+      for (BasicBlock *BB : order)
+        for (Instruction &I : *BB)
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && orig.count(CB) && !CB->isInlineAsm()) {
+            const Function *G = CB->getCalledFunction();
+            if (!G || G->getName() == "cq_phi" || In.phiReach.count(G))
+              need.push_back(CB);
+          }
+      if (need.empty())
+        return;
+      // direct control dependence: X depends on branch block B when X post-dominates a successor of B, up to B's
+      // immediate post-dominator
+      DenseMap<const BasicBlock *, SmallVector<BasicBlock *, 4>> cdOn;
+      for (BasicBlock *BB : order) {
+        Instruction *Tm = BB->getTerminator();
+        if (!orig.count(Tm) || Tm->getNumSuccessors() < 2 || !condOf(Tm))
+          continue;
+        DomTreeNode *bn = PDT.getNode(BB);
+        DomTreeNode *stop = bn ? bn->getIDom() : nullptr;
+        for (BasicBlock *S : successors(BB))
+          for (DomTreeNode *n = PDT.getNode(S); n && n != stop && n->getBlock(); n = n->getIDom()) {
+            auto &v = cdOn[n->getBlock()];
+            if (std::find(v.begin(), v.end(), BB) == v.end())
+              v.push_back(BB);
+          }
+      }
+      DenseMap<const BasicBlock *, std::vector<BasicBlock *>> anc;   // the transitive closure, per needed block
+      SetVector<BasicBlock *> branches;
+      for (CallBase *CB : need) {
+        BasicBlock *X = CB->getParent();
+        if (anc.count(X))
+          continue;
+        std::vector<BasicBlock *> &out = anc[X];
+        SmallPtrSet<const BasicBlock *, 16> seen;
+        SmallVector<const BasicBlock *, 16> w{X};
+        while (!w.empty()) {
+          const BasicBlock *y = w.pop_back_val();
+          if (auto it = cdOn.find(y); it != cdOn.end())
+            for (BasicBlock *b : it->second)
+              if (seen.insert(b).second)
+                out.push_back(b), branches.insert(b), w.push_back(b);
+        }
+      }
+      IRBuilder<> E(&*F.getEntryBlock().getFirstInsertionPt());
+      Value *qin = E.CreateCall(h("__cqo_qs_get", I32, {}), {});
+      DenseMap<const BasicBlock *, AllocaInst *> slot;
+      for (BasicBlock *b : branches) {
+        AllocaInst *a = E.CreateAlloca(I32);
+        E.CreateStore(E.getInt32(0), a);
+        slot[b] = a;
+        IRBuilder<> B(b->getTerminator());
+        B.CreateStore(B.CreateCall(h("__cqo_qcond", I32, {I32}), {get(condOf(b->getTerminator()))}), a);
+      }
+      for (CallBase *CB : need) {
+        IRBuilder<> B(CB);
+        Value *q = qin;
+        for (BasicBlock *b : anc[CB->getParent()])
+          q = B.CreateOr(q, B.CreateLoad(I32, slot[b]));
+        const Function *G = CB->getCalledFunction();
+        if (G && G->getName() == "cq_phi") {
+          B.CreateCall(h("__cqo_phq", In.Void, {I32}), {q});
+          continue;
+        }
+        if (!G)   // a call by a quantum pointer: which function runs is quantum (rule 19's `_t_ctl`)
+          q = B.CreateOr(q, B.CreateCall(h("__cqo_qcond", I32, {I32}), {get(CB->getCalledOperand())}));
+        B.CreateCall(h("__cqo_qs_set", In.Void, {I32}), {q});
       }
     }
     // CR rule 2, 406-408 (cq-ndtt): collapse is STATIC, "it applies to a value whose quantum sources are measured on EVERY
@@ -1360,6 +1468,7 @@ public:
           visit(I, retMerge, rets, qconds);
       }
       skips(order);
+      phaseScope(order);
 
       storeSlots();
       for (auto &[P, s] : phis)
@@ -3011,6 +3120,7 @@ public:
       spellBlocks(pristine);
     }
     measureSites();
+    phaseReach();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
     instrumentRule24();
     if (KI.on) {

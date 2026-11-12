@@ -1165,11 +1165,15 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     flags of a program that touches the environment (rule 23; run.touches_fenv), else absent}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
-    measured before it (cq-459d); kept/clean: None (the C program has no
+    measured before it (cq-459d), and a phi's "q": True when a quantum predicate is in scope there (cq-xidq); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations, reads, skips = [], [], [], []
     status = _exit_status(sr)
+    phq = False
     for e in sr.events:
+        if e.get("ev") == "phq":
+            phq = True               # cq-xidq: the next phi site is reached with a quantum predicate in scope
+            continue
         if e.get("ev") == "skip":
             # rulings Q3: the measurement sites a branch left, after len(measured) measurements, and whether its
             # condition was quantum (cqo_rt.c __cqo_skip)
@@ -1185,7 +1189,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
             # measure a load copy of it, classical-valued (rule 3: every load is a rail, 207)
             reads.append({"w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         else:
-            rotations.append(dict(e, nmeas=len(measured)))   # the measurements before it (cq-459d)
+            rotations.append(dict(e, nmeas=len(measured), **({"q": True} if phq and e["kind"] == "phi" else {})))
+        phq = False
     return RunResult(side="c", sample=sr.sample,
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": _effects_of(sr),

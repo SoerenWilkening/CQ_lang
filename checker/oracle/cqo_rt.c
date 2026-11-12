@@ -892,6 +892,17 @@ void __cqo_skip(uint32_t node, const char *const *s, int32_t n) {
     out_line(trace_fd, line);
 }
 
+/* cq-xidq (CR rule 12, §6's global phases): the quantum scope a frame was called in (OracleInstr.cpp Shadow::phaseScope).
+ * A cq_phi reached with a quantum predicate in scope (rule 2's static collapse) logs `phq` just before its site event. */
+static int32_t qs_next;
+void __cqo_qs_set(int32_t q) { qs_next = q != 0; }
+int32_t __cqo_qs_get(void) { return qs_next; }
+int32_t __cqo_qcond(uint32_t node) { return !sh_classical(node); }
+void __cqo_phq(int32_t q) {
+    if (trips_only || !q) return;
+    out_line(trace_fd, "{\"ev\":\"phq\"}");
+}
+
 /* ------------------------------------------------------------------ the cutoff K (CR §6, cq-8ay)
  * OracleInstr.cpp passes kq = 1 where the loop is a quantum-exit loop in the running specialization.
  * Each activation of one gets a T2 record when it ends: by an exit edge (capped false), or when the

@@ -1006,7 +1006,9 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
             st.occ[s].append((epos, _fpv(ang, "f64", nan_eq),
                               _int(rec.get("reg")) if rec["kind"] == "theta" else None))
             st.pre[s].append(_int(rec.get("pre")) if rec["kind"] == "theta" else None)
-            st.mkey[s].append(_mprefix(rr, _int(rec.get("nmeas")) or 0, nan_eq))
+            # cq-xidq (CR rule 12, owner ruling 2026-10-29): a reach under a quantum predicate (rule 2's static collapse) is
+            # never global by the outcomes before it: keyed as one with nothing measured before
+            st.mkey[s].append(() if rec.get("q") else _mprefix(rr, _int(rec.get("nmeas")) or 0, nan_eq))
     return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
