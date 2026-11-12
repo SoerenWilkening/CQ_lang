@@ -2229,16 +2229,38 @@ Value *conjoin(LoweringContext &ctx, Value *a, Value *b, bool negA) {
   return t;
 }
 
-// errno as a lifted musl body sets it: the i32 address __errno_location() returns. A module with no __errno_location
-// (a program built against another C library, whose errno the bus does not hold) gets no store, with a note.
-std::optional<Operand> errnoAddress(LoweringContext &ctx, const CallBase &CB) {
-  IRBuilder<> &B = ctx.B();
-  Function *f = ctx.M.getFunction("__errno_location");
-  if (!f || f->arg_size() || !f->getReturnType()->isPointerTy()) {
-    noteUnbuilt("calls: signal's EINVAL with no __errno_location in the module (errno not stored)", &CB);
-    return std::nullopt;
+// Owner 2026-11-12 (clarifies cq-silnj): signal's EINVAL goes to errno through the accessor the module declares or
+// defines for its own errno reads, int *(void) by name and signature: __errno_location (musl, glibc) or __error (a
+// Darwin-built module). The pass never declares one. Neither present: no store, by the rule (nothing in the module can
+// read errno). Both present: the module reads errno through each accessor it calls, so the store goes through each one
+// with a call in the module (__errno_location first); with neither called, __errno_location alone.
+SmallVector<Operand, 2> errnoAddresses(LoweringContext &ctx) {
+  SmallVector<Function *, 2> acc;
+  for (const char *name : {"__errno_location", "__error"}) {
+    Function *f = ctx.M.getFunction(name);
+    if (f && !f->arg_size() && !f->isVarArg() && f->getReturnType()->isPointerTy())
+      acc.push_back(f);
   }
-  return Operand{B.CreatePtrToInt(B.CreateCall(f), B.getInt64Ty()), false};
+  auto called = [](Function *f) {
+    for (const User *u : f->users())
+      if (auto *c = dyn_cast<CallBase>(u); c && c->getCalledOperand() == f)
+        return true;
+    return false;
+  };
+  if (acc.size() == 2 && (called(acc[0]) || called(acc[1]))) {
+    SmallVector<Function *, 2> used;
+    for (Function *f : acc)
+      if (called(f))
+        used.push_back(f);
+    acc = used;
+  } else if (acc.size() == 2) {
+    acc.pop_back();
+  }
+  IRBuilder<> &B = ctx.B();
+  SmallVector<Operand, 2> out;
+  for (Function *f : acc)
+    out.push_back(Operand{B.CreatePtrToInt(B.CreateCall(f), B.getInt64Ty()), false});
+  return out;
 }
 
 } // namespace
@@ -2278,8 +2300,8 @@ void lowerSignal(LoweringContext &ctx, CallBase &CB) {
   Operand einval{ConstantInt::get(i32, 22), false};
   auto *k = sig.handle ? nullptr : dyn_cast<ConstantInt>(sig.v);
   if (k && !validSignal(k->getSExtValue())) {
-    if (std::optional<Operand> e = errnoAddress(ctx, CB))
-      bus::emitKeptStore(ctx, i32, *e, einval);
+    for (const Operand &e : errnoAddresses(ctx))
+      bus::emitKeptStore(ctx, i32, e, einval);
     if (!CB.use_empty()) {   // the result is a rail (the table's cell is bus memory): SIG_ERR as a seed
       CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 64}}, {ConstantInt::get(i64, -1, true)});
       ctx.unc().recordSeed(seed);
@@ -2301,11 +2323,11 @@ void lowerSignal(LoweringContext &ctx, CallBase &CB) {
   Value *c = flag ? conjoin(ctx, v, flag, false) : v;
   CallInst *old = bus::emitLoadUnder(ctx, i64, cell, c);
   bus::emitKeptStoreUnder(ctx, i64, cell, h, c, false);
-  if (std::optional<Operand> e = errnoAddress(ctx, CB)) {
+  for (const Operand &e : errnoAddresses(ctx)) {
     if (flag)
-      bus::emitKeptStoreUnder(ctx, i32, *e, einval, conjoin(ctx, v, flag, true), false);
+      bus::emitKeptStoreUnder(ctx, i32, e, einval, conjoin(ctx, v, flag, true), false);
     else
-      bus::emitKeptStoreUnder(ctx, i32, *e, einval, v, true);
+      bus::emitKeptStoreUnder(ctx, i32, e, einval, v, true);
   }
   if (CB.use_empty()) {
     ctx.unc().resolveAt(old->getNextNode(), {ctx.unc().idOf(old)});   // un-copied before the store
