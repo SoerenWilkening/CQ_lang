@@ -2398,25 +2398,31 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         sites = c_site.get(_call_key(r_by[k].sample), {})
         skips = (r_by[k].outputs or {}).get("skips", []) if isinstance(r_by[k].outputs, dict) else []
 
-        def accepted(extra: List[Tuple[int, int]]) -> List[int]:
-            """The extras (index, C measurements before it) the C run's skips do not account for. Per point (that count)
-            and site of ours: some C site it names has a quantum skip there, and either no classical one, or no more
-            extras there than quantum skips (the point does not tell several branches of one window apart: a loop whose
-            trips measure nothing between them)."""
-            groups: Dict[Tuple[int, Any], List[int]] = {}
+        nc = len(r_by[k].measured or [])
+
+        def accepted(extra: List[Tuple[int, int, int]]) -> List[int]:
+            """The extras (index, gaps lo..hi) the C run's skips do not account for. An extra of ours lies after the C
+            measurement matched to the last of ours before it and before the one matched to the next of ours after it:
+            in the C run, at one of the gaps lo..hi (gap g: after g C measurements). A skip covers the gaps from its
+            branch (n) to its join (e; the end when never joined): the circuit runs the arms a quantum branch skipped in
+            sequence somewhere between (rule 2; cq-qotkl). Per gaps and site of ours: some C site it names has a quantum
+            skip covering them, and either no classical one, or no more extras there than quantum skips (cq-fgo3h: the
+            gaps do not tell several branches of one window apart)."""
+            groups: Dict[Tuple[int, int, Any], List[int]] = {}
             miss = []
-            for i, before in extra:
+            for i, lo, hi in extra:
                 # rulings Q8: a copy read through a select whose condition reads 1 and which is no carried advance
                 # measures another register (run.py: the select is followed only where its condition reads 0)
                 if ms[i].get("site") is None or ms[i].get("sel_other") or \
                         (ms[i].get("fn") in anywhere and ms[i].get("fn") not in here):
                     miss.append(i)
                 else:
-                    groups.setdefault((before, ms[i]["site"]), []).append(i)
-            for (before, site), ix in groups.items():
+                    groups.setdefault((lo, hi, ms[i]["site"]), []).append(i)
+            for (lo, hi, site), ix in groups.items():
                 ok = False
                 for cs in sites.get(site, ()):
-                    at = [sk["q"] for sk in skips if sk["n"] == before and cs in sk["s"]]
+                    at = [sk["q"] for sk in skips if cs in sk["s"] and sk["n"] <= hi
+                          and (nc if sk.get("e") is None else sk["e"]) >= lo]
                     nq = sum(at)
                     if nq and (nq == len(at) or len(ix) <= nq):
                         ok = True
@@ -2429,7 +2435,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         bad: List[int] = []
         for x, (img, past) in enumerate(opts):
             matched = sorted(img)
-            miss = accepted([(i, sum(1 for m in matched if m < i)) for i in range(n) if i not in img and i not in past])
+
+            def gaps(i: int) -> Tuple[int, int]:
+                before = sum(1 for m in matched if m < i)     # matched[j] is C measurement j (in-order embedding)
+                return before, before
+            miss = accepted([(i, *gaps(i)) for i in range(n) if i not in img and i not in past])
             if not miss:
                 return []
             if x == 0:

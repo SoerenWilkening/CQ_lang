@@ -874,21 +874,31 @@ void __cqo_enter(const char *fn) {
     out_line(trace_fd, line);
 }
 
-/* Rulings Q3 (2026-11-11, part 2): a conditional branch whose taken successor no longer reaches the measurement sites
- * `s` (OracleInstr.cpp Shadow::skips) logs them with whether its condition is quantum (its node not classical, rule 2's
- * static collapse). compare.py accepts an extra measurement of ours at a site only where the C run left its path by
- * quantum conditions alone. */
-void __cqo_skip(uint32_t node, const char *const *s, int32_t n) {
+/* Rulings Q3 (2026-11-11, part 2): a conditional branch whose arms not taken would reach the measurement sites `s` with
+ * flags[i] set and the taken arm does not (OracleInstr.cpp Shadow::skips) logs them with whether the C run left them by a
+ * quantum condition (q: the operands that decided the condition on this run, cq-nmzv3) and the branch's join id; the
+ * join event marks its immediate post-dominator reached (cq-qotkl: the circuit runs the arms in sequence before it).
+ * compare.py accepts an extra measurement of ours at a site only where the C run left its path by quantum conditions. */
+int32_t __cqo_sh_isq(uint32_t node) { return !sh_classical(node); }
+void __cqo_skip(int32_t q, const char *const *s, const int32_t *flags, int32_t n, int32_t j) {
     if (trips_only || n <= 0) return;
     char line[4000];
-    int q = !sh_classical(node);
-    int at = snprintf(line, sizeof line, "{\"ev\":\"skip\",\"q\":%d,\"s\":[", q);
+    int at = snprintf(line, sizeof line, "{\"ev\":\"skip\",\"q\":%d,\"j\":%d,\"s\":[", q != 0, j);
+    int k = 0;
     for (int32_t i = 0; i < n && at < (int)sizeof line - 400; ++i) {
+        if (!flags[i]) continue;
         char f[300];
         jsonstr(f, sizeof f, s[i]);
-        at += snprintf(line + at, sizeof line - at, "%s%s", i ? "," : "", f);
+        at += snprintf(line + at, sizeof line - at, "%s%s", k++ ? "," : "", f);
     }
+    if (!k) return;
     snprintf(line + at, sizeof line - at, "]}");
+    out_line(trace_fd, line);
+}
+void __cqo_join(int32_t j) {
+    if (trips_only) return;
+    char line[64];
+    snprintf(line, sizeof line, "{\"ev\":\"join\",\"j\":%d}", j);
     out_line(trace_fd, line);
 }
 

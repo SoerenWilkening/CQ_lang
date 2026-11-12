@@ -1261,6 +1261,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     measured before it (cq-459d), and a phi's "q": True when a quantum predicate is in scope there (cq-xidq); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations, reads, skips = [], [], [], []
+    open_skips: Dict[Any, List[dict]] = {}
     status = _exit_status(sr)
     phq = False
     for e in sr.events:
@@ -1268,9 +1269,15 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
             phq = True               # cq-xidq: the next phi site is reached with a quantum predicate in scope
             continue
         if e.get("ev") == "skip":
-            # rulings Q3: the measurement sites a branch left, after len(measured) measurements, and whether its
-            # condition was quantum (cqo_rt.c __cqo_skip)
-            skips.append({"n": len(measured), "q": bool(e.get("q")), "s": list(e.get("s", []))})
+            # rulings Q3: the measurement sites a branch left, after len(measured) measurements ("n"), whether the
+            # operands that decided it were quantum, and ("e") the measurements made when its join was reached
+            # (cqo_rt.c __cqo_skip, __cqo_join; None: never reached, the region runs to the end)
+            skips.append({"n": len(measured), "q": bool(e.get("q")), "s": list(e.get("s", [])), "e": None})
+            open_skips.setdefault(e.get("j"), []).append(skips[-1])
+            continue
+        if e.get("ev") == "join":
+            if open_skips.get(e.get("j")):
+                open_skips[e.get("j")].pop()["e"] = len(measured)
             continue
         if e.get("ev") != "site":
             continue
