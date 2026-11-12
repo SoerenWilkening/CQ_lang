@@ -671,6 +671,44 @@ int sigvalid(int s) {
                          ["0x29", "0x29", "0x29", "0x39", "0x49", "0x36", "0x36", "0x36"])
 
 
+    def test_signal_errno_of_a_dropped_body(self):
+        # cq-silnj: a module whose own signal body the oracle drops (rule 16: the host's, cq-du1gw) and whose internal
+        # __errno_location only that body called keeps __errno_location and its cell, as the lowered module does (the
+        # pass's EINVAL store for a number that is not a valid constant): the cell is a named output, EINVAL where invalid
+        # IR: clang -O1 folds a C __errno_location away (its result is the cell's constant address)
+        o1 = TMP / "sigerrno.O1.ll"
+        o1.write_text("""target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+@err_cell = global i32 0, align 4
+define internal ptr @__errno_location() noinline {
+  ret ptr @err_cell
+}
+define ptr @signal(i32 %s, ptr %h) noinline {
+  %z = icmp eq i32 %s, 0
+  br i1 %z, label %a, label %b
+a:
+  %p = call ptr @__errno_location()
+  store i32 99, ptr %p, align 4
+  ret ptr inttoptr (i64 -1 to ptr)
+b:
+  ret ptr null
+}
+define i32 @sigerrno(i32 %s) {
+  %r = call ptr @signal(i32 %s, ptr null)
+  %c = icmp eq ptr %r, inttoptr (i64 -1 to ptr)
+  %v = zext i1 %c to i32
+  ret i32 %v
+}
+""")
+        sp = spec("sigerrno", "int sigerrno(int)", [("sigerrno", ["int"])])
+        got = []
+        for x in (0, 19, 5):
+            rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(x)]})
+            got.append((rr.outputs["ret"][0]["v"]["v"],
+                        [(m["name"], int(m["v"], 16)) for m in rr.outputs["mem"] if "err_cell" in m["name"]]))
+        self.assertEqual(got, [("0x1", [("err_cell", 22)]), ("0x1", [("err_cell", 22)]), ("0x0", [("err_cell", 0)])])
+
+
 class Cutoff(unittest.TestCase):
     """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
     recursion stops after K trips; the cq-arch T2 records in outputs["loops"]."""

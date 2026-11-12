@@ -1603,15 +1603,15 @@ static int sig_valid(int32_t s) { return s >= 1 && s <= 64 && s != 9 && s != 19 
  * (on_crash, on_timeout); the host's raise then runs it, as the C program does. */
 /* The C program's signal(sig, h) (OracleInstr.cpp notes()): CR rule 16's signal table over ruling cq-silnj's numbers. An
  * invalid sig returns SIG_ERR, stores EINVAL to the program's errno (sig_errloc: the module's own __errno_location, which
- * __cqo_signal_errloc passes right before the call and which is called only then, or null when the module defines none;
- * the host's errno too) and registers nothing; a valid one returns its cell's previous content and
+ * __cqo_signal_errloc passes right before the call and which is called only then) and registers nothing. A module that
+ * defines no __errno_location gets no errno effect at all, as the pass stores none there (K3's rule, a question to the
+ * owner); a valid one returns its cell's previous content and
  * stores h there. Where the host has the signal, h is also installed there, so that a delivery runs it as before. */
 static int32_t *(*sig_errloc)(void);
 void __cqo_signal_errloc(int32_t *(*f)(void)) { sig_errloc = f; }
 void (*__cqo_signal(int32_t sig, void (*h)(int)))(int) {
     if (!sig_valid(sig)) {
         if (sig_errloc) *sig_errloc() = EINVAL;
-        errno = EINVAL;
         return SIG_ERR;
     }
     void (*r)(int) = sig_cell[sig];
