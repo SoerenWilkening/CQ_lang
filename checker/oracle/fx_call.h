@@ -27,6 +27,10 @@ static size_t fxc_len;
 
 void cqd_fxc_begin(const char *name) { fxc_name = name, fxc_n = 0; }
 void cqd_fxc_int(uint64_t lo, uint64_t hi, unsigned bits, const char *token) {
+#ifdef FX_PTR_HOOK
+  /* a 64-bit word where host addresses lie is a pointer the callee may follow (a long, __cq_syscall's arguments) */
+  if (bits == 64 && lo >= (UINT64_C(1) << 32) && lo < (UINT64_C(1) << 47)) FX_PTR_HOOK(fxc_name, (uintptr_t)lo);
+#endif
   if (fxc_n < FXC_MAX) fxc_args[fxc_n++] = (fxc_arg){{lo, hi}, bits, token, 0};
 }
 void cqd_fxc_ptr(const void *p) {

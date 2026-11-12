@@ -783,6 +783,7 @@ static void q2_fields(const event *e) {
     const field *f = &e->fields[i];
     char role = ent && i < (int)strlen(ent->roles) ? ent->roles[i] : '-';
     if (strchr("WBspFGv", role) || f->v.bits != 64 || (f->k == F_RAIL && !f->known)) continue;
+    if (field_low64(f) < (UINT64_C(1) << 32) || field_low64(f) >= (UINT64_C(1) << 47)) continue; /* fx_standin.h: no address */
     cqe__q2_check(e->str ? e->str : "(host address)", field_low64(f));
   }
 }
