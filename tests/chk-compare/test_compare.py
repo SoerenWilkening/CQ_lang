@@ -1702,8 +1702,9 @@ class HostOutput(unittest.TestCase):
 
     def test_q2_not_compared_against_c_only(self):
         # rulings Q2: a sample whose host callee got a pointer into a QUANTUM object is not compared against C; the C
-        # program's record decides and ours only narrows it (cq-auqs3); when that leaves none, the comparison is not
-        # equal (the guard); the reference comparison stands
+        # program's record decides and ours only narrows it (cq-auqs3); when that leaves none, nothing against C is
+        # judged (the wrong measured value is not a reason) and stats["compared"] is 0, the caller's PASS (STRUCTURE
+        # ONLY) (owner ruling 2026-11-12 "verdict for excluded inputs"); the reference comparison stands
         import cqcheck.compare as cmp
         ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
         hit = [{"name": "gmtime_r", "addr": "0x200000000010"}]
@@ -1713,7 +1714,7 @@ class HostOutput(unittest.TestCase):
         reasons = cmp.compare(q2, cq2, "c", classical_key=QKEY, stats=st)
         self.assertEqual(st["compared"], 0)
         self.assertEqual(len(st["q2"]), len(q2))
-        self.assertTrue(any("no sample compared" in x for x in reasons), reasons)
+        self.assertEqual(reasons, [])
         one = [q2[0]] + list(self.ours()[1:])
         st = {}
         self.assertEqual(cmp.compare(one, cq2, "c", classical_key=QKEY, stats=st), [])
@@ -1731,7 +1732,7 @@ class HostOutput(unittest.TestCase):
     def test_deferred_read_not_compared_against_c_only(self):
         # owner rulings 2026-11-12 cq-dbtpi and Q2 partial exclusion: a sample on which the C program reads a callee's
         # result (outputs["hsread"]) whose entry ours deferred with a result rail (outputs["deferred_r"]) is not compared;
-        # either record alone, or for different callees, excludes nothing; none left is not equal (the guard)
+        # either record alone, or for different callees, excludes nothing; none left: no reason against C, compared 0
         import cqcheck.compare as cmp
         ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
         dr = [dataclasses.replace(r, outputs=dict(r.outputs, deferred_r=["ftell"])) for r in ours]
@@ -1739,7 +1740,7 @@ class HostOutput(unittest.TestCase):
         st = {}
         reasons = cmp.compare(dr, cr, "c", classical_key=QKEY, stats=st)
         self.assertEqual((st["compared"], len(st["deferred"])), (0, len(dr)))
-        self.assertTrue(any("no sample compared" in x and "cq-dbtpi" in x for x in reasons), reasons)
+        self.assertEqual(reasons, [])
         one = [dr[0]] + list(self.ours()[1:])
         st = {}
         self.assertEqual(cmp.compare(one, cr, "c", classical_key=QKEY, stats=st), [])
@@ -1750,6 +1751,38 @@ class HostOutput(unittest.TestCase):
             self.assertNotEqual(cmp.compare(o, c, "c", classical_key=QKEY, stats=st), [])
             self.assertEqual((st["compared"], st["deferred"]), (len(o), []))
         self.check(dr, self.ours(side="r"), "ref", False)
+
+    def test_excluded_inputs_judged_on_the_lowered_run_alone(self):
+        # owner ruling 2026-11-12 "verdict for excluded inputs" (CR §6): an excluded input (Q2 or cq-dbtpi) stays in the
+        # run; our violations (uncomputation among them), the frees and the leak rule are judged on it and FAIL; what
+        # needs C (here a wrong measured value) is not. The planted faults: a dirty free, a garbage rail live at exit, an
+        # _unc that did not leave 0 (core.c's violation)
+        import cqcheck.compare as cmp
+        ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
+        hit = [{"name": "gmtime_r", "addr": "0x200000000010"}]
+        q2 = [dataclasses.replace(r, outputs=dict(r.outputs, q2=hit)) for r in ours]
+        cq2 = [dataclasses.replace(r, outputs=dict(r.outputs, q2=hit)) for r in self.c()]
+        dr = [dataclasses.replace(r, outputs=dict(r.outputs, deferred_r=["ftell"])) for r in ours]
+        cr = [dataclasses.replace(r, outputs=dict(r.outputs, hsread=["ftell"])) for r in self.c()]
+        dirty = lambda rs: [dataclasses.replace(r, clean=list(r.clean or []) + [{"h": 99, "v": "0x5", "known": 0}])
+                            for r in rs]
+        leak = lambda rs: [dataclasses.replace(r, kept=list(r.kept or []) + [keep(98, 5, "i32", "garbage")]) for r in rs]
+        unc = lambda rs: [dataclasses.replace(r, violations=[{"what": "unc_nonzero", "h": 97, "msg": "planted"}])
+                          for r in rs]
+        for o, c in ((q2, cq2), (dr, cr)):
+            st = {}
+            self.assertEqual(cmp.compare(o, c, "c", classical_key=QKEY, stats=st), [])
+            self.assertEqual(st["compared"], 0)
+            for plant, needle in ((dirty, "not in a known basis state"), (leak, "a leak; cq-tt2j"),
+                                  (unc, "violations on our side")):
+                st = {}
+                reasons = cmp.compare(plant(o), c, "c", classical_key=QKEY, stats=st)
+                self.assertEqual(st["compared"], 0)
+                self.assertTrue(reasons and all(needle in x for x in reasons), (plant, reasons))
+            # one excluded sample with the fault, the others compared and equal: the fault still FAILs
+            mixed = dirty(o[:1]) + list(self.ours()[1:])
+            self.assertTrue(any("not in a known basis state" in x for x in
+                                cmp.compare(mixed, c, "c", classical_key=QKEY, stats={})))
 
     def test_pointer_field_relational(self):
         # CR §6: host addresses differ per run; a pointer into one object reads as (object, offset)

@@ -151,8 +151,9 @@ class FakeSiblings:
     """Installs fake sibling functions for the duration of a test; the real modules are restored."""
 
     def __init__(self, compare_reasons=(), samples=({"call": 0, "args": [0]},), drop=(), classes=None,
-                 domain=(), trip_runs=None):
+                 domain=(), trip_runs=None, stats=None):
         self.calls = []
+        self.stats = stats or {}         # what the fake compare reports in its stats (against "c")
         self.compare_reasons = list(compare_reasons)
         self.samples = list(samples)
         self.drop = set(drop)
@@ -180,8 +181,10 @@ class FakeSiblings:
                 (self.calls.append(("oracle",)), self.oracle_run(smp))[1] for smp in smps],
             ("oracle", "run_result"): lambda sr, s, o1: rr("c"),
             # cq-ia96: against the C program report also passes registers= (the cq_theta register webs)
-            ("compare", "compare"): lambda a, b, against, classical_key=None, registers=None: (
-                self.calls.append(("compare", against, classical_key)), self.compare_reasons)[1],
+            ("compare", "compare"): lambda a, b, against, classical_key=None, registers=None, stats=None: (
+                self.calls.append(("compare", against, classical_key)),
+                stats.update(self.stats if against == "c" else {}) if stats is not None else None,
+                self.compare_reasons)[2],
             ("compare", "classical_key_from_driver"): lambda d: (self.calls.append(("key", d)),
                                                                  self.key)[1],
         }
@@ -242,6 +245,24 @@ class Evaluate(unittest.TestCase):
         self.assertNotIn(("run", "ref"), f.calls)          # §6 vs reference short-circuited
         self.assertIn(("compare", "c", f.key), f.calls)     # the C oracle still runs
         self.assertTrue(report.green(v))
+
+    def test_structure_only_is_not_pass(self):
+        # owner ruling 2026-11-12 "verdict for excluded inputs": a C-oracle check with every sample excluded and no
+        # reason is PASS (STRUCTURE ONLY), never PASS nor green; with a reason it is FAIL; partial exclusion is PASS
+        # with the count stated
+        every = {"compared": 0, "q2": ["s0"], "deferred": []}
+        with FakeSiblings(stats=every):
+            v = report.evaluate(EX04, EX04.reference, "c")
+        self.assertEqual(v.c_oracle, report.STRUCTURE_ONLY)
+        self.assertFalse(report.requested_accepted(v) or report.green(v))
+        self.assertTrue(any("PASS (STRUCTURE ONLY)" in r for r in v.reasons), v.reasons)
+        self.assertIn("PASS (STRUCTURE ONLY) 1", report.format_table([v]))
+        with FakeSiblings(stats=every, compare_reasons=["sample 0: our side frees rail 1 = 0x5 not in a known basis state"]):
+            self.assertEqual(report.evaluate(EX04, EX04.reference, "c").c_oracle, report.FAIL)
+        with FakeSiblings(stats={"compared": 3, "q2": [], "deferred": ["s0"]}):
+            v = report.evaluate(EX04, EX04.reference, "c")
+        self.assertEqual(v.c_oracle, report.PASS)
+        self.assertTrue(any("not compared (ruling cq-dbtpi)" in r for r in v.reasons), v.reasons)
 
     def test_no_short_circuit(self):
         with FakeSiblings() as f:
