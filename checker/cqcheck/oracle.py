@@ -1222,11 +1222,11 @@ def _typed_ret(spec: DriverSpec, sr: SampleRun) -> List[Dict[str, Any]]:
 
 
 def _effects_of(sr: SampleRun) -> List[dict]:
-    """The C program's effect sequence: a raise a handler took, or one that does nothing, is no effect of
-    the circuit (rule 16's signal table dispatches it in lowered code; only the complement branch, the
-    fatal raise that ends the sample here, is an entry)."""
-    fatal = sr.outcome.startswith("raise:")
-    return [e for e in sr.effects if e.get("name") != "raise" or fatal]
+    """The C program's effect sequence. A raise a handler the program registered took is no effect (rule 16's signal
+    table dispatches it in lowered code, and the oracle runs the handler without logging it); the complement branch,
+    the default action or no handler, is the effect entry raise, logged as §6's stand-in with no host call
+    (cqo_rt.c __cqo_raise, CR 1356-1358, cq-njo63) and kept here as every other effect."""
+    return list(sr.effects)
 
 
 _TOUCHES_FENV: Dict[str, bool] = {}

@@ -3010,6 +3010,13 @@ public:
         }
         continue;
       }
+      // CR rule 16's signal table and CR 1356-1358 (cq-njo63): a direct call of the host's raise goes to cqo_rt.c
+      // __cqo_raise, which runs a handler the program registered and is otherwise the effect entry raise, §6's stand-in
+      if (callee && callee->isDeclaration() && callee->getName() == "raise" && CB->arg_size() == 1 &&
+          CB->getType()->isIntegerTy(32) && CB->getArgOperand(0)->getType()->isIntegerTy(32)) {
+        CB->setCalledFunction(hook("__cqo_raise", I32, {I32}));
+        continue;
+      }
       if (callee && callee->isDeclaration() && hostEffects.contains(callee->getName()))
         logEffect(CB, callee->getName());
       if (callee && callee->getName() == "raise" && CB->arg_size() == 1) {

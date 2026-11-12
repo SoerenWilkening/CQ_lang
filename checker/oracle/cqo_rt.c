@@ -1521,6 +1521,24 @@ static void on_timeout(int sig) {
     worker_leave();
 }
 
+/* The C program's raise(sig) (OracleInstr.cpp notes() sends a direct call of the declared raise here). CR rule 16's
+ * signal table: raise calls the function the program registered for sig; the complement (no registered function: the
+ * default action or no handler, an invalid sig included) is the effect entry raise with sig as its one field, which §6
+ * models on both sides by one stand-in of the name and argument bits (CR 1356-1358), as rt_tape.c does for ours: logged,
+ * the stand-in's result, no host call. A handler is the program's when it is neither SIG_DFL, SIG_IGN nor one this
+ * runtime installed (on_crash, on_timeout); the host's raise then runs it, as the C program does. */
+int32_t __cqo_raise(int32_t sig) {
+    struct sigaction cur;
+    if (sig > 0 && sigaction(sig, 0, &cur) == 0) {
+        int own = (cur.sa_flags & SA_SIGINFO) ? cur.sa_sigaction == on_crash
+                                              : cur.sa_handler == SIG_DFL || cur.sa_handler == SIG_IGN || cur.sa_handler == on_timeout;
+        if (!own) return raise(sig);
+    }
+    cqd_fxc_begin("raise");
+    cqd_fxc_int((uint32_t)sig, 0, 32, "i32");
+    return (int32_t)cqd_fxc_done(32);
+}
+
 /* -- the snapshot -- */
 static void snapshot_take(void) {
     static const char *segs[] = {"__DATA", "__DATA_DIRTY"};
