@@ -1,6 +1,7 @@
 // Private to the one bus (pass/lib/bus): what Bus.cpp, InPlace.cpp, Version.cpp, Intrinsics.cpp and Alloc.cpp share.
 #pragma once
 
+#include "cq/Abi.h"
 #include "cq/Bus.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Attributes.h"
@@ -26,6 +27,13 @@ llvm::CallInst *emitLoad(LoweringContext &, llvm::Type *T, Operand addr, bool un
 // One kept qram_store_<W>[_hl][_controlled] of `value` at addr (a classical value first the seed alloc_<W>), noted
 // (Uncompute::noteKeptStore). Rule 5 sentence 3.
 void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value);
+// The same two under an explicit control rail `c` (nullptr: none) in place of the predicate in scope; the kept store keeps
+// c as its control, and `neg` true puts the store under NOT c (rule 8: an X bracket on c around the store).
+llvm::CallInst *emitLoadUnder(LoweringContext &, llvm::Type *T, Operand addr, llvm::Value *c);
+void emitKeptStoreUnder(LoweringContext &, llvm::Type *T, Operand addr, Operand value, llvm::Value *c, bool neg);
+// A template no Uncompute item undoes (Intrinsics.cpp): the caller undoes it (undoRaw: its _unc, then the free) or keeps it.
+llvm::CallInst *rawTemplate(LoweringContext &, const abi::TemplateSpec &, llvm::ArrayRef<llvm::Value *>);
+void undoRaw(LoweringContext &, const abi::TemplateSpec &, llvm::CallInst *fwd);
 // The rail that stays as a kept store's control (rule 5) when the control in scope is `c`: the IR's flag g where c is
 // g's false edge, read inside an X bracket around the store (rule 8, cq-5aus); else c. nullptr when c is.
 llvm::Value *keptControl(LoweringContext &, llvm::Value *c, llvm::Value *value);

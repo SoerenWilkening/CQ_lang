@@ -21,6 +21,20 @@ using namespace llvm;
 
 namespace cq::bus {
 
+// A template no Uncompute item undoes: the caller undoes it in the trip, or it is kept.
+CallInst *rawTemplate(LoweringContext &ctx, const abi::TemplateSpec &t, ArrayRef<Value *> args) {
+  CallInst *c = ctx.B().CreateCall(abi::declare(ctx.M, t, /*unc=*/false), args);
+  ctx.unc().recordExternal(c, Role::Kept);
+  return c;
+}
+
+void undoRaw(LoweringContext &ctx, const abi::TemplateSpec &t, CallInst *fwd) {
+  SmallVector<Value *, 4> args{fwd};
+  args.append(fwd->arg_begin(), fwd->arg_end());
+  ctx.B().CreateCall(abi::declare(ctx.M, t, /*unc=*/true), args);
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {fwd});
+}
+
 namespace {
 
 const RailType W8{Kind::Int, 8}, W64{Kind::Int, 64}, W1{Kind::Int, 1};
@@ -40,20 +54,6 @@ abi::TemplateSpec ugtHl() {
   g.w = W64;
   g.shape = "hl";
   return g;
-}
-
-// A template no Uncompute item undoes: the caller undoes it in the trip, or it is kept.
-CallInst *rawTemplate(LoweringContext &ctx, const abi::TemplateSpec &t, ArrayRef<Value *> args) {
-  CallInst *c = ctx.B().CreateCall(abi::declare(ctx.M, t, /*unc=*/false), args);
-  ctx.unc().recordExternal(c, Role::Kept);
-  return c;
-}
-
-void undoRaw(LoweringContext &ctx, const abi::TemplateSpec &t, CallInst *fwd) {
-  SmallVector<Value *, 4> args{fwd};
-  args.append(fwd->arg_begin(), fwd->arg_end());
-  ctx.B().CreateCall(abi::declare(ctx.M, t, /*unc=*/true), args);
-  ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {fwd});
 }
 
 // One classical host loop over j in [0, trips) or (trips, 0], guarded when `trips` is not a constant: `body` gets the
