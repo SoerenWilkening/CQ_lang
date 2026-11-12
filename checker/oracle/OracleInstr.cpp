@@ -814,13 +814,16 @@ public:
     // (rule 2: a measurement in its region runs on every path through it), as in the pass's cq::measuredOnEveryPath. A
     // formal or a loaded value is the caller's or the cell's rail: it collapses only when also measured on every path to a
     // return (cq::measuredOnEveryPath; CR 406-410: a clone measuring a rail on some paths leaves the caller's rail alone).
-    bool staticCollapse(const CallBase *M, function_ref<bool(const Value *)> isQ) {
+    // `of`: the value judged instead of M's operand (a header phi's incoming M reads this trip, below); M itself is then no
+    // measurement of it, and its readers through the measured phi are M's own (covered by M): only its other readers count
+    // (measure_carried: x0 read by x's header phi and so by the exit test; cq-2z29a's v0 read through v's phi alone).
+    bool staticCollapse(const CallBase *M, function_ref<bool(const Value *)> isQ, const Value *of = nullptr) {
       auto strip = [](const Value *x) {
         while (auto *f = dyn_cast<FreezeInst>(x))
           x = f->getOperand(0);
         return x;
       };
-      const Value *root = strip(M->getArgOperand(0));
+      const Value *root = strip(of ? of : M->getArgOperand(0));
       if (!isa<Argument>(root) && !isa<Instruction>(root))
         return true;
       auto isMeas = [&](const Instruction &I) {
@@ -833,7 +836,7 @@ public:
                                   isa<AtomicCmpXchgInst>(cast<ExtractValueInst>(root)->getAggregateOperand()))
                              ? nullptr
                              : dyn_cast<Instruction>(root);
-      if (!defI && !cq::measuredOnEveryPath(isQ, root, M))
+      if (!defI && !cq::measuredOnEveryPath(isQ, root, of ? nullptr : M))
         return false;
       BasicBlock *D = defI ? const_cast<BasicBlock *>(defI->getParent()) : &F.getEntryBlock();
       // the readers of v: values depending on it by SSA, and the cq_measure calls and branches reading one of them
@@ -844,7 +847,8 @@ public:
         const Value *x = w.back();
         w.pop_back();
         for (const User *U : x->users())
-          if (auto *I = dyn_cast<Instruction>(U); I && orig.count(I) && !I->getType()->isVoidTy() && dep.insert(I).second)
+          if (auto *I = dyn_cast<Instruction>(U); I && orig.count(I) && !I->getType()->isVoidTy() &&
+                                                  !(of && I == M->getArgOperand(0)) && dep.insert(I).second)
             w.push_back(I);
       }
       auto reader = [&](const Instruction &I) {
@@ -945,18 +949,24 @@ public:
     // The frame's specialization answers at run time; a frame no call named (id 0, through a pointer) collapses when some
     // specialization does. None collapses in a _ctl clone (rule 19's controlled copy) or a table clone (§1.4: a kept copy is
     // measured). Computed on the function as clang wrote it (orig; Shadow adds instructions, no blocks).
-    Value *collapses(IRBuilder<> &B, CallBase *CB) {
+    // `of` empty: M's operand; else every value of `of` (the incomings of a measured header phi, for __cqo_sh_mark).
+    Value *collapses(IRBuilder<> &B, CallBase *CB, ArrayRef<const Value *> of = {}) {
       std::vector<int32_t> vals(In.KI.on ? In.KI.N + 1 : 1, 0);
       bool any = false, all = true;
+      auto judge = [&](function_ref<bool(const Value *)> isQ) {
+        if (of.empty())
+          return staticCollapse(CB, isQ);
+        return all_of(of, [&](const Value *v) { return staticCollapse(CB, isQ, v); });
+      };
       for (const cq::Specialization *S : specs) {
-        bool e = !S->table && !S->ctl && staticCollapse(CB, [&](const Value *x) { return T.isQuantum(x, *S); });
+        bool e = !S->table && !S->ctl && judge([&](const Value *x) { return T.isQuantum(x, *S); });
         any |= e, all &= e;
         if (In.KI.on)
           if (auto id = In.KI.idOf.find(S); id != In.KI.idOf.end())
             vals[id->second] = e;
       }
       if (specs.empty())
-        any = all = staticCollapse(CB, [](const Value *) { return false; });
+        any = all = judge([](const Value *) { return false; });
       if (all == any || !In.KI.on)
         return B.getInt32(any);
       vals[0] = any;
@@ -1723,9 +1733,16 @@ public:
           IRBuilder<> Bb(CB);
           auto *m = Bb.CreateCall(h("__cqo_sh_measure", I32, {I32, I32}), {args[0], collapses(Bb, CB)});
           // A loop-carried value's rail this trip is the incoming it took: that one is measured too (owner, cq-2z29a: the later trips re-read
-          // what is computed from it alone).
-          if (auto ci = carriedIn.find(CB->getArgOperand(0)); ci != carriedIn.end())
-            Bb.CreateCall(h("__cqo_sh_mark", In.Void, {I32}), {ci->second});
+          // what is computed from it alone), but only under the same static test as any collapse (CR 406-408): an incoming another
+          // value reads unmeasured (measure_carried: x0, read by x's header phi and the exit test) stays a rail; the loop-carried
+          // value with a rail incoming is a rail in every trip (owner 2026-11-07, cq-2z29a).
+          if (auto ci = carriedIn.find(CB->getArgOperand(0)); ci != carriedIn.end()) {
+            std::vector<const Value *> ins;
+            if (auto *P = dyn_cast<PHINode>(CB->getArgOperand(0)))
+              for (const Value *v : P->incoming_values())
+                ins.push_back(v);
+            Bb.CreateCall(h("__cqo_sh_mark", In.Void, {I32, I32}), {ci->second, collapses(Bb, CB, ins)});
+          }
           sh[CB] = m;  // dominated uses denote the outcome: classical (the measured node, or its basis copy's)
         }
         return;

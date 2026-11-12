@@ -679,9 +679,9 @@ uint32_t __cqo_sh_measure(uint32_t n, int32_t every) {
 }
 
 /* The incoming a measured loop-carried value took this trip: the same rail, measured with it (only
- * when that measurement collapses, cq-ndtt). */
-void __cqo_sh_mark(uint32_t n) {
-    if (!sh_pending_read && sh_pending_collapse && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
+ * when that measurement collapses and the incoming passes the same static test, cq-ndtt). */
+void __cqo_sh_mark(uint32_t n, int32_t every) {
+    if (!sh_pending_read && sh_pending_collapse && every && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
 }
 
 /* memory cells, one per byte, open addressing; a cell of another generation is empty */

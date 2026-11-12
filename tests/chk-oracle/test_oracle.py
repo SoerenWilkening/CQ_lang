@@ -943,21 +943,33 @@ double vec_q(double x0, double c, double th) { double x = x0; cq_theta(&x, th);
 
     def test_measure_in_a_loop_body(self):
         """Owner, cq-2z29a, cq-47f8h: a loop-carried value with a rail incoming is a rail. What is computed from the measured rail alone is a read on the
-        later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement."""
+        later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement.
+        The carried incoming is collapsed with the measured phi only under rule 2's static test (CR 406-408)."""
         o1 = compile_c("loopbody", """
 int body(unsigned x0, double t) { unsigned v = x0; cq_theta(&v, t); int n = 0; while (v & 1) { n += cq_measure(v); v >>= 1; } return n; }
 int qexit(unsigned x0, unsigned y0, double t) { unsigned x = x0, y = y0; cq_theta(&x, t); cq_theta(&y, t); int n = 0;
     while ((x & 1) && !(y & 1)) { n += cq_measure(x); x >>= 1; } return n; }
+unsigned carried(unsigned x0, unsigned w0, double th, unsigned k) { unsigned x = x0, w = w0; cq_theta(&x, th); cq_theta(&w, th);
+    unsigned v = x, m = 0; while (x > k) { m += cq_measure(v); v = w; x >>= 1; } return m; }
 """)
-        sp = spec("loopbody", "int body(unsigned,double);int qexit(unsigned,unsigned,double)",
-                  [("body", ["unsigned", "double"]), ("qexit", ["unsigned", "unsigned", "double"])])
+        sp = spec("loopbody", "int body(unsigned,double);int qexit(unsigned,unsigned,double);"
+                  "unsigned carried(unsigned,unsigned,double,unsigned)",
+                  [("body", ["unsigned", "double"]), ("qexit", ["unsigned", "unsigned", "double"]),
+                   ("carried", ["unsigned", "unsigned", "double", "unsigned"])])
         S = lambda c, *a: {"call": c, "args": list(a)}
         for smp, gates, reads in [(S(0, i32(1), HALF), 1, 0), (S(0, i32(3), HALF), 1, 1), (S(0, i32(7), HALF), 1, 2),
                                   (S(1, i32(1), i32(0), HALF), 1, 0), (S(1, i32(3), i32(0), HALF), 2, 0),
-                                  (S(1, i32(7), i32(0), HALF), 3, 0)]:
+                                  (S(1, i32(7), i32(0), HALF), 3, 0),
+                                  # rulings Q8 witness: trip 1 measures x0 through v's phi, but x0 is read unmeasured by x's
+                                  # phi and the exit test, so it is not collapsed through the carried incoming (x stays a rail,
+                                  # the exit test quantum); v, with that rail among its incomings, is a rail in every trip
+                                  (S(2, i32(7), i32(9), HALF, i32(0)), 3, 0)]:
             ev = oracle.trace_sample(o1, sp, smp)
             got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
             self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+        # the exit test of `carried` stays quantum after trip 1 measured x0 through v
+        ev = oracle.trace_sample(o1, sp, S(2, i32(7), i32(9), HALF, i32(0)))
+        self.assertTrue(any(e["ev"] == "skip" and e["q"] for e in ev), ev)
 
 
 class ExitRead(unittest.TestCase):
