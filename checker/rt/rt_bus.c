@@ -609,6 +609,28 @@ void cqe__q2_check(const char *name, uint64_t a) {
   cqe_log(b);
 }
 
+/* Rulings Q2 for CR rule 23's calls with an object operand: a host call by name (rule 16, cq-rrc52) that reads and writes
+ * the object's host bytes (rule 23), so a QUANTUM cell of the object gets CR 1.3's result. run.py host_effects_module
+ * sends a direct call of each here; the system's function runs as before (dlsym past the program image, as
+ * libm_next.h). The C side decides (cqo_rt.c __cqo_fegetenv ...), this record narrows. */
+#define CQE_Q2_FENV(name, params, args, p)                                                                         \
+  int cqe__q2_##name params {                                                                                      \
+    static int (*fn) params;                                                                                       \
+    if (!fn) fn = (int(*) params)dlsym(RTLD_NEXT, #name);                                                         \
+    if (!fn) {                                                                                                     \
+      fprintf(stderr, "cq: rt_bus: no host " #name "\n");                                                          \
+      abort();                                                                                                     \
+    }                                                                                                              \
+    cqe__q2_check(#name, (uint64_t)(uintptr_t)(p));                                                                \
+    return fn args;                                                                                                \
+  }
+CQE_Q2_FENV(fegetenv, (void *e), (e), e)
+CQE_Q2_FENV(feholdexcept, (void *e), (e), e)
+CQE_Q2_FENV(fesetenv, (const void *e), (e), e)
+CQE_Q2_FENV(feupdateenv, (const void *e), (e), e)
+CQE_Q2_FENV(fegetexceptflag, (void *p, int m), (p, m), p)
+CQE_Q2_FENV(fesetexceptflag, (const void *p, int m), (p, m), p)
+
 uint8_t cqe__bus_host_byte(uint64_t a) {
   uint8_t b = 0;
   host_read(a, 1, &b);

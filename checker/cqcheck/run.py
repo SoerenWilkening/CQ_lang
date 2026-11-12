@@ -2521,7 +2521,15 @@ def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
     # rulings Q2 (2026-11-11): every __cq_alloc block is recorded (rt_bus.c cqe__q2_alloc), so a host call's pointer
     # argument is resolved to its object; __cq_alloc is the bundle's (drivers._REAL), never a stand-in
     text = re.sub(r"@__cq_alloc(?=\()", "@cqe__q2_alloc", text)
+    # rulings Q2 for CR rule 23's calls with an object operand (a host call by name, rule 16): the host's function behind
+    # rt_bus.c's record of a QUANTUM object, as the C side's cqo_rt.c __cqo_fegetenv ... (a module that defines one calls its own)
+    for name in _FENV_OBJ_CALLS:
+        if name not in defined and re.search(rf"(?m)^declare\b[^\n]*@{name}\(", text):
+            text = re.sub(rf"@{name}(?=\()", f"@cqe__q2_{name}", text)
     return text + drivers.effect_wrappers_ir(callees)
+
+
+_FENV_OBJ_CALLS = ("fegetenv", "feholdexcept", "fesetenv", "feupdateenv", "fegetexceptflag", "fesetexceptflag")
 
 
 def _fx_arg(f: dict) -> dict:

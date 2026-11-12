@@ -458,11 +458,33 @@ static void fe_set_exactly(int m) { /* raise the flags in m, no arithmetic, no t
     fexcept_t f = (fexcept_t)m;
     fesetexceptflag(&f, m);
 }
+/* Rulings Q2 (owner 2026-11-11) for rule 23's calls with an object operand: CR rule 23 "a host fenv call reads and writes
+ * its host bytes", and rule 16 makes each a host call by name (cq-rrc52, cq-du1gw), so a QUANTUM cell of the object gets
+ * CR 1.3's result on the lowered side (a host write there is not seen by the bus, a host read is unspecified). Each
+ * such call is a bodiless callee given a pointer: __cqo_q2_check (below) decides, as fx_call.h's FX_PTR_HOOK does. */
+static void __cqo_q2_check(const char *name, uintptr_t a);
 int __cqo_fetestexcept(int m) { return fetestexcept(m & CQO_FE_IEEE); }
 int __cqo_feclearexcept(int m) { return feclearexcept(m & CQO_FE_IEEE) ? -1 : 0; }
 int __cqo_feraiseexcept(int m) { fe_set_exactly(m); return 0; }
-int __cqo_fegetexceptflag(fexcept_t *p, int m) { *p = (fexcept_t)fetestexcept(m & CQO_FE_IEEE); return 0; }
+int __cqo_fegetexceptflag(fexcept_t *p, int m) {
+    __cqo_q2_check("fegetexceptflag", (uintptr_t)p);
+    *p = (fexcept_t)fetestexcept(m & CQO_FE_IEEE);
+    return 0;
+}
+int __cqo_fegetenv(fenv_t *e) {
+    __cqo_q2_check("fegetenv", (uintptr_t)e);
+    return fegetenv(e);
+}
+int __cqo_feholdexcept(fenv_t *e) {
+    __cqo_q2_check("feholdexcept", (uintptr_t)e);
+    return feholdexcept(e);
+}
+int __cqo_fesetenv(const fenv_t *e) {
+    __cqo_q2_check("fesetenv", (uintptr_t)e);
+    return fesetenv(e);
+}
 int __cqo_fesetexceptflag(const fexcept_t *p, int m) {
+    __cqo_q2_check("fesetexceptflag", (uintptr_t)p);
     m &= CQO_FE_IEEE;
     int saved = (int)*p & m;
     feclearexcept(m & ~saved);
@@ -474,6 +496,7 @@ int __cqo_fesetround(int m) {
     return fesetround(m) ? 1 : 0;
 }
 int __cqo_feupdateenv(const fenv_t *e) {
+    __cqo_q2_check("feupdateenv", (uintptr_t)e);
     int cur = fetestexcept(CQO_FE_IEEE);
     if (fesetenv(e)) return -1;
     fe_set_exactly(cur);
