@@ -22,11 +22,11 @@ namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &)
                        // Rule 16 Signal table: raise's complement, the entry `raise` with its one actual as its field.
                        llvm::SmallVector<llvm::Value *, 2> lowerRaiseEffect(LoweringContext &, llvm::CallBase &,
                                                                             llvm::Value *flag);
-                       // cq-a63l (CR rule 16, "a result the program reads"; amendment on cq-arch): before
-                       // the final taint, a deferred printf/fprintf (a host effect of some specialization)
-                       // whose count the program reads or whose format may hold %n gets the library's
-                       // formatting body on a null buffer, snprintf(0, 0, fmt, args...), in front of it;
-                       // the count's uses read that call (lifted by rule 18, or a rule 27 declared clone).
+                       // cq-a63l, owner ruling 2026-11-12 (rule 16): before the final taint, a deferred C library
+                       // output call (a host effect of some specialization) whose result the program reads, or
+                       // whose format may hold %n, gets in front of it the value musl's body returns when every
+                       // write succeeds: a bundle result entry (__cq_count_*, lifted by rule 18) or a template
+                       // over the arguments; the result's uses read that value and the effect has no result.
                        // True when the module changed (taint is then recomputed).
                        bool rewriteDeferredResults(llvm::Module &, const TaintInfo &); }
 namespace cq::invert { // cq-4593 (cq-arch 2026-11-02, CR rule 17, §1.3): a __cq_invert_begin/_end call becomes

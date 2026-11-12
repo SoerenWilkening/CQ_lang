@@ -11,7 +11,10 @@ no stream call are shared. Idempotent. usage: cq_formatters.py in.ll out.ll"""
 import re, sys
 
 FORMATTERS = ["sprintf", "snprintf", "sscanf", "vsprintf", "vsnprintf", "vsscanf",
-              "swprintf", "vswprintf", "swscanf", "vswscanf"]
+              "swprintf", "vswprintf", "swscanf", "vswscanf",
+              # the bundle's result entries (bundle/src/cq_count.c, cq-cdf9z): their private FILE is on their own stack
+              "__cq_count_snprintf", "__cq_count_vsnprintf", "__cq_count_wprintf", "__cq_count_vwprintf",
+              "__cq_count_wctomb", "__cq_count_wcsrtombs"]
 # pass/lib/Common.cpp streamName: C17 7.21 / POSIX.1-2017 <stdio.h> less the string formatters, the <wchar.h> stream
 # functions less the wide string formatters, CR rule 16's descriptor calls.
 STREAM = set("""fopen freopen fclose fflush setbuf setvbuf fprintf printf vfprintf vprintf fscanf scanf vfscanf vscanf fgetc
