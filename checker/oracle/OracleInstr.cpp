@@ -3233,12 +3233,13 @@ public:
       }
       // CR rule 16's signal table (cq-t0xnq): the previous handler signal returns is never one the oracle runtime installed.
       // Owner ruling 2026-11-12 cq-silnj: an invalid sig stores EINVAL at __errno_location(); the runtime calls the
-      // module's own (its address, no call added here) only then, or none when the module defines none.
+      // module's own (its address, no call added here) only then; a module with none gets no errno effect, as the pass
+      // (calls/Calls.cpp errnoAddress) stores none there.
       if (callee && callee->isDeclaration() && callee->getName() == "signal" && CB->arg_size() == 2 &&
           CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
           CB->getArgOperand(1)->getType()->isPointerTy()) {
         Function *el = M.getFunction("__errno_location");
-        Value *errFn = el && !el->isDeclaration() && el->arg_empty() && el->getReturnType()->isPointerTy()
+        Value *errFn = el && el->arg_empty() && el->getReturnType()->isPointerTy()
                            ? (Value *)el : ConstantPointerNull::get(cast<PointerType>(Ptr));
         IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr}), {errFn});
         CB->setCalledFunction(hook("__cqo_signal", Ptr, {I32, Ptr}));
@@ -3593,6 +3594,23 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
             }
         changed = true;
       }
+    // Owner ruling 2026-11-12 cq-silnj: signal with an invalid number stores EINVAL at __errno_location(). The pass emits
+    // that store (calls/Calls.cpp errnoAddress) for every call whose number is not a valid constant, so the lowered module
+    // keeps the module's __errno_location and what it reaches (musl's __cq_tp, __cq_locale: named outputs); the reference
+    // stores it too (cqo_rt.c __cqo_signal through __cqo_signal_errloc), so it keeps the same body where the dropped signal
+    // body was its only caller.
+    if (Function *sg = M.getFunction("signal"); changed && sg && sg->isDeclaration())
+      if (Function *el = M.getFunction("__errno_location");
+          el && !el->isDeclaration() && el->arg_empty() && el->getReturnType()->isPointerTy())
+        for (User *U : sg->users())
+          if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledOperand() == sg && CB->arg_size() == 2) {
+            auto *k = dyn_cast<ConstantInt>(CB->getArgOperand(0));
+            int64_t v = k ? k->getSExtValue() : 0;
+            if (!k || !(v >= 1 && v <= 64 && v != 9 && v != 19 && v != 32 && v != 33 && v != 34)) {
+              taken.insert(el);
+              break;
+            }
+          }
     if (changed)
       dropUnreached(M, taken);
     return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
