@@ -1314,10 +1314,18 @@ def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hoo
 # calls, INPUT entries of fx_standin.h; cq-muafq), setjmp, signals and raise, program end, threads, and
 # the printing family, whose text is compared as stdout. Bodies the driver line writes (203's ext_fill) and
 # the corpus's rule 27 roots (rulings Q6) are no host calls either.
+# cq-ggcbc (CR 1356-1358: one stand-in on both sides): a `__` name is real only when named here: the lowered ABI's and the
+# checker's own (__cq*), the stack protector's, the program ends sampling._ENDS knows (__assert_rtn, __assert_fail), the
+# compiler-rt builtins clang emits as calls (complex multiply and divide, powi), and what pass/lib/calls/LibCalls.cpp and
+# Plugin.cpp rewrite to a real function or to plain accesses (the fortified __*_chk forms, the oversize __atomic_* calls,
+# __longjmp_chk). Every other bodiless `__` callee (the macOS SDK's __srget, __swbuf, __error, __toupper, __maskrune, a
+# libc internal) is an effect entry on the lowered side, so the stand-in here too.
 
 FX_PREFIX = "cqd_fx_"
 _REAL = re.compile(
-    r"^(llvm\.|cq_|cqrt_|cqd_|__|malloc$|calloc$|realloc$|reallocf$|free$|aligned_alloc$|valloc$|posix_memalign$"
+    r"^(llvm\.|cq_|cqrt_|cqd_|__cq|__stack_chk_fail$|__assert_(rtn|fail)$|__(mul|div)[sdxt]c3$|__powi[sdx]f2$"
+    r"|__(mem(cpy|move|set|ccpy)|st(r|p)n?cpy|strn?cat|strl(cpy|cat)|v?sn?printf|longjmp)_chk$"
+    r"|__atomic_(load|store|exchange|compare_exchange)$|malloc$|calloc$|realloc$|reallocf$|free$|aligned_alloc$|valloc$|posix_memalign$"
     r"|mem(cpy|move|set|cmp|chr)$|memset_pattern(4|8|16)$|bcmp$|bzero$|bcopy$|str[a-z]*$|wcs[a-z]*$|wmem[a-z]*$"
     r"|fe(clearexcept|getexceptflag|raiseexcept|setexceptflag|testexcept|getround|setround|getenv|holdexcept|setenv|updateenv)$|_?setjmp$|_?longjmp$|sig[a-z]*$|raise$|abort$|exit$|_exit$|_Exit$|atexit$|pthread_[a-z_]+$|thrd_exit$"
     r"|v?[sf]?n?printf$|v?asprintf$|v?f?wprintf$"
@@ -1372,7 +1380,7 @@ def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[st
         c = _c_name(m.group("name"))
         if c in excluded or uses.get(m.group("name"), 0) < 2:
             continue
-        # `__` marks the compiler's and the runtime's real symbols, but a `declare hidden` one links statically
+        # a `__` name _REAL lists is a real symbol, but a `declare hidden` one links statically
         # and no host library can supply it: a libc internal with no body in the build (musl's
         # __private_cond_signal under cnd_signal), a bodiless callee like any other (rule 16)
         # __cq_syscall, the musl arch hook (CQ_spec _tools/musl_arch_cq, LIBC_COVERAGE): "a host call", bodiless: rule 16

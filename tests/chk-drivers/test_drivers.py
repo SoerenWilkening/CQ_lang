@@ -128,17 +128,23 @@ class FlatDrivers(unittest.TestCase):
             self.assertEqual({n for n, _, _ in D.writable_globals(t)} - {n for n, _, _ in D.writable_globals(low)}, set(), name)
 
     def test_effect_callees_hidden(self):
-        # a `declare hidden` libc internal with no body is a stand-in; other `__` names stay real
+        # a `declare hidden` libc internal with no body is a stand-in; the `__` names drivers._REAL lists stay real
+        # (cq-ggcbc: only those; the macOS SDK's __srget under getchar_unlocked and __error are stand-ins on both sides)
         t = ('declare hidden i32 @__private_cond_signal(ptr noundef, i32 noundef) local_unnamed_addr #6\n'
-             'declare i32 @__muldc3(i32)\ndeclare hidden ptr @__cq_alloc(i64, i64)\ndeclare hidden void @__stack_chk_fail()\n')
+             'declare i32 @__muldc3(i32)\ndeclare hidden ptr @__cq_alloc(i64, i64)\ndeclare hidden void @__stack_chk_fail()\n'
+             'declare i32 @__srget(ptr noundef)\ndeclare ptr @__error()\ndeclare ptr @__memcpy_chk(ptr, ptr, i64, i64)\n'
+             'declare void @__assert_rtn(ptr, ptr, i32, ptr)\ndeclare void @__atomic_load(i64, ptr, ptr, i32)\n')
+        # a declaration nothing uses is no callee (cq-tgl3i): each is used
+        t += "".join(f"  call void @{n}()\n" for n in ("__private_cond_signal", "__muldc3", "__cq_alloc", "__stack_chk_fail",
+                                                       "__srget", "__error", "__memcpy_chk", "__assert_rtn", "__atomic_load"))
         c = D.effect_callees(t)
-        self.assertEqual(sorted(c), ["__private_cond_signal"])
+        self.assertEqual(sorted(c), ["__error", "__private_cond_signal", "__srget"])
         self.assertEqual(c["__private_cond_signal"][1], "i32")
 
     def test_effect_callees(self):
         t = ('declare i32 @putchar(i32 noundef)\ndeclare noalias ptr @malloc(i64)\ndeclare i64 @"\\01_fwrite"(ptr noundef, i64, i64, ptr)\n'
              'declare double @sin(double)\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @ext(i32)\ndeclare i32 @rooted(i32)\ndeclare void @llvm.foo(i32)\n'
-             'declare ptr @__cq_alloc(i64, i64)\n  %1 = call i32 @putchar(i32 3)\n  %2 = call i64 @"\\01_fwrite"(ptr %0, i64 1, i64 1, ptr %0)\n')
+             'declare ptr @__cq_alloc(i64, i64)\n  %0 = call i32 @ext(i32 1)\n  %1 = call i32 @putchar(i32 3)\n  %2 = call i64 @"\\01_fwrite"(ptr %0, i64 1, i64 1, ptr %0)\n')
         c = D.effect_callees(t, frozenset({"rooted"}))
         self.assertEqual(sorted(c), ["ext", "fwrite", "putchar"])
         out = D.rename_effects(t, c)

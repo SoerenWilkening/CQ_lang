@@ -363,6 +363,19 @@ RV3 = {
     # the C oracle runtime's own SIGSEGV handler; the result read as 1 instead
     "t0xnq": [("prev", r"%9 = call i32 @cq_template_zext_i1_to_i32\(i32 %8\)", "%9 = call i32 @cqrt_alloc_i32(i32 1)")],
     "njo63": [("signo", r"@cqrt_tape_write_i32_lit\(i32 %3, i32 15\)", "@cqrt_tape_write_i32_lit(i32 %3, i32 14)")],
+    # cq-d4n0n (ruling Q5): getchar_unlocked is an INPUT call with getchar's model on both sides (fx_standin.h); under a
+    # quantum predicate (d4n0n, which FAILed: ours deferred it) and unconditional (d4n0n2, which PASSed with both sides
+    # reading the stand-in's hash 0x7106341d, the mutant's value, instead of the stream's '7')
+    "d4n0n": [],
+    "d4n0n2": [("hash", r"%4 = tail call i32 @getchar_unlocked\(\)",
+                "%unl = tail call i32 @getchar_unlocked()\n  %4 = add i32 0, 1896232989")],
+    # cq-ggcbc (CR 1356-1358): a bodiless `__` callee (__srget) is the stand-in on the C side too, never the host's
+    "ggcbc": [("plus", r"%4 = tail call i32 @__srget\(ptr noundef null\) #2",
+               "%srg = tail call i32 @__srget(ptr noundef null) #2\n  %4 = add i32 %srg, 256")],
+    # cq-xwv7r: vprintf / vwprintf leave the caller's va_list where musl leaves it (the C side passes the host a copy);
+    # both FAILed on every sample before
+    "xwv7r": [],
+    "xwv7r_w": [],
     "glob": [("classical", r"%9 = shl nsw i32 %0, 1", "%9 = shl nsw i32 %0, 2"),
              ("measured", r"%8 = call i32 @cqrt_alloc_i32\(i32 %7\)",
               "%bad = add i32 %7, 1\n  %8 = call i32 @cqrt_alloc_i32(i32 %bad)")],

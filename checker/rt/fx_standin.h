@@ -66,7 +66,31 @@ static const cq_fx_ent cq_fx_table[] = {
     {"ungetc", 'I', "-f"},  {"ungetwc", 'I', "-f"}, {"feof", 'I', "f"},    {"ferror", 'I', "f"},  {"clearerr", 'I', "f"},
     {"getw", 'I', "f"},     {"pread", 'I', "fWn-"}, {"getline", 'I', "LNf"}, {"getdelim", 'I', "LN-f"},
     {"fgetln", 'I', "fN"},
+    /* cq-d4n0n: the _unlocked forms (POSIX getc_unlocked, getchar_unlocked, putc_unlocked, putchar_unlocked, which
+     * pass/lib/Common.cpp streamName lists; musl's other aliases, bodiless under ruling Q6) are their locked form: the
+     * same roles and, through cq_fx_is, the same model (owner ruling 2026-11-12: an _unlocked variant follows its
+     * locked form). tests/rt-tape/test_fx_table.py keeps this table and streamName from drifting apart. */
+    {"getc_unlocked", 'I', "f"},      {"getchar_unlocked", 'I', ""},    {"fgetc_unlocked", 'I', "f"},
+    {"fgets_unlocked", 'I', "Wnf"},   {"fread_unlocked", 'I', "Wnnf"},  {"fgetwc_unlocked", 'I', "f"},
+    {"getwc_unlocked", 'I', "f"},     {"getwchar_unlocked", 'I', ""},   {"fgetws_unlocked", 'I', "Wnf"},
+    {"feof_unlocked", 'I', "f"},      {"ferror_unlocked", 'I', "f"},    {"clearerr_unlocked", 'I', "f"},
+    {"fwrite_unlocked", 'O', "Bnnf"}, {"fputs_unlocked", 'O', "sf"},    {"putchar_unlocked", 'O', "-"},
+    {"putc_unlocked", 'O', "-f"},     {"fputc_unlocked", 'O', "-f"},    {"fflush_unlocked", 'O', "f"},
 };
+
+/* cq-dsnrs: the length of a call's buffer, one rule for both sides (rt_tape.c length_of, fx_call.h fxc_length): the
+ * product of its length arguments ('n' roles), each masked to its width, a negative one (its sign bit set below 64 bits)
+ * counting as 0, saturating; an INPUT call consumes for that value (ruling Q5: a rail length consumes for its value on
+ * that input), and a 'B' argument's capture records that many bytes of the buffer, at most CQ_FX_K2 when a length is a
+ * rail (known 0: BACKEND_ABI §1.11's bound on a capture of a quantum extent; only the lowered side has rails). */
+static inline uint64_t cq_fx_len_mul(uint64_t v, uint64_t x, unsigned bits) {
+  if (bits < 64) {
+    x &= (UINT64_C(1) << bits) - 1;
+    if ((x >> (bits - 1)) & 1) x = 0;
+  }
+  return x && v > UINT64_MAX / x ? UINT64_MAX : v * x;
+}
+static inline uint64_t cq_fx_len_capture(uint64_t v, int known) { return !known && v > CQ_FX_K2 ? CQ_FX_K2 : v; }
 
 static inline const cq_fx_ent *cq_fx_find(const char *name) {
   if (!name) return NULL;
@@ -104,7 +128,11 @@ static inline uint64_t cq_fx_result(uint64_t h, unsigned bits) {
  * that ran into the end, cleared by clearerr and a push-back), and quantum: the evaluator's mark that a call that was not
  * classical consumed, so the position depends on the quantum inputs (rt_tape.c sets it; fx_call.h's direct calls on the
  * lowered side then store through the bus as quantum stores, cq_fx_bus_store). */
-typedef struct { const uint8_t *b; size_t n, pos; int set, haspb, eof, quantum; uint8_t pbv; void *ln; } cq_fx_in_t;
+/* cq-dsnrs: musl's push-back (ungetc.c, ungetwc.c) writes *--f->rpos into the buffer, which has UNGET (8) bytes before
+ * its start: at least 8 pushed-back bytes always succeed, read back last pushed first; whether a ninth does depends on
+ * musl's buffer, so the model takes 8 (a stated limit). haspb is their number, pbv[0] the next byte read. */
+#define CQ_FX_UNGET 8
+typedef struct { const uint8_t *b; size_t n, pos; int set, haspb, eof, quantum; uint8_t pbv[CQ_FX_UNGET]; void *ln; } cq_fx_in_t;
 __attribute__((weak)) cq_fx_in_t cq_fx_in;
 
 static inline cq_fx_in_t *cq_fx_stream(void) {
@@ -146,31 +174,48 @@ void cq_fx_bus_store(uint64_t addr, uint8_t byte, int write, int classical);
 typedef struct {
   size_t pos, take, stored, unit, skip;  /* pos: the state before the call (with haspb, pbv, eof) */
   int haspb, eof, at;                     /* at: pread, the bytes come from offset base of the stream, nothing consumed */
-  uint8_t pbv;
+  uint8_t pbv[CQ_FX_UNGET];
   size_t base;
   int seteof, push, clear;                /* the state after: the end was hit; push pushes pbv2 back; clear clears eof */
+  int eofgrow;                            /* getline, getdelim at the end: musl's buffer of 3 (cq_fx_input_apply) */
   uint8_t pbv2;
   uint64_t result;
 } cq_fx_io;
 
-static inline size_t cq_fx_rem(const cq_fx_in_t *s) { return s->n - s->pos + (s->haspb ? 1u : 0u); }
+static inline size_t cq_fx_rem(const cq_fx_in_t *s) { return s->n - s->pos + (size_t)s->haspb; }
+
+/* The pushed-back bytes in an "in" field: -1 for none, the byte for one, else their number in the top byte above the
+ * first seven. */
+static inline long long cq_fx_pb_json(int haspb, const uint8_t *pbv) {
+  if (!haspb) return -1;
+  if (haspb == 1) return pbv[0];
+  unsigned long long v = (unsigned long long)haspb << 56;
+  for (int i = 0; i < haspb && i < 7; i++) v |= (unsigned long long)pbv[i] << (8 * i);
+  return (long long)v;
+}
 
 /* Byte k of the stream's sequence at the call's state. */
 static inline uint8_t cq_fx_io_at(const cq_fx_io *io, size_t k) {
   const cq_fx_in_t *s = &cq_fx_in;
   if (io->at) return s->b[io->base + k];
-  if (io->haspb) return k == 0 ? io->pbv : s->b[io->pos + k - 1];
+  if (k < (size_t)io->haspb) return io->pbv[k];
+  k -= (size_t)io->haspb;
   return s->b[io->pos + k];
 }
 
-static inline int cq_fx_is(const cq_fx_ent *e, const char *a) { return !strcmp(e->name, a); }
+/* e is the function a, or its _unlocked form (cq-d4n0n: the same model). */
+static inline int cq_fx_is(const cq_fx_ent *e, const char *a) {
+  size_t n = strlen(a);
+  return !strncmp(e->name, a, n) && (!e->name[n] || !strcmp(e->name + n, "_unlocked"));
+}
 
 static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t buf, uint64_t size, uint64_t aux) {
   cq_fx_in_t *s = cq_fx_stream();
   size_t rem = cq_fx_rem(s);
   cq_fx_io io;
   memset(&io, 0, sizeof io);
-  io.pos = s->pos, io.haspb = s->haspb, io.pbv = s->pbv, io.eof = s->eof, io.unit = 1, io.skip = (size_t)-1;
+  io.pos = s->pos, io.haspb = s->haspb, io.eof = s->eof, io.unit = 1, io.skip = (size_t)-1;
+  memcpy(io.pbv, s->pbv, sizeof io.pbv);
   int wide = cq_fx_is(e, "fgetws");
   if (cq_fx_is(e, "fgets") || wide) {
     io.unit = wide ? sizeof(wchar_t) : 1;
@@ -190,6 +235,7 @@ static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t
     if (!rem) {                                    /* end of file at once: null / -1, nothing stored */
       io.seteof = 1;
       io.result = g || cq_fx_is(e, "fgetln") ? 0 : UINT64_MAX;
+      io.eofgrow = !g && !cq_fx_is(e, "fgetln");   /* getline, getdelim: cq_fx_input_apply */
       return io;
     }
     size_t k = 0;
@@ -221,11 +267,18 @@ static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t
                 (uint64_t)cq_fx_io_at(&io, 3) << 24;
     return io;
   }
-  if (cq_fx_is(e, "ungetc") || cq_fx_is(e, "ungetwc")) {   /* one byte of push-back; EOF (WEOF) or a second fails */
+  /* cq-dsnrs, musl ungetc.c, ungetwc.c: EOF (WEOF) fails, and a push-back past CQ_FX_UNGET bytes (above); ungetc pushes
+   * (unsigned char)c; ungetwc pushes wcrtomb's encoding in the C locale the bundle runs in (wcrtomb.c: c below 0x80 its
+   * byte, a byte code unit 0xdf80..0xdfff its low byte, any other c EILSEQ: WEOF). Both clear the end-of-file indicator. */
+  if (cq_fx_is(e, "ungetc") || cq_fx_is(e, "ungetwc")) {
     uint32_t c = (uint32_t)aux;
-    if (c == 0xFFFFFFFFu || s->haspb) { io.result = 0xFFFFFFFFu; return io; }
+    int w = cq_fx_is(e, "ungetwc");
+    if (c == 0xFFFFFFFFu || s->haspb >= CQ_FX_UNGET || (w && c >= 0x80 && c - 0xdf80u >= 0x80)) {
+      io.result = 0xFFFFFFFFu;
+      return io;
+    }
     io.push = 1, io.pbv2 = (uint8_t)c, io.clear = 1;
-    io.result = cq_fx_is(e, "ungetc") ? (uint8_t)c : c;
+    io.result = w ? c : (uint8_t)c;
     return io;
   }
   if (cq_fx_is(e, "feof")) { io.result = s->eof ? 1 : 0; return io; }
@@ -251,18 +304,27 @@ static inline uint8_t cq_fx_input_byte(const cq_fx_io *io, size_t j) {
 static inline void cq_fx_input_done(const cq_fx_io *io) {
   cq_fx_in_t *s = cq_fx_stream();
   if (io->take) {
-    s->pos = io->pos + io->take - (io->haspb ? 1u : 0u);
-    s->haspb = 0;
+    size_t hp = (size_t)io->haspb;
+    if (io->take < hp) {                         /* the rest of the pushed-back bytes stay, in order */
+      memmove(s->pbv, io->pbv + io->take, hp - io->take);
+      s->haspb = (int)(hp - io->take), s->pos = io->pos;
+    } else {
+      s->pos = io->pos + io->take - hp;
+      s->haspb = 0;
+    }
   }
   if (io->seteof) s->eof = 1;
   if (io->clear) s->eof = 0;
-  if (io->push) s->haspb = 1, s->pbv = io->pbv2;
+  if (io->push && s->haspb < CQ_FX_UNGET) {
+    memmove(s->pbv + 1, s->pbv, (size_t)s->haspb);
+    s->pbv[0] = io->pbv2, s->haspb++;
+  }
 }
 
 /* The cells a store of the call can reach for length v from any state of the stream: a bound that does not depend on
  * the quantum inputs (an earlier call under a quantum predicate moves the position). */
 static inline size_t cq_fx_input_reach(const cq_fx_ent *e, uint64_t v) {
-  size_t n = cq_fx_stream()->n + 1;            /* a pushed-back byte too */
+  size_t n = cq_fx_stream()->n + CQ_FX_UNGET;  /* the pushed-back bytes too */
   if (cq_fx_is(e, "fgets")) return v == 0 ? 0 : (size_t)((v - 1 < n ? v - 1 : n) + 1);
   if (cq_fx_is(e, "fgetws")) return v == 0 ? 0 : (size_t)((v - 1 < n ? v - 1 : n) + 1) * sizeof(wchar_t);
   if (cq_fx_is(e, "gets")) return n + 1;
@@ -302,6 +364,17 @@ static inline uint64_t cq_fx_input_apply(const cq_fx_ent *e, const cq_fx_io *io,
                                          int nknown, int classical, int cv, uint64_t lpa, uint64_t npa, cq_fx_peek_fn pk,
                                          cq_fx_store_fn st) {
   if (cq_fx_is(e, "getline") || cq_fx_is(e, "getdelim")) {
+    /* cq-dsnrs, musl getdelim.c: at the end of file with *lineptr null or *n 0 it still grows the buffer (m = 0 + 0 + 2,
+     * plus m / 2 with no delimiter seen: 3) and sets *n, then returns -1 with nothing stored */
+    if (cv && io->eofgrow) {
+      uint64_t lp = cq_fx_load64(pk, lpa), cap = cq_fx_load64(pk, npa);
+      if (!lp || !cap) {
+        lp = (uint64_t)(uintptr_t)CQ_FX_REALLOC((void *)(uintptr_t)lp, 3);
+        cq_fx_store64(st, lpa, lp, 1, classical);
+        cq_fx_store64(st, npa, 3, 1, classical);
+      }
+      return io->result;
+    }
     if (!cv || !io->stored) return cv ? io->result : 0;
     uint64_t lp = cq_fx_load64(pk, lpa), cap = cq_fx_load64(pk, npa);
     if (!lp || cap < io->stored) {
@@ -324,7 +397,7 @@ static inline uint64_t cq_fx_input_apply(const cq_fx_ent *e, const cq_fx_io *io,
     return line;
   }
   if (has_buf) {
-    size_t reach = classical ? io->stored : cq_fx_input_reach(e, nknown ? v : (uint64_t)CQ_FX_K2);
+    size_t reach = classical ? io->stored : cq_fx_input_reach(e, nknown ? v : UINT64_MAX);
     for (size_t j = 0; j < reach; j++) {
       int write = cv && j < io->stored;
       if (classical && !write) continue;
@@ -336,7 +409,7 @@ static inline uint64_t cq_fx_input_apply(const cq_fx_ent *e, const cq_fx_io *io,
 
 /* The "in" field of an input call's effect line: the state it found and the bytes it took. */
 static inline int cq_fx_in_json(char *out, size_t cap, const cq_fx_io *io) {
-  return snprintf(out, cap, ",\"in\":[%zu,%zu,%d,%d]", io->pos, io->take, io->haspb ? (int)io->pbv : -1, io->eof);
+  return snprintf(out, cap, ",\"in\":[%zu,%zu,%lld,%d]", io->pos, io->take, cq_fx_pb_json(io->haspb, io->pbv), io->eof);
 }
 
 /* cq-tgl3i: the scanf family (scanf, fscanf, vscanf, vfscanf and the wide four) is a rule-16 stream call by name (CR rule
@@ -383,11 +456,14 @@ static inline size_t cq_fx_scan_nptr(const char *fmt) {
 
 /* ruling Q5: where a scan starts: the stream's state (a position, a pushed-back byte), or for the lowered side's union of
  * reach every position with nothing pushed back. */
-typedef struct { size_t pos; int haspb; uint8_t pbv; } cq_fx_at;
+typedef struct { size_t pos; int haspb; uint8_t pbv[CQ_FX_UNGET]; } cq_fx_at;
 
 static inline cq_fx_at cq_fx_here(void) {
   cq_fx_in_t *s = cq_fx_stream();
-  cq_fx_at a = {s->pos, s->haspb, s->pbv};
+  cq_fx_at a;
+  memset(&a, 0, sizeof a);
+  a.pos = s->pos, a.haspb = s->haspb;
+  memcpy(a.pbv, s->pbv, sizeof a.pbv);
   return a;
 }
 
@@ -397,11 +473,12 @@ static inline FILE *cq_fx_in_open(cq_fx_at a, uint8_t **tmp) {
   *tmp = NULL;
   size_t n = s->n - a.pos;
   if (a.haspb) {
-    *tmp = (uint8_t *)malloc(n + 1);
+    size_t hp = (size_t)a.haspb;
+    *tmp = (uint8_t *)malloc(n + hp);
     if (!*tmp) return NULL;
-    (*tmp)[0] = a.pbv;
-    if (n) memcpy(*tmp + 1, s->b + a.pos, n);
-    return fmemopen(*tmp, n + 1, "r");
+    memcpy(*tmp, a.pbv, hp);
+    if (n) memcpy(*tmp + hp, s->b + a.pos, n);
+    return fmemopen(*tmp, n + hp, "r");
   }
   if (!n) return fopen("/dev/null", "r");
   return fmemopen((void *)(uintptr_t)(s->b + a.pos), n, "r");
@@ -420,13 +497,14 @@ static inline size_t cq_fx_in_close(FILE *in, uint8_t *tmp, int *hit_eof) {
 static inline void cq_fx_scan_done(cq_fx_at a, size_t took, int hit_eof) {
   cq_fx_io io;
   memset(&io, 0, sizeof io);
-  io.pos = a.pos, io.haspb = a.haspb, io.pbv = a.pbv, io.take = took, io.seteof = hit_eof;
+  io.pos = a.pos, io.haspb = a.haspb, io.take = took, io.seteof = hit_eof;
+  memcpy(io.pbv, a.pbv, sizeof io.pbv);
   cq_fx_input_done(&io);
 }
 
 /* The "in" field of a scan's effect line, as cq_fx_in_json. */
 static inline int cq_fx_scan_json(char *out, size_t cap, cq_fx_at a, size_t took, int eof) {
-  return snprintf(out, cap, ",\"in\":[%zu,%zu,%d,%d]", a.pos, took, a.haspb ? (int)a.pbv : -1, eof);
+  return snprintf(out, cap, ",\"in\":[%zu,%zu,%lld,%d]", a.pos, took, cq_fx_pb_json(a.haspb, a.pbv), eof);
 }
 
 /* The host's vfscanf (wide: vfwscanf on a wchar_t format) on the stream from a (ruling Q5: the lowered side runs its two
@@ -494,7 +572,7 @@ static inline int cq_fx_scan_apply(int wide, const void *fmt, const uint64_t *ds
     reach = (uint8_t **)calloc(n + 1, sizeof *reach);
     for (size_t k = 0; k < n; k++) reach[k] = (uint8_t *)calloc(CQ_FX_SCAN_BUF, 1);
     for (size_t p = 0; p <= cq_fx_stream()->n; p++) {
-      cq_fx_at q = {p, 0, 0};
+      cq_fx_at q = {p, 0, {0}};
       (void)cq_fx_scan_twice(wide, fmt, a, b, n, q, &t, &h);
       for (size_t k = 0; k < n; k++)
         for (size_t j = 0; j < CQ_FX_SCAN_BUF; j++) reach[k][j] |= !(a[k][j] == 0 && b[k][j] == 0xFF);

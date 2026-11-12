@@ -59,18 +59,10 @@ static void fxc_str(const unsigned char *s, size_t n) {
   fxc_put("\"");
 }
 
-/* The product of the length factors from argument i on; a negative int length is nothing (rt_tape.c length_of). */
+/* The product of the length factors from argument i on (fx_standin.h cq_fx_len_mul, as rt_tape.c length_of). */
 static uint64_t fxc_length(const char *roles, int i) {
   uint64_t v = 1;
-  for (int j = i; roles[j] == 'n' && j < fxc_n; j++) {
-    uint64_t x = fxc_args[j].w[0];
-    unsigned b = fxc_args[j].bits;
-    if (b < 64) {
-      x &= (UINT64_C(1) << b) - 1;
-      if ((x >> (b - 1)) & 1) x = 0;
-    }
-    v = x && v > UINT64_MAX / x ? UINT64_MAX : v * x;
-  }
+  for (int j = i; roles[j] == 'n' && j < fxc_n; j++) v = cq_fx_len_mul(v, fxc_args[j].w[0], fxc_args[j].bits);
   return v > (uint64_t)INT64_MAX ? (uint64_t)INT64_MAX : v;
 }
 
@@ -101,7 +93,7 @@ static uint64_t fxc_log(const cq_fx_ent *e) {
       fxc_put(",\"cap\":"), fxc_str(p, (k < CQ_FX_K2 ? k + 1 : k) * sizeof(wchar_t));
     } else if (p && role == 'B') {
       uint64_t n = fxc_length(e->roles, i + 1);
-      fxc_put(",\"cap\":"), fxc_str(p, n > 4096 ? 4096 : (size_t)n);
+      fxc_put(",\"cap\":"), fxc_str(p, n > CQ_FX_K2 ? CQ_FX_K2 : (size_t)n);   /* the line's room (fxc_line) */
     }
     fxc_put("}");
   }
