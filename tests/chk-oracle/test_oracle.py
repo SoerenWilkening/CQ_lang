@@ -591,6 +591,33 @@ int kq2(unsigned x0, double t) { unsigned x = x0; int n = 0; cq_theta(&x, t); wh
 """
 
 
+class OutputValues(unittest.TestCase):
+    """Owner ruling 2026-11-12 (the reference takes every value the program reads from the same musl source the circuit
+    lifts): cq-jp8qu, the %n stores of the printf family are musl's counts (the host's printf writes its own, macOS "0x0"
+    for a null %p where musl writes "0"; vdprintf is the stand-in on the C side and writes none); cq-xwv7r, vprintf leaves
+    the caller's va_list where musl's copy leaves it."""
+
+    def test_percent_n_and_va_list(self):
+        o1 = compile_c("pctn", """
+#include <stdio.h>
+#include <stdarg.h>
+static int vp(const char *f, ...) { va_list ap; va_start(ap, f); vprintf(f, ap); int nx = va_arg(ap, int); va_end(ap);
+    return nx; }
+static void vd(const char *f, ...) { va_list ap; va_start(ap, f); vdprintf(1, f, ap); va_end(ap); }
+int pctn(int k) {
+    int a = -1, b = -1, c = -1, d = -1;
+    printf("%p%d%n\\n", (void *)0, k, &a);            /* result unused: the count for %n alone */
+    int r = printf("%p%c%n|\\n", (void *)0, 'x', &b); /* result read */
+    vd("%d%n\\n", k, &c);                             /* vdprintf: the stand-in on the C side (dprintf: cq-i17u) */
+    int x = vp("%p%d%n\\n", (void *)0, k, &d, 77);    /* vprintf: %n, then the caller's list from its start */
+    return (a & 15) | (b & 15) << 4 | (c & 15) << 8 | (d & 15) << 12 | (r & 15) << 16 | (x & 255) << 20;
+}
+""")
+        sp = spec("pctn", "int pctn(int)", [("pctn", ["int"])])
+        # musl: a "02" 2, b "0x" 2, c "2" 1, d "02" 2, r "0x|\\n" 4, x the first variadic (a null pointer) 0
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(2)]}]), ["0x42122"])
+
+
 class Cutoff(unittest.TestCase):
     """CR §6 at eb8a11a (ruling cq-1di, bead cq-8ay): every quantum-exit loop and quantum-depth
     recursion stops after K trips; the cq-arch T2 records in outputs["loops"]."""

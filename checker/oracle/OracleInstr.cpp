@@ -3443,6 +3443,46 @@ std::optional<Fn> outputFunction(const Function &F) {
   return std::nullopt;
 }
 
+bool isFormat(Kind k) { return k == Kind::Fmt || k == Kind::VFmt || k == Kind::WFmt || k == Kind::VWFmt; }
+bool isWide(Kind k) { return k == Kind::WFmt || k == Kind::VWFmt; }
+
+// cq-jp8qu: may the format at fmt write through %n? True unless it is a constant string (narrow, or wide: i32 code
+// units) with no conversion ending in n, as pass/lib/eff/tape/Tape.cpp formatMayHoldN decides (an over-approximation of
+// its parse: any '%' whose flags, digits, '$', '*', '.' and length modifiers end in 'n').
+bool formatMayHoldN(const Value *fmt, bool wide) {
+  std::string text;
+  if (!wide) {
+    StringRef s;
+    if (!getConstantStringInfo(fmt, s))
+      return true;
+    text = s.str();
+  } else {
+    auto *gv = dyn_cast<GlobalVariable>(getUnderlyingObject(fmt));
+    if (!gv || !gv->isConstant() || !gv->hasDefinitiveInitializer() || fmt != gv)
+      return true;
+    auto *cds = dyn_cast<ConstantDataSequential>(gv->getInitializer());
+    if (!cds || !cds->getElementType()->isIntegerTy(32))
+      return !isa<ConstantAggregateZero>(gv->getInitializer());
+    for (unsigned i = 0; i < cds->getNumElements(); ++i) {
+      uint64_t u = cds->getElementAsInteger(i);
+      if (!u)
+        break;
+      text += u < 0x80 ? char(u) : '?';
+    }
+  }
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (text[i] != '%')
+      continue;
+    size_t j = i + 1;
+    while (j < text.size() && strchr("-+ #0'123456789$*.hlLqjzt", text[j]))
+      ++j;
+    if (j < text.size() && text[j] == 'n')
+      return true;
+    i = j < text.size() && text[j] == '%' && j == i + 1 ? j : i;
+  }
+  return false;
+}
+
 // cq-xwv7r (owner ruling 2026-11-12: the reference follows musl's source): musl's vfprintf and vfwprintf work on a copy of
 // the caller's va_list (vfprintf.c:675, vfwprintf.c:357), so after vprintf(fmt, ap) the caller's ap is where it was; the
 // host's (macOS) advances it. The calls the host performs for the C program (drivers._REAL: vprintf, vfprintf, vwprintf,
@@ -3490,19 +3530,20 @@ bool copyHostVaLists(Module &M) {
 
 struct Pass : PassInfoMixin<Pass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
-    bool copied = copyHostVaLists(M);
     SmallVector<CallBase *, 16> sites;
     for (Function &G : M)
       for (Instruction &I : instructions(G)) {
         auto *CB = dyn_cast<CallBase>(&I);
         auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
-        if (!F || !F->isDeclaration() || CB->use_empty() || CB->getFunctionType() != F->getFunctionType())
+        if (!F || !F->isDeclaration() || CB->getFunctionType() != F->getFunctionType())
           continue;
-        if (outputFunction(*F))
+        std::optional<Fn> o = outputFunction(*F);
+        if (o && (!CB->use_empty() || (isFormat(o->kind) && formatMayHoldN(CB->getArgOperand(o->first), isWide(o->kind)))))
           sites.push_back(CB);
       }
+    // after the counts, which read the caller's own va_list (musl copies it)
     if (sites.empty())
-      return copied ? PreservedAnalyses::none() : PreservedAnalyses::all();
+      return copyHostVaLists(M) ? PreservedAnalyses::none() : PreservedAnalyses::all();
     LLVMContext &C = M.getContext();
     PointerType *ptr = PointerType::get(C, 0);
     Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);
@@ -3515,7 +3556,10 @@ struct Pass : PassInfoMixin<Pass> {
     for (CallBase *CB : sites) {
       Fn o = *outputFunction(*cast<Function>(CB->getCalledOperand()->stripPointerCasts()));
       Function &fn = *CB->getFunction();
-      IRBuilder<> B(CB);
+      // cq-jp8qu: a format's count runs right after the call, so that the stores of its %n conversions (musl's counts)
+      // are what the program reads, over the host's (the C side performs printf on the host) or none (dprintf and
+      // vdprintf are the stand-in on the C side)
+      IRBuilder<> B(isFormat(o.kind) ? CB->getNextNode() : CB);
       Type *rt = CB->getType();
       Value *v = nullptr;
       SmallVector<Value *, 8> args;
@@ -3572,11 +3616,14 @@ struct Pass : PassInfoMixin<Pass> {
         break;
       }
       }
+      if (CB->use_empty())
+        continue;
       if (v->getType() == rt)
         CB->replaceAllUsesWith(v);
       else
         report_fatal_error("cq-oracle: unimplemented: an output call's result of another type than its musl value");
     }
+    copyHostVaLists(M);
     return PreservedAnalyses::none();
   }
 };
