@@ -37,6 +37,10 @@ Fails on any of:
             not NOT COMPARED (exit 3), one that reads a deferred ftell's on some inputs is not a PASS with that count
             stated, one that never reads it has an input excluded, or a wrong lowering of the partial one (a wrong value,
             ftell's entry deferred on every input) is not rejected on the compared inputs. --dbtpi runs this group alone
+  fenvq2    rulings Q2 for CR rule 23's calls with an object operand (src/fenvq2, musl's fenv_t and fexcept_t, musl's no-op
+            bodies in their own unit): fegetenv and fegetexceptflag are host calls (rule 16) given an object that holds a
+            rail only where x is odd; not a PASS on the others with the excluded count stated, or a wrong lowering (either
+            call dropped, so the host's write is lost) not rejected. --fenvq2 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -447,6 +451,32 @@ def dbtpi(tmp):
         expect(f"mutant dbtpi dpart {m_}", 1, run("dpart", p))
 
 
+def fenvq2(tmp):
+    """Rulings Q2 for CR rule 23's calls with an object operand: CR rule 23 "a host fenv call reads and writes its host
+    bytes", rule 16 makes each a host call by name (cq-rrc52), so a QUANTUM cell of the object gets CR 1.3's result and
+    the input is not compared (cqo_rt.c __cqo_fegetenv ..., rt_bus.c cqe__q2_fegetenv ...). Where x is even the objects
+    hold no rail: e's first byte is the host's control word (0x7f), g's the host's flags (0) on both sides. Mutants:
+    the fegetenv call dropped, the fegetexceptflag call dropped."""
+    d = SRC / "fenvq2"
+    o1, low = d / "fenvq2.O1.ll", d / "fenvq2.lowered.ll"
+    code, out = user(o1, low, "f", samples=64, light=True)
+    expect("program fenvq2 (f)", 0, (code, out))
+    m = re.search(r"compared (\d+) of (\d+) samples", out)
+    n = re.search(r"(\d+) of \d+ samples not compared \(rulings Q2", out)
+    if code == 0 and not (m and n and int(m.group(1)) > 0 and int(n.group(1)) > 0
+                          and int(m.group(1)) + int(n.group(1)) == int(m.group(2))):
+        fail("program fenvq2 (f)", f"no partial exclusion stated:\n{out}")
+    text = low.read_text()
+    muts = {"no_fegetenv": re.sub(r"= call i32 @fegetenv\(ptr %\d+\)", "= add i32 0, 0", text),
+            "no_fegetexceptflag": re.sub(r"= call i32 @fegetexceptflag\(ptr %\d+, i32 61\)", "= add i32 0, 0", text)}
+    for m_, t in muts.items():
+        if t == text:
+            raise SystemExit(f"fenvq2 {m_}: no site in its lowering")
+        p = tmp / f"fenvq2_{m_}.ll"
+        p.write_text(t)
+        expect(f"mutant fenvq2 {m_}", 1, user(o1, p, "f", samples=64, light=True))
+
+
 def musl_stdout(tmp):
     """Ruling Q6 and the output ruling of 2026-11-12 item 4: a program built against musl's <stdio.h> names the host's
     stream `stdout`, which Darwin calls __stdoutp; both sides bind it to the host's object, so the C program's fprintf
@@ -465,6 +495,7 @@ def main():
     ap.add_argument("--rv3", nargs="*", help="only the src/rv3 group, or these of it")
     ap.add_argument("--musl-stdout", action="store_true", help="only the src/muslstdout test")
     ap.add_argument("--dbtpi", action="store_true", help="only the src/dbtpi tests (ruling cq-dbtpi)")
+    ap.add_argument("--fenvq2", action="store_true", help="only the src/fenvq2 tests (rulings Q2, rule 23's objects)")
     ap.add_argument("--spec", type=Path, default=ROOT.parent / "CQ_spec")
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
@@ -478,6 +509,11 @@ def main():
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
             dbtpi(Path(t))
         print(f"{len(failures)} failures" if failures else "all dbtpi tests passed")
+        return 1 if failures else 0
+    if a.fenvq2:
+        with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
+            fenvq2(Path(t))
+        print(f"{len(failures)} failures" if failures else "all fenvq2 tests passed")
         return 1 if failures else 0
     if a.rv3 is not None:
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
@@ -493,6 +529,7 @@ def main():
         rv3_undefined(tmp)
         musl_stdout(tmp)
         dbtpi(tmp)
+        fenvq2(tmp)
         for name, entry in PROGRAMS:
             d = tmp / name
             r = subprocess.run([sys.executable, str(CQCC), "-S", str(SRC / f"{name}.c"), "--save-temps", str(d),

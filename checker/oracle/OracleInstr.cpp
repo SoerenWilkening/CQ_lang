@@ -2673,7 +2673,9 @@ public:
                                   "bcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk", "pthread_create", "pthread_join", "pthread_detach",
                                   // fenv as rule 23 models it, not as the host libm does (cq-fvs2)
                                   "fetestexcept", "feclearexcept", "feraiseexcept", "fegetexceptflag",
-                                  "fesetexceptflag", "fesetround", "feupdateenv"};
+                                  "fesetexceptflag", "fesetround", "feupdateenv",
+                                  // the host's, behind the rulings Q2 check of their object operand (cqo_rt.c)
+                                  "fegetenv", "feholdexcept", "fesetenv"};
     for (const char *n : names) {
       std::string repl = std::string("__cqo_") + n;
       // Darwin's asm-label spelling is the same function (<pthread.h>: @"\01_pthread_join"; cq-cj4r)
