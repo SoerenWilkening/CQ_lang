@@ -2587,7 +2587,8 @@ def _effects_read(rr: RunResult, fx: List[Any], oracle: str) -> List[Any]:
     """The effect sequence of one side as compared (module docstring, rulings Q8): the name and the fields,
     every pointer-valued one read relationally."""
     table = _addr_table(rr)
-    return [{"name": e["name"], "args": [_field_read(a, table, oracle) for a in e["args"]]} for e in fx]
+    return [dict({"name": e["name"], "args": [_field_read(a, table, oracle) for a in e["args"]]},
+                 **({"in": e["in"]} if "in" in e else {})) for e in fx]   # ruling Q5: the input stream's offset, bytes taken
 
 
 def _tape_rel(rr: RunResult, seq: List[Any]) -> List[Any]:
@@ -2637,8 +2638,8 @@ def _fields_match(ours: List[Any], other: List[Any]) -> bool:
     if len(ours) != len(other):
         return False
     for a, b in zip(ours, other):
-        if a["name"] != b["name"] or len(a["args"]) != len(b["args"]):
-            return False
+        if a["name"] != b["name"] or len(a["args"]) != len(b["args"]) or a.get("in") != b.get("in"):
+            return False   # ruling Q5: both sides consume the one input stream in step
         for x, y in zip(a["args"], b["args"]):
             if "cap" in x and "cap" in y and x["cap"] != y["cap"]:
                 return False

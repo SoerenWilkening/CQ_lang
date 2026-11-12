@@ -2481,7 +2481,7 @@ def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
     for name in HOST_EFFECTS:
         if re.search(rf"(?m)^declare\b[^\n]*@{name}\(", text):
             text = re.sub(rf"@{name}(?=\()", f"@__cqe_fx_{name}", text)
-    text = drivers.route_scans(text)   # cq-tgl3i: a direct scanf-family call, the host's on the empty input (fx_call.h)
+    text = drivers.route_scans(text)   # cq-tgl3i: a direct scanf-family call, the host's on the one input stream (fx_call.h, ruling Q5)
     callees = drivers.effect_callees(text, frozenset(defined) | frozenset(HOST_EFFECTS))
     return drivers.rename_effects(text, callees) + drivers.effect_wrappers_ir(callees)
 
@@ -2500,7 +2500,10 @@ def _fx_arg(f: dict) -> dict:
 def _fx_event(e: dict) -> dict:
     """One {"ev":"effect"} line (rt_tape.c's entry object, host_fx.c's and fx_call.h's direct call) as
     compare reads it: what the C program does at this call."""
-    return {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
+    out = {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
+    if "in" in e:   # ruling Q5: an INPUT call's stream offset and the bytes it took (fx_standin.h)
+        out["in"] = list(e["in"])
+    return out
 
 
 def _effects_in_order(lines: List[dict]) -> List[dict]:
@@ -2528,7 +2531,7 @@ def _tape_entry(x: dict) -> dict:
     evaluator's class."""
     if x.get("kind") == "abort":
         return {"kind": "abort", "seq": x.get("seq"), "fv": x.get("fv")}
-    out = {k: x[k] for k in ("seq", "kind", "pred", "performed", "name", "fmt") if k in x}
+    out = {k: x[k] for k in ("seq", "kind", "pred", "performed", "name", "fmt", "in") if k in x}
     out["fields"] = [_fx_arg(f) for f in x.get("fields", [])]
     if "text" in x:
         out["text"] = _bytes_text(x["text"])

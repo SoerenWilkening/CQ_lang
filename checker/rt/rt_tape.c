@@ -221,6 +221,8 @@ typedef struct {
   int nva;
   capture *vcap;         /* the va_list and argument slots as read (their tape rails) */
   int nvcap;
+  int has_in;            /* ruling Q5: an INPUT call performed at the call, in_pos the stream offset it read from */
+  size_t in_pos, in_take;
 } event;
 
 typedef struct { field *f; int n, cap; } pendlist;
@@ -235,6 +237,8 @@ static int g_registered_exit;
 static int g_front;               /* the first event advance() has not resolved */
 static int g_blocked;             /* an event was deferred or an abort read 1: nothing later resolves */
 static int g_abort_seen;
+static int g_in_quantum;          /* ruling Q5: an INPUT call that was not classical consumed (or not): the stream position
+                                   * depends on the quantum inputs, and so does what every later call reads */
 
 static const cqe_tape_bus *g_bus;
 void cqe_tape_set_bus(const cqe_tape_bus *bus) { g_bus = bus; }
@@ -626,7 +630,12 @@ static void set_result(event *e, uint64_t x, int known) {
   free(v.w);
 }
 
-/* Performs an INPUT call now (the four INPUT rows of §1.11). */
+/* Performs an INPUT call now (the four INPUT rows of §1.11) on the one input stream (fx_standin.h, ruling Q5): it
+ * consumes what the C function consumes on this basis input, nothing where its predicate reads 0, and for a rail length
+ * what the length's value asks. Its stores are bus stores (§1.10): cstore when everything is classical (the predicate,
+ * the fields, and the stream position: no earlier call that was not classical), else qstore of every cell the call can
+ * reach from any position (cq_fx_input_reach, so the slots a shot allocates do not vary with the quantum inputs), the
+ * byte where this basis input stores one. ABI §1.11's K2 read and its consumption on every branch are not modelled. */
 static void perform_input(event *e, const cq_fx_ent *ent) {
   int bi = -1, li = -1;
   for (int i = 0; ent->roles[i]; i++) {
@@ -637,49 +646,61 @@ static void perform_input(event *e, const cq_fx_ent *ent) {
   int64_t v = 0;
   if (bi >= 0 && li >= 0 && li < e->nfields) v = length_of(e, ent->roles, li, &nknown);
   uint64_t addr = bi >= 0 && bi < e->nfields ? field_low64(&e->fields[bi]) : 0;
-  int classical = e->pred_known && fields_known(e);
+  int own = e->pred_known && fields_known(e);
+  int classical = own && !g_in_quantum;
   int cv = e->pred;
-  uint64_t h = entry_hash(e, ent);
-  size_t stored = 0, reach = 0;                       /* the bytes stored for v; the cells the store can reach */
-  if (bi >= 0) {
-    stored = cq_fx_input_stored(ent, (uint64_t)v);
-    reach = nknown ? stored : cq_fx_input_reach(ent);
-  }
-  if (!(e->pred_known && !cv)) {                      /* classical predicate 0: skipped, nothing is touched */
+  uint64_t size = bi >= 0 && li + 1 < e->nfields && ent->roles[li + 1] == 'n' ? field_low64(&e->fields[li]) : 1;
+  cq_fx_io io = {cq_fx_stream()->pos, 0, 0, 1, (size_t)-1, 0};
+  if (cv) io = cq_fx_input_plan(ent, (uint64_t)v, addr, size);
+  if (bi >= 0 && !(e->pred_known && !cv)) {           /* classical predicate 0: skipped, nothing is touched */
+    size_t reach = classical ? io.stored : cq_fx_input_reach(ent, nknown ? (uint64_t)v : (uint64_t)CQ_FX_K2);
     for (size_t j = 0; j < reach; j++) {
-      int write = j < stored && cv;
-      uint8_t byte = write ? cq_fx_input_byte(ent, h, j, stored) : 0;
-      if (classical && !write) continue;
+      int write = j < io.stored;
+      uint8_t byte = write ? cq_fx_input_byte(&io, j) : 0;
       if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); return; }
       if (classical) g_bus->cstore(addr + j, byte);
       else g_bus->qstore(addr + j, byte, write);
     }
   }
-  uint64_t r = cv ? cq_fx_input_result(ent, h, addr, (uint64_t)v, bi >= 0 && li + 1 < e->nfields && ent->roles[li + 1] == 'n'
-                                                                       ? field_low64(&e->fields[li]) : 1) : 0;
-  set_result(e, r, classical);
+  if (!own) g_in_quantum = 1;
+  e->has_in = cv != 0, e->in_pos = io.pos, e->in_take = io.take;
+  cq_fx_input_done(&io);
+  set_result(e, cv ? io.result : 0, classical);
   e->cls = C_INPUT;
   e->performed = !(e->pred_known && !cv);
 }
 
 /* cq-tgl3i: performs a scanf-family INPUT entry now (BACKEND_ABI §1.11's INPUT rows, as perform_input): the host's vfscanf
- * or vfwscanf on the checker's empty input (fx_standin.h cq_fx_scan_host, what the C program's call runs: fx_call.h
- * cqd_in_*), its format the bytes captured, its arguments the pointers the entry passes (the fields after the format, or for
- * a v-form those its va_list holds, capture_scan_va). The host writes into a temporary buffer per pointer, filled 0x00 in
- * one run and 0xFF in a second (the input is the same): a byte one of the runs changed is a byte the call stores, and the
- * backend makes that write as a bus store (§1.10), cstore when everything is classical, else qstore under the predicate
- * (the call is performed unconditionally and its bytes merged, the INPUT row under a quantum predicate). The result rail is
- * the call's result under the predicate, |0> when it reads 0. */
+ * or vfwscanf on the one input stream from its position (fx_standin.h cq_fx_scan_host, ruling Q5; what the C program's
+ * call runs: fx_call.h cqd_in_*), its format the bytes captured, its arguments the pointers the entry passes (the fields
+ * after the format, or for a v-form those its va_list holds, capture_scan_va). The host writes into a temporary buffer per
+ * pointer, filled 0x00 in one run and 0xFF in a second, both from the same position (the input is the same): a byte one
+ * of the runs changed is a byte the call stores, and the stream advances once, by what the first run took. Nothing is
+ * read where the predicate reads 0. The backend makes the write as a bus store (§1.10), cstore when everything is
+ * classical (the stream position too, perform_input), else qstore under the predicate of every cell a scan from any
+ * position of the stream changes (so the slots a shot allocates do not vary with the quantum inputs). The result rail
+ * is the call's result under the predicate, |0> when it reads 0. */
 #define SCAN_BUF ((size_t)CQ_FX_K2 + 64)
+
+/* The two runs from position pos into a and b (n pointers each, refilled); the result and what the first run took. */
+static int scan_twice(int wide, const void *fmt, uint8_t **a, uint8_t **b, size_t n, size_t pos, size_t *took) {
+  size_t t2;
+  for (size_t k = 0; k < n; k++) memset(a[k], 0x00, SCAN_BUF), memset(b[k], 0xFF, SCAN_BUF);
+  int r = cq_fx_scan_host(wide, fmt, (void *const *)a, pos, took);
+  (void)cq_fx_scan_host(wide, fmt, (void *const *)b, pos, &t2);
+  return r;
+}
+
 static void perform_scan(event *e, const cq_fx_ent *ent) {
   int fi = (int)(strpbrk(ent->roles, "FG") - ent->roles);
   int wide = ent->roles[fi] == 'G', va = ent->roles[fi + 1] == 'v';
   int cv = e->pred;
-  int classical = e->pred_known && fields_known(e);
+  int own = e->pred_known && fields_known(e);
   e->cls = C_INPUT;
   e->performed = !(e->pred_known && !cv);
   if (!e->performed || fi >= e->nfields || !e->fields[fi].cap.done) {   /* classical predicate 0: skipped */
-    set_result(e, 0, classical);
+    if (!own) g_in_quantum = 1;
+    set_result(e, 0, own && !g_in_quantum);
     return;
   }
   const capture *fc = &e->fields[fi].cap;
@@ -694,35 +715,51 @@ static void perform_scan(event *e, const cq_fx_ent *ent) {
     fmt = parse;
   }
   for (size_t k = 0; k < fc->n; k++)
-    if (fc->rail[k]) classical = 0;
+    if (fc->rail[k]) own = 0;
   size_t need = cq_fx_scan_nptr(parse);
   size_t given = va ? (size_t)e->nva : (size_t)(e->nfields > fi + 1 ? e->nfields - fi - 1 : 0);
   if (va)
-    for (int k = 0; k < e->nva; k++) classical &= e->va[k].known;
+    for (int k = 0; k < e->nva; k++) own &= e->va[k].known;
+  int classical = own && !g_in_quantum;
   size_t n = need > given ? need : given;
   uint8_t **a = calloc(n + 1, sizeof *a), **b = calloc(n + 1, sizeof *b);
-  for (size_t k = 0; k < n; k++) {
-    a[k] = calloc(SCAN_BUF, 1);
-    b[k] = malloc(SCAN_BUF);
-    memset(b[k], 0xFF, SCAN_BUF);
+  for (size_t k = 0; k < n; k++) a[k] = malloc(SCAN_BUF), b[k] = malloc(SCAN_BUF);
+  uint8_t **reach = NULL;   /* not classical: the cells a scan from any position changes */
+  if (!classical) {
+    size_t total = cq_fx_stream()->n, t;
+    reach = calloc(n + 1, sizeof *reach);
+    for (size_t k = 0; k < n; k++) reach[k] = calloc(SCAN_BUF, 1);
+    for (size_t p = 0; p <= total; p++) {
+      (void)scan_twice(wide, fmt, a, b, n, p, &t);
+      for (size_t k = 0; k < n; k++)
+        for (size_t j = 0; j < SCAN_BUF; j++) reach[k][j] |= !(a[k][j] == 0 && b[k][j] == 0xFF);
+    }
   }
-  int r = cq_fx_scan_host(wide, fmt, (void *const *)a);
-  (void)cq_fx_scan_host(wide, fmt, (void *const *)b);
+  size_t pos = cq_fx_stream()->pos, took = 0;
+  int r = 0;
+  if (cv) r = scan_twice(wide, fmt, a, b, n, pos, &took);
   for (size_t k = 0; k < given && k < n; k++) {
     const field *p = va ? &e->va[k] : &e->fields[fi + 1 + k];
     uint64_t addr = field_low64(p);
     for (size_t j = 0; j < SCAN_BUF; j++) {
-      if (a[k][j] == 0 && b[k][j] == 0xFF) continue;   /* neither run wrote it */
-      uint8_t byte = a[k][j];
+      int write = cv && !(a[k][j] == 0 && b[k][j] == 0xFF);   /* this basis input's scan wrote it */
+      if (classical ? !write : !reach[k][j]) continue;
       if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); goto done; }
-      if (classical) { if (cv) g_bus->cstore(addr + j, byte); }
-      else g_bus->qstore(addr + j, byte, cv);
+      if (classical) g_bus->cstore(addr + j, a[k][j]);
+      else g_bus->qstore(addr + j, write ? a[k][j] : 0, write);
     }
   }
 done:
-  for (size_t k = 0; k < n; k++) free(a[k]), free(b[k]);
+  if (!own) g_in_quantum = 1;
+  e->has_in = cv != 0, e->in_pos = pos, e->in_take = took;
+  cq_fx_stream()->pos = pos + took;
+  for (size_t k = 0; k < n; k++) {
+    free(a[k]), free(b[k]);
+    if (reach) free(reach[k]);
+  }
   free(a);
   free(b);
+  free(reach);
   if (wide) free(fmt);
   free(parse);
   set_result(e, cv ? (uint64_t)(int64_t)r : 0, classical);
@@ -1443,6 +1480,7 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
     sb_puts(b, "}");
   }
   sb_puts(b, "]");
+  if (e->has_in) sb_printf(b, ",\"in\":[%zu,%zu]", e->in_pos, e->in_take);   /* ruling Q5 (fx_standin.h) */
   if (e->k == E_FMT) {
     sbuf t = {0};
     sb_reserve(&t, 0);

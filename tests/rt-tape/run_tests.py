@@ -28,6 +28,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -58,14 +59,14 @@ def standin(name, words):
     return h
 
 
-def line_byte_h(h, j):
-    if j + 1 >= 6:
-        return 10
-    return ord("a") + ((h ^ j) * 0x100000001b3 & (2 ** 64 - 1)) % 26
+def _default_stream():
+    """fx_standin.h's CQ_FX_STDIN_DEFAULT (ruling Q5: the one input stream every INPUT call consumes from)."""
+    hdr = (Path(__file__).resolve().parents[2] / "checker" / "rt" / "fx_standin.h").read_text()
+    lit = re.search(r'#define CQ_FX_STDIN_DEFAULT ("(?:[^"\\]|\\.)*")', hdr).group(1)
+    return bytes(lit[1:-1], "ascii").decode("unicode_escape").encode("latin-1")
 
 
-def line_byte(name, j):
-    return line_byte_h(standin(name, []), j)
+STREAM = _default_stream()
 
 
 def parse_fmt(f):
@@ -496,7 +497,7 @@ def scenarios(clang, work):
         if lines(trace) != [("fgets", "call"), ("%d\n", "end")]:
             return "lines %s" % lines(trace)
         p = tap(trace, "probe")[0]
-        return None if p["b0"] == line_byte("fgets", 0) and p["b1"] == line_byte("fgets", 1) else "bytes %s" % p
+        return None if p["b0"] == STREAM[0] and p["b1"] == STREAM[1] else "bytes %s" % p
     check("input_classical", clean(input_classical))
     check("input_skip", clean(lambda tr, sh: None if classes(sh) == [("fgets", "input", False)] and not lines(tr)
                               else "classes %s lines %s" % (classes(sh), lines(tr))))
@@ -505,15 +506,17 @@ def scenarios(clang, work):
         if classes(shot) != [("fgets", "input", True)]:
             return "classes %s" % classes(shot)
         q = tap(trace, "qstore")
-        if [(e["write"]) for e in q] != [1, 1, 1, 0, 0, 0, 0]:     # v = 3: 2 bytes and the NUL of 7 cells reached
+        # v = 3: 2 bytes and the NUL, of the cells a quantum length can reach from any position of the stream (ruling Q5)
+        reach = min(4096 - 1, len(STREAM)) + 1
+        if [(e["write"]) for e in q] != [1, 1, 1] + [0] * (reach - 3):
             return "qstores %s" % q
-        want = [line_byte("fgets", 0), line_byte("fgets", 1), 0, 0, 0, 0, 0]
+        want = [STREAM[0], STREAM[1], 0] + [0] * (reach - 3)
         return None if [e["b"] for e in q] == want else "bytes %s want %s" % ([e["b"] for e in q], want)
     check("input_len_q", clean(input_len_q))
 
     def input_addr_q(trace, shot):
         q = tap(trace, "qstore")
-        if [(e["write"], e["b"]) for e in q] != [(1, line_byte("fgets", 0)), (1, 0)]:
+        if [(e["write"], e["b"]) for e in q] != [(1, STREAM[0]), (1, 0)]:
             return "qstores %s" % q
         # an INPUT call with a quantum address is performed and not resolved: a later output stays behind it
         return None if classes(shot) == [("fgets", "input", True), ("after\n", "deferred", True)] else "classes %s" % classes(shot)
@@ -521,9 +524,10 @@ def scenarios(clang, work):
 
     def input_pred_q(trace, shot):
         q = tap(trace, "qstore")
-        if [e["write"] for e in q] != [0, 0, 1, 1]:
+        if [(e["write"], e["b"]) for e in q] != [(0, 0), (0, 0), (1, STREAM[0]), (1, 0)]:
             return "qstores %s" % q
-        # c = 0: the C program does not reach the call, so no effect line; the input is consumed all the same
+        # c = 0: the C program does not reach the call, so no effect line and nothing consumed (ruling Q5): the second call
+        # reads the stream's first byte
         if classes(shot) != [("fgets", "input", True), ("fgets", "input", True)]:
             return "classes %s" % classes(shot)
         return None if lines(trace) == [("fgets", "call")] else "lines %s" % lines(trace)
@@ -533,8 +537,10 @@ def scenarios(clang, work):
 
     def read_fread_getc(trace, shot):
         p = tap(trace, "probe")[0]
-        want = {"r": 6, "f": 3, "g": line_byte("getc", 0), "gc": line_byte("getchar", 0), "a6": ord("Z"), "b6": ord("Z"),
-                "a0": line_byte_h(standin("read", [3]), 0)}
+        # ruling Q5: one stream, consumed in call order: read 5, fread 4 elements of 2, getc, getchar, then read takes the
+        # rest and getchar sees end of file
+        want = {"r": 5, "f": 4, "g": STREAM[13], "gc": STREAM[14], "r2": len(STREAM) - 15, "ge": 0xFFFFFFFF,
+                "a0": STREAM[0], "a5": ord("Z"), "b7": STREAM[12], "b8": ord("Z"), "a10": STREAM[15]}
         return None if all(p[k] == v for k, v in want.items()) else "probe %s want %s" % (p, want)
     check("read_fread_getc", clean(read_fread_getc))
 

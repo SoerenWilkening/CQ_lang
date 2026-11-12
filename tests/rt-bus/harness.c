@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "cqe.h"
+#include "fx_standin.h" /* CQ_FX_STDIN_DEFAULT, ruling Q5 */
 
 void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **argv, void *ret);
 int32_t __cq_mem(void);
@@ -591,7 +592,7 @@ static void effect_cstore(void) {
   C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, 0x1000);
   int32_t c = seed1(1);
   C4("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr,i32", c, t, A("fgets"), 3);
-  CHECK(cbuf[0] >= 'a' && cbuf[0] <= 'z' && cbuf[2] >= 'a' && cbuf[2] <= 'z' && cbuf[3] == 0); /* host bytes */
+  CHECK(!memcmp(cbuf, CQ_FX_STDIN_DEFAULT, 3) && cbuf[3] == 0); /* host bytes: the input stream's first (ruling Q5) */
   CHECK(cbuf[4] == 0xB4);
   int32_t h = LOADHL32(m, cbuf);
   CHECK(val(h) == (uint32_t)(cbuf[0] | cbuf[1] << 8 | cbuf[2] << 16)); /* the load reads the input, a rail of known bytes */

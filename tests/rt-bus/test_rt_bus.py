@@ -218,7 +218,11 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(cells(ev), [])
         out = int(next(e for e in ev if e["ev"] == "out_mem")["v"], 16)
         self.assertEqual(out >> 24, 0)                # the NUL
-        self.assertTrue(all(0x61 <= (out >> s) & 0xff <= 0x7a for s in (0, 8, 16)), hex(out))
+        # the input stream's first three bytes (ruling Q5, fx_standin.h CQ_FX_STDIN_DEFAULT)
+        hdr = (Path(__file__).resolve().parents[2] / "checker" / "rt" / "fx_standin.h").read_text()
+        lit = re.search(r'#define CQ_FX_STDIN_DEFAULT "((?:[^"\\]|\\.)*)"', hdr).group(1)
+        first = lit.encode().decode("unicode_escape").encode("latin-1")[:3]
+        self.assertEqual(out & 0xffffff, int.from_bytes(first, "little"), hex(out))
         slots = [r for r in live(ev) if r["role"] == "tape_slot"]
         # the store's (the host bytes it displaced), then one per byte fgets stored, holding the quantum bytes
         self.assertEqual([r["v"] for r in slots], ["0xb3b2b1b0", "0x88", "0x77", "0x66", "0x55"])

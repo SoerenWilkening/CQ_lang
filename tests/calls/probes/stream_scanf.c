@@ -1,7 +1,8 @@
 /* tests/calls probe, cq-tgl3i (rule 16, BACKEND_ABI §1.11): scanf and vscanf are stream calls by name, INPUT calls the host
-   performs on both sides: the C program's call and the lowered program's effect entry run the host's vfscanf on the checker's
-   empty input. %n stores before the input failure, so the entry under the quantum predicate x & 1 writes n through the bus
-   (merged under the predicate) and returns EOF; vscanf reads its pointers through the va_list of a variadic wrapper. */
+   performs on both sides: the C program's call and the lowered program's effect entry run the host's vfscanf on the one
+   input stream (ruling Q5; before it, the checker's empty input). %n stores, so the entry under the quantum predicate x & 1
+   writes n through the bus (merged under the predicate); vscanf reads its pointers through the va_list of a variadic
+   wrapper. */
 #include <stdarg.h>
 #include <stdio.h>
 __attribute__((noinline)) static int rd(const char *fmt, ...) {

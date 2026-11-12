@@ -1020,10 +1020,10 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[S
         elif e.get("ev") == "stdout":   # host output (cq-e4jk), not a trace event
             runs[i].stdout = _bytes_text(e.get("s", ""))
         elif e.get("ev") == "effect":
-            runs[i].effects.append({"name": e.get("name"), "args": [
+            runs[i].effects.append(dict({"name": e.get("name"), "args": [
                 {"s": _bytes_text(a["s"])} if "s" in a
                 else dict({k: a[k] for k in ("w", "v", "p") if k in a}, **({"cap": _bytes_text(a["cap"])} if "cap" in a else {}))
-                for a in e.get("fields", e.get("args", []))]})
+                for a in e.get("fields", e.get("args", []))]}, **({"in": list(e["in"])} if "in" in e else {})))
         elif e.get("ev") == "out_mem":
             del e["ev"]
             runs[i].mem.append(e)

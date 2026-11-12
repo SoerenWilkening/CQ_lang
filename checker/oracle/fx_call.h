@@ -24,6 +24,7 @@ static fxc_arg fxc_args[FXC_MAX];
 static int fxc_n;
 static char fxc_line[1 << 17];
 static size_t fxc_len;
+static long long fxc_in_pos = -1, fxc_in_take; /* ruling Q5: an INPUT call's stream offset and the bytes it took, or -1 */
 
 void cqd_fxc_begin(const char *name) { fxc_name = name, fxc_n = 0; }
 void cqd_fxc_int(uint64_t lo, uint64_t hi, unsigned bits, const char *token) {
@@ -95,15 +96,21 @@ static uint64_t fxc_log(const cq_fx_ent *e) {
     }
     fxc_put("}");
   }
-  fxc_put("]}");
+  fxc_put("]");
+  if (fxc_in_pos >= 0) {   /* ruling Q5, as rt_tape.c's entry_json */
+    snprintf(b, sizeof b, ",\"in\":[%lld,%lld]", fxc_in_pos, fxc_in_take);
+    fxc_put(b);
+    fxc_in_pos = -1;
+  }
+  fxc_put("}");
   FX_LOG(fxc_line, fxc_len);
   return h;
 }
 
 uint64_t cqd_fxc_done(unsigned rbits) {
   const cq_fx_ent *e = cq_fx_find(fxc_name);
-  uint64_t h = fxc_log(e);
-  if (!e || e->cls != 'I') return cq_fx_result(h, rbits);
+  if (!e || e->cls != 'I') return cq_fx_result(fxc_log(e), rbits);
+  /* ruling Q5: what the C function consumes of the one input stream at its position, logged with the call */
   int bi = -1, li = -1;
   for (int i = 0; e->roles[i]; i++) {
     if (e->roles[i] == 'W') bi = i;
@@ -111,20 +118,23 @@ uint64_t cqd_fxc_done(unsigned rbits) {
   }
   uint64_t v = bi >= 0 && li >= 0 && li < fxc_n ? fxc_length(e->roles, li) : 0;
   uint64_t addr = bi >= 0 && bi < fxc_n ? fxc_args[bi].w[0] : 0;
-  if (bi >= 0) {
-    size_t stored = cq_fx_input_stored(e, v);
-    for (size_t j = 0; j < stored; j++) ((unsigned char *)(uintptr_t)addr)[j] = cq_fx_input_byte(e, h, j, stored);
-  }
   uint64_t size = bi >= 0 && li + 1 < fxc_n && e->roles[li + 1] == 'n' ? fxc_args[li].w[0] : 1;
-  return cq_fx_input_result(e, h, addr, v, size);
+  cq_fx_io io = cq_fx_input_plan(e, v, addr, size);
+  fxc_in_pos = (long long)io.pos, fxc_in_take = (long long)io.take;
+  fxc_log(e);
+  if (bi >= 0)
+    for (size_t j = 0; j < io.stored; j++) ((unsigned char *)(uintptr_t)addr)[j] = cq_fx_input_byte(&io, j);
+  cq_fx_input_done(&io);
+  return io.result;
 }
 
 /* cq-tgl3i: the scanf family (fx_standin.h cq_fx_scan): drivers.route_scans sends the C program's call of scanf, fscanf,
  * wscanf or fwscanf to cqd_in_<name>(n, args...) with n its number of arguments (a use that is no direct call, to
  * cqd_in_<name>_a, whose arguments are those its format consumes), and of a v-form to cqd_in_<name>(args), its signature.
  * The call is logged as an effect with its arguments (the format captured, role F or G), as rt_tape.c logs the INPUT entry
- * the lowered program makes of it, and performed by the host C library on the empty stream (cq_fx_scan_host_va); its
- * conversions write through the program's own pointers. */
+ * the lowered program makes of it, and performed by the host C library on the one input stream from its position
+ * (cq_fx_scan_host_va, ruling Q5), which advances by what the scan took; its conversions write through the program's own
+ * pointers. The log follows the scan, so that it carries the offset and the bytes taken. */
 static int fxc_scan(const char *name, int wide, int has_f, const void *f, const void *fmt, int nv, va_list ap,
                     const void *va_addr) {
   cqd_fxc_begin(name);
@@ -138,8 +148,11 @@ static int fxc_scan(const char *name, int wide, int has_f, const void *f, const 
     for (int i = 0; i < nv; i++) cqd_fxc_ptr(va_arg(cp, void *));
     va_end(cp);
   }
+  size_t pos, took;
+  int r = cq_fx_scan_host_va(wide, fmt, ap, &pos, &took);
+  fxc_in_pos = (long long)pos, fxc_in_take = (long long)took;
   fxc_log(cq_fx_find(name));
-  return cq_fx_scan_host_va(wide, fmt, ap);
+  return r;
 }
 
 /* The arguments a format consumes, for a use of the function that is no direct call. */
