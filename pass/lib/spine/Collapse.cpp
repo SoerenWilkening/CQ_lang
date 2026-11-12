@@ -653,13 +653,15 @@ bool measuredHere(Shared &sh, Value *h) {
   auto m = sh.measured.find(h);
   if (m == sh.measured.end() || !sh.cur || !sh.isQ)
     return false;
-  // The instruction being lowered is the measurement itself, already emitted here: the builder is past it (the write-backs
-  // and settles that run after a measurement, rule 2's "right after the measurement", 65). Not the same site's
-  // measurement of an earlier K-loop trip, whose outcome does not reach this trip (me_cbr: behind a classical branch).
-  if (m->second.at == sh.cur) {
-    auto *mc = dyn_cast<Instruction>(m->second.outcome);
-    return mc && outAvailable(sh, mc);
-  }
+  // The outcome must reach the builder's point too: a value measured on every path by several measurements, none of
+  // which reaches here alone (one in each classical arm), stays a rail here (no re-read is made up).
+  if (!measuredEarlier(sh, h))
+    return false;
+  // The instruction being lowered is the measurement itself, its outcome reaching here: the builder is past it (the
+  // write-backs and settles that run after a measurement, rule 2's "right after the measurement", 65), not the same
+  // site's measurement of an earlier K-loop trip (me_cbr: behind a classical branch, its outcome does not reach).
+  if (m->second.at == sh.cur)
+    return true;
   return cq::measuredBefore(sh.isQ, m->second.v, sh.cur->getParent(), sh.cur, m->second.at);
 }
 
@@ -667,22 +669,7 @@ Value *outcomeAt(LoweringContext &ctx, Value *h, bool reread) {
   Shared &sh = shared(ctx);
   if (!measuredHere(sh, h) && !(reread && measuredEarlier(sh, h)))
     return nullptr;
-  const Shared::Measurement &m = sh.measured.find(h)->second;
-  auto *mc = dyn_cast<Instruction>(m.outcome);
-  if (!mc || sh.dominatesCurrent(m.at) || outAvailable(sh, mc))
-    return m.outcome;
-  if (auto r = sh.reread.find(h); r != sh.reread.end() && availableValue(sh, r->second))
-    return r->second;
-  // Measured on every path, by measurements none of which reaches here alone: the rail holds the outcome (CR §1.3), and a
-  // measurement of it is a classical re-read (rule 2). No gate, so no open cq_invert gate log records it.
-  std::vector<bool> logs = sh.gateLogOpen;
-  sh.gateLogOpen.assign(logs.size(), false);
-  CallInst *r = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, railTypeOf(m.outcome->getType())}, {h});
-  sh.gateLogOpen = logs;
-  // V1 provenance as calleeCollapse's re-read: a measurement of a rail the user's cq_measure measured.
-  r->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
-  sh.reread[h] = r;
-  return r;
+  return sh.measured.find(h)->second.outcome;
 }
 
 Value *classicalRead(LoweringContext &ctx, Value *handle) {

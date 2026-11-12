@@ -116,9 +116,6 @@ struct Shared {
   // static (measuredHere, cq::measuredBefore, the predicate taint reads by too).
   struct Measurement { const llvm::Instruction *at; llvm::Value *outcome; const llvm::Value *v; };
   llvm::DenseMap<const llvm::Value *, Measurement> measured;
-  // Rule 2: a classical re-read (measure_<W> of a rail holding its outcome) where the measurement's own outcome does not reach
-  // (a rail measured on every path by several measurements, CR "Collapse is static").
-  llvm::DenseMap<const llvm::Value *, llvm::Value *> reread;
   // The taint of an original value in this run's specialization (spine::isQ), for cq::measuredBefore.
   std::function<bool(const llvm::Value *)> isQ;
   // Rules 2, 14 (owner, cq-2z29a): a loop-carried value's rail once measured: it stays the value every template of the trip reads (its next value,
@@ -265,7 +262,7 @@ void noteCore(Shared &, llvm::CallInst *call, const abi::CoreSpec &, llvm::Array
 bool measuredHere(Shared &, llvm::Value *handle);
 // Rule 2's re-measurement: a measurement of the rail was emitted before the builder's point (decides a cq_measure's read only).
 bool measuredEarlier(Shared &, llvm::Value *handle);
-// Its classical outcome there (a re-read when no measurement's own outcome reaches the builder's point), else nullptr. With
+// Its classical outcome there, else nullptr. With
 // `reread` (a cq_measure's read, rule 2's classical re-read) also when a measurement of it was emitted before the point.
 llvm::Value *outcomeAt(LoweringContext &, llvm::Value *handle, bool reread);
 llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
