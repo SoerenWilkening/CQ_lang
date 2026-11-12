@@ -1892,7 +1892,9 @@ def kept_ak_module(text: str) -> str:
 
 
 _K2_CMP = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cq_template_icmp_ugt_i64_hl\(i32 (%[-\w.$]+), i64 (\d+)\)\s*$")
-_K2_ALLOC = re.compile(r"^\s+%[-\w.$]+ = (?:tail |notail )?call (?:noalias )?ptr @__cq_alloc\(i64 (\d+), i64 [^)]*\)\s*$")
+# the allocation: __cq_alloc, or its recording stand-in cqe__q2_alloc once host_effects_module has run (rulings Q2,
+# 2026-11-11: the same call, sent to rt_bus.c so its block is recorded; kept_k2_module runs after that rewrite)
+_K2_ALLOC = re.compile(r"^\s+%[-\w.$]+ = (?:tail |notail )?call (?:noalias )?ptr @(?:__cq_alloc|cqe__q2_alloc)\(i64 (\d+), i64 [^)]*\)\s*$")
 # what the uncompute spine may emit between the two once the compare was the size's last consumer: its producers' _unc
 # (a template's or a twin's) and their frees
 _K2_SPINE = re.compile(r"^\s+(?:tail |notail )?call void @(?:[-\w.$]+_unc|cqrt_free)\(")
@@ -1970,7 +1972,7 @@ def _k2_cmps(lines: List[str], lo: int, hi: int) -> List[int]:
 def kept_k2_module(text: str) -> str:
     """Rule 20's kept overflow predicate n > K2 of a rail-sized allocation, a kept rail CR §6 item 1 names (owner
     2026-11-09, cq-0ldab: identified structurally in the lowered program): a rail `icmp_ugt_i64_hl(n, K2)` followed by
-    `__cq_alloc(K2, align)` of the same K2, with nothing between them but the uncompute spine's _unc and frees, and that
+    `__cq_alloc(K2, align)` of the same K2 (or `cqe__q2_alloc`, host_effects_module's name for the same call), with nothing between them but the uncompute spine's _unc and frees, and that
     nothing reads, uncomputes or frees. The pass's own emission is the same (bus/Alloc.cpp sizeOperand: the compare,
     Role::KeptOverflow, then the call with K2 as its size; lowerAlloc, lowerRealloc). Likewise rule 22's n > K2 of a
     memory intrinsic whose length is a rail, unpredicated (cq-dl7da): the compare followed by the intrinsic's K2 trips
