@@ -5,6 +5,9 @@ probes/alloc.O1.ll (clang -O1 -include CQ.h of alloc.c): cq-lower and cq-verify 
 hold, and the entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 probes/k2.O1.ll: K2's resolution, structural only: a rail size or length with no bound has inputs past any K2 the
 sampler cannot compare against C.
+probes/alloc_nobuiltin.O1.ll (clang -O1 -fno-builtin -include CQ.h of alloc_nobuiltin.c, cq-15amv): malloc, calloc, realloc
+and free with no allockind, the allocation by its rule-16 name alone, at rail sizes, the result compared with NULL; each
+entry has a __cq_alloc and is §6-equal to its C program (the full `cqcheck user`).
 probes/inplace.O1.ll, probes/inplace_loop.O1.ll: rule 5's in-place form, the shapes that stay the form and the shapes that
 are a kept store instead; each entry §6-equal to its C program (`--light`).
 """
@@ -39,6 +42,15 @@ ENTRIES = {
     "p_realloc_pred": ([ALLOC % ("16", "16"), "@cqrt_qram_load_i64_hl_controlled\\("], []),
     "p_free_pred": ([], ["@free\\("]),
     "p_vla_loop": ([], ["stacksave", "stackrestore"]),
+}
+# cq-15amv: the allocation by name (no allockind); entry -> its __cq_alloc calls (size, align).
+NOBUILTIN = {
+    "n_calloc_count": [("4096", "16")],
+    "n_calloc_size": [("4096", "16")],
+    "n_calloc_both": [("4096", "16")],
+    "n_calloc_wide": [("4096", "16")],
+    "n_malloc": [("4096", "16")],
+    "n_realloc": [("4", "16"), ("4096", "16")],
 }
 # Rule 5 In-place form: entry -> does its body hold the form's swaps at i32?
 SWAP = r"@cqrt_qram_swap_i32"
@@ -161,6 +173,36 @@ def check_inplace(a):
     return failures
 
 
+def check_nobuiltin(a):
+    failures = 0
+    chosen = [fn for fn in NOBUILTIN if not a.entry or fn in a.entry]
+    if not chosen:
+        return 0
+    src, lowered = PROBES / "alloc_nobuiltin.O1.ll", OUT / "alloc_nobuiltin.lowered.ll"
+    e = lower(a, src, lowered)
+    if e:
+        print(f"FAIL alloc_nobuiltin: {e}")
+        return len(chosen)
+    text = lowered.read_text()
+    for fn in chosen:
+        b = body(text, fn)
+        why = []
+        if not b:
+            why.append("no lowered body")
+        if SURFACE.search(b):
+            why.append("a CQ.h surface call is left")
+        why += [f"no {ALLOC % sa}" for sa in NOBUILTIN[fn] if not re.search(ALLOC % sa, b)]
+        if re.search(r"call [^@]*@(malloc|calloc|realloc|free)\(", b):
+            why.append("a host allocation call is left")
+        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
+                            "--entry", fn], capture_output=True, text=True, cwd=ROOT / "checker")
+        if c.returncode or "PASS" not in c.stdout + c.stderr:
+            why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1][:400])
+        print(("FAIL " if why else "ok   ") + fn + ("" if not why else ": " + "; ".join(why)))
+        failures += bool(why)
+    return failures
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
@@ -173,6 +215,7 @@ def main():
         print("FAIL k2: " + why)
         failures += 1
     failures += check_inplace(a)
+    failures += check_nobuiltin(a)
     src, lowered = PROBES / "alloc.O1.ll", OUT / "alloc.lowered.ll"
     e = lower(a, src, lowered)
     if e:

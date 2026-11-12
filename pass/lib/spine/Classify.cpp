@@ -393,6 +393,27 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
 
 } // namespace calls
 
+namespace bus {
+
+// Rule 16 Allocation and Deallocation: the one recognition of an allocation call, shared by the taint (whose result
+// lanes it decides) and the lowering (bus::lowerAlloc, lowerRealloc). Defined here, not in bus/Alloc.cpp, because the
+// checker's oracle plugin compiles Taint.cpp and this file but not the bus.
+AllocFnKind hostAllocKind(const Function &F) {
+  AllocFnKind k = F.getAttributes().getFnAttrs().getAllocKind();
+  if (k != AllocFnKind::Unknown || !hostCallee(F))
+    return k;
+  StringRef n = F.getName();
+  if (n == "malloc" || n == "calloc" || n == "aligned_alloc")
+    return AllocFnKind::Alloc;
+  if (n == "realloc")
+    return AllocFnKind::Realloc;
+  if (n == "free")
+    return AllocFnKind::Free;
+  return AllocFnKind::Unknown;
+}
+
+} // namespace bus
+
 namespace spine {
 
 void scopeAllocas(const CallBase &restore, SmallVectorImpl<const AllocaInst *> &out) {

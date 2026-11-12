@@ -172,20 +172,6 @@ std::optional<uint64_t> rangeBound(LoweringContext &ctx, const Value *V) {
   return hi.getZExtValue();
 }
 
-AllocFnKind hostAllocKind(const Function &F) {
-  AllocFnKind k = F.getAttributes().getFnAttrs().getAllocKind();
-  if (k != AllocFnKind::Unknown || !hostCallee(F))
-    return k;
-  StringRef n = F.getName();
-  if (n == "malloc" || n == "calloc" || n == "aligned_alloc")
-    return AllocFnKind::Alloc;
-  if (n == "realloc")
-    return AllocFnKind::Realloc;
-  if (n == "free")
-    return AllocFnKind::Free;
-  return AllocFnKind::Unknown;
-}
-
 unsigned K2(const LoweringContext &cctx) {
   LoweringContext &ctx = const_cast<LoweringContext &>(cctx);
   const Function &F = *ctx.S.F;
