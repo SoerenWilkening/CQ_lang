@@ -2342,35 +2342,27 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     if reasons:
         return reasons
 
-    # CR rule 2 against C (bead cq-tnrb): one of our measurements may go unmatched on a sample only
-    # when it is identified elsewhere: matched in every embedding of some sample of the same call
-    # with the same measured rails of ours (the C program measures that register on another path)
-    ident: Dict[Tuple, set] = {}
-
-    # cq-1ye9c: identification is per classical arguments (classical_key, the call and every classical argument),
-    # never pooled over them: CR rule 8, "A purely classical condition is always a classical branch", so a site behind
-    # a classical branch runs only where the classical path takes it, on both sides; only rule 2's quantum arm runs
-    # its measurement unconditionally.
-    def _pool(k: str) -> Tuple:
-        return (classical_key(r_by[k].sample), tuple(m.get("h") for m in o_by[k].measured or []))
-
-    # cq-47f8h (owner 2026-11-07): measurements are identified by call site. A measurement of ours is identified when
-    # the C program reaches its site (a class of copies of one cq_measure, run.measure_site_classes) on some sample of
-    # the same classical arguments (cq-1ye9c), matched in every embedding; the other copies of the site, on trips no sample of the C program
-    # reaches, are then no difference. Any other site is.
-    ident_sites: Dict[Hashable, set] = {}
+    # Rulings Q3 (2026-11-11), Q9: an execution of a measurement site of ours on an input where the C program does not reach
+    # it (one of ours no embedding matches) is accepted iff every condition by which the C run left the path to the site is
+    # quantum under rule 2's static collapse (CR 406-408): a quantum arm, a trip behind a quantum exit or break, a _ctl
+    # predicate; a classical condition (an argument, a statically collapsed outcome) is a failure. The classification is the
+    # C oracle's (outputs["skips"]: each branch that left sites, after how many C measurements, quantum or not); the lowered
+    # measurement carries no predicate. Our site (run.measure_site_classes, the copies of one cq_measure) names the C site
+    # (fn:ordinal) it is matched to in every embedding of some sample of the call (structure, not evidence of a reach). Our
+    # extra measurement lies after the C measurements matched before it; the C run's branches at that point (skips with that
+    # count) must have left the site, all of them by a quantum condition. Q9: such an execution is no event of the input
+    # (its rail is a kept rail, compared as any). Past the horizon (a capped or ended sample, Q3 part 1: a_K, n > K2, a
+    # recursion cut, an abort under a quantum predicate reading 1) nothing is compared, measurements included (`past`).
+    c_site: Dict[Hashable, Dict[Any, set]] = {}
     for k, opts in meas_opts.items():
-        m_ = frozenset.intersection(*(img for img, _ in opts))
-        ident.setdefault(_pool(k), set()).update(m_)
-        ms_ = o_by[k].measured or []
-        ident_sites.setdefault(classical_key(r_by[k].sample), set()).update(
-            ms_[i]["site"] for i in m_ if i < len(ms_) and ms_[i].get("site") is not None)
-        # cq-jws5r, cq-v8cn7: a site every embedding matches through one of its copies is reached, though no single copy
-        # lies in every embedding (one register measured on several trips, each trip copy behind a classical branch,
-        # CR rules 2, 8). Sound only because a site's copies measure one register (run.measure_site_classes: shape
-        # AND register through rule 14's carried select): a copy measuring another register is a site of its own.
-        ident_sites[classical_key(r_by[k].sample)].update(set.intersection(*(
-            {ms_[i]["site"] for i in img if i < len(ms_) and ms_[i].get("site") is not None} for img, _ in opts)))
+        ms_, mc_ = o_by[k].measured or [], r_by[k].measured or []
+        common = None
+        for img, _ in opts:
+            pairs = {(ms_[i].get("site"), mc_[j].get("cs")) for j, i in enumerate(sorted(img))
+                     if i < len(ms_) and j < len(mc_) and ms_[i].get("site") is not None and mc_[j].get("cs")}
+            common = pairs if common is None else common & pairs
+        for o_site, cs in common or ():
+            c_site.setdefault(_call_key(r_by[k].sample), {}).setdefault(o_site, set()).add(cs)
 
     # CR rules 2, 19: the functions some input of the call enters, which the C oracle reports entries of
     entered_any: Dict[Hashable, set] = {}
@@ -2382,21 +2374,46 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         n = len(ms)
         here = (r_by[k].outputs or {}).get("entered", [])
         anywhere = entered_any[_call_key(r_by[k].sample)]
-        sites = ident_sites.get(classical_key(r_by[k].sample), set())
-        known = {i for i in ident[_pool(k)]
-                 if i >= n or (ms[i].get("site") is None
-                               and (ms[i].get("fn") not in anywhere or ms[i].get("fn") in here))}
-        known |= {i for i in range(n) if ms[i].get("site") is not None and ms[i]["site"] in sites
-                  and (ms[i].get("fn") not in anywhere or ms[i].get("fn") in here)}
+        sites = c_site.get(_call_key(r_by[k].sample), {})
+        skips = (r_by[k].outputs or {}).get("skips", []) if isinstance(r_by[k].outputs, dict) else []
+
+        def accepted(extra: List[Tuple[int, int]]) -> List[int]:
+            """The extras (index, C measurements before it) the C run's skips do not account for. Per point (that count)
+            and site of ours: some C site it names has a quantum skip there, and either no classical one, or no more
+            extras there than quantum skips (the point does not tell several branches of one window apart: a loop whose
+            trips measure nothing between them)."""
+            groups: Dict[Tuple[int, Any], List[int]] = {}
+            miss = []
+            for i, before in extra:
+                if ms[i].get("site") is None or (ms[i].get("fn") in anywhere and ms[i].get("fn") not in here):
+                    miss.append(i)
+                else:
+                    groups.setdefault((before, ms[i]["site"]), []).append(i)
+            for (before, site), ix in groups.items():
+                ok = False
+                for cs in sites.get(site, ()):
+                    at = [sk["q"] for sk in skips if sk["n"] == before and cs in sk["s"]]
+                    nq = sum(at)
+                    if nq and (nq == len(at) or len(ix) <= nq):
+                        ok = True
+                        break
+                if not ok:
+                    miss += ix
+            return sorted(miss)
+
         opts = meas_opts[k]
-        if any(all(i in img or i in past or i in known for i in range(n)) for img, past in opts):
-            return []
-        img, past = opts[0]
-        bad = [i for i in range(n) if i not in img and i not in past and i not in known]
+        bad: List[int] = []
+        for x, (img, past) in enumerate(opts):
+            matched = sorted(img)
+            miss = accepted([(i, sum(1 for m in matched if m < i)) for i in range(n) if i not in img and i not in past])
+            if not miss:
+                return []
+            if x == 0:
+                bad = miss
         hs = [o_by[k].measured[i].get("h") for i in bad]
-        return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and no sample "
-                f"of these classical arguments identifies them with one the C program reaches in a function this input enters (only "
-                f"CR rule 2's hoisted arm measurement may be extra)"]
+        return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and the C run did not leave "
+                f"their site by quantum conditions alone at that point (rulings Q3: only CR rule 2's unconditional execution "
+                f"in a quantum arm, a trip behind a quantum exit or a _ctl predicate may be extra)"]
 
     for gk, ks in groups.items():
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"

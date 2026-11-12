@@ -44,6 +44,7 @@
 #undef unimplemented
 #undef internalError
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -515,6 +516,68 @@ public:
   // classical in the frame's is that frame's classical value (CR rule 2: "`cq_measure` of a value that never was a rail is
   // that value: no gate"), its node 0, and a condition quantum only in another specialization decides no quantum merge or
   // implicit write here. The frame's specialization answers at run time (railPick).
+  // Rulings Q3: the measurement sites, numbered as sites() numbers them ("fn:ordinal", the C side's site key), and the
+  // sites each function reaches through its calls (a call through a pointer: every address-taken function's).
+  std::vector<std::string> msiteNames;
+  DenseMap<const CallBase *, unsigned> msiteIdx;
+  DenseMap<const Function *, BitVector> msiteReach;
+  BitVector msiteTaken;
+  bool msiteAny = false;
+  void measureSites() {
+    std::vector<Function *> fns;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        fns.push_back(&F);
+    for (Function *F : fns) {
+      unsigned k = 0;
+      for (Instruction &I : instructions(*F))
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (Function *g = CI->getCalledFunction(); g && siteKind(g->getName()) >= 0) {
+            if (siteKind(g->getName()) == KMeasure)
+              msiteIdx[CI] = msiteNames.size(), msiteNames.push_back((F->getName() + ":" + Twine(k)).str());
+            ++k;
+          }
+    }
+    msiteAny = !msiteNames.empty();
+    if (!msiteAny)
+      return;
+    unsigned N = msiteNames.size();
+    for (Function *F : fns) {
+      BitVector b(N);
+      for (Instruction &I : instructions(*F))
+        if (auto it = msiteIdx.find(dyn_cast<CallBase>(&I)); isa<CallBase>(&I) && it != msiteIdx.end())
+          b.set(it->second);
+      msiteReach[F] = b;
+    }
+    msiteTaken = BitVector(N);
+    for (bool changed = true; changed;) {
+      changed = false;
+      BitVector taken(N);
+      for (Function *F : fns)
+        if (F->hasAddressTaken())
+          taken |= msiteReach[F];
+      if (taken != msiteTaken)
+        msiteTaken = taken, changed = true;
+      for (Function *F : fns) {
+        BitVector b = msiteReach[F];
+        for (Instruction &I : instructions(*F))
+          if (auto *CB = dyn_cast<CallBase>(&I))
+            b |= calleeSites(*CB);
+        if (b != msiteReach[F])
+          msiteReach[F] = b, changed = true;
+      }
+    }
+  }
+  BitVector calleeSites(const CallBase &CB) {
+    BitVector none(msiteNames.size());
+    if (CB.isInlineAsm())
+      return none;
+    const Function *G = CB.getCalledFunction();
+    if (!G)
+      return msiteTaken.size() ? msiteTaken : none;
+    auto it = msiteReach.find(G);
+    return it == msiteReach.end() ? none : it->second;
+  }
   std::optional<cq::TaintInfo> Taint;
 
   struct Shadow {
@@ -653,6 +716,94 @@ public:
       auto *c = B.CreateCall(h("__cqo_sh_pick", I32, {I32, I32, I32}), {a, b, B.getInt32(1)});
       In.railLoads.push_back({c, &F, std::move(rail), 2});
       return c;
+    }
+    // Rulings Q3 (2026-11-11, part 2): the conditions by which the C run leaves the path to a measurement site. A conditional
+    // branch (br, switch) at b decides the arms between b and its immediate post-dominator J (an arm: the blocks a successor
+    // reaches before J or b; a loop's exit test: the remaining trips). Where the arms not taken hold measurement sites (in
+    // their blocks, or in the functions their calls reach, In.msiteReach) that the taken arm does not, the run logs them with
+    // whether the condition is quantum there (its node not classical under rule 2's static collapse, cqo_rt.c __cqo_skip):
+    // the circuit runs a quantum branch's arms all, unconditionally (rule 2), and a classical one's taken arm only (rule 8).
+    void skips(const std::vector<BasicBlock *> &order) {
+      if (!In.msiteAny || !In.msiteReach.count(&F) || In.msiteReach[&F].none())
+        return;
+      unsigned N = In.msiteNames.size();
+      DenseMap<const BasicBlock *, BitVector> local;
+      for (BasicBlock *BB : order) {
+        BitVector b(N);
+        for (Instruction &I : *BB)
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && orig.count(CB)) {
+            if (auto it = In.msiteIdx.find(CB); it != In.msiteIdx.end())
+              b.set(it->second);
+            b |= In.calleeSites(*CB);
+          }
+        local[BB] = b;
+      }
+      auto arm = [&](BasicBlock *b, BasicBlock *s, BasicBlock *J) {
+        BitVector r(N);
+        SmallPtrSet<BasicBlock *, 32> seen;
+        SmallVector<BasicBlock *, 16> w{s};
+        while (!w.empty()) {
+          BasicBlock *x = w.pop_back_val();
+          if (x == J || !seen.insert(x).second)
+            continue;
+          if (auto l = local.find(x); l != local.end())
+            r |= l->second;   // b itself, reached again: the next trip's part of it before its test
+          if (x == b)
+            continue;
+          for (BasicBlock *y : successors(x))
+            w.push_back(y);
+        }
+        return r;
+      };
+      for (BasicBlock *BB : order) {
+        Instruction *Tm = BB->getTerminator();
+        if (!orig.count(Tm) || Tm->getNumSuccessors() < 2 || !(isa<BranchInst>(Tm) || isa<SwitchInst>(Tm)))
+          continue;
+        BasicBlock *J = PDT.getNode(BB) && PDT.getNode(BB)->getIDom() ? PDT.getNode(BB)->getIDom()->getBlock() : nullptr;
+        std::vector<BitVector> arms;
+        BitVector all(N);
+        for (unsigned k = 0; k < Tm->getNumSuccessors(); ++k)
+          arms.push_back(arm(BB, Tm->getSuccessor(k), J)), all |= arms.back();
+        if (all.none())
+          continue;
+        std::vector<std::pair<Value *, unsigned>> lists;   // per successor index: (list, length)
+        bool anyList = false;
+        for (unsigned k = 0; k < Tm->getNumSuccessors(); ++k) {
+          BitVector d = all;
+          d.reset(arms[k]);
+          std::vector<Constant *> names;
+          for (unsigned i : d.set_bits())
+            names.push_back(In.str(In.msiteNames[i]));
+          anyList |= !names.empty();
+          if (names.empty()) {
+            lists.push_back({ConstantPointerNull::get(cast<PointerType>(In.Ptr)), 0});
+            continue;
+          }
+          auto *AT = ArrayType::get(In.Ptr, names.size());
+          auto *gv = new GlobalVariable(In.M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, names),
+                                        "__cqo_skip_list");
+          lists.push_back({gv, (unsigned)names.size()});
+        }
+        if (!anyList)
+          continue;
+        IRBuilder<> B(Tm);
+        Value *cond = condOf(Tm);
+        Value *list, *n;
+        if (auto *BI = dyn_cast<BranchInst>(Tm)) {
+          list = B.CreateSelect(cond, lists[0].first, lists[1].first);
+          n = B.CreateSelect(cond, B.getInt32(lists[0].second), B.getInt32(lists[1].second));
+        } else {
+          auto *SI = cast<SwitchInst>(Tm);
+          list = lists[0].first, n = B.getInt32(lists[0].second);   // successor 0: the default
+          for (auto &c : SI->cases()) {
+            unsigned k = c.getSuccessorIndex();
+            Value *hit = B.CreateICmpEQ(cond, c.getCaseValue());
+            list = B.CreateSelect(hit, lists[k].first, list);
+            n = B.CreateSelect(hit, B.getInt32(lists[k].second), n);
+          }
+        }
+        B.CreateCall(h("__cqo_skip", In.Void, {I32, In.Ptr, I32}), {get(cond), list, n});
+      }
     }
     // CR rule 2, 406-408 (cq-ndtt): collapse is STATIC, "it applies to a value whose quantum sources are measured on EVERY
     // path reaching it". The runtime marks the measured node at the measurement and every later reader of the sample sees it
@@ -1208,6 +1359,7 @@ public:
         for (Instruction *I : insts)
           visit(I, retMerge, rets, qconds);
       }
+      skips(order);
 
       storeSlots();
       for (auto &[P, s] : phis)
@@ -2858,6 +3010,7 @@ public:
           pristine.push_back(&F);
       spellBlocks(pristine);
     }
+    measureSites();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
     instrumentRule24();
     if (KI.on) {

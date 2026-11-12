@@ -1167,13 +1167,19 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
     measured before it (cq-459d); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
-    measured, rotations, reads = [], [], []
+    measured, rotations, reads, skips = [], [], [], []
     status = _exit_status(sr)
     for e in sr.events:
+        if e.get("ev") == "skip":
+            # rulings Q3: the measurement sites a branch left, after len(measured) measurements, and whether its
+            # condition was quantum (cqo_rt.c __cqo_skip)
+            skips.append({"n": len(measured), "q": bool(e.get("q")), "s": list(e.get("s", []))})
+            continue
         if e.get("ev") != "site":
             continue
         if e["kind"] == "measure":
-            measured.append({"h": None, "w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
+            measured.append({"h": None, "w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"],
+                             "cs": f"{e['fn']}:{e['site']}"})
         elif e["kind"] == "read":
             # CR rule 2: a classical read of a collapsed value, no gate (cq-y1ll); the lowered side may
             # measure a load copy of it, classical-valued (rule 3: every load is a rail, 207)
@@ -1184,7 +1190,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": _effects_of(sr),
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
-                              "k2": list(sr.k2), "reads": reads,
+                              "k2": list(sr.k2), "reads": reads, "skips": skips,
                               "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"}),
                               **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {}),
                               **({"exit_status": status} if status is not None else {})},

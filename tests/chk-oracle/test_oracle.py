@@ -65,7 +65,7 @@ def rets(o1, sp, samples):
 
 def _no_mem(outputs):
     """outputs without the memory and address tables (asserted on their own, FlatMemory below)."""
-    return {k: v for k, v in outputs.items() if k not in ("mem", "objects", "regions", "k2", "reads")}
+    return {k: v for k, v in outputs.items() if k not in ("mem", "objects", "regions", "k2", "reads", "skips")}
 
 
 class Totalization(unittest.TestCase):

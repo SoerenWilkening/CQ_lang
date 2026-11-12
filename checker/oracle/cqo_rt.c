@@ -874,6 +874,24 @@ void __cqo_enter(const char *fn) {
     out_line(trace_fd, line);
 }
 
+/* Rulings Q3 (2026-11-11, part 2): a conditional branch whose taken successor no longer reaches the measurement sites
+ * `s` (OracleInstr.cpp Shadow::skips) logs them with whether its condition is quantum (its node not classical, rule 2's
+ * static collapse). compare.py accepts an extra measurement of ours at a site only where the C run left its path by
+ * quantum conditions alone. */
+void __cqo_skip(uint32_t node, const char *const *s, int32_t n) {
+    if (trips_only || n <= 0) return;
+    char line[4000];
+    int q = !sh_classical(node);
+    int at = snprintf(line, sizeof line, "{\"ev\":\"skip\",\"q\":%d,\"s\":[", q);
+    for (int32_t i = 0; i < n && at < (int)sizeof line - 400; ++i) {
+        char f[300];
+        jsonstr(f, sizeof f, s[i]);
+        at += snprintf(line + at, sizeof line - at, "%s%s", i ? "," : "", f);
+    }
+    snprintf(line + at, sizeof line - at, "]}");
+    out_line(trace_fd, line);
+}
+
 /* ------------------------------------------------------------------ the cutoff K (CR §6, cq-8ay)
  * OracleInstr.cpp passes kq = 1 where the loop is a quantum-exit loop in the running specialization.
  * Each activation of one gets a T2 record when it ends: by an exit edge (capped false), or when the
