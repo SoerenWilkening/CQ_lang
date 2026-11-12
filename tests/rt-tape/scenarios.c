@@ -216,7 +216,7 @@ int main(int argc, char **argv) {
     li32(t, 3);
     li64(t, (uint64_t)(uintptr_t)stdin);
     int32_t r = eff64(i1(1), t, "fgets", 3);
-    if (b[2] != 0 || b[3] != 'Z' || b[0] < 'a' || b[0] > 'z') cqe_fail("TEST: fgets stored %.8s", b);
+    if (b[2] != 0 || b[3] != 'Z') cqe_fail("TEST: fgets stored %.8s", b);
     if (cqe_rail(r)->w[0] != (uint64_t)(uintptr_t)b) cqe_fail("TEST: fgets result");
     char l[64];
     snprintf(l, sizeof l, "{\"ev\":\"probe\",\"b0\":%d,\"b1\":%d}", b[0], b[1]);
@@ -273,27 +273,34 @@ int main(int argc, char **argv) {
     wr("i64", t, q64p(stdin));
     int32_t r = eff64(i1(1), t, "fgets", 3);
     if (cqe_rail(r)->w[0] != 0 || b[0] != 'Z') cqe_fail("TEST: the deferred input acted");
-  } else if (!strcmp(s, "read_fread_getc")) {
+  } else if (!strcmp(s, "read_fread_getc")) {   /* ruling Q5: one stream, consumed in call order, then end of file */
     cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();
     char a[32], b[32];
     memset(a, 'Z', 32), memset(b, 'Z', 32);
     li32(t, 3);
     li64(t, (uint64_t)(uintptr_t)a);
-    li64(t, 20);
+    li64(t, 5);
     int32_t r = eff64(i1(1), t, "read", 3);
     li64(t, (uint64_t)(uintptr_t)b);
     li64(t, 2);
-    li64(t, 10);
+    li64(t, 4);
     li64(t, (uint64_t)(uintptr_t)stdin);
     int32_t f = eff64(i1(1), t, "fread", 4);
     li64(t, (uint64_t)(uintptr_t)stdin);
     int32_t g = eff32(i1(1), t, "getc", 1);
     int32_t gc = eff32(i1(1), t, "getchar", 0);
-    char l[160];
-    snprintf(l, sizeof l, "{\"ev\":\"probe\",\"r\":%llu,\"f\":%llu,\"g\":%llu,\"gc\":%llu,\"a6\":%d,\"b6\":%d,\"a0\":%d}",
+    li32(t, 3);
+    li64(t, (uint64_t)(uintptr_t)(a + 10));
+    li64(t, 100);
+    int32_t r2 = eff64(i1(1), t, "read", 3);
+    int32_t ge = eff32(i1(1), t, "getchar", 0);
+    char l[256];
+    snprintf(l, sizeof l, "{\"ev\":\"probe\",\"r\":%llu,\"f\":%llu,\"g\":%llu,\"gc\":%llu,\"r2\":%llu,\"ge\":%llu,"
+             "\"a0\":%d,\"a5\":%d,\"b7\":%d,\"b8\":%d,\"a10\":%d}",
              (unsigned long long)cqe_rail(r)->w[0], (unsigned long long)cqe_rail(f)->w[0],
-             (unsigned long long)cqe_rail(g)->w[0], (unsigned long long)cqe_rail(gc)->w[0], a[6], b[6], a[0]);
+             (unsigned long long)cqe_rail(g)->w[0], (unsigned long long)cqe_rail(gc)->w[0],
+             (unsigned long long)cqe_rail(r2)->w[0], (unsigned long long)cqe_rail(ge)->w[0], a[0], a[5], b[7], b[8], a[10]);
     cqe_log(l);
   } else if (!strcmp(s, "capture")) {       /* 99: fwrite's buffer: HOST bytes as bytes, QUANTUM cells on rails */
     cqe_tape_set_bus(&td_bus);

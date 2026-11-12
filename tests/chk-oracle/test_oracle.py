@@ -1332,7 +1332,7 @@ int go(int x) { putchar(x); int r = ext_unknown(x); char b[8] = {0}; fgets(b, 8,
         self.assertEqual(rr.outputs["effects"][0]["args"], [{"w": "i32", "v": "0x41"}])
         self.assertEqual(rr.outputs["effects"][2]["args"][0]["p"], 1)
         ret = rr.outputs["ret"][0]["v"]
-        self.assertNotEqual(ret["v"], "0xffffffff")   # fgets stored the stand-in's line
+        self.assertNotEqual(ret["v"], "0xffffffff")   # fgets stored the input stream's first line (ruling Q5)
 
 
 if __name__ == "__main__":

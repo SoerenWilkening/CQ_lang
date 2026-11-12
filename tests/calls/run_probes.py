@@ -227,14 +227,25 @@ CASES = [
      [r"call void @cqrt_tape_fmt\(i32 %\d+, ptr @\.str\.2\)", r"define internal noundef i32 @printf\("]),
     ("stream_internal_host", "stream_internal_host", [], "wrong: stream_internal_host.wrongarg.ll", []),
     # cq-tgl3i (rule 16, BACKEND_ABI §1.11): scanf (variadic, under a quantum predicate) and vscanf (through a variadic
-    # wrapper's va_list) are INPUT entries the evaluator performs with the host's vfscanf on the checker's empty input, as the
-    # C oracle's call does; %n stores before the input failure, through the bus. Mutants: the pointers swapped; the call
-    # dropped (its result taken as EOF).
+    # wrapper's va_list) are INPUT entries the evaluator performs with the host's vfscanf on the one input stream (ruling Q5),
+    # as the C oracle's call does; %n stores, through the bus. Mutants: the pointers swapped; the call dropped (its result
+    # taken as EOF).
     ("stream_scanf", "stream_scanf", [], "pass",
      [r"call i32 @cqrt_tape_effect_i32_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.scanf, i32 3\)",
       r"call i32 @cqrt_tape_effect_i32_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vscanf, i32 2\)"]),
     ("stream_scanf", "stream_scanf", [], "wrong: stream_scanf.wrongptr.ll", []),
     ("stream_scanf", "stream_scanf", [], "wrong: stream_scanf.noscan.ll", []),
+    # Ruling Q5 (DECISIONS 2026-11-11): one finite input stream with state, the same bytes on both sides (fx_standin.h); an
+    # INPUT call consumes what the C program consumes on that basis input, and its effect line carries the offset and the
+    # bytes taken. The question's witness (a getchar loop until end of file ends); two calls in sequence (the second's length
+    # a rail); a call under a quantum predicate (nothing consumed where it reads 0; mutant: the call made unconditional);
+    # scanf then getchar (the two scans from one position, the stream advanced once); reading past the end.
+    ("stdin_witness", "count_then_rotate", [], "pass", []),
+    ("stdin_seq", "stdin_seq", [], "pass", []),
+    ("stdin_pred", "stdin_pred", [], "pass", []),
+    ("stdin_pred", "stdin_pred", [], "wrong: stdin_pred.always.ll", []),
+    ("stdin_scan_getc", "stdin_scan_getc", [], "pass", []),
+    ("stdin_eof", "stdin_eof", [], "pass", []),
     # cq-xdscs (rule 16, BACKEND_ABI §1.11): perror and puts read a string whose first byte is quantum, results unread (no
     # stated deviation): deferred entries performed on the measured string, read up to its first 0 (on x0 = 0: ""), as the
     # C program's call reads it. The mutant passes perror the string's second byte.

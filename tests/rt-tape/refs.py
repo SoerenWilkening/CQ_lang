@@ -14,7 +14,7 @@ RT = os.path.join(os.path.dirname(os.path.dirname(HERE)), "checker", "rt")
 ROOT = os.path.dirname(os.path.dirname(HERE))
 SPEC = next(p for p in (os.path.join(ROOT, "..", "CQ_spec"), os.path.join(ROOT, "..", "..", "CQ_spec")) if os.path.isdir(p))
 sys.path.insert(0, HERE)
-from run_tests import line_byte  # noqa: E402
+from run_tests import STREAM  # noqa: E402
 
 
 def sh(cmd, **kw):
@@ -76,8 +76,8 @@ CASES = [
     ("210_input_behind_output", "int input_behind_output(unsigned,double,int,double,FILE*);",
      "input_behind_output(3,.5,4,.25,stdin)", [("%d\n", "deferred", True), ("fgets", "input", True)], "4\n",
      lambda t, s: [e["name"] if e["kind"] == "effect" else e["fmt"] for e in t if e.get("ev") == "effect"] == ["fgets", "%d\n"]
-     # buf[0], loaded and measured, is the first byte the stand-in stored under n & 7 = 3
-     and [int(e["v"], 16) for e in t if e.get("ev") == "measure"] == [line_byte("fgets", 0)]),
+     # buf[0], loaded and measured, is the stream's first byte, which fgets stored under n & 7 = 3 (ruling Q5)
+     and [int(e["v"], 16) for e in t if e.get("ev") == "measure"] == [STREAM[0]]),
     # 99: both output entries deferred; the buffer captured at the entry (two QUANTUM cells, one HOST); x > k is 0
     ("99_byte_tape", "int byte_tape(unsigned char,double,int);", "byte_tape(0,.5,1)",
      [("fwrite", "deferred", True), ("fputs", "deferred", False)], "",

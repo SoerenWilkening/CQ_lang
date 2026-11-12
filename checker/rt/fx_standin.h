@@ -10,12 +10,18 @@
  * whatever the C type. A length of an INPUT call is not mixed: the stand-in's bytes cannot depend on it.
  *
  * Result. The low W bits of the hash; W = 64 (a pointer or a long, the lowered side cannot tell) reads 0, null.
- * INPUT calls have their natural result (cq_fx_input_result).
+ * INPUT calls have their natural result (cq_fx_input_plan).
  *
- * Input. The stand-in has no state: an INPUT call reads the same 6-byte line every time, 5 letters from the hash
- * and '\n'. So what a call stores depends on its length only as the C function's contract says, and the deviation
- * of §1.11's quantum-length row (the K2 read consumes the line on every branch) cannot show. A program that loops
- * until end of file does not end under this model on either side.
+ * Input (ruling Q5, DECISIONS 2026-11-11): one finite input stream with state, the same bytes on both sides
+ * (cq_fx_in below: the default CQ_FX_STDIN_DEFAULT, or the bytes a drivers.txt line's stdin field gives, set by
+ * the driver's setup through cq_fx_stdin_set). Every INPUT call, whatever its FILE or descriptor, consumes from
+ * it in call order what the C function consumes on that basis input, and after its end sees end of file. A call
+ * whose predicate reads 0 consumes nothing; a length consumes for its value. BACKEND_ABI §1.11's two
+ * consumption deviations (the K2 call, input consumed on every branch) are effects across branches on a real
+ * backend and are not modelled. The position is a static of the executable: each sample starts from the
+ * post-setup state (the snapshot of __DATA on both sides). An INPUT call's effect line carries "in":[pos,n],
+ * the stream offset it read from and the bytes it took, so a divergence in consumption is a difference of the
+ * effect sequences.
  *
  * Roles, one character per argument (past the string: none):
  *   W buffer the call writes  B buffer the call reads, length the following n's  n a length factor
@@ -37,7 +43,8 @@
 #include "cq_standin.h"
 
 #define CQ_FX_K2 4096u /* the input-length bound K2, BACKEND_ABI §0 default */
-#define CQ_FX_LINE 6u
+/* ruling Q5: the default input stream. Numbers, letters, an 'a' (the Q5 witness counts them), three lines. */
+#define CQ_FX_STDIN_DEFAULT "7 ab\n-12 c 3.5\nxyz\n"
 
 typedef struct { const char *name; char cls; const char *roles; } cq_fx_ent; /* cls 'I' INPUT, 'O' OUTPUT */
 
@@ -49,7 +56,7 @@ static const cq_fx_ent cq_fx_table[] = {
     {"lseek", 'O', "f--"},  {"remove", 'O', "p"},   {"unlink", 'O', "p"},  {"rename", 'O', "pp"},
     {"raise", 'O', "-"},    {"vfprintf", 'O', "fFv"}, {"vprintf", 'O', "Fv"},
     {"fwprintf", 'O', "fG"}, {"wprintf", 'O', "G"},    {"vfwprintf", 'O', "fGv"}, {"vwprintf", 'O', "Gv"},
-    /* cq-tgl3i: the scanf family, INPUT calls the host performs (cq_fx_scan below), not the stand-in's line */
+    /* cq-tgl3i: the scanf family, INPUT calls the host performs (cq_fx_scan below), on the one input stream */
     {"scanf", 'I', "F"},    {"fscanf", 'I', "fF"},  {"vscanf", 'I', "Fv"},  {"vfscanf", 'I', "fFv"},
     {"wscanf", 'I', "G"},   {"fwscanf", 'I', "fG"}, {"vwscanf", 'I', "Gv"}, {"vfwscanf", 'I', "fGv"},
 };
@@ -82,43 +89,83 @@ static inline uint64_t cq_fx_result(uint64_t h, unsigned bits) {
   return bits < 64 ? h & ((UINT64_C(1) << bits) - 1) : h;
 }
 
-/* Byte j of the stand-in's line. */
-static inline uint8_t cq_fx_line_byte(uint64_t h, size_t j) {
-  if (j + 1 >= CQ_FX_LINE) return '\n';
-  return (uint8_t)('a' + cq_standin_mix(h, (uint64_t)j) % 26);
+/* ruling Q5: the one input stream. Weak, so the evaluator's objects (rt_tape.c, fx_lowered.c) and the C oracle share
+ * one; zero-initialized in __DATA, put back per sample with the rest. set 0: the default. */
+typedef struct { const uint8_t *b; size_t n, pos; int set; } cq_fx_in_t;
+__attribute__((weak)) cq_fx_in_t cq_fx_in;
+
+static inline cq_fx_in_t *cq_fx_stream(void) {
+  if (!cq_fx_in.set) {
+    cq_fx_in.b = (const uint8_t *)CQ_FX_STDIN_DEFAULT;
+    cq_fx_in.n = sizeof CQ_FX_STDIN_DEFAULT - 1;
+    cq_fx_in.pos = 0;
+    cq_fx_in.set = 1;
+  }
+  return &cq_fx_in;
 }
 
-/* How many bytes the call stores for length v: fgets: min(v - 1, line) and a NUL for v >= 1, nothing for v <= 0;
- * read and fread: min(v, line). A signed fgets length arrives here as 0 when negative. */
-static inline size_t cq_fx_input_stored(const cq_fx_ent *e, uint64_t v) {
-  if (!strcmp(e->name, "fgets")) return v == 0 ? 0 : (size_t)((v - 1 < CQ_FX_LINE ? v - 1 : CQ_FX_LINE) + 1);
-  return (size_t)(v < CQ_FX_LINE ? v : CQ_FX_LINE);
+/* A drivers.txt line's stdin field (drivers.py): the driver's setup calls this once, before any sample. */
+__attribute__((weak)) void cq_fx_stdin_set(const char *b, unsigned long n) {
+  cq_fx_in.b = (const uint8_t *)b;
+  cq_fx_in.n = (size_t)n;
+  cq_fx_in.pos = 0;
+  cq_fx_in.set = 1;
 }
 
-/* The cells a store of the K2 read can reach, whatever the length. */
-static inline size_t cq_fx_input_reach(const cq_fx_ent *e) { return CQ_FX_LINE + (strcmp(e->name, "fgets") ? 0u : 1u); }
+/* What one INPUT call (fgets, fread, read, fgetc, getc, getchar) does at the stream's position for total length v
+ * (fread: v = size * nmemb, the element size apart): take the bytes it consumes, stored the bytes it stores at its
+ * buffer (fgets: those and the null character), result its result. C17 7.21.7.2 / 7.21.8.1 / 7.21.7.1, POSIX read. */
+typedef struct { size_t pos, take, stored; uint64_t result; } cq_fx_io;
 
-/* Byte j of the stored bytes; fgets ends them with the NUL. */
-static inline uint8_t cq_fx_input_byte(const cq_fx_ent *e, uint64_t h, size_t j, size_t stored) {
-  if (!strcmp(e->name, "fgets") && j + 1 == stored) return 0;
-  return cq_fx_line_byte(h, j);
+static inline cq_fx_io cq_fx_input_plan(const cq_fx_ent *e, uint64_t v, uint64_t buf, uint64_t size) {
+  cq_fx_in_t *s = cq_fx_stream();
+  size_t rem = s->n - s->pos;
+  cq_fx_io io = {s->pos, 0, 0, 0};
+  if (!strcmp(e->name, "fgets")) {
+    if (v == 0) return io;                         /* n <= 0: nothing, null */
+    size_t k = 0;
+    while (k + 1 < v && k < rem) {
+      if (s->b[s->pos + k++] == '\n') break;
+    }
+    if (k == 0 && v > 1) return io;                /* end of file before any character: null, the buffer as it was */
+    io.take = k, io.stored = k + 1, io.result = buf;
+    return io;
+  }
+  if (!strcmp(e->name, "fread") || !strcmp(e->name, "read")) {
+    io.take = io.stored = (size_t)(v < rem ? v : rem);
+    io.result = !strcmp(e->name, "read") ? io.take : (size ? io.take / size : 0);
+    return io;
+  }
+  /* fgetc, getc, getchar: the next byte, or EOF */
+  io.take = rem ? 1 : 0;
+  io.result = rem ? s->b[s->pos] : (uint64_t)(int64_t)EOF;
+  return io;
 }
 
-/* The natural result of an INPUT call at a buffer buf, total length v, element size size (fread). */
-static inline uint64_t cq_fx_input_result(const cq_fx_ent *e, uint64_t h, uint64_t buf, uint64_t v, uint64_t size) {
-  if (!strcmp(e->name, "fgets")) return v == 0 ? 0 : buf;
-  if (!strcmp(e->name, "fread")) return size ? cq_fx_input_stored(e, v) / size : 0;
-  if (!strcmp(e->name, "read")) return cq_fx_input_stored(e, v);
-  return cq_fx_line_byte(h, 0);    /* fgetc, getc, getchar */
+/* Byte j of what the call stores (fgets ends with the null character). Before cq_fx_input_done. */
+static inline uint8_t cq_fx_input_byte(const cq_fx_io *io, size_t j) {
+  return j < io->take ? cq_fx_stream()->b[io->pos + j] : 0;
+}
+
+/* The call consumed its bytes. */
+static inline void cq_fx_input_done(const cq_fx_io *io) { cq_fx_stream()->pos = io->pos + io->take; }
+
+/* The cells a store of the call can reach for length v from any position of the stream: a bound that does not depend
+ * on the quantum inputs (an earlier call under a quantum predicate moves the position). */
+static inline size_t cq_fx_input_reach(const cq_fx_ent *e, uint64_t v) {
+  size_t n = cq_fx_stream()->n;
+  if (!strcmp(e->name, "fgets")) return v == 0 ? 0 : (size_t)((v - 1 < n ? v - 1 : n) + 1);
+  if (!strcmp(e->name, "fread") || !strcmp(e->name, "read")) return (size_t)(v < n ? v : n);
+  return 0;
 }
 
 /* cq-tgl3i: the scanf family (scanf, fscanf, vscanf, vfscanf and the wide four) is a rule-16 stream call by name (CR rule
  * 16: every <stdio.h> and <wchar.h> stream function, input and output alike), performed with the host C library
  * (BACKEND_ABI §1.11), on both sides: the C program's call (fx_call.h cqd_in_*) and the evaluator's INPUT entry (rt_tape.c
- * perform_scan) run the same host vfscanf / vfwscanf, never a stand-in. Under the checker every stream such a call reads is
- * empty (at end of file at once, whatever the FILE argument): what the musl bodies these rows lifted before cq-pt57w read
- * through the __cq_syscall stand-in (readv: 0), the same on every run and side, and never the checker's own pipes (the
- * sampler serves its batches on stdin). A conversion before the first input failure still writes (%n).
+ * perform_scan) run the same host vfscanf / vfwscanf, never a stand-in. Ruling Q5: what such a call reads is the one input
+ * stream from its position (whatever the FILE argument; cq_fx_in_open), never the checker's own pipes (the sampler serves
+ * its batches on stdin), and the stream advances by what it took. A conversion before the first input failure still
+ * writes (%n).
  * A role F or G entry of this table with class 'I' is one of them. */
 static inline int cq_fx_scan(const cq_fx_ent *e) { return e && e->cls == 'I' && strpbrk(e->roles, "FG") != NULL; }
 
@@ -154,10 +201,25 @@ static inline size_t cq_fx_scan_nptr(const char *fmt) {
   return maxpos > n ? maxpos : n;
 }
 
-/* The host's vfscanf (wide: vfwscanf on a wchar_t format) on an empty stream, its arguments the n pointers ptrs, passed as
- * a va_list whose every slot is in the overflow area (x86-64 SysV: gp_offset 48, fp_offset 176, as CR rule 16's variadic
- * clones fill one). Its result. */
-static inline int cq_fx_scan_host(int wide, const void *fmt, void *const *ptrs) {
+/* ruling Q5: a FILE that reads the stream from position pos on (at its end: an empty one). */
+static inline FILE *cq_fx_in_open(size_t pos) {
+  cq_fx_in_t *s = cq_fx_stream();
+  if (pos >= s->n) return fopen("/dev/null", "r");
+  return fmemopen((void *)(uintptr_t)(s->b + pos), s->n - pos, "r");
+}
+
+/* The bytes a scan took from that FILE. */
+static inline size_t cq_fx_in_close(FILE *in) {
+  long t = ftell(in);
+  fclose(in);
+  return t > 0 ? (size_t)t : 0;
+}
+
+/* The host's vfscanf (wide: vfwscanf on a wchar_t format) on the stream from position pos (ruling Q5: the lowered side
+ * runs its two scans from the same position and advances the stream once, by *took), its arguments the n pointers ptrs,
+ * passed as a va_list whose every slot is in the overflow area (x86-64 SysV: gp_offset 48, fp_offset 176, as CR rule 16's
+ * variadic clones fill one). Its result. */
+static inline int cq_fx_scan_host(int wide, const void *fmt, void *const *ptrs, size_t pos, size_t *took) {
 #if defined(__x86_64__)
   struct cq_va { unsigned gp, fp; void *ov, *rs; };
   va_list ap;
@@ -166,19 +228,24 @@ static inline int cq_fx_scan_host(int wide, const void *fmt, void *const *ptrs) 
 #else
 #error "cq_fx_scan_host: the va_list layout of x86-64 SysV"
 #endif
-  FILE *in = fopen("/dev/null", "r");
+  *took = 0;
+  FILE *in = cq_fx_in_open(pos);
   if (!in) return EOF;
   int r = wide ? vfwscanf(in, (const wchar_t *)fmt, ap) : vfscanf(in, (const char *)fmt, ap);
-  fclose(in);
+  *took = cq_fx_in_close(in);
   return r;
 }
 
-/* The same call from a va_list the C program passed (fx_call.h). */
-static inline int cq_fx_scan_host_va(int wide, const void *fmt, va_list ap) {
-  FILE *in = fopen("/dev/null", "r");
+/* The same call from a va_list the C program passed (fx_call.h), at the stream's position; *pos and *took say where it
+ * read and what it took, and the stream advances by that. */
+static inline int cq_fx_scan_host_va(int wide, const void *fmt, va_list ap, size_t *pos, size_t *took) {
+  cq_fx_in_t *s = cq_fx_stream();
+  *pos = s->pos, *took = 0;
+  FILE *in = cq_fx_in_open(s->pos);
   if (!in) return EOF;
   int r = wide ? vfwscanf(in, (const wchar_t *)fmt, ap) : vfscanf(in, (const char *)fmt, ap);
-  fclose(in);
+  *took = cq_fx_in_close(in);
+  s->pos += *took;
   return r;
 }
 
