@@ -2186,8 +2186,13 @@ class ProbeBuild:
         scan of a new binary is paid there, not inside a batch."""
         w = self.work
         h = hashlib.sha256()
+        # the stand-ins the fx object compiles (fx_call.h, fx_standin.h, and this file's fx_probe.c text) are part of the
+        # executable: without them a changed input model kept serving a stale probe (ruling Q5)
+        fx = [(D.REPO / "checker" / "oracle" / "fx_call.h").read_text(),
+              (D.REPO / "checker" / "rt" / "fx_standin.h").read_text(),
+              (D.REPO / "checker" / "rt" / "cq_standin.h").read_text(), Path(__file__).read_text()] if self.fx else []
         for part in (_PROBE_VERSION, str(LLVM_BIN), " ".join(_CC), str(_rt_object()), (w / "probe.ll").read_text(),
-                     (w / "driver.c").read_text()):
+                     (w / "driver.c").read_text(), *fx):
             h.update(part.encode() + b"\0")
         final = _cache_dir() / "probe" / h.hexdigest()[:24]
         if not final.exists():
@@ -2252,7 +2257,13 @@ class ProbeBuild:
             fd = ex.submit(self._compile, "driver.c", "-include", "stdbool.h")
         objs = [fp.result(), fd.result(), str(_rt_object())]
         if self.fx:
+            # ruling Q5: getline's buffer and fgetln's line are heap blocks of the program, registered as its own are
             (w / "fx_probe.c").write_text('#define FX_LOG(line, n) ((void)0)\n'
+                                          '#include <stdlib.h>\n'
+                                          'void __cqd_reg(void *, unsigned long long);\n'
+                                          'static void *cqd_fx_realloc(void *p, size_t n) {\n'
+                                          '  void *q = realloc(p, n); if (q) __cqd_reg(q, n); return q; }\n'
+                                          '#define CQ_FX_REALLOC cqd_fx_realloc\n'
                                           f'#include "{D.REPO / "checker" / "oracle" / "fx_call.h"}"\n')
             objs.append(self._compile("fx_probe.c"))
         r = subprocess.run(_ld_command(objs, str(self.exe)), capture_output=True, text=True)
