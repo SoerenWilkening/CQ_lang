@@ -157,6 +157,12 @@ class FlatDrivers(unittest.TestCase):
                     for i, n in enumerate(["feof", "ferror", "fesetround", "fetestexcept", "feupdateenv"]))
         self.assertEqual(sorted(D.effect_callees(t)), ["feof", "ferror"])
 
+    def test_effect_callees_thrd(self):
+        # cq-q3g4o: a bodiless thrd_* callee is the stand-in on the C side as its effect entry is on ours; thrd_exit, noreturn,
+        # stays real
+        t = "".join(f"declare ptr @{n}()\n  %{i} = call ptr @{n}()\n" for i, n in enumerate(["thrd_current", "thrd_exit"]))
+        self.assertEqual(sorted(D.effect_callees(t)), ["thrd_current"])
+
     def test_wrappers_parse(self):
         all_ = {"a": ("a", "void", "ptr, i32"), "b": ("b", "double", "double, float"), "c": ("c", "x86_fp80", "x86_fp80"),
                 "d": ("d", "ptr", ""), "e": ("e", "i8", "i8 signext, i128")}
