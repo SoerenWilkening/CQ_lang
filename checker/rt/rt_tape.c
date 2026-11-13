@@ -82,6 +82,7 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 
+#include "libm_next.h" /* the host's formatters and fenv, never the module's (cq-jp8qu) */
 #include "cqe.h"
 #define CQ_FX_BUS_STORE /* this file defines cq_fx_bus_store: the bus */
 #include "fx_standin.h"

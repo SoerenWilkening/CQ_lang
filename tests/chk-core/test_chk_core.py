@@ -1473,8 +1473,17 @@ class HostOutput(unittest.TestCase):
         self.assertEqual([(e["name"], e["args"][0]["cap"]) for e in r.outputs["effects"]], [("remove", "/nonexistent/cq_e4jk\n")])
         self.assertEqual(r.outputs["stdout"], "v=5\n")
 
+    def test_module_formatters_are_not_the_runtimes(self):
+        # cq-jp8qu: the module defines vsnprintf (cqcc's bundle does); the tape's events and text are still the host's
+        # (before: unparsable trace lines, no stdout; with musl's vsnprintf lowered, the evaluator ran printf_core on
+        # its own gates for every event and a printf("%c%n") sample passed 5e8 rails)
+        r = run.run_sample(HERE / "host_formatter.ll", spec1("int fx(int)", "fx", ["int"]), {"call": 0, "args": [5]},
+                           "ours", rt_sources=RT, extra_sources=FAM)
+        self.assertEqual(r.violations, [])
+        self.assertEqual(r.outputs["stdout"], "v=5\n")
 
-RT_ALL = sorted((REPO / "checker" / "rt").glob("*.c"))
+
+RT_ALL =sorted((REPO / "checker" / "rt").glob("*.c"))
 
 
 def build_harness(c_file, exe):
