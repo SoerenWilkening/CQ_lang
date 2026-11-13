@@ -29,6 +29,9 @@ int main(void)
 	fprintf(stderr, "FAIL %s = %lld, want %lld\n", #e, g_, (long long)(v)); } } while (0)
 	EXPECT(__cq_count_snprintf(0, 0, "%d %s|%5.2f", 42, "ab", 3.14159), 11);
 	EXPECT(vs("%x%c", 255u, 'z'), 3);
+	/* cq-jp8qu: the %n stores are musl's counts (a null %p prints "0"; macOS prints "0x0") */
+	int pn = -1; EXPECT(__cq_count_snprintf(0, 0, "ab%nc", &pn), 3); EXPECT(pn, 2);
+	pn = -1; EXPECT(__cq_count_snprintf(0, 0, "%p%n", (void *)0, &pn), 1); EXPECT(pn, 1);
 	EXPECT(__cq_count_wprintf(L"ab%d%ls", 123, L"xy"), 7);
 	EXPECT(vw(L"%s!", "hi"), 3);
 	EXPECT(__cq_count_wprintf(L"\xe9"), -1);
