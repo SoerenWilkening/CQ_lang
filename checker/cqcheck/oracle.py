@@ -76,7 +76,8 @@ at) reads 0 and a store there is dropped. Threads collapse (rule 24).
 A rule 27 root (the `roots=` field of drivers.txt) or another function neither libc nor the driver defines and
 drivers.effect_callees leaves gets the checker's model (OracleInstr.cpp ``stubs``):
 FNV-1a-64 over the name bytes, then ``h = (h ^ w) * 0x100000001b3`` per 64-bit word of each non-pointer
-argument; the result is the low W bits; no memory effect.
+argument; the result is the low W bits; no memory effect. A root's call (not one whose clone the driver line defines)
+also reaches the stand-in's phase, a phi site ``<caller>#standin`` (cq-743m, checker/rt/cq_standin.h "The phase").
 
 Samples are Z1's ``{"call", "args"}`` (SampleSet.samples entries); the driver is rendered only by
 ``drivers.driver_source(spec, samples, before_call=..., after_call=..., main_name="__cqo_drv_main")``,
@@ -675,10 +676,16 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
             und = [n[1:] if n.startswith("_") else n for n in und]
         stubs = sorted(n for n in und if not _PROVIDED.match(n) and not _host_defines(n) and n not in defined)
         (d / "stubs.txt").write_text("".join(n + "\n" for n in stubs))
+        # cq-743m: the rule 27 roots whose declared clone is the checker's stand-in (no clone of theirs on the driver
+        # line, 161 and 190's printing ones): their calls reach the stand-in's phase (checker/rt/cq_standin.h)
+        roots = drivers.corpus_roots()
+        phases = sorted(n for n in set(und) if n in roots and n not in defined
+                        and not any(x.startswith(f"__cq_q_{n}_") for x in defined))
+        (d / "standin_phases.txt").write_text("".join(n + "\n" for n in phases))
         iso = sorted(set(und) & _ISOLATE) + (["thread_local"] if "thread_local" in text else [])
         (d / "isolate.txt").write_text("".join(n + "\n" for n in iso))
         _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle",
-              f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, "-S", str(linked), "-o", str(d / "prog.inst.ll")],
+              f"-cq-oracle-stubs={d / 'stubs.txt'}", f"-cq-oracle-standin-phases={d / 'standin_phases.txt'}", *kf, "-S", str(linked), "-o", str(d / "prog.inst.ll")],
              "the cq-oracle instrumentation of the program")
         # the named outputs' reader joins after the instrumentation: its uses of the globals' addresses
         # are no escape of the program's (rule 2's collapse reads them), and its accesses no program access

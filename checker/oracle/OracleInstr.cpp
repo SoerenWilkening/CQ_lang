@@ -93,6 +93,11 @@ using namespace llvm;
 static cl::opt<std::string> StubsFile("cq-oracle-stubs",
                                       cl::desc("file of undefined external function names to model"),
                                       cl::init(""));
+// cq-743m: the rule 27 roots whose declared clone is the checker's stand-in (oracle.py): each call of one reaches the
+// stand-in's phase (checker/rt/cq_standin.h "The phase"), as the evaluator's stand-in emits it.
+static cl::opt<std::string> StandinPhasesFile("cq-oracle-standin-phases",
+                                              cl::desc("file of rule 27 callees whose calls reach the stand-in's phase"),
+                                              cl::init(""));
 static cl::list<std::string> Entries("cq-oracle-entries", cl::CommaSeparated,
                                      cl::desc("functions whose results calls in __cqo_* driver functions log"));
 
@@ -114,7 +119,10 @@ namespace {
   report_fatal_error(Twine(os.str()), false);
 }
 
-enum SiteKind { KTheta = 0, KPhi = 1, KMeasure = 2, KInvBegin = 3, KInvEnd = 4 };
+enum SiteKind { KTheta = 0, KPhi = 1, KMeasure = 2, KInvBegin = 3, KInvEnd = 4, KStandin = 5 };
+// KStandin (cq-743m): the marker standinPhases() puts before a call of a stand-in callee, a phi site of its own key
+// (`<fn>#standin`, numbered apart, so the program's own sites keep their numbers); never a kind cqo_rt.c sees.
+static constexpr const char *StandinMarker = "__cqo_standin_phi";
 
 bool isDriverFn(const Function &F) { return F.getName().starts_with("__cqo_"); }
 
@@ -538,7 +546,7 @@ public:
             const Function *G = CB->getCalledFunction();
             if (CB->isInlineAsm())
               continue;
-            if (!G || G->getName() == "cq_phi" || phiReach.count(G)) {
+            if (!G || G->getName() == "cq_phi" || G->getName() == StandinMarker || phiReach.count(G)) {
               phiReach.insert(&F), changed = true;
               break;
             }
@@ -563,7 +571,7 @@ public:
       unsigned k = 0;
       for (Instruction &I : instructions(*F))
         if (auto *CI = dyn_cast<CallInst>(&I))
-          if (Function *g = CI->getCalledFunction(); g && siteKind(g->getName()) >= 0) {
+          if (Function *g = CI->getCalledFunction(); g && siteKind(g->getName()) >= 0 && siteKind(g->getName()) != KStandin) {
             if (siteKind(g->getName()) == KMeasure)
               msiteIdx[CI] = msiteNames.size(), msiteNames.push_back((F->getName() + ":" + Twine(k)).str());
             ++k;
@@ -994,7 +1002,7 @@ public:
         for (Instruction &I : *BB)
           if (auto *CB = dyn_cast<CallBase>(&I); CB && orig.count(CB) && !CB->isInlineAsm()) {
             const Function *G = CB->getCalledFunction();
-            if (!G || G->getName() == "cq_phi" || In.phiReach.count(G))
+            if (!G || G->getName() == "cq_phi" || G->getName() == StandinMarker || In.phiReach.count(G))
               need.push_back(CB);
           }
       if (need.empty())
@@ -1048,7 +1056,7 @@ public:
         for (BasicBlock *b : anc[CB->getParent()])
           q = B.CreateOr(q, B.CreateLoad(I32, slot[b]));
         const Function *G = CB->getCalledFunction();
-        if (G && G->getName() == "cq_phi") {
+        if (G && (G->getName() == "cq_phi" || G->getName() == StandinMarker)) {
           B.CreateCall(h("__cqo_phq", In.Void, {I32}), {q});
           continue;
         }
@@ -2730,6 +2738,8 @@ public:
       return KInvBegin;
     if (n == "__cq_invert_end")
       return KInvEnd;
+    if (n == StandinMarker)
+      return KStandin;
     return -1;
   }
 
@@ -2782,10 +2792,18 @@ public:
             calls.push_back(CI);
     FunctionCallee site = hook("__cqo_site", Void, {Ptr, I32, I32, I64, Ptr, I32});
     Constant *fn = str(F.getName());
-    unsigned k = 0;
+    unsigned k = 0, ks = 0;
     for (CallInst *CI : calls) {
       int kind = siteKind(CI->getCalledFunction()->getName());
       IRBuilder<> B(CI);
+      if (kind == KStandin) {  // cq-743m: on (arg 1) where this call reaches the stand-in callee
+        Value *ang = B.CreateBitCast(CI->getArgOperand(0), I64);
+        B.CreateCall(hook("__cqo_standin_site", Void, {Ptr, I32, I64, I32}),
+                     {str((F.getName() + "#standin").str()), B.getInt32(ks++), ang,
+                      B.CreateZExt(CI->getArgOperand(1), I32)});
+        CI->eraseFromParent();
+        continue;
+      }
       Value *angle = B.getInt64(0);
       Value *reg = ConstantPointerNull::get(cast<PointerType>(Ptr));
       unsigned bits = 0;
@@ -3296,6 +3314,53 @@ public:
     }
   }
 
+  // ---------------------------------------------------------------- the stand-in's phase (cq-743m)
+  // checker/rt/cq_standin.h "The phase": every activation of a callee whose rule 27 declared clone is the checker's
+  // stand-in reaches the phase P(theta_fn) on the lowered side (CR §6: one deterministic stand-in of the name and the
+  // argument bits, the model the checker's; CR §1.4 `_ctl`: a predicate applies to phases). The C program reaches it at
+  // the call: a marker before every direct call of fn (on), and before every call through a pointer, on where the
+  // pointer is fn. sites() makes each marker a phi site; phaseReach and phaseScope read it as a cq_phi.
+  void standinPhases() {
+    if (StandinPhasesFile.empty())
+      return;
+    auto buf = MemoryBuffer::getFile(StandinPhasesFile);
+    if (!buf)
+      report_fatal_error(Twine("cq-oracle: cannot read ") + StandinPhasesFile, false);
+    SmallVector<StringRef, 16> lines;
+    (*buf)->getBuffer().split(lines, '\n', -1, false);
+    std::vector<Function *> fns;
+    for (StringRef line : lines)
+      if (Function *G = M.getFunction(line.trim()); G && G->isDeclaration())
+        fns.push_back(G);
+    if (fns.empty())
+      return;
+    std::vector<Function *> taken;  // before any marker's compare takes an address
+    for (Function *G : fns)
+      if (G->hasAddressTaken())
+        taken.push_back(G);
+    FunctionCallee mark = hook(StandinMarker, Void, {Type::getDoubleTy(C), Type::getInt1Ty(C)});
+    auto angle = [&](Function *G) {
+      uint64_t b = cq_standin_angle(G->getName().data(), G->getName().size());  // checker/rt/cq_standin.h
+      return ConstantFP::get(Type::getDoubleTy(C), APFloat(APFloat::IEEEdouble(), APInt(64, b)));
+    };
+    std::vector<CallBase *> calls;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && !CB->isInlineAsm() && !isa<IntrinsicInst>(CB))
+            calls.push_back(CB);
+    for (CallBase *CB : calls) {
+      IRBuilder<> B(CB);
+      if (Function *G = CB->getCalledFunction()) {
+        if (std::find(fns.begin(), fns.end(), G) != fns.end())
+          B.CreateCall(mark, {angle(G), B.getTrue()});
+        continue;
+      }
+      for (Function *G : taken)
+        B.CreateCall(mark, {angle(G), B.CreateICmpEQ(CB->getCalledOperand(), G)});
+    }
+  }
+
   // ---------------------------------------------------------------- undefined externals
   // The checker's model of a function nothing defines (rule 27 declared clones on the lowered side):
   // h = FNV-1a-64 offset; h = (h ^ b) * P for each byte of the name; then for each non-pointer scalar
@@ -3402,6 +3467,7 @@ public:
           pristine.push_back(&F);
       spellBlocks(pristine);
     }
+    standinPhases();
     measureSites();
     phaseReach();
     notePristine();

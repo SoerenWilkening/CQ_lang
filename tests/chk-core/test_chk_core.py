@@ -1297,6 +1297,106 @@ class HostClone(unittest.TestCase):
             stubgen.generate([bad], ["declare i64 @strlen(ptr)"])
 
 
+class StandinPhase(unittest.TestCase):
+    """cq-743m (CR §6: one deterministic stand-in on both sides, the model the checker's; CR §1.4 `_ctl`: the predicate
+    applies to "rotations, phases, ..."): a declared clone's stand-in emits its phase P(theta_fn), unguarded in the
+    forward form, under pred in the `_ctl` form, never in a twin; the C program reaches it at the call. A declared clone
+    called without its predicate under a quantum predicate is rejected; the correct lowering passes."""
+    UNCTL = [("call i32 @__cq_q_ext_1_t_ctl(i32 %4, i32 %3, i32 4)", "call i32 @__cq_q_ext_1_t(i32 %3, i32 4)"),
+             ("call void @__cq_q_ext_1_t_ctl_unc(i32 %4, i32 %5, i32 %3, i32 4)",
+              "call void @__cq_q_ext_1_t_unc(i32 %5, i32 %3, i32 4)"),
+             ("\ndeclare i32 @__cq_q_ext_1_t_ctl(i32, i32, i32)\n",
+              "\ndeclare i32 @__cq_q_ext_1_t_ctl(i32, i32, i32)\ndeclare i32 @__cq_q_ext_1_t(i32, i32)\n"
+              "declare void @__cq_q_ext_1_t_unc(i32, i32, i32)\n")]
+    TRUE_PRED = [("  %5 = call i32 @__cq_q_ext_1_t_ctl(i32 %4, i32 %3, i32 4)",
+                  "  %one = call i32 @cqrt_alloc_i1(i1 true)\n  %5 = call i32 @__cq_q_ext_1_t_ctl(i32 %one, i32 %3, i32 4)"),
+                 ("  call void @__cq_q_ext_1_t_ctl_unc(i32 %4, i32 %5, i32 %3, i32 4)",
+                  "  call void @__cq_q_ext_1_t_ctl_unc(i32 %one, i32 %5, i32 %3, i32 4)\n"
+                  "  call void @cqrt_xorc_i1(i32 %one, i1 true)\n  call void @cqrt_free(i32 %one)"),
+                 ("\ndeclare i32 @__cq_q_ext_1_t_ctl(i32, i32, i32)\n",
+                  "\ndeclare i32 @__cq_q_ext_1_t_ctl(i32, i32, i32)\ndeclare void @cqrt_xorc_i1(i32, i1)\n")]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="cq-standin-phase."))
+
+    def user(self, text, name):
+        ll = self.tmp / f"{name}.ll"
+        ll.write_text(text)
+        p = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(HERE / "standin_ctl.O1.ll"),
+                            "--lowered", str(ll), "--entry", "f", "--samples", "64"], cwd=REPO / "checker",
+                           env=dict(os.environ, CQ_ROOTS_EXTRA="ext"), capture_output=True, text=True)
+        return p.returncode, p.stdout + p.stderr
+
+    def mutate(self, edits):
+        text = (HERE / "standin_ctl.ll").read_text()
+        for a, b in edits:
+            self.assertEqual(text.count(a), 1, a)
+            text = text.replace(a, b)
+        return text
+
+    def test_control_passes(self):
+        rc, out = self.user((HERE / "standin_ctl.ll").read_text(), "control")
+        self.assertEqual(rc, 0, out)
+
+    def test_uncontrolled_rejected(self):
+        rc, out = self.user(self.mutate(self.UNCTL), "unctl")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("the phase totals differ", out)
+
+    def test_constant_true_predicate_rejected(self):
+        rc, out = self.user(self.mutate(self.TRUE_PRED), "truepred")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("the phase totals differ", out)
+
+    def test_phase_events(self):
+        # forward: +theta unguarded; inside a cq_invert region: replayed negated (rule 17); _ctl with pred 0: fv 0; a twin:
+        # none. theta by cq_standin.h restated in Python.
+        c = self.tmp / "ph.c"
+        c.write_text("void e_v(int); int e_r(int);\nint iv(int a) { e_v(a); return e_r(a); }\n")
+        o1 = self.tmp / "ph.O1.ll"
+        subprocess.run([str(LLVM / "clang"), "-target", "x86_64-apple-macosx16.0.0", "-O1", "-S", "-emit-llvm", str(c),
+                        "-o", str(o1)], check=True)
+        ll = self.tmp / "ph.ll"
+        ll.write_text(STANDIN_LL.split("\ndefine")[0] + """
+define i32 @iv(i32 %a) {
+  %h = call i32 @cqrt_alloc_i32(i32 %a)
+  %p = call i32 @cqrt_alloc_i1(i1 0)
+  call void @__cq_q_e_v_1_t(i32 %h, i32 4)
+  call void @cqrt_invert_begin()
+  call void @__cq_q_e_v_1_t(i32 %h, i32 4)
+  call void @cqrt_invert_end()
+  call void @__cq_q_e_v_1_t_ctl(i32 %p, i32 %h, i32 4)
+  %r = call i32 @__cq_q_e_r_1_t(i32 %h, i32 4)
+  call void @__cq_q_e_r_1_t_unc(i32 %r, i32 %h, i32 4)
+  call void @cqrt_free(i32 %p)
+  call void @cqrt_free(i32 %h)
+  ret i32 0
+}
+declare i32 @cqrt_alloc_i1(i1)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_invert_begin()
+declare void @cqrt_invert_end()
+declare void @__cq_q_e_v_1_t(i32, i32)
+declare void @__cq_q_e_v_1_t_ctl(i32, i32, i32)
+declare i32 @__cq_q_e_r_1_t(i32, i32)
+declare void @__cq_q_e_r_1_t_unc(i32, i32, i32)
+""")
+        spec = DriverSpec("chk-core", ["int iv(int);"], "", [{"fn": "iv", "args": [{"ctype": "int", "quantum": False}]}])
+        ev = run_prog(run.build(ll, spec, (), RT, FAM, o1), spec, {"call": 0, "args": [5]})
+        self.assertEqual([e for e in ev if e["ev"] == "violation"], [])
+
+        def theta(name):
+            t = (1 + (standin_reference(name, []) >> 44)) / 2 ** 19
+            return int.from_bytes(struct.pack("<d", t), "little")
+
+        ph = [(e["f"], e["fv"], int(e["theta"], 16)) for e in ev if e["ev"] == "phase"]
+        p = next(e["h"] for e in ev if e["ev"] == "alloc" and e["w"] == "i1")
+        tv, tr = theta("e_v"), theta("e_r")
+        self.assertEqual(ph, [(0, 1, tv), (0, 1, tv ^ (1 << 63)), (p, 0, tv), (0, 1, tr)])
+
+
 class HostOutput(unittest.TestCase):
     """cq-e4jk: outputs["stdout"] is the process's output followed by the tape's end-of-shot text;
     outputs["effects"] the {"ev":"effect"} lines in the C program's order (run._effects_in_order);

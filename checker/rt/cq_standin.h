@@ -14,6 +14,15 @@
  *     word first; fp as its bit pattern, x86_fp80 as 80 bits = 2 words):  h = cq_standin_mix(h, w)
  *   result = the low W bits of h, W the C result type's width (fp: as a bit pattern, f80: h
  *   zero-extended to 80 bits); void: nothing; a pointer result: null. No memory effect.
+ * The phase (cq-743m): every activation of fn is also the phase P(theta_fn), theta_fn = cq_standin_angle(fn):
+ *   theta_fn = (1 + (h_name >> 44)) * 2^-19, h_name the h after the name bytes: an exact double in (0, 2],
+ *   never the identity. CR §1.4 `_ctl`: "applies [the predicate] to everything that is not a template on
+ *   SSA values: rotations, phases, ..."; so the forward clone emits the phase unguarded, its `_ctl` form
+ *   under its predicate, `_pure` and every twin none (rule 18's twin recomputes through `_pure`). The C side
+ *   reaches the same phase at every call of fn (a cq_phi(theta_fn) site of the call), so a declared clone
+ *   called without its predicate (or with a wrong one) changes the phase total CR §6 item 2 compares.
+ *   Only for a callee whose declared clone is the checker's stand-in (stubgen.py), never a clone the
+ *   driver line defines (161, 190).
  * A declared clone __cq_q_<fn>_<1...1>_t(handles..., i32 K) (rule 27, CR §1.4) takes a pointer as a handle to
  * an i64 address rail. A pointer is an argument never mixed: an address differs per run (CR §6: pointer values
  * are compared only relationally). The trailing K, the _ctl predicate and a twin's out handles are not arguments
@@ -37,6 +46,14 @@ static inline uint64_t cq_standin_name(const char *name, size_t n) {
   for (size_t i = 0; i < n; ++i)
     h = cq_standin_mix(h, (uint64_t)(unsigned char)name[i]);
   return h;
+}
+
+/* theta_fn as its f64 bit pattern (cq-743m; above). */
+static inline uint64_t cq_standin_angle(const char *name, size_t n) {
+  double t = (double)(1 + (cq_standin_name(name, n) >> 44)) / 524288.0; /* 2^19 */
+  uint64_t b;
+  __builtin_memcpy(&b, &t, sizeof b);
+  return b;
 }
 
 #endif

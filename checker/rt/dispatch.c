@@ -2119,8 +2119,8 @@ static const char *lty_wtok(const lty *t, char *buf, size_t n) {
  * classical ptr), then, for a table clone (_t, the declared clone of rule 27), the i32 K. The value is the
  * cq_standin.h function of fn and the non-pointer scalar arguments (a quantum one by its rail's value), the
  * same function the C oracle defines fn with. The forward clone returns a fresh rail holding it, a classical
- * result as a seed rail (void: no effect); its _ctl form ignores pred (the stand-in has no effect to guard,
- * rule 27); the twin XORs it out of the out rail (void: no effect) and, for a table clone, frees that rail
+ * result as a seed rail (void: no result); every forward form but _pure also emits the stand-in's phase
+ * (standin_phase, cq-743m), a _ctl form under pred (CR §1.4); the twin XORs it out of the out rail (void: no effect) and, for a table clone, frees that rail
  * (§1.4: "frees the results it zeroes"; the caller frees no result of a table clone). A pointer result is a
  * rail holding null. */
 typedef void (*standin_thunk)(void **cargs, void *cret);
@@ -2139,6 +2139,20 @@ void cqe_standin(const char *sym, const char *sig, const char *csig, int32_t nar
 void cqe_standin_host(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
                       void *thunk) {
   standin(sym, sig, csig, nargs, argv, ret, (standin_thunk)thunk);
+}
+
+/* cq-743m (cq_standin.h "The phase"): the forward clone's phase P(theta_fn), on the predicate rail of a _ctl form
+ * (CR §1.4 `_ctl`: the predicate applies to "rotations, phases, ..."), unguarded otherwise (f 0: no rail, always
+ * fires). Replayed inverted by a cq_invert region (rule 17), its angle is negated (iv_standin_inv). */
+static int iv_standin_inv;
+
+static void standin_phase(const char *fn, size_t fl, int32_t pred) {
+  uint64_t th = cq_standin_angle(fn, fl);
+  if (iv_standin_inv)
+    th ^= 1ULL << 63;
+  int fv = pred ? (int)(cqe__val(pred)->w[0] & 1) : 1;
+  cqe__logf("{\"ev\":\"phase\",\"f\":%lld,\"fv\":%d,\"theta\":\"0x%llx\"}", pred ? cqe__hname(pred) : 0LL, fv,
+            (unsigned long long)th);
 }
 
 static void standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
@@ -2177,7 +2191,7 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
   int ok = !strncmp(sym, "__cq_q_", 7) && !strncmp(sym + 7, fn, fl) && sym[7 + fl] == '_';
   const char *mask = ok ? sym + 8 + fl : "";
   size_t ml = strspn(mask, "01");
-  int unc = 0, ctl = 0, table = 0;
+  int unc = 0, ctl = 0, table = 0, pure = 0;
   if (!strncmp(mask, "v", 1) && (mask[1] == 0 || mask[1] == '_'))
     ml = 0; /* §1.4: a function with no scalar formal */
   const char *sfx = mask + ml + (ml == 0 && *mask == 'v' ? 1 : 0);
@@ -2194,7 +2208,9 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
       ctl = 1;
     else if (len == 1 && q[1] == 't')
       table = 1;
-    else if (!(len == 4 && !strncmp(q + 1, "pure", 4)))
+    else if (len == 4 && !strncmp(q + 1, "pure", 4))
+      pure = 1;
+    else
       ok = 0;
     q += 1 + len;
   }
@@ -2206,7 +2222,7 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
   /* walk the ABI arguments against the C signature and the mask */
   {
     int a = 0, d = 0, nh = 0, known = 1;
-    int32_t out_h = -1, hs[64];
+    int32_t out_h = -1, hs[64], pred_h = 0;
     uint64_t h = cq_standin_name(fn, fl);
     sbuf ab = {0};
     sb_add(&ab, "[");
@@ -2218,6 +2234,8 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
     if (ok && ctl) { /* §1.4: _ctl_unc(pred, outs..., args...) */
       if (a >= nargs || strcmp(ty[a].ty, "i32") != 0 || cqe__check(as_i32(&raw[a]), sym) < 0)
         ok = 0;
+      else
+        pred_h = as_i32(&raw[a]);
       ++a;
     }
     if (ok && unc && crty.kind != 'v') {
@@ -2315,6 +2333,8 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
     if (ok && (a != nargs || d != (int)ml))
       ok = 0;
     sb_add(&ab, "]");
+    if (ok && !unc && !pure)
+      standin_phase(fn, fl, ctl ? pred_h : 0);
     if (!ok) {
       cqe__violation("malformed_call", -1, "%s: arguments '%s' do not follow rule 27 for C signature '%s' and mask %.*s",
                      sym, sig, csig, (int)ml, mask);
@@ -2597,10 +2617,16 @@ static int iv_intercept(const char *sym, const char *sig, const char *csig, int3
       const char *b1 = strchr(csig, '|'), *b2 = b1 ? strchr(b1 + 1, '|') : NULL;
       lty crty;
       char wt[16];
-      if (!b2 || parse_lty(b1 + 1, (size_t)(b2 - b1 - 1), &crty) || crty.kind == 'v' ||
-          !lty_wtok(&crty, wt, sizeof wt) || strcmp(rty.ty, "i32"))
-        return 0; /* a void clone has no effect (rule 27); anything else the ordinary path reports */
-      op.out = iv_reserve(wt, &rty, ret);
+      if (b2 && !parse_lty(b1 + 1, (size_t)(b2 - b1 - 1), &crty) && crty.kind == 'v' && rty.kind == 'v') {
+        if (ends_with(sym, "_pure"))
+          return 0; /* no result and no phase: nothing to invert */
+        op.kind = IV_GATE; /* a void clone's only effect is its phase (cq-743m): reversed and negated */
+      } else {
+        if (!b2 || parse_lty(b1 + 1, (size_t)(b2 - b1 - 1), &crty) || crty.kind == 'v' ||
+            !lty_wtok(&crty, wt, sizeof wt) || strcmp(rty.ty, "i32"))
+          return 0; /* anything else the ordinary path reports */
+        op.out = iv_reserve(wt, &rty, ret);
+      }
     }
   } else if (!strncmp(sym, "cq_template_", 12)) {
     cqe_tname t;
@@ -2687,9 +2713,11 @@ static int iv_intercept(const char *sym, const char *sig, const char *csig, int3
 }
 
 static void iv_call(const iv_op *op, const char *sym, const char *sig, void **argv, int nargs, void *ret) {
-  if (op->standin)
+  if (op->standin) {
+    iv_standin_inv = op->inv; /* rule 17: the stand-in's phase replayed inverted (cq-743m) */
     standin(sym, sig, op->csig, nargs, argv, ret, (standin_thunk)op->thunk);
-  else
+    iv_standin_inv = 0;
+  } else
     cqe_dispatch(sym, sig, nargs, argv, ret);
   cqe__prealloc(0);
 }
