@@ -1,9 +1,9 @@
 # CQ_spec pin, written by tools/spec_lock.py --write. Spec: examples/, CONSTRUCTION_RULES.md, CQ.h.
 # Also locked because we consume them: BACKEND_ABI.md (non-normative, CONSTRUCTION_RULES.md wins over it)
 # and _tools/drivers.txt (input data). A drift in either of those two is a re-pin, not a spec issue.
-commit 5a055f9bbae5b3ca20960920fe002996f42ed130
+commit 5d23dd0f6c43ca327e1f2f575d79d353c383d227
 0f0cfbb310b4096eeee39ff03761508b7e2f0e43303412dbf56f33522524338b  BACKEND_ABI.md
-45a72f3b2693e323e761b24bb23f300239faf99d3dadf800d718a96763efb17e  CONSTRUCTION_RULES.md
+49b17d6020531e911528c5bcbb8d2f552d16dda6959faa2edb03483cf10e5511  CONSTRUCTION_RULES.md
 a277b3618e436d7404ea74f7234976fd1ba9dc5e1f108845b3f8ce4bd9427d23  CQ.h
 904904550a0ef6a4605b08e17db4740cfe31db8b6fb6589f59603a0fb818f740  _tools/drivers.txt
 721d422960294e2fe9c8821f9365f47679bd71dc815f2594c84f2cd3de8f7611  examples/01_add_classical_const/add_classical_const.O1.ll
