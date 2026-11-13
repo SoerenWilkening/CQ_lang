@@ -35,7 +35,9 @@ where csig = "<fn>|<ret>|<t0>,<t1>,..." is the C function's own signature, read 
 files (the example's .O1.ll: the declaration of fn, rule 27's callee). fn is the clone name read right
 to left (CR §1.4): the suffix words (_unc, _pure, _ctl, _t), then the mask (binary digits, or v). A clone whose fn
 the C modules do not declare is left undefined (no stub: an ordinary link error, as rule 27 says for
-a missing definition); one whose C signature has a non-scalar type is an error.
+a missing definition); one whose C signature has a non-scalar type is an error. The stand-in's forward forms
+also emit its phase (cq_standin.h "The phase", cq-743m): unguarded, or under the predicate of a _ctl form
+(CR §1.4), so a declared clone called without its predicate differs from the C program on §6's phase total.
 
 Clones of host functions (cq-aou6). The C oracle links a callee nothing in the program defines to the
 host library when the host defines it (libc/libm: oracle.py _host_defines, ctypes.CDLL(None)) and

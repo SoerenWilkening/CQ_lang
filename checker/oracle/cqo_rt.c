@@ -888,6 +888,13 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     else if (kind != 5) n_rotations++;
 }
 
+/* cq-743m (OracleInstr.cpp standinPhases): a call of a rule 27 callee whose declared clone is the checker's stand-in
+ * reaches the stand-in's phase (checker/rt/cq_standin.h "The phase"), a phi site of its own key; `on` is 0 at a call
+ * through a pointer that is another function. */
+void __cqo_standin_site(const char *fn, int32_t site, uint64_t angle, int32_t on) {
+    if (on) __cqo_site(fn, site, 1, angle, NULL, 0);
+}
+
 /* OracleInstr.cpp enters(): this input enters fn (compare._meas_extra) */
 void __cqo_enter(const char *fn) {
     if (trips_only) return;
