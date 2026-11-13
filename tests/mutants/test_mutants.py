@@ -155,12 +155,12 @@ class Release(unittest.TestCase):
                 seen.append(o)
             return [good, bad]
 
-        saved = mutants._spec_lock, mutants._example_job
-        mutants._spec_lock, mutants._example_job = (lambda: 0), fake_job
+        saved = mutants._spec_lock, mutants._example_job, mutants._IN_PROCESS
+        mutants._spec_lock, mutants._example_job, mutants._IN_PROCESS = (lambda: 0), fake_job, True
         try:
             rc = mutants.selftest(only=[], empty=["01_add_classical_const"])
         finally:
-            mutants._spec_lock, mutants._example_job = saved
+            mutants._spec_lock, mutants._example_job, mutants._IN_PROCESS = saved
         self.assertEqual(rc, 1)                      # the bad outcome fails the run
         self.assertEqual([o.verdict for o in seen], [None, None])
         recs = [json.loads(line) for line in (report.out_dir() / "selftest" / "outcomes.jsonl").read_text().splitlines()]

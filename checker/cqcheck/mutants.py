@@ -48,7 +48,8 @@ $CQ_BUILD_DIR/cqcheck/baseline/ (never `run`'s store: a reference's verdict is n
 reaches `progress`). Exit 0 iff every example is green.
 
 Both run examples in parallel, $CQCHECK_JOBS at a time (default: the CPU count), and check
-spec.lock first (drift exits 1).
+spec.lock first (drift exits 1). The self-test runs each example in a worker process of its own (cq-p9pty), the
+baseline in threads.
 """
 from __future__ import annotations
 
@@ -56,6 +57,7 @@ import concurrent.futures
 import dataclasses
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -305,23 +307,36 @@ def _timing(t: float, secs: Optional[float]) -> str:
     return f"t={t:.1f}s took=" + ("?" if secs is None else f"{secs:.1f}s")
 
 
-def _record(store: Path, o: Outcome, lock: threading.Lock, t: float = 0.0) -> None:
-    """Write `o` to outcomes.jsonl and print its line: mark, kind, id, example, the reasons it is not as predicted,
-    then (cq-p9pty) `t=<s>s took=<s>s`, `t` the seconds since the self-test started (`t` argument)."""
-    line = json.dumps({"kind": o.kind, "id": o.id, "example": o.example, "class": o.cls, "ok": o.ok,
-                       "why": o.why, "verdict": _verdict_record(o.verdict, not o.ok),
-                       "verdict_subst_off": _verdict_record(o.verdict_off, not o.ok),
-                       "t": round(t, 3), "secs": None if o.secs is None else round(o.secs, 3)},
-                      sort_keys=True)
+def _payload(o: Outcome) -> dict:
+    """What _write needs of `o`, its verdicts already cut to their record (cq-p9pty: a worker process sends this, never
+    the whole verdict, to the self-test's parent)."""
+    return {"rec": {"kind": o.kind, "id": o.id, "example": o.example, "class": o.cls, "ok": o.ok, "why": o.why,
+                    "verdict": _verdict_record(o.verdict, not o.ok),
+                    "verdict_subst_off": _verdict_record(o.verdict_off, not o.ok),
+                    "secs": None if o.secs is None else round(o.secs, 3)},
+            "detail": [] if o.ok else ["      " + _short(o.verdict, 3)] + (
+                ["      substitution off: " + _short(o.verdict_off, 3)] if o.verdict_off is not None else []),
+            "secs": o.secs}
+
+
+def _write(store: Path, p: dict, lock: threading.Lock, t: float = 0.0) -> None:
+    """Write the payload `p` (_payload) to outcomes.jsonl and print its line (see _record)."""
+    r = p["rec"]
+    line = json.dumps(dict(r, t=round(t, 3)), sort_keys=True)
     with lock:
         with (store / "outcomes.jsonl").open("a") as f:
             f.write(line + "\n")
-        mark = "ok  " if o.ok else "FAIL"
-        print(f"{mark} {o.kind:<7} {o.id:<32} {o.example:<28} {'; '.join(o.why)}  {_timing(t, o.secs)}", flush=True)
-        if not o.ok:
-            print("      " + _short(o.verdict, 3), flush=True)
-            if o.verdict_off is not None:
-                print("      substitution off: " + _short(o.verdict_off, 3), flush=True)
+        mark = "ok  " if r["ok"] else "FAIL"
+        print(f"{mark} {r['kind']:<7} {r['id']:<32} {r['example']:<28} {'; '.join(r['why'])}  "
+              f"{_timing(t, p['secs'])}", flush=True)
+        for d in p["detail"]:
+            print(d, flush=True)
+
+
+def _record(store: Path, o: Outcome, lock: threading.Lock, t: float = 0.0) -> None:
+    """Write `o` to outcomes.jsonl and print its line: mark, kind, id, example, the reasons it is not as predicted,
+    then (cq-p9pty) `t=<s>s took=<s>s`, `t` the seconds since the self-test started (`t` argument)."""
+    _write(store, _payload(o), lock, t)
 
 
 def _control(ex: report.Example, substitution: Any) -> Outcome:
@@ -416,6 +431,39 @@ def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -
     return out
 
 
+# The self-test's worker processes (cq-p9pty): each outcome goes to the parent through _EMIT_Q as it is decided.
+_EMIT_Q: Any = None
+_IN_PROCESS = False         # a test's switch: the tasks run in threads of this process (a replaced _example_job is seen)
+_TASK_END = "\0task-end"
+
+
+def _worker_init(q: Any) -> None:
+    global _EMIT_Q
+    _EMIT_Q = q
+
+
+def _worker_emit(o: Outcome) -> None:
+    _EMIT_Q.put(_payload(o))
+    # cq-p9pty: recorded and judged, the verdicts are not read again (summary reads kind, id, class, ok); the
+    # outcomes of 213 examples held them all, every sample's reasons included, until the process exceeded 6 GB
+    o.verdict = o.verdict_off = None
+
+
+def _example_task(ex: report.Example, mutants: List[Mutant], empty: bool) -> List[Outcome]:
+    """_example_job in a worker process; its outcomes return without their verdicts, then the task's end marker."""
+    try:
+        return _example_job(ex, mutants, empty, _worker_emit)
+    finally:
+        _EMIT_Q.put(_TASK_END)
+
+
+def _replay_task() -> List[Outcome]:
+    try:
+        return replay_checks(_worker_emit)
+    finally:
+        _EMIT_Q.put(_TASK_END)
+
+
 def _spec_lock() -> int:
     from cqcheck import speclock   # in this process, stamped (cq-8m6v)
     return speclock.check()
@@ -477,19 +525,52 @@ def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]
     outcomes: List[Outcome] = []
     last = [start]                      # when the last outcome was recorded
 
-    def emit(o: Outcome) -> None:
-        now = time.monotonic()
-        _record(store, o, lock, now - start)
-        last[0] = max(last[0], now)
-        # cq-p9pty: recorded and judged, the verdicts are not read again (summary reads kind, id, class, ok); the
-        # outcomes of 213 examples held them all, every sample's reasons included, until the process exceeded 6 GB
-        o.verdict = o.verdict_off = None
+    # cq-p9pty: the checks run in worker processes, not threads. A check's own work is mostly Python (the sample
+    # set's searches and the C oracle's trace parsing, the evaluator's, the two comparisons; the tools it starts are a
+    # small part), so the threads of one process shared one core under the GIL whatever $CQCHECK_JOBS said. Each task
+    # (one example: its controls, mutants and empty output, or the replay checks) runs in a fresh process
+    # (max_tasks_per_child=1: a large example's peak, 56_int_intrinsics 1.7 GB, is returned when it ends). A worker
+    # sends every outcome's payload (_payload: its verdicts cut to their record) through a queue as it is decided,
+    # then an end marker for its task; the parent writes and prints them in arrival order.
+    import multiprocessing
+    ctx = multiprocessing.get_context("spawn")
+    q: Any = queue.Queue() if _IN_PROCESS else ctx.Queue()
+    tasks = ([(_replay_task, ())] if replay else []) + \
+        [(_example_task, (e, by_ex.get(e.name, []), e.name in empty_set)) for e in todo]
+    ended = [0]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=_jobs()) as pool:
-        futs = ([pool.submit(replay_checks, emit)] if replay else []) + \
-            [pool.submit(_example_job, e, by_ex.get(e.name, []), e.name in empty_set, emit) for e in todo]
-        for f in futs:
-            outcomes += f.result()
+    def drain() -> None:
+        while True:
+            p = q.get()
+            if p is None:
+                return
+            if p == _TASK_END:
+                ended[0] += 1
+                if ended[0] == len(tasks):
+                    return
+                continue
+            now = time.monotonic()
+            _write(store, p, lock, now - start)
+            last[0] = max(last[0], now)
+
+    drainer = threading.Thread(target=drain, daemon=True)
+    drainer.start()
+    futs: List[concurrent.futures.Future] = []
+    try:
+        if _IN_PROCESS:
+            _worker_init(q)
+        with (concurrent.futures.ThreadPoolExecutor(max_workers=_jobs()) if _IN_PROCESS else
+              concurrent.futures.ProcessPoolExecutor(max_workers=_jobs(), mp_context=ctx, initializer=_worker_init,
+                                                     initargs=(q,), max_tasks_per_child=1)) as pool:
+            futs = [pool.submit(fn, *args) for fn, args in tasks]
+            for f in futs:
+                outcomes += f.result()
+    finally:
+        if not tasks:
+            q.put(None)
+        elif any(not f.done() or f.cancelled() or f.exception() is not None for f in futs):
+            q.put(None)             # a worker that died sends no end marker
+        drainer.join()
 
     ok = all(o.ok for o in outcomes) and not missing and \
         sum(1 for o in outcomes if o.kind == "empty") == len(empty_set)
