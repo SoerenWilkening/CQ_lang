@@ -135,6 +135,43 @@ class Judge(unittest.TestCase):
         self.assertTrue(mutants._judge(v, mutants.EMPTY_PATTERN, mutants.EMPTY_PATTERN))
 
 
+class Release(unittest.TestCase):
+    """cq-p9pty: the self-test's parent holds no verdict after recording it (213 empty-output verdicts, every
+    sample's reasons, exceeded 6 GB), and an outcome as predicted is recorded with its first reasons and their
+    count; one not as predicted with all of them."""
+
+    def test_verdicts_released_and_record_capped(self):
+        import json
+        n = mutants.REASONS_RECORDED + 50
+        seen = []
+
+        def fake_job(ex, ms, empty, emit):
+            good = mutants.Outcome("empty", ex.name, ex.name, "empty_output", True, [],
+                                   V("fail", "fail", [f"ref: r{i}" for i in range(n)]))
+            bad = mutants.Outcome("empty", ex.name + "/bad", ex.name, "empty_output", False, ["x"],
+                                  V("pass", "fail", [f"c: r{i}" for i in range(n)]))
+            for o in (good, bad):
+                emit(o)
+                seen.append(o)
+            return [good, bad]
+
+        saved = mutants._spec_lock, mutants._example_job
+        mutants._spec_lock, mutants._example_job = (lambda: 0), fake_job
+        try:
+            rc = mutants.selftest(only=[], empty=["01_add_classical_const"])
+        finally:
+            mutants._spec_lock, mutants._example_job = saved
+        self.assertEqual(rc, 1)                      # the bad outcome fails the run
+        self.assertEqual([o.verdict for o in seen], [None, None])
+        recs = [json.loads(line) for line in (report.out_dir() / "selftest" / "outcomes.jsonl").read_text().splitlines()]
+        self.assertEqual([r["ok"] for r in recs], [True, False])
+        self.assertEqual(len(recs[0]["verdict"]["reasons"]), mutants.REASONS_RECORDED)
+        self.assertEqual(recs[0]["verdict"]["reasons_total"], n)
+        self.assertEqual(recs[0]["verdict"]["s6"], "fail")
+        self.assertEqual(len(recs[1]["verdict"]["reasons"]), n)
+        self.assertNotIn("reasons_total", recs[1]["verdict"])
+
+
 if __name__ == "__main__":
     if "--run" in sys.argv:
         ids = sys.argv[sys.argv.index("--run") + 1:]

@@ -53,6 +53,7 @@ spec.lock first (drift exits 1).
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import json
 import os
 import re
@@ -280,10 +281,27 @@ def _short(v: Optional[Verdict], n: int = 2) -> str:
     return head + "".join(f"\n      {r}" for r in rs)
 
 
+# cq-p9pty: an outcome as predicted keeps its verdict's first reasons in the record, and their count; one not as
+# predicted keeps all. An empty output's verdict lists every sample's reasons (132_angle_select: 154470 reasons, 85 MB),
+# so the full records of a self-test were several GB on disk and, held as JSON copies, in memory. The judgement reads
+# the whole verdict before the record is written; the record is the log, never an input of a verdict.
+REASONS_RECORDED = 100
+
+
+def _verdict_record(v: Optional[Verdict], full: bool) -> Optional[dict]:
+    if v is None:
+        return None
+    if full or len(v.reasons) <= REASONS_RECORDED:
+        return dataclasses.asdict(v)
+    d = dataclasses.asdict(dataclasses.replace(v, reasons=v.reasons[:REASONS_RECORDED]))
+    d["reasons_total"] = len(v.reasons)
+    return d
+
+
 def _record(store: Path, o: Outcome, lock: threading.Lock) -> None:
     line = json.dumps({"kind": o.kind, "id": o.id, "example": o.example, "class": o.cls, "ok": o.ok,
-                       "why": o.why, "verdict": json.loads(to_json(o.verdict)) if o.verdict else None,
-                       "verdict_subst_off": json.loads(to_json(o.verdict_off)) if o.verdict_off else None},
+                       "why": o.why, "verdict": _verdict_record(o.verdict, not o.ok),
+                       "verdict_subst_off": _verdict_record(o.verdict_off, not o.ok)},
                       sort_keys=True)
     with lock:
         with (store / "outcomes.jsonl").open("a") as f:
@@ -430,9 +448,15 @@ def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]
     print(f"selftest: {len(mutants)} mutants over {len(by_ex)} references, empty output for "
           f"{len(empty_set)} of {len(every)} examples, {_jobs()} jobs", flush=True)
     outcomes: List[Outcome] = []
+
+    def emit(o: Outcome) -> None:
+        _record(store, o, lock)
+        # cq-p9pty: recorded and judged, the verdicts are not read again (summary reads kind, id, class, ok); the
+        # outcomes of 213 examples held them all, every sample's reasons included, until the process exceeded 6 GB
+        o.verdict = o.verdict_off = None
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=_jobs()) as pool:
-        futs = [pool.submit(_example_job, e, by_ex.get(e.name, []), e.name in empty_set,
-                            lambda o: _record(store, o, lock)) for e in todo]
+        futs = [pool.submit(_example_job, e, by_ex.get(e.name, []), e.name in empty_set, emit) for e in todo]
         for f in futs:
             outcomes += f.result()
 
