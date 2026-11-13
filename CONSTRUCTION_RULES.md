@@ -883,7 +883,12 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       a stated deviation. Where musl's value is not a function of the arguments alone (`fopen`,
       `tmpfile`, `ftell`, `fileno`, `fwide`, `open`, `lseek`: host state), and for every callee
       that is no such library function, the result is the entry's rail, `|0⟩` when the backend
-      defers the call (a stated deviation, §6; the compiler may warn).
+      defers the call (a stated deviation, §6; the compiler may warn). The result of an
+      ordinary host call is the host's own, as is that of every call in a module left unchanged
+      (§0). On a host whose C library is not musl the two classes differ where the libraries
+      do (`printf("%p%n", NULL, &n)` gives 3 on macOS and 1 in musl; `puts` returns 10 and 0),
+      and an entry's count is musl's while the bytes written are the host's: a stated
+      deviation, absent on a musl host.
     - *Pure*: a callee LLVM marks `memory(none)` and `willreturn`. With classical arguments
       under a quantum predicate it is executed unguarded and its result merged like any
       classical arm value (rule 9).
@@ -1467,6 +1472,10 @@ modelled on both sides by one deterministic stand-in of the name and argument bi
 checker's, not the spec's. For a C library call whose result rule 16 computes in the circuit the
 reference takes the result from the same musl source and performs only the host operation; the
 host library's own return value is not the reference (`puts` returns 10 on macOS and 0 in musl).
+For an ordinary host call (rule 16), and for every call of a module the pass leaves unchanged, the
+reference is the host's own call and its own result, with no substitution. Which of the two a call
+is, is rule 16's static classification, fixed at compile time; applying it is no model of the
+backend's deferral.
 Standard input is one finite stream with state, the same bytes on both sides (the checker's
 default, or the `stdin="…"` field of the example's line in `drivers.txt`): an input call
 consumes what the C program consumes on that basis input (a call whose predicate reads 0 consumes
