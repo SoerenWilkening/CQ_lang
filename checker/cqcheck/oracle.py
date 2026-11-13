@@ -1123,24 +1123,44 @@ def _pointer_samples(spec: DriverSpec, samples: Sequence[Dict[str, Any]]) -> Lis
     return list(out.values())
 
 
+_SCAN_ONCE = json.JSONDecoder().scan_once     # json.loads's scanner (json.decoder.JSONDecoder.raw_decode)
+
+
 def _trace_pairs(trace):
     """(index, event) of every `<index>\t<event JSON>` line of a trace (text or an open file), one line
     at a time."""
     lines = trace.split("\n") if isinstance(trace, str) else trace
+    scan = _SCAN_ONCE
     for line in lines:
         line = line.rstrip("\n")
         if not line:
             continue
         i, e = line.split("\t", 1)
-        yield int(i), json.loads(e)
+        # cq-p9pty: json.loads's own value when the text is one JSON value with nothing around it (the C scanner,
+        # without loads's three Python frames per line: a large example's traces have 10^6 lines); anything else
+        # goes through json.loads, which returns or raises as before
+        try:
+            v, end = scan(e, 0)
+        except (StopIteration, ValueError):
+            end = -1
+        yield int(i), (v if end == len(e) else json.loads(e))
+
+
+# the "ev" values _parse_runs files elsewhere than a run's events
+_NOT_TRACE_EVENTS = frozenset({"kloop", "stdout", "effect", "out_mem", "object", "region", "allocs", "q2", "hsread", "k2",
+                               "fenv"})
 
 
 def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[SampleRun]:
     runs = [SampleRun(i, s) for i, s in enumerate(samples)]
+    special = _NOT_TRACE_EVENTS
     for i, e in _trace_pairs(trace):
         if i < 0:
             continue   # the driver's own setup, before any sample: no sample's event
-        if e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event
+        ev = e.get("ev")
+        if ev.__class__ is not str or ev not in special:
+            runs[i].events.append(e)      # cq-p9pty: the common case, with one lookup (the chain below is unchanged)
+        elif e.get("ev") == "kloop":   # a T2 cutoff record, not a trace event
             del e["ev"]
             runs[i].loops.append(e)
         elif e.get("ev") == "stdout":   # host output (cq-e4jk), not a trace event
