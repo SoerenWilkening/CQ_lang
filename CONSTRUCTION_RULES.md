@@ -878,7 +878,12 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       encoding error; `fflush`, `fclose`, `remove`, `rename`, `fsetpos`, `close`: 0; `fseek`,
       `fseeko`: 0, and −1 for a `whence` outside {0, 1, 2}; `setvbuf`: 0, and −1 for a type
       outside {0, 1, 2}; an `_unlocked` form as its locked one. A function not named here is
-      decided the same way from musl's source. A failed host operation (a short or failed
+      decided the same way from musl's source. An `errno` store on the path to a computed
+      failure value belongs to that value when it is a function of the arguments alone: it is
+      made by ordinary lowered code under the same condition, through the module's accessor as
+      for `signal` below (no accessor, no store): `EINVAL` (22) with the −1 of `fseek`,
+      `fseeko` and `raise`; `setvbuf`'s −1 stores none. The `errno` a failed host operation
+      would set is never produced. A failed host operation (a short or failed
       write, a missing file, an unseekable stream, the stream's error flag) is never produced:
       a stated deviation. Where musl's value is not a function of the arguments alone (`fopen`,
       `tmpfile`, `ftell`, `fileno`, `fwide`, `open`, `lseek`: host state), and for every callee
@@ -952,14 +957,17 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       accessor is the one the module declares or defines for its own `errno` reads
       (`__errno_location`; `__error` in a Darwin-built module); a module with neither cannot
       read `errno`, and the store is omitted (host code that reads `errno` itself, `perror`,
-      does not see `EINVAL`: a stated deviation).
+      does not see `EINVAL`: a stated deviation). A call of the accessor returns an address
+      and has no effect: it is made as it stands, unguarded, wherever a store needs the
+      address; it is no effect entry and no event, and how often it is called is not compared
+      (§6).
       `raise(sig)` loads that cell and calls through the
       loaded address rail by rule 19, as a call of function type `void (i32)` with `sig` as
       its one actual, except that the complement branch (no registered function: the default
       action or a host handler) is the effect entry `raise` with `sig` as its one field. A
       result of `raise` the program reads is the literal 0 under every candidate flag (rule 9)
       and under the complement musl's value, computed by ordinary lowered code: 0 for
-      `0 ≤ sig ≤ 64`, −1 otherwise (*Results* above; the complement's entry has no result). No handler is tracked at compile time.
+      `0 ≤ sig ≤ 64`, −1 with `EINVAL` stored otherwise (*Results* above; the complement's entry has no result). No handler is tracked at compile time.
     - *Callback.* A library that calls back into the program (`qsort`, `bsearch`) must itself be
       lowered: injected (rule 18) or a lowered library (rule 27).
 
@@ -1469,7 +1477,12 @@ argument or a statically collapsed outcome, it is a failure. An accepted extra e
 event of that input, and its measured rail is a kept rail. Trip j's copy of a body `cq_measure`
 measures trip j's carried rail (rule 14). A function with no body (rules 16, 27) is
 modelled on both sides by one deterministic stand-in of the name and argument bits; the model is the
-checker's, not the spec's. For a C library call whose result rule 16 computes in the circuit the
+checker's, not the spec's. The stand-in of a declared clone (rule 27) must have an effect that occurs
+exactly when the clone runs, so that a call made without its predicate is seen: a phase of an angle
+fixed per name serves (the plain clone emits it, the `_ctl` form where its predicate reads 1, a
+`cq_invert` region replays it negated). A call of the `errno` accessor (rule 16) is no host effect on
+either side: its count and order are not compared, what is stored and read through it is.
+For a C library call whose result rule 16 computes in the circuit the
 reference takes the result from the same musl source and performs only the host operation; the
 host library's own return value is not the reference (`puts` returns 10 on macOS and 0 in musl).
 For an ordinary host call (rule 16), and for every call of a module the pass leaves unchanged, the
