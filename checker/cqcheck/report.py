@@ -638,7 +638,15 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
             c_samples = samples
             if need_ref_run:
                 try:
-                    ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
+                    if Path(ours).resolve() == Path(ex.reference).resolve():
+                        # cq-p9pty: the reference against itself (the self-test's controls, the baseline): its run as
+                        # ours is the same executable on the same samples, so it is not run (or read from the cache)
+                        # again; an independent copy, the side relabelled, as a second run returns it
+                        import pickle
+                        ref_results = [dataclasses.replace(r, side="ref")
+                                       for r in pickle.loads(pickle.dumps(ours_results, pickle.HIGHEST_PROTOCOL))]
+                    else:
+                        ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
                     s6, rs = _compare(ours_results, ref_results, "ref", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
