@@ -33,4 +33,49 @@ CQE_LIBM_NEXT(int, feraiseexcept, (int m), (m))
 #define feclearexcept cqe_next_feclearexcept
 #define fetestexcept cqe_next_fetestexcept
 #define feraiseexcept cqe_next_feraiseexcept
+
+/* cq-jp8qu: the same for the C library's string formatters. A module that defines vsnprintf (the injection bundle's
+ * musl vsnprintf, which cqcc links unrenamed and external beside printf's count entry) captured the runtime's own
+ * vsnprintf calls (rt_tape.c sb_printf, the trace's event text, the driver's out events): the evaluator ran the
+ * lowered printf_core, all-zero mask, on its own gates, inside the sample, for every event it wrote; a sample of
+ * printf("%c%n") made more than 5e8 rails before the 6 GB cap. The variadic ones go to the system's vsnprintf (vswprintf). */
+#include <stdarg.h>
+#include <stdio.h>
+CQE_LIBM_NEXT(int, vsnprintf, (char *s, size_t n, const char *f, va_list ap), (s, n, f, ap))
+static int cqe_next_snprintf(char *s, size_t n, const char *f, ...) {
+  va_list ap;
+  va_start(ap, f);
+  int r = cqe_next_vsnprintf(s, n, f, ap);
+  va_end(ap);
+  return r;
+}
+CQE_LIBM_NEXT(int, vsprintf, (char *s, const char *f, va_list ap), (s, f, ap))
+static int cqe_next_sprintf(char *s, const char *f, ...) {
+  va_list ap;
+  va_start(ap, f);
+  int r = cqe_next_vsprintf(s, f, ap);
+  va_end(ap);
+  return r;
+}
+#include <wchar.h>
+CQE_LIBM_NEXT(int, vswprintf, (wchar_t *s, size_t n, const wchar_t *f, va_list ap), (s, n, f, ap))
+static int cqe_next_swprintf(wchar_t *s, size_t n, const wchar_t *f, ...) {
+  va_list ap;
+  va_start(ap, f);
+  int r = cqe_next_vswprintf(s, n, f, ap);
+  va_end(ap);
+  return r;
+}
+#undef vsnprintf
+#undef snprintf
+#undef vsprintf
+#undef sprintf
+#define vsnprintf cqe_next_vsnprintf
+#define snprintf cqe_next_snprintf
+#define vsprintf cqe_next_vsprintf
+#define sprintf cqe_next_sprintf
+#undef vswprintf
+#undef swprintf
+#define vswprintf cqe_next_vswprintf
+#define swprintf cqe_next_swprintf
 #endif

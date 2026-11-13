@@ -70,6 +70,7 @@
 #include <string.h>
 
 #include "cq_standin.h"
+#include "libm_next.h" /* the host's formatters and fenv, never the module's (cq-jp8qu) */
 #include "cqe.h"
 #include "cqe_plan.h"
 #include "cqe_site.h"

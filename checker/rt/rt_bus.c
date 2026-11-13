@@ -44,6 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libm_next.h" /* the host's formatters and fenv, never the module's (cq-jp8qu) */
 #include "cqe.h"
 #include "cqe_plan.h"
 #include "rt_replay.h"
