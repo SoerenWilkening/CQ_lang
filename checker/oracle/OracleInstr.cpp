@@ -87,6 +87,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace llvm;
@@ -3719,6 +3720,21 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
               break;
             }
           }
+    // Owner ruling 2026-11-13 (errno of a computed failure value): likewise for fseek, fseeko (whence) and raise (sig),
+    // whose dropped musl bodies may have been __errno_location's only callers; the pass stores EINVAL through it at each
+    // such call whose argument is not a constant inside the valid range (calls/Calls.cpp storeEinvalAbove), and so does
+    // cq-oracle-output-results.
+    if (Function *el = M.getFunction("__errno_location");
+        changed && el && !el->isDeclaration() && el->arg_empty() && el->getReturnType()->isPointerTy())
+      for (auto [name, arg, max] : {std::tuple<const char *, unsigned, uint64_t>{"fseek", 2, 2}, {"fseeko", 2, 2},
+                                    {"raise", 0, 64}})
+        if (Function *f = M.getFunction(name); f && f->isDeclaration())
+          for (User *U : f->users())
+            if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledOperand() == f && CB->arg_size() > arg) {
+              auto *k = dyn_cast<ConstantInt>(CB->getArgOperand(arg));
+              if (!k || k->getValue().ugt(max))
+                taken.insert(el);
+            }
     if (changed)
       dropUnreached(M, taken);
     return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
