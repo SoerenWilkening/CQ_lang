@@ -3,9 +3,28 @@
 Branch `flat-memory` at 8c3b8d5, CQ_spec 4d08ffa, LLVM 19.1.7, K = 4. Per-row results: [`libc_results.tsv`](libc_results.tsv).
 A row is one libc function, or one function@mask when the mask names which inputs are quantum. The check is `cqcheck user --light` (16 samples): a smoke test, not a proof, and once it hid a miscompile.
 
+## Update 2026-11-13: unchanged at 807 PASS, 6 PASS (STRUCTURE ONLY), 0 FAIL of 813
+
+`libc_results.tsv` now holds the state at `flat-memory` 112075bc (CQ_spec 5d23dd0). No verdict changed since a56e6b09; 134 rows have a new `source`.
+
+**What changed in the pass and checker** (owner rulings 2026-11-13):
+- The computed −1 of `fseek`, `fseeko` and `raise` now comes with `EINVAL` stored through the module's errno accessor, as `signal` already did. `setvbuf` stores nothing, as in musl.
+- A call of the errno accessor (`__errno_location`, `__error`) is not a host effect; its count and order are not compared.
+- The checker's stand-in for a declared clone carries a phase, so a missing or wrong predicate on such a call is rejected (cq-743m).
+
+**How the table was updated.**
+- All 797 non-heavy rows were lowered with the plugin before and after the errno change. 663 have byte-identical lowering and use none of `fseek`, `fseeko`, `raise`, `signal` or the errno accessor: they keep their verdict and `source`.
+- The other 134 were re-checked on 112075bc (light check, 16 samples): all PASS. Only `raise` has a changed lowering. `clock` and `malloc` again compare 9 of 16 samples.
+- The six structure-only rows are among the 663 unchanged.
+- **The 16 heavy rows were not re-checked.** Their lowering is byte-identical before and after the change, but each calls `__errno_location`, whose checker treatment changed. They keep the PASS of 6213d213 (owner 2026-11-13: no re-check).
+
+**Selftest.** Not run again. Run 2 below had all 281 checks ok and was killed by the 2 hour limit while still working: the checks alone took about 7186 s. Since then the replay checks run in the worker pool, checks run in worker processes and every line carries its time (3922ed2c, d7b87e23, 554d35b1); the limit is now 2.5 hours. cq-p9pty was closed without a further run (owner 2026-11-13). The checker has changed since run 2 (the errno accessor, the C oracle's errno, UNCOVERED counted apart), so no complete selftest covers the current checker.
+
+**Still not built.** The pass work for Q4, Q7 (cq-edr1f) and Q10; the received K in a table clone (cq-9kcq).
+
 ## Update 2026-11-12: 807 PASS, 6 PASS (STRUCTURE ONLY), 0 FAIL of 813
 
-`libc_results.tsv` now holds the state at `flat-memory` a56e6b09 (CQ_spec dfec094), after the owner rulings of 2026-11-11 and 2026-11-12. Everything below this section is history.
+`libc_results.tsv` now holds the state at `flat-memory` a56e6b09 (CQ_spec dfec094), after the owner rulings of 2026-11-11 and 2026-11-12. The section above is newer; everything below this section is history.
 
 | of 813 | 6e4b744c | a56e6b09 |
 |---|---|---|

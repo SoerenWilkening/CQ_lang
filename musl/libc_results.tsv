@@ -35,7 +35,7 @@ atanhf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 atanhl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 atanl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 atexit	exit	PASS	b29a1c12	lowering byte-identical on 6213d213
-atof	stdlib	PASS	6213d213	
+atof	stdlib	PASS	112075bc	
 atoi	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
 atol	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
 atoll	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -43,20 +43,20 @@ bsearch@0	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
 bsearch@01	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
 bsearch@1	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
 btowc	multibyte	PASS	b29a1c12	lowering byte-identical on 6213d213
-c16rtomb@0	multibyte	PASS	6213d213	
-c16rtomb@01	multibyte	PASS	6213d213	
-c16rtomb@012	multibyte	PASS	6213d213	
-c16rtomb@02	multibyte	PASS	6213d213	
-c16rtomb@1	multibyte	PASS	6213d213	
-c16rtomb@12	multibyte	PASS	6213d213	
-c16rtomb@2	multibyte	PASS	6213d213	
-c32rtomb@0	multibyte	PASS	6213d213	
-c32rtomb@01	multibyte	PASS	6213d213	
-c32rtomb@012	multibyte	PASS	6213d213	
-c32rtomb@02	multibyte	PASS	6213d213	
-c32rtomb@1	multibyte	PASS	6213d213	
-c32rtomb@12	multibyte	PASS	6213d213	
-c32rtomb@2	multibyte	PASS	6213d213	
+c16rtomb@0	multibyte	PASS	112075bc	
+c16rtomb@01	multibyte	PASS	112075bc	
+c16rtomb@012	multibyte	PASS	112075bc	
+c16rtomb@02	multibyte	PASS	112075bc	
+c16rtomb@1	multibyte	PASS	112075bc	
+c16rtomb@12	multibyte	PASS	112075bc	
+c16rtomb@2	multibyte	PASS	112075bc	
+c32rtomb@0	multibyte	PASS	112075bc	
+c32rtomb@01	multibyte	PASS	112075bc	
+c32rtomb@012	multibyte	PASS	112075bc	
+c32rtomb@02	multibyte	PASS	112075bc	
+c32rtomb@1	multibyte	PASS	112075bc	
+c32rtomb@12	multibyte	PASS	112075bc	
+c32rtomb@2	multibyte	PASS	112075bc	
 cabs	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cabsf	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cabsl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -67,9 +67,9 @@ cacoshf	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cacoshl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cacosl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 call_once	thread	PASS	b29a1c12	lowering byte-identical on 6213d213
-calloc@0	malloc	PASS	6213d213	
-calloc@01	malloc	PASS	6213d213	
-calloc@1	malloc	PASS	6213d213	
+calloc@0	malloc	PASS	112075bc	
+calloc@01	malloc	PASS	112075bc	
+calloc@1	malloc	PASS	112075bc	
 carg	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cargf	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cargl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -104,7 +104,7 @@ cimag	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cimagf	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 cimagl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 clearerr	stdio	PASS	6213d213	
-clock	time	PASS	a56e6b09	compared 9 of 16; the rest excluded and structure-checked
+clock	time	PASS	112075bc	compared 9 of 16; the rest excluded and structure-checked
 clog	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 clogf	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 clogl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -170,7 +170,7 @@ ctanh	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 ctanhf	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 ctanhl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
 ctanl	complex	PASS	b29a1c12	lowering byte-identical on 6213d213
-ctime	time	PASS	6213d213	
+ctime	time	PASS	112075bc	
 difftime@0	time	PASS	b29a1c12	lowering byte-identical on 6213d213
 difftime@01	time	PASS	b29a1c12	lowering byte-identical on 6213d213
 difftime@1	time	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -281,11 +281,11 @@ fmodl@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 fmodl@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 fmodl@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 fopen	stdio	PASS (STRUCTURE ONLY)	a56e6b09	0 of 16 compared: every sample excluded (ruling cq-dbtpi: reads the result rail of a deferred host call); no violation, leak or dirty free on the lowered run
-fprintf	stdio	PASS	6213d213	
+fprintf	stdio	PASS	112075bc	
 fputc	stdio	PASS	6213d213	
 fputs	stdio	PASS	6213d213	
-fputwc	stdio	PASS	6213d213	
-fputws	stdio	PASS	6213d213	
+fputwc	stdio	PASS	112075bc	
+fputws	stdio	PASS	112075bc	
 fread	stdio	PASS	6213d213	
 free	malloc	PASS	b29a1c12	lowering byte-identical on 6213d213
 freopen	stdio	PASS	a56e6b09	compared 10 of 16; the rest excluded and structure-checked
@@ -299,13 +299,13 @@ frexpl@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 frexpl@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 frexpl@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 fscanf	stdio	PASS	6213d213	
-fseek@0	stdio	PASS	6213d213	
-fseek@01	stdio	PASS	6213d213	
-fseek@1	stdio	PASS	6213d213	
+fseek@0	stdio	PASS	112075bc	
+fseek@01	stdio	PASS	112075bc	
+fseek@1	stdio	PASS	112075bc	
 fsetpos	stdio	PASS	6213d213	
 ftell	stdio	PASS	a56e6b09	compared 9 of 16; the rest excluded and structure-checked
 fwide	stdio	PASS (STRUCTURE ONLY)	a56e6b09	0 of 16 compared: every sample excluded (ruling cq-dbtpi: reads the result rail of a deferred host call); no violation, leak or dirty free on the lowered run
-fwprintf	stdio	PASS	6213d213	
+fwprintf	stdio	PASS	112075bc	
 fwrite	stdio	PASS	6213d213	
 fwscanf	stdio	PASS	6213d213	
 getc	stdio	PASS	6213d213	
@@ -313,7 +313,7 @@ getchar	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
 getenv	env	PASS	b29a1c12	lowering byte-identical on 6213d213
 getwc	stdio	PASS	6213d213	
 getwchar	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
-gmtime	time	PASS	6213d213	
+gmtime	time	PASS	112075bc	
 hypot@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 hypot@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 hypot@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -382,7 +382,7 @@ llround	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 llroundf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 llroundl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 localeconv	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
-localtime	time	PASS	6213d213	
+localtime	time	PASS	112075bc	
 log	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 log10	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 log10f	math	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -405,42 +405,42 @@ lrintl	math	PASS	6213d213
 lround	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 lroundf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 lroundl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
-malloc	malloc	PASS	a56e6b09	compared 9 of 16; the rest excluded and structure-checked
-mblen	multibyte	PASS	6213d213	
-mbrlen@0	multibyte	PASS	6213d213	
-mbrlen@01	multibyte	PASS	6213d213	
-mbrlen@1	multibyte	PASS	6213d213	
-mbrtoc16@0	multibyte	PASS	6213d213	
-mbrtoc16@01	multibyte	PASS	6213d213	
-mbrtoc16@012	multibyte	PASS	6213d213	
-mbrtoc16@02	multibyte	PASS	6213d213	
-mbrtoc16@1	multibyte	PASS	6213d213	
-mbrtoc16@12	multibyte	PASS	6213d213	
-mbrtoc16@2	multibyte	PASS	6213d213	
-mbrtoc32@0	multibyte	PASS	6213d213	
-mbrtoc32@01	multibyte	PASS	6213d213	
-mbrtoc32@012	multibyte	PASS	6213d213	
-mbrtoc32@02	multibyte	PASS	6213d213	
-mbrtoc32@1	multibyte	PASS	6213d213	
-mbrtoc32@12	multibyte	PASS	6213d213	
-mbrtoc32@2	multibyte	PASS	6213d213	
-mbrtowc@0	multibyte	PASS	6213d213	
-mbrtowc@01	multibyte	PASS	6213d213	
-mbrtowc@012	multibyte	PASS	6213d213	
-mbrtowc@02	multibyte	PASS	6213d213	
-mbrtowc@1	multibyte	PASS	6213d213	
-mbrtowc@12	multibyte	PASS	6213d213	
-mbrtowc@2	multibyte	PASS	6213d213	
+malloc	malloc	PASS	112075bc	compared 9 of 16; the rest excluded and structure-checked
+mblen	multibyte	PASS	112075bc	
+mbrlen@0	multibyte	PASS	112075bc	
+mbrlen@01	multibyte	PASS	112075bc	
+mbrlen@1	multibyte	PASS	112075bc	
+mbrtoc16@0	multibyte	PASS	112075bc	
+mbrtoc16@01	multibyte	PASS	112075bc	
+mbrtoc16@012	multibyte	PASS	112075bc	
+mbrtoc16@02	multibyte	PASS	112075bc	
+mbrtoc16@1	multibyte	PASS	112075bc	
+mbrtoc16@12	multibyte	PASS	112075bc	
+mbrtoc16@2	multibyte	PASS	112075bc	
+mbrtoc32@0	multibyte	PASS	112075bc	
+mbrtoc32@01	multibyte	PASS	112075bc	
+mbrtoc32@012	multibyte	PASS	112075bc	
+mbrtoc32@02	multibyte	PASS	112075bc	
+mbrtoc32@1	multibyte	PASS	112075bc	
+mbrtoc32@12	multibyte	PASS	112075bc	
+mbrtoc32@2	multibyte	PASS	112075bc	
+mbrtowc@0	multibyte	PASS	112075bc	
+mbrtowc@01	multibyte	PASS	112075bc	
+mbrtowc@012	multibyte	PASS	112075bc	
+mbrtowc@02	multibyte	PASS	112075bc	
+mbrtowc@1	multibyte	PASS	112075bc	
+mbrtowc@12	multibyte	PASS	112075bc	
+mbrtowc@2	multibyte	PASS	112075bc	
 mbsinit	multibyte	PASS	b29a1c12	lowering byte-identical on 6213d213
-mbsrtowcs@0	multibyte	PASS	6213d213	
-mbsrtowcs@01	multibyte	PASS	6213d213	
-mbsrtowcs@1	multibyte	PASS	6213d213	
-mbstowcs@0	multibyte	PASS	6213d213	
-mbstowcs@01	multibyte	PASS	6213d213	
-mbstowcs@1	multibyte	PASS	6213d213	
-mbtowc@0	multibyte	PASS	6213d213	
-mbtowc@01	multibyte	PASS	6213d213	
-mbtowc@1	multibyte	PASS	6213d213	
+mbsrtowcs@0	multibyte	PASS	112075bc	
+mbsrtowcs@01	multibyte	PASS	112075bc	
+mbsrtowcs@1	multibyte	PASS	112075bc	
+mbstowcs@0	multibyte	PASS	112075bc	
+mbstowcs@01	multibyte	PASS	112075bc	
+mbstowcs@1	multibyte	PASS	112075bc	
+mbtowc@0	multibyte	PASS	112075bc	
+mbtowc@01	multibyte	PASS	112075bc	
+mbtowc@1	multibyte	PASS	112075bc	
 memchr@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 memchr@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 memchr@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -456,7 +456,7 @@ memmove@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 memset@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 memset@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 memset@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-mktime	time	PASS	6213d213	
+mktime	time	PASS	112075bc	
 modf@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 modf@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 modf@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -510,17 +510,17 @@ powf@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 powl@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 powl@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 powl@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
-printf	stdio	PASS	6213d213	
+printf	stdio	PASS	112075bc	
 putc	stdio	PASS	6213d213	
 putchar	stdio	PASS	6213d213	
 puts	stdio	PASS	6213d213	
-putwc	stdio	PASS	6213d213	
-putwchar	stdio	PASS	6213d213	
+putwc	stdio	PASS	112075bc	
+putwchar	stdio	PASS	112075bc	
 qsort	stdlib	PASS	b29a1c12	lowering byte-identical on 6213d213
 quick_exit	exit	SKIP	-	does not return (exit-like)
-raise	signal	PASS	6213d213	
+raise	signal	PASS	112075bc	
 rand	prng	PASS	b29a1c12	lowering byte-identical on 6213d213
-realloc	malloc	PASS	6213d213	
+realloc	malloc	PASS	112075bc	
 remainder@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remainder@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remainder@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -530,7 +530,7 @@ remainderf@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remainderl@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remainderl@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remainderl@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
-remove	stdio	PASS	6213d213	
+remove	stdio	PASS	112075bc	
 remquo@0	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remquo@01	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remquo@012	math	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -552,9 +552,9 @@ remquol@02	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remquol@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remquol@12	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 remquol@2	math	PASS	b29a1c12	lowering byte-identical on 6213d213
-rename@0	stdio	PASS	6213d213	
-rename@01	stdio	PASS	6213d213	
-rename@1	stdio	PASS	6213d213	
+rename@0	stdio	PASS	112075bc	
+rename@01	stdio	PASS	112075bc	
+rename@1	stdio	PASS	112075bc	
 rewind	stdio	PASS	6213d213	
 rint	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 rintf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -583,28 +583,28 @@ scalbnl@1	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 scanf	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
 setbuf	stdio	PASS	a56e6b09	compared 7 of 16; the rest excluded and structure-checked
 setjmp	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-setlocale@0	locale	PASS	6213d213	
-setlocale@01	locale	PASS	6213d213	
-setlocale@1	locale	PASS	6213d213	
+setlocale@0	locale	PASS	112075bc	
+setlocale@01	locale	PASS	112075bc	
+setlocale@1	locale	PASS	112075bc	
 setvbuf	stdio	PASS	6213d213	
-signal	signal	PASS	6213d213	
+signal	signal	PASS	112075bc	
 sin	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sinf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sinh	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sinhf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sinhl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sinl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
-snprintf@0	stdio	PASS	6213d213	
-snprintf@01	stdio	PASS	6213d213	
-snprintf@1	stdio	PASS	6213d213	
-sprintf@0	stdio	PASS	6213d213	
-sprintf@01	stdio	PASS	6213d213	
-sprintf@1	stdio	PASS	6213d213	
+snprintf@0	stdio	PASS	112075bc	
+snprintf@01	stdio	PASS	112075bc	
+snprintf@1	stdio	PASS	112075bc	
+sprintf@0	stdio	PASS	112075bc	
+sprintf@01	stdio	PASS	112075bc	
+sprintf@1	stdio	PASS	112075bc	
 sqrt	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sqrtf	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 sqrtl	math	PASS	b29a1c12	lowering byte-identical on 6213d213
 srand	prng	PASS	b29a1c12	lowering byte-identical on 6213d213
-sscanf	stdio	PASS	6213d213	
+sscanf	stdio	PASS	112075bc	
 strcat@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strcat@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strcat@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -649,18 +649,18 @@ strspn@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strstr@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strstr@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strstr@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-strtod	stdlib	PASS	6213d213	
-strtof	stdlib	PASS	6213d213	
-strtoimax	stdlib	PASS	6213d213	
+strtod	stdlib	PASS	112075bc	
+strtof	stdlib	PASS	112075bc	
+strtoimax	stdlib	PASS	112075bc	
 strtok@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strtok@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 strtok@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-strtol	stdlib	PASS	6213d213	
-strtold	stdlib	PASS	6213d213	
-strtoll	stdlib	PASS	6213d213	
-strtoul	stdlib	PASS	6213d213	
-strtoull	stdlib	PASS	6213d213	
-strtoumax	stdlib	PASS	6213d213	
+strtol	stdlib	PASS	112075bc	
+strtold	stdlib	PASS	112075bc	
+strtoll	stdlib	PASS	112075bc	
+strtoul	stdlib	PASS	112075bc	
+strtoull	stdlib	PASS	112075bc	
+strtoumax	stdlib	PASS	112075bc	
 strxfrm@0	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
 strxfrm@01	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
 strxfrm@1	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -690,10 +690,10 @@ thrd_sleep@0	thread	PASS	b29a1c12	lowering byte-identical on 6213d213
 thrd_sleep@01	thread	PASS	b29a1c12	lowering byte-identical on 6213d213
 thrd_sleep@1	thread	PASS	b29a1c12	lowering byte-identical on 6213d213
 thrd_yield	thread	SKIP	-	no input to make quantum and no observable result
-time	time	PASS	6213d213	
-timespec_get@0	time	PASS	6213d213	
-timespec_get@01	time	PASS	6213d213	
-timespec_get@1	time	PASS	6213d213	
+time	time	PASS	112075bc	
+timespec_get@0	time	PASS	112075bc	
+timespec_get@01	time	PASS	112075bc	
+timespec_get@1	time	PASS	112075bc	
 tmpfile	stdio	PASS	a56e6b09	compared 9 of 16; the rest excluded and structure-checked
 tmpnam	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
 tolower	ctype	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -712,32 +712,32 @@ tss_set@01	thread	PASS	b29a1c12	lowering byte-identical on 6213d213
 tss_set@1	thread	PASS	b29a1c12	lowering byte-identical on 6213d213
 ungetc	stdio	PASS	6213d213	
 ungetwc	stdio	PASS	6213d213	
-vfprintf	stdio	PASS	6213d213	
+vfprintf	stdio	PASS	112075bc	
 vfscanf	stdio	PASS	6213d213	
-vfwprintf	stdio	PASS	6213d213	
+vfwprintf	stdio	PASS	112075bc	
 vfwscanf	stdio	PASS	6213d213	
-vprintf	stdio	PASS	6213d213	
+vprintf	stdio	PASS	112075bc	
 vscanf	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
 vsnprintf@0	stdio	PASS	6213d213	run singly: 120 s per sample, 2400 s, 7 GB
-vsnprintf@01	stdio	PASS	6213d213	
-vsnprintf@1	stdio	PASS	6213d213	
-vsprintf@0	stdio	PASS	6213d213	
-vsprintf@01	stdio	PASS	6213d213	
-vsprintf@1	stdio	PASS	6213d213	
-vsscanf	stdio	PASS	6213d213	
+vsnprintf@01	stdio	PASS	112075bc	
+vsnprintf@1	stdio	PASS	112075bc	
+vsprintf@0	stdio	PASS	112075bc	
+vsprintf@01	stdio	PASS	112075bc	
+vsprintf@1	stdio	PASS	112075bc	
+vsscanf	stdio	PASS	112075bc	
 vswprintf@0	stdio	PASS	6213d213	run singly: 120 s per sample, 2400 s, 7 GB
 vswprintf@01	stdio	PASS	6213d213	run singly: 120 s per sample, 2400 s, 7 GB
 vswprintf@1	stdio	PASS	6213d213	run singly: 120 s per sample, 2400 s, 7 GB
 vswscanf	stdio	PASS	6213d213	run singly: 120 s per sample, 2400 s, 7 GB
-vwprintf	stdio	PASS	6213d213	
+vwprintf	stdio	PASS	112075bc	
 vwscanf	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
-wcrtomb@0	multibyte	PASS	6213d213	
-wcrtomb@01	multibyte	PASS	6213d213	
-wcrtomb@012	multibyte	PASS	6213d213	
-wcrtomb@02	multibyte	PASS	6213d213	
-wcrtomb@1	multibyte	PASS	6213d213	
-wcrtomb@12	multibyte	PASS	6213d213	
-wcrtomb@2	multibyte	PASS	6213d213	
+wcrtomb@0	multibyte	PASS	112075bc	
+wcrtomb@01	multibyte	PASS	112075bc	
+wcrtomb@012	multibyte	PASS	112075bc	
+wcrtomb@02	multibyte	PASS	112075bc	
+wcrtomb@1	multibyte	PASS	112075bc	
+wcrtomb@12	multibyte	PASS	112075bc	
+wcrtomb@2	multibyte	PASS	112075bc	
 wcscat@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcscat@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcscat@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -775,30 +775,30 @@ wcspbrk@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsrchr@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsrchr@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsrchr@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-wcsrtombs@0	multibyte	PASS	6213d213	
-wcsrtombs@01	multibyte	PASS	6213d213	
-wcsrtombs@1	multibyte	PASS	6213d213	
+wcsrtombs@0	multibyte	PASS	112075bc	
+wcsrtombs@01	multibyte	PASS	112075bc	
+wcsrtombs@1	multibyte	PASS	112075bc	
 wcsspn@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsspn@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsspn@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsstr@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsstr@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsstr@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-wcstod	stdlib	PASS	6213d213	
-wcstof	stdlib	PASS	6213d213	
-wcstoimax	stdlib	PASS	6213d213	
+wcstod	stdlib	PASS	112075bc	
+wcstof	stdlib	PASS	112075bc	
+wcstoimax	stdlib	PASS	112075bc	
 wcstok@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcstok@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcstok@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-wcstol	stdlib	PASS	6213d213	
-wcstold	stdlib	PASS	6213d213	
-wcstoll	stdlib	PASS	6213d213	
-wcstombs@0	multibyte	PASS	6213d213	
-wcstombs@01	multibyte	PASS	6213d213	
-wcstombs@1	multibyte	PASS	6213d213	
-wcstoul	stdlib	PASS	6213d213	
-wcstoull	stdlib	PASS	6213d213	
-wcstoumax	stdlib	PASS	6213d213	
+wcstol	stdlib	PASS	112075bc	
+wcstold	stdlib	PASS	112075bc	
+wcstoll	stdlib	PASS	112075bc	
+wcstombs@0	multibyte	PASS	112075bc	
+wcstombs@01	multibyte	PASS	112075bc	
+wcstombs@1	multibyte	PASS	112075bc	
+wcstoul	stdlib	PASS	112075bc	
+wcstoull	stdlib	PASS	112075bc	
+wcstoumax	stdlib	PASS	112075bc	
 wcswcs@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcswcs@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcswcs@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -806,9 +806,9 @@ wcsxfrm@0	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsxfrm@01	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
 wcsxfrm@1	locale	PASS	b29a1c12	lowering byte-identical on 6213d213
 wctob	multibyte	PASS	b29a1c12	lowering byte-identical on 6213d213
-wctomb@0	multibyte	PASS	6213d213	
-wctomb@01	multibyte	PASS	6213d213	
-wctomb@1	multibyte	PASS	6213d213	
+wctomb@0	multibyte	PASS	112075bc	
+wctomb@01	multibyte	PASS	112075bc	
+wctomb@1	multibyte	PASS	112075bc	
 wctrans	ctype	PASS	b29a1c12	lowering byte-identical on 6213d213
 wctype	ctype	PASS	b29a1c12	lowering byte-identical on 6213d213
 wmemchr@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
@@ -826,5 +826,5 @@ wmemmove@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wmemset@0	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wmemset@01	string	PASS	b29a1c12	lowering byte-identical on 6213d213
 wmemset@1	string	PASS	b29a1c12	lowering byte-identical on 6213d213
-wprintf	stdio	PASS	6213d213	
+wprintf	stdio	PASS	112075bc	
 wscanf	stdio	PASS	b29a1c12	lowering byte-identical on 6213d213
