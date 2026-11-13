@@ -161,6 +161,8 @@ def _run(cmd: Sequence[str], what: str, **kw) -> subprocess.CompletedProcess:
 def _atomic_dir(final: Path, fill) -> Path:
     """Build into a fresh temp dir and rename it into place (concurrent builders are safe)."""
     if final.exists():
+        from . import cachegc
+        cachegc.used(final)
         return final
     from .run import key_lock
     with key_lock(final):   # cq-8m6v: a concurrent builder of the same entry in this process waits

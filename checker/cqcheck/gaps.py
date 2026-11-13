@@ -548,6 +548,8 @@ def domain_check(spec: DriverSpec, example_dir: Path, ss: SampleSet) -> List[str
     from cqcheck import sampling
     cache = sampling._cache_dir() / f"{spec.example}.{sampling._cache_key(spec, Path(example_dir))}.domain.json"
     if cache.exists():
+        from cqcheck import cachegc
+        cachegc.used(cache)
         return list(json.loads(cache.read_text()))
     bad = list(sampling.domain_problems(spec, Path(example_dir), ss))
     cache.parent.mkdir(parents=True, exist_ok=True)

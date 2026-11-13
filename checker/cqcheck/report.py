@@ -207,6 +207,11 @@ def _tool_cache(kind: str, *parts: str) -> Path:
     return run._cache_root() / kind / h.hexdigest()[:24]
 
 
+def run_cachegc_used(entry: Path) -> None:
+    from cqcheck import cachegc
+    cachegc.used(entry)      # a hit: the entry is in use (cachegc.prune)
+
+
 def _publish_entry(final: Path, files: Dict[str, bytes]) -> None:
     tmp = final.with_name(f"{final.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.mkdir(parents=True, exist_ok=True)
@@ -251,6 +256,7 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
             files["linked.ll"] = (dest.parent / linked_name).read_bytes()
         _publish_entry(entry, files)
         return res, err
+    run_cachegc_used(entry)
     if (entry / "linked.ll").exists():
         shutil.copyfile(entry / "linked.ll", dest.parent / linked_name)
     result = (entry / "result").read_text()
@@ -310,6 +316,7 @@ def verify(lowered: Path, reference: bool = False) -> Tuple[str, str]:
     passes = "cq-verify<reference>" if reference else "cq-verify"
     entry = _tool_cache("verify", passes, str(lowered), Path(lowered).read_text())
     if (entry / "result").exists():
+        run_cachegc_used(entry)
         d = json.loads((entry / "result").read_text())
         return d[0], d[1]
     out = _verify_uncached(lowered, passes)

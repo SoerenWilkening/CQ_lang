@@ -225,5 +225,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     a = p.parse_args(argv)
     from cqcheck import tmpdirs
     tmpdirs.sweep()   # cq-3fjt: run directories of killed checker processes
+    from cqcheck import cachegc
+    cachegc.prune()   # cq-p9pty: cache entries no checker used for $CQCHECK_CACHE_DAYS days
     return {"run": cmd_run, "selftest": cmd_selftest, "baseline": cmd_baseline,
             "progress": cmd_progress, "user": cmd_user}[a.cmd](a)
