@@ -162,6 +162,8 @@ def _run(cmd: Sequence[str], what: str, **kw) -> subprocess.CompletedProcess:
 def _atomic_dir(final: Path, fill) -> Path:
     """Build into a fresh temp dir and rename it into place (concurrent builders are safe)."""
     if final.exists():
+        from . import cachegc
+        cachegc.used(final)
         return final
     from .run import key_lock
     with key_lock(final):   # cq-8m6v: a concurrent builder of the same entry in this process waits
@@ -272,11 +274,21 @@ _FP_RAIL = {"float": "f32", "double": "f64", "long double": "f80", "_Float16": "
             "__bf16": "bf16"}
 
 
+_RET_CTYPES: Dict[Tuple[str, ...], Dict[str, str]] = {}   # cq-p9pty: parsed once per prototype list, not per sample
+
+
 def _ret_ctype(spec: DriverSpec, fn: str) -> str:
-    r = parse_protos(spec.protos).get(fn)
+    key = tuple(spec.protos)
+    rets = _RET_CTYPES.get(key)
+    if rets is None:
+        rets = {f: r[0] for f, r in parse_protos(spec.protos).items()}
+        if len(_RET_CTYPES) >= 64:
+            _RET_CTYPES.clear()
+        _RET_CTYPES[key] = rets
+    r = rets.get(fn)
     if r is None:
         raise OracleError(f"oracle: no prototype for {fn} in the driver of {spec.example}")
-    return r[0]
+    return r
 
 
 # ------------------------------------------------------------------------------------------------
@@ -1183,12 +1195,17 @@ _SITE_RAIL = {"i1": "i1", "c": "i8", "si8": "i8", "ui8": "i8", "si16": "i16", "u
 _SITE_CALL = re.compile(r'\bcall\b[^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_begin|__cq_invert_end)\(')
 _DEFINE = re.compile(r'^define\b[^@]*@("(?:[^"\\]|\\.)*"|[-\w$.]+)\(')
 _SITE_CACHE: Dict[Path, Dict[Tuple[str, int], str]] = {}
+_SITE_RESOLVED: Dict[str, Path] = {}   # cq-p9pty: the path as given -> resolved, so a sample's lookup does no realpath
 
 
 def site_callees(o1: Path) -> Dict[Tuple[str, int], str]:
     """(fn, site ordinal) -> the callee name of each site call in the input .O1.ll (T1.1 ordinals:
     textual order of the calls to cq_theta_*, cq_phi, cq_measure_*, __cq_invert_* within fn)."""
-    o1 = Path(o1).resolve()
+    given = str(o1)
+    hit = _SITE_RESOLVED.get(given)
+    if hit is not None and hit in _SITE_CACHE:
+        return _SITE_CACHE[hit]
+    o1 = _SITE_RESOLVED[given] = Path(o1).resolve()
     if o1 in _SITE_CACHE:
         return _SITE_CACHE[o1]
     out: Dict[Tuple[str, int], str] = {}

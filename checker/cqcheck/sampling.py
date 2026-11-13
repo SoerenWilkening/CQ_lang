@@ -2205,7 +2205,10 @@ class ProbeBuild:
                      (w / "driver.c").read_text(), *fx):
             h.update(part.encode() + b"\0")
         final = _cache_dir() / "probe" / h.hexdigest()[:24]
-        if not final.exists():
+        if final.exists():
+            from cqcheck import cachegc
+            cachegc.used(final)
+        else:
             from cqcheck import run as _run
             with _run.key_lock(final):
                 if not final.exists():
@@ -3878,6 +3881,8 @@ def sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True
     key = _cache_key(spec, example_dir, exempt_baseline)
     cache = _cache_dir() / f"{spec.example}.{key}.json"
     if cache.exists():
+        from cqcheck import cachegc
+        cachegc.used(cache)
         d = json.loads(cache.read_text())
         return SampleSet(**d)
     ss = build_sample_set(spec, example_dir, exempt_baseline)

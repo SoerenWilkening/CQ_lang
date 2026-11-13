@@ -207,6 +207,11 @@ def _tool_cache(kind: str, *parts: str) -> Path:
     return run._cache_root() / kind / h.hexdigest()[:24]
 
 
+def run_cachegc_used(entry: Path) -> None:
+    from cqcheck import cachegc
+    cachegc.used(entry)      # a hit: the entry is in use (cachegc.prune)
+
+
 def _publish_entry(final: Path, files: Dict[str, bytes]) -> None:
     tmp = final.with_name(f"{final.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.mkdir(parents=True, exist_ok=True)
@@ -251,6 +256,7 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
             files["linked.ll"] = (dest.parent / linked_name).read_bytes()
         _publish_entry(entry, files)
         return res, err
+    run_cachegc_used(entry)
     if (entry / "linked.ll").exists():
         shutil.copyfile(entry / "linked.ll", dest.parent / linked_name)
     result = (entry / "result").read_text()
@@ -310,6 +316,7 @@ def verify(lowered: Path, reference: bool = False) -> Tuple[str, str]:
     passes = "cq-verify<reference>" if reference else "cq-verify"
     entry = _tool_cache("verify", passes, str(lowered), Path(lowered).read_text())
     if (entry / "result").exists():
+        run_cachegc_used(entry)
         d = json.loads((entry / "result").read_text())
         return d[0], d[1]
     out = _verify_uncached(lowered, passes)
@@ -638,7 +645,15 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
             c_samples = samples
             if need_ref_run:
                 try:
-                    ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
+                    if Path(ours).resolve() == Path(ex.reference).resolve():
+                        # cq-p9pty: the reference against itself (the self-test's controls, the baseline): its run as
+                        # ours is the same executable on the same samples, so it is not run (or read from the cache)
+                        # again; an independent copy, the side relabelled, as a second run returns it
+                        import pickle
+                        ref_results = [dataclasses.replace(r, side="ref")
+                                       for r in pickle.loads(pickle.dumps(ours_results, pickle.HIGHEST_PROTOCOL))]
+                    else:
+                        ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
                     s6, rs = _compare(ours_results, ref_results, "ref", spec)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001

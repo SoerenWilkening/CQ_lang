@@ -112,6 +112,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from cqcheck.compare import HOST_EFFECTS
+from cqcheck import cachegc
 from cqcheck import kept as kept_mod
 from cqcheck.contracts import DriverSpec, RunResult
 
@@ -522,6 +523,7 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
         h.update(b"\0")
     final = _cache_root() / "prog" / h.hexdigest()[:24]
     if (final / "prog").exists():
+        cachegc.used(final)
         return final / "prog"
     with key_lock(final):
         return _build_locked(final, lowered, drv, triple, objs, ctext if c_module else None, extra_sources,
@@ -536,6 +538,7 @@ def _build_locked(final: Path, lowered: Path, drv: str, triple: str, objs: Seque
     # raises the recorded BuildError without rerunning clang, llvm-link and stubgen.
     failed = final.with_name(final.name + ".build_error")
     if failed.exists():
+        cachegc.used(failed)
         raise BuildError(failed.read_text())
     tmp = Path(tempfile.mkdtemp(prefix="prog.", dir=_ensure(_cache_root() / "prog")))
     try:
@@ -619,6 +622,7 @@ def driver_ll(drv: str, triple: str) -> Path:
     h = hashlib.sha256("\0".join([_VERSION, CLANG, triple, drv]).encode()).hexdigest()[:24]
     out = _cache_root() / "drv" / f"{h}.ll"
     if out.exists():
+        cachegc.used(out)
         return out
     with key_lock(out):
         if not out.exists():
@@ -640,6 +644,7 @@ def driver_obj(dll: Path, triple: str) -> Path:
     """driver_ll's module compiled at -O0, as the program's link compiled it (cached beside it)."""
     out = dll.with_suffix(".o")
     if out.exists():
+        cachegc.used(out)
         return out
     with key_lock(out):
         if not out.exists():
@@ -3160,6 +3165,7 @@ def load_runs(kind: str, key: Any, post: Optional[Callable[[dict], Any]] = None)
         f = open(p, "rb")
     except OSError:
         return None
+    cachegc.used(p)
     out: List[Any] = []
     z = zlib.decompressobj()
     tail = b""
