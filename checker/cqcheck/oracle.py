@@ -449,8 +449,9 @@ def _entries_mod():
 
 
 def output_results(text: str) -> str:
-    """The C program with every read result of a C library output call replaced by musl's value when every write
-    succeeds (owner ruling 2026-11-12 item 4): the closed forms inline, the counts by the bundle's result entries
+    """The C program with every read result of a C library output call that rule 16 makes an effect entry replaced by
+    musl's value when every write succeeds (owner ruling 2026-11-12 item 4; 2026-11-13 cq-025xt: not an ordinary host
+    call's, and nothing in a module the pass leaves unchanged): the closed forms inline, the counts by the bundle's result entries
     (bundle/recipe.json "entries"), which program() links from the bundle and runs natively. The call stays: it is the
     write. A module that declares no such function is text as it stands."""
     from . import drivers
@@ -461,10 +462,16 @@ def output_results(text: str) -> str:
             or any(n.startswith(("pthread_mutex_", "__pthread_mutex_")) for n in names)):
         return text
     plugin, _ = toolchain()
+    # owner ruling 2026-11-13 cq-025xt: only an effect entry's result is musl's; an ordinary host call's and every call's
+    # of a module the pass leaves unchanged are the host's. The class is the pass's own (cq::computeTaint and
+    # cq::calls::classify in the plugin), its root list the rule 27 names the module declares (the pass's TaintOptions
+    # listed, its identity test).
+    listed = sorted(names & drivers.corpus_roots())
     with tempfile.TemporaryDirectory(prefix="cqo-outres.") as d:
         src, dst = Path(d) / "in.ll", Path(d) / "out.ll"
         src.write_text(text)
-        _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle-output-results", "-S", str(src), "-o", str(dst)],
+        _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle-output-results",
+              *([f"-cq-oracle-listed={','.join(listed)}"] if listed else []), "-S", str(src), "-o", str(dst)],
              "the output calls' results (cq-oracle-output-results)")
         return dst.read_text()
 

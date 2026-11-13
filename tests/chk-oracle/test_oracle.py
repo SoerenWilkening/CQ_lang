@@ -597,14 +597,16 @@ class OutputValues(unittest.TestCase):
     for a null %p where musl writes "0"; vdprintf is the stand-in on the C side and writes none); cq-xwv7r, vprintf leaves
     the caller's va_list where musl's copy leaves it."""
 
-    def test_percent_n_and_va_list(self):
-        o1 = compile_c("pctn", """
+    # cq-025xt (owner ruling 2026-11-13): musl's values only where rule 16 makes the call an effect entry; cq_theta makes
+    # the module a lowered one, in which these calls are entries (stream calls with a pointer argument)
+    PCTN = """
 #include <stdio.h>
 #include <stdarg.h>
 static int vp(const char *f, ...) { va_list ap; va_start(ap, f); vprintf(f, ap); int nx = va_arg(ap, int); va_end(ap);
     return nx; }
 static void vd(const char *f, ...) { va_list ap; va_start(ap, f); vdprintf(1, f, ap); va_end(ap); }
 int pctn(int k) {
+    THETA
     int a = -1, b = -1, c = -1, d = -1;
     printf("%p%d%n\\n", (void *)0, k, &a);            /* result unused: the count for %n alone */
     int r = printf("%p%c%n|\\n", (void *)0, 'x', &b); /* result read */
@@ -612,10 +614,20 @@ int pctn(int k) {
     int x = vp("%p%d%n\\n", (void *)0, k, &d, 77);    /* vprintf: %n, then the caller's list from its start */
     return (a & 15) | (b & 15) << 4 | (c & 15) << 8 | (d & 15) << 12 | (r & 15) << 16 | (x & 255) << 20;
 }
-""")
+"""
+
+    def test_percent_n_and_va_list(self):
+        o1 = compile_c("pctn", self.PCTN.replace("THETA", "cq_theta(&k, 0.0);"))
         sp = spec("pctn", "int pctn(int)", [("pctn", ["int"])])
         # musl: a "02" 2, b "0x" 2, c "2" 1, d "02" 2, r "0x|\\n" 4, x the first variadic (a null pointer) 0
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(2)]}]), ["0x42122"])
+
+    def test_identity_module_is_the_hosts(self):
+        # cq-025xt: no cq_* call, the pass's identity (CR §0): every result is the host's own, no substitution. macOS:
+        # a "0x02" 4, b "0x0x" 4, c the stand-in's none (-1), d "0x02" 4, r "0x0x|\\n" 6, x the host's advanced list 77
+        o1 = compile_c("pctnh", self.PCTN.replace("THETA", "").replace("pctn", "pctnh"))
+        sp = spec("pctnh", "int pctnh(int)", [("pctnh", ["int"])])
+        self.assertEqual(rets(o1, sp, [{"call": 0, "args": [i32(2)]}]), ["0x4d64f44"])
 
 
 class EffectValues(unittest.TestCase):
@@ -732,6 +744,7 @@ define i32 @sigerrno(i32 %s) {
 int __pthread_mutex_lock(void *), __pthread_mutex_trylock(void *), __pthread_mutex_timedlock(void *, const void *),
     __pthread_mutex_unlock(void *);
 int mtxnoop(int k) {
+    cq_theta(&k, 0.0);                /* cq-025xt: a lowered module (rule 24 collapses its mutex calls) */
     char m[64] = {0};                 /* no mutex the host made */
     int r = __pthread_mutex_lock(m) | __pthread_mutex_trylock(m) << 1 | __pthread_mutex_timedlock(m, 0) << 2
             | __pthread_mutex_unlock(m) << 3;

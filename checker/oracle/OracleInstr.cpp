@@ -34,6 +34,7 @@
 // The instrumented module is compiled at -O0, so nothing re-optimizes the C program after this pass.
 // An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
 
+#include "cq/Calls.h"
 #include "cq/Loops.h"
 #include "../../pass/lib/calls/LibCalls.h"
 #include "cq/SetjmpPair.h"
@@ -98,6 +99,10 @@ static cl::opt<std::string> StubsFile("cq-oracle-stubs",
 static cl::opt<std::string> StandinPhasesFile("cq-oracle-standin-phases",
                                               cl::desc("file of rule 27 callees whose calls reach the stand-in's phase"),
                                               cl::init(""));
+// cq-025xt: the rule 27 names of the module's root list (the pass's -cq-roots C names, TaintOptions::listed), so the
+// oracle's identity test and taint are the pass's (oracle.py output_results).
+static cl::list<std::string> OutresListed("cq-oracle-listed", cl::CommaSeparated,
+                                          cl::desc("rule 27 bodiless functions a root list names"));
 static cl::list<std::string> Entries("cq-oracle-entries", cl::CommaSeparated,
                                      cl::desc("functions whose results calls in __cqo_* driver functions log"));
 
@@ -3720,9 +3725,14 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
 // fputwc(0xe9) 233 against musl's 0, 0, WEOF). -passes=cq-oracle-output-results replaces every read of such a call's
 // result by that value, computed as pass/lib/eff/tape/Tape.cpp rewriteDeferredResults computes it (the same table, the
 // same bundle result entries, bundle/recipe.json "entries", whose bodies the C program's link pulls from the bundle,
-// oracle.py program), at EVERY call of such a function, not only the ones the circuit defers: the C program has no
-// deferral model and the value does not depend on it (the ruling's criterion). The call itself stays: it is the write
-// (a stand-in effect, drivers.effect_callees, or the host's printing). oracle.py output_results runs it after host_streams.
+// oracle.py program), at every call rule 16 makes an effect entry, whether or not the backend defers it at run time:
+// the C program has no deferral model (the ruling's criterion). The call itself stays: it is the write (a stand-in
+// effect, drivers.effect_callees, or the host's printing). oracle.py output_results runs it after host_streams.
+// Owner ruling 2026-11-13 cq-025xt (CR rule 16 Results, §6): an ordinary host call's result is the host's own, and a
+// module the pass leaves unchanged (§0) is the host's own run with no substitution at all. Which class a call is, is
+// rule 16's static classification, decided here by the pass's own code on the C side: cq::computeTaint and
+// cq::calls::classify (Taint.cpp, Classify.cpp, linked into this plugin), over the sites rewriteDeferredResults selects
+// (a non-pure specialization of a defined function classifies the call HostEffect, raise its Raise class).
 namespace outres {
 
 // Sel3: 0 when the int argument `first` is 0, 1 or 2, else -1 (owner ruling 2026-11-12 cq-dbtpi: fseek's whence, musl
@@ -3851,14 +3861,15 @@ bool formatMayHoldN(const Value *fmt, bool wide) {
 // the caller's va_list (vfprintf.c:675, vfwprintf.c:357), so after vprintf(fmt, ap) the caller's ap is where it was; the
 // host's (macOS) advances it. The calls the host performs for the C program (drivers._REAL: vprintf, vfprintf, vwprintf,
 // vfwprintf; vdprintf is the stand-in, which reads no argument) are given a copy (llvm.va_copy into an entry-block
-// va_list, llvm.va_end after the call), so the caller's ap stays as musl leaves it. Returns whether it changed M.
-bool copyHostVaLists(Module &M) {
+// va_list, llvm.va_end after the call), so the caller's ap stays as musl leaves it. Only an effect entry's (cq-025xt:
+// an ordinary host call is the host's own, its ap included). Returns whether it changed M.
+bool copyHostVaLists(Module &M, const SetVector<CallBase *> &entries) {
   SmallVector<CallBase *, 8> sites;
   for (Function &G : M)
     for (Instruction &I : instructions(G)) {
       auto *CB = dyn_cast<CallBase>(&I);
       auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
-      if (!F || !F->isDeclaration() || CB->getFunctionType() != F->getFunctionType())
+      if (!F || !F->isDeclaration() || CB->getFunctionType() != F->getFunctionType() || !entries.count(CB))
         continue;
       StringRef n = F->getName();
       if (n.starts_with("\01_"))
@@ -3919,22 +3930,60 @@ bool noopMutexes(Module &M) {
 }
 
 struct Pass : PassInfoMixin<Pass> {
+  // cq-025xt: the pass's identity (pass/lib/Plugin.cpp CQLowerPass::run: no root list, no CQ.h surface call, no
+  // declared clone __cq_q_*): the host's own run, nothing substituted.
+  static bool passIdentity(const Module &M) {
+    if (!OutresListed.empty())
+      return false;
+    for (const Function &F : M)
+      if (F.isDeclaration() && F.getName().starts_with("__cq_q_"))
+        return false;
+    return !Instrumenter::callsCqSurface(M);
+  }
+
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
-    bool mutexes = noopMutexes(M);
-    SmallVector<CallBase *, 16> sites;
-    for (Function &G : M)
-      for (Instruction &I : instructions(G)) {
+    if (passIdentity(M))
+      return PreservedAnalyses::all();
+    noopMutexes(M);
+    // The pass's first steps (Plugin.cpp: canonicalizeLibCalls, then the preliminary taint rewriteDeferredResults reads).
+    cq::calls::canonicalizeLibCalls(M);
+    cq::TaintOptions TO;
+    for (const std::string &n : OutresListed)
+      TO.listed.push_back(n);
+    cq::TaintInfo T = cq::computeTaint(M, TO);
+    // Tape.cpp rewriteDeferredResults' selection: the calls some non-pure specialization of a defined function makes
+    // effect entries (raise: its Raise class, whose complement branch is the entry). Every other call of these
+    // functions is an ordinary host call (or a call of a function the pass leaves as it is): the host's result.
+    SetVector<CallBase *> entrySites;
+    for (const cq::Specialization &S : T.specializations()) {
+      if (!S.F || S.F->isDeclaration() || S.pure)
+        continue;
+      for (Instruction &I : instructions(*S.F)) {
         auto *CB = dyn_cast<CallBase>(&I);
         auto *F = CB ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
-        if (!F || !F->isDeclaration() || CB->getFunctionType() != F->getFunctionType())
+        if (!F || !cq::hostCallee(*F) || CB->getFunctionType() != F->getFunctionType())
           continue;
         std::optional<Fn> o = outputFunction(*F);
-        if (o && (!CB->use_empty() || (isFormat(o->kind) && formatMayHoldN(CB->getArgOperand(o->first), isWide(o->kind)))))
-          sites.push_back(CB);
+        if (!o)
+          continue;
+        cq::calls::Class k = cq::calls::classify(*CB, T, S);
+        if (k == cq::calls::Class::HostEffect || (k == cq::calls::Class::Raise && o->kind == Kind::Sig64))
+          entrySites.insert(CB);
       }
+    }
+    SmallVector<CallBase *, 16> sites;
+    for (CallBase *CB : entrySites) {
+      auto *F = cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+      std::optional<Fn> o = outputFunction(*F);
+      if (F->isDeclaration() &&
+          (!CB->use_empty() || (isFormat(o->kind) && formatMayHoldN(CB->getArgOperand(o->first), isWide(o->kind)))))
+        sites.push_back(CB);
+    }
     // after the counts, which read the caller's own va_list (musl copies it)
-    if (sites.empty())
-      return copyHostVaLists(M) || mutexes ? PreservedAnalyses::none() : PreservedAnalyses::all();
+    if (sites.empty()) {
+      copyHostVaLists(M, entrySites);
+      return PreservedAnalyses::none();
+    }
     LLVMContext &C = M.getContext();
     PointerType *ptr = PointerType::get(C, 0);
     Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);
@@ -4029,7 +4078,7 @@ struct Pass : PassInfoMixin<Pass> {
       else
         report_fatal_error("cq-oracle: unimplemented: an output call's result of another type than its musl value");
     }
-    copyHostVaLists(M);
+    copyHostVaLists(M, entrySites);
     return PreservedAnalyses::none();
   }
 };
