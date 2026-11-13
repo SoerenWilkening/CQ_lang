@@ -40,7 +40,7 @@ The verdict was made to fail on purpose: an all-excluded program with a planted 
 - The check is still the light one (16 samples from one classical group). The strftime and wcsftime rows still run with `CQ_K(__strftime_fmt_1, 1)`.
 - stdin is one finite stream with the same bytes on both sides (Q5); the bundle omits every public function that reads or writes a FILE it did not create (Q6).
 
-**Selftest (once, on a56e6b09, 2 jobs).** All 42 mutants rejected, all 26 controls passed, 138 of 213 empty-output checks passed with none failing. The run was then killed after about 85 minutes by the 6144 MB memory cap it was started under, not by a checker result; the other 75 empty-output checks did not run.
+**Selftest.** Run 1 (a56e6b09, 2 jobs): all 42 mutants rejected, all 26 controls passed, 138 of 213 empty-output checks passed, then killed by its 6144 MB memory cap (the parent kept every verdict; fixed in c4e97964). Run 2 (4f553a03, CQ_spec 5a055f9, 2 jobs, after the checker changes for cq-743m, cq-p9pty and cq-025xt): all 42 mutants rejected, all 26 controls passed, all 213 empty-output checks passed, none failing. The process had not exited when the 2 hour limit killed it, so it printed no final acceptance line; what it was doing after the last check is not known (cq-p9pty stays open).
 
 **Not done in this round.** The pass work for Q4, Q7 and Q10; `%n` on the lowered side (cq-jp8qu).
 
