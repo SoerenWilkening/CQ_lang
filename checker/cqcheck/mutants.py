@@ -60,6 +60,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -271,6 +272,7 @@ class Outcome:
     why: List[str] = field(default_factory=list)
     verdict: Optional[Verdict] = None
     verdict_off: Optional[Verdict] = None     # substitution off (ROTATION_ONLY classes)
+    secs: Optional[float] = None              # the check's own wall time (cq-p9pty), a nested control's excluded
 
 
 def _short(v: Optional[Verdict], n: int = 2) -> str:
@@ -298,16 +300,24 @@ def _verdict_record(v: Optional[Verdict], full: bool) -> Optional[dict]:
     return d
 
 
-def _record(store: Path, o: Outcome, lock: threading.Lock) -> None:
+def _timing(t: float, secs: Optional[float]) -> str:
+    """The fields appended to an outcome line (cq-p9pty): seconds since the self-test started, and the check's own."""
+    return f"t={t:.1f}s took=" + ("?" if secs is None else f"{secs:.1f}s")
+
+
+def _record(store: Path, o: Outcome, lock: threading.Lock, t: float = 0.0) -> None:
+    """Write `o` to outcomes.jsonl and print its line: mark, kind, id, example, the reasons it is not as predicted,
+    then (cq-p9pty) `t=<s>s took=<s>s`, `t` the seconds since the self-test started (`t` argument)."""
     line = json.dumps({"kind": o.kind, "id": o.id, "example": o.example, "class": o.cls, "ok": o.ok,
                        "why": o.why, "verdict": _verdict_record(o.verdict, not o.ok),
-                       "verdict_subst_off": _verdict_record(o.verdict_off, not o.ok)},
+                       "verdict_subst_off": _verdict_record(o.verdict_off, not o.ok),
+                       "t": round(t, 3), "secs": None if o.secs is None else round(o.secs, 3)},
                       sort_keys=True)
     with lock:
         with (store / "outcomes.jsonl").open("a") as f:
             f.write(line + "\n")
         mark = "ok  " if o.ok else "FAIL"
-        print(f"{mark} {o.kind:<7} {o.id:<32} {o.example:<28} {'; '.join(o.why)}", flush=True)
+        print(f"{mark} {o.kind:<7} {o.id:<32} {o.example:<28} {'; '.join(o.why)}  {_timing(t, o.secs)}", flush=True)
         if not o.ok:
             print("      " + _short(o.verdict, 3), flush=True)
             if o.verdict_off is not None:
@@ -316,15 +326,18 @@ def _record(store: Path, o: Outcome, lock: threading.Lock) -> None:
 
 def _control(ex: report.Example, substitution: Any) -> Outcome:
     cid = f"{ex.name}/subst-only" if substitution == "only" else ex.name if substitution else f"{ex.name}/subst-off"
+    t0 = time.monotonic()
     try:
         v = report.evaluate(ex, ex.reference, short_circuit=False, reference_mode=True,
                             substitution=substitution)
         # the gate (cq-g8md): a reference with uncovered targets listed is an accepted control (UNCOVERED)
-        return Outcome("control", cid, ex.name, "", report.accepted(v),
-                       ([] if report.green(v) else ["UNCOVERED: accepted by the gate, not green"])
-                       if report.accepted(v) else ["the reference is not green against itself and its C program"], v)
+        o = Outcome("control", cid, ex.name, "", report.accepted(v),
+                    ([] if report.green(v) else ["UNCOVERED: accepted by the gate, not green"])
+                    if report.accepted(v) else ["the reference is not green against itself and its C program"], v)
     except Exception as e:  # noqa: BLE001 - reported, never green
-        return Outcome("control", cid, ex.name, "", False, [f"{type(e).__name__}: {e}"])
+        o = Outcome("control", cid, ex.name, "", False, [f"{type(e).__name__}: {e}"])
+    o.secs = time.monotonic() - t0
+    return o
 
 
 def needs_subst_off(cls: str, v: Verdict) -> bool:
@@ -362,6 +375,7 @@ def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -
         for m in mutants:
             mode = "only" if m.cls in SUBST_ONLY else True
             ctl = control(mode)
+            t0, nested = time.monotonic(), 0.0
             if not ctl.ok:
                 o = Outcome("mutant", m.id, ex.name, m.cls, False, ["unproven: the control is not green"])
             else:
@@ -371,8 +385,10 @@ def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -
                     v_off = None
                     if needs_subst_off(m.cls, v):
                         if not ctl_off:
+                            tn = time.monotonic()
                             ctl_off.append(_control(ex, False))
                             emit(ctl_off[0])
+                            nested = time.monotonic() - tn      # the control's own time, not the mutant's
                             out.append(ctl_off[0])
                         if ctl_off[0].ok:
                             v_off = report.evaluate(ex, path, short_circuit=False, reference_mode=True,
@@ -383,15 +399,18 @@ def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -
                     o = Outcome("mutant", m.id, ex.name, m.cls, not why, why, v, v_off)
                 except Exception as e:  # noqa: BLE001
                     o = Outcome("mutant", m.id, ex.name, m.cls, False, [f"{type(e).__name__}: {e}"])
+            o.secs = time.monotonic() - t0 - nested
             emit(o)
             out.append(o)
     if empty:
+        t0 = time.monotonic()
         try:
             v = report.evaluate(ex, empty_output(ex), short_circuit=False, reference_mode=False)
             why = _judge(v, EMPTY_PATTERN, EMPTY_PATTERN)
             o = Outcome("empty", ex.name, ex.name, "empty_output", not why, why, v)
         except Exception as e:  # noqa: BLE001
             o = Outcome("empty", ex.name, ex.name, "empty_output", False, [f"{type(e).__name__}: {e}"])
+        o.secs = time.monotonic() - t0
         emit(o)
         out.append(o)
     return out
@@ -406,11 +425,17 @@ def _jobs() -> int:
     return max(1, int(os.environ.get("CQCHECK_JOBS", str(os.cpu_count() or 1))))
 
 
-def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]] = None) -> int:
-    """The self-test (module docstring). With no arguments (the CLI): every mutant and the empty
-    output for every example. `only` restricts the mutants to these ids and `empty` the empty
-    output to these examples ([] = none); a restricted run is iteration, never the acceptance, and
-    says so."""
+def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]] = None,
+             replay: Optional[bool] = None) -> int:
+    """The self-test (module docstring). With no arguments (the CLI): every mutant, the empty
+    output for every example and the clone replay checks. `only` restricts the mutants to these ids and `empty` the
+    empty output to these examples ([] = none); a restricted run is iteration, never the acceptance, and says so.
+    `replay` runs the clone replay checks (default: only in a full run).
+
+    Every outcome line ends with `t=<s>s took=<s>s` (cq-p9pty), and the run ends with its total wall time and the
+    time after its last check. The replay checks run as the pool's first job (cq-p9pty: run after the pool, their
+    three subprocesses printed nothing for minutes, and a run cut at its time limit then looked like a hang)."""
+    start = time.monotonic()
     if _spec_lock() != 0:
         return 1
     try:
@@ -426,6 +451,8 @@ def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]
         return 1
     missing = sorted(set(CLASSES) - {m.cls for m in mutants})
     restricted = only is not None or empty is not None
+    if replay is None:
+        replay = not restricted
     if only is not None:
         unknown = set(only) - {m.id for m in mutants}
         if unknown:
@@ -448,34 +475,44 @@ def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]
     print(f"selftest: {len(mutants)} mutants over {len(by_ex)} references, empty output for "
           f"{len(empty_set)} of {len(every)} examples, {_jobs()} jobs", flush=True)
     outcomes: List[Outcome] = []
+    last = [start]                      # when the last outcome was recorded
 
     def emit(o: Outcome) -> None:
-        _record(store, o, lock)
+        now = time.monotonic()
+        _record(store, o, lock, now - start)
+        last[0] = max(last[0], now)
         # cq-p9pty: recorded and judged, the verdicts are not read again (summary reads kind, id, class, ok); the
         # outcomes of 213 examples held them all, every sample's reasons included, until the process exceeded 6 GB
         o.verdict = o.verdict_off = None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=_jobs()) as pool:
-        futs = [pool.submit(_example_job, e, by_ex.get(e.name, []), e.name in empty_set, emit) for e in todo]
+        futs = ([pool.submit(replay_checks, emit)] if replay else []) + \
+            [pool.submit(_example_job, e, by_ex.get(e.name, []), e.name in empty_set, emit) for e in todo]
         for f in futs:
             outcomes += f.result()
 
-    if not restricted:
-        outcomes += replay_checks(lambda o: _record(store, o, lock))
-    print(summary(outcomes, missing, len(every), restricted))
     ok = all(o.ok for o in outcomes) and not missing and \
         sum(1 for o in outcomes if o.kind == "empty") == len(empty_set)
+    text = summary(outcomes, missing, len(every), restricted)
+    end = time.monotonic()
+    print(text)
+    print(f"selftest: {'PASS' if ok else 'FAIL'}{' (restricted)' if restricted else ''}, "
+          f"wall time {end - start:.1f}s, {end - last[0]:.1f}s after the last check", flush=True)
     return 0 if ok else 1
+
+
+REPLAY_CASES = ("mutants", "tampered", "dirty")
 
 
 def replay_checks(emit) -> List[Outcome]:
     """Part 4 of the module docstring: tests/replay/test_replay.py's rejection cases, one outcome each."""
     out: List[Outcome] = []
-    for case in ("mutants", "tampered", "dirty"):
+    for case in REPLAY_CASES:
+        t0 = time.monotonic()
         r = subprocess.run([sys.executable, str(REPLAY_TEST), "--plugin", str(report.plugin_path()),
                             "--opt", str(report.LLVM_BIN / "opt"), "--only", case], capture_output=True, text=True)
         o = Outcome("replay", case, "tests/replay", "clone_replay", r.returncode == 0,
-                    [] if r.returncode == 0 else [(r.stdout + r.stderr)[-800:]])
+                    [] if r.returncode == 0 else [(r.stdout + r.stderr)[-800:]], secs=time.monotonic() - t0)
         emit(o)
         out.append(o)
     return out
