@@ -2234,11 +2234,10 @@ Value *conjoin(LoweringContext &ctx, Value *a, Value *b, bool negA) {
 // Darwin-built module). The pass never declares one. Neither present: no store, by the rule (nothing in the module can
 // read errno). Both present: the module reads errno through each accessor it calls, so the store goes through each one
 // with a call in the module (__errno_location first); with neither called, __errno_location alone.
-SmallVector<Operand, 2> errnoAddresses(LoweringContext &ctx) {
+SmallVector<Function *, 2> errnoAccessors(Module &M) {
   SmallVector<Function *, 2> acc;
   for (const char *name : {"__errno_location", "__error"}) {
-    Function *f = ctx.M.getFunction(name);
-    if (f && !f->arg_size() && !f->isVarArg() && f->getReturnType()->isPointerTy())
+    if (Function *f = M.getFunction(name); f && errnoAccessor(*f))
       acc.push_back(f);
   }
   auto called = [](Function *f) {
@@ -2256,14 +2255,67 @@ SmallVector<Operand, 2> errnoAddresses(LoweringContext &ctx) {
   } else if (acc.size() == 2) {
     acc.pop_back();
   }
+  return acc;
+}
+
+// The address each accessor returns: its call as it stands, unguarded (owner 2026-11-13: no host effect, no event).
+SmallVector<Operand, 2> errnoAddresses(LoweringContext &ctx) {
   IRBuilder<> &B = ctx.B();
   SmallVector<Operand, 2> out;
-  for (Function *f : acc)
+  for (Function *f : errnoAccessors(ctx.M))
     out.push_back(Operand{B.CreatePtrToInt(B.CreateCall(f), B.getInt64Ty()), false});
   return out;
 }
 
 } // namespace
+
+// EINVAL (22) stored at errno through each accessor (errnoAccessors): under the rail c (under NOT c when neg) ANDed with
+// flag, the predicate in scope as bus::accessControl gave it (read once by the caller: it may make a rail); c null: under
+// the predicate in scope alone. No accessor: nothing.
+void storeEinval(LoweringContext &ctx, Value *c, bool neg, Value *flag) {
+  Operand einval{ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), 22), false};
+  Type *i32 = einval.v->getType();
+  if (!c) {
+    for (const Operand &e : errnoAddresses(ctx))
+      bus::emitKeptStore(ctx, i32, e, einval);
+    return;
+  }
+  for (const Operand &e : errnoAddresses(ctx)) {
+    if (flag)
+      bus::emitKeptStoreUnder(ctx, i32, e, einval, conjoin(ctx, c, flag, neg), false);
+    else
+      bus::emitKeptStoreUnder(ctx, i32, e, einval, c, neg);
+  }
+}
+
+// Owner 2026-11-13 (errno of a computed failure value; CR rule 16 Results): EINVAL where (unsigned)a > max. A constant a:
+// the test at compile time and the store under the predicate in scope; a classical a: the classical test, its outcome a
+// seed; a rail a: the flag by the ordinary icmp template. No accessor: no test and no store.
+void storeEinvalAbove(LoweringContext &ctx, Value *arg, uint64_t max) {
+  if (errnoAccessors(ctx.M).empty())
+    return;
+  IRBuilder<> &B = ctx.B();
+  Operand a = ctx.operand(arg);
+  Type *ty = arg->getType();
+  if (!a.handle) {
+    if (auto *k = dyn_cast<ConstantInt>(a.v)) {
+      if (k->getValue().ugt(max))
+        storeEinval(ctx, nullptr, false, nullptr);
+      return;
+    }
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
+                                  {B.CreateICmpUGT(a.v, ConstantInt::get(ty, max))});
+    ctx.unc().recordSeed(seed);
+    return storeEinval(ctx, seed, false, bus::accessControl(ctx));
+  }
+  abi::TemplateSpec t;
+  t.op = "icmp";
+  t.pred = "ugt";
+  t.w = railTypeOf(ty);
+  t.shape = "hl";
+  Value *bad = ctx.emitTemplate(t, {a, Operand{ConstantInt::get(ty, max), false}});
+  storeEinval(ctx, bad, false, bus::accessControl(ctx));
+}
 
 void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
@@ -2296,12 +2348,10 @@ void lowerSignal(LoweringContext &ctx, CallBase &CB) {
     ctx.B().Insert(n);
   }
   LLVMContext &C = ctx.M.getContext();
-  Type *i64 = Type::getInt64Ty(C), *i32 = Type::getInt32Ty(C);
-  Operand einval{ConstantInt::get(i32, 22), false};
+  Type *i64 = Type::getInt64Ty(C);
   auto *k = sig.handle ? nullptr : dyn_cast<ConstantInt>(sig.v);
   if (k && !validSignal(k->getSExtValue())) {
-    for (const Operand &e : errnoAddresses(ctx))
-      bus::emitKeptStore(ctx, i32, e, einval);
+    storeEinval(ctx, nullptr, false, nullptr);
     if (!CB.use_empty()) {   // the result is a rail (the table's cell is bus memory): SIG_ERR as a seed
       CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 64}}, {ConstantInt::get(i64, -1, true)});
       ctx.unc().recordSeed(seed);
@@ -2323,12 +2373,7 @@ void lowerSignal(LoweringContext &ctx, CallBase &CB) {
   Value *c = flag ? conjoin(ctx, v, flag, false) : v;
   CallInst *old = bus::emitLoadUnder(ctx, i64, cell, c);
   bus::emitKeptStoreUnder(ctx, i64, cell, h, c, false);
-  for (const Operand &e : errnoAddresses(ctx)) {
-    if (flag)
-      bus::emitKeptStoreUnder(ctx, i32, e, einval, conjoin(ctx, v, flag, true), false);
-    else
-      bus::emitKeptStoreUnder(ctx, i32, e, einval, v, true);
-  }
+  storeEinval(ctx, v, true, flag);
   if (CB.use_empty()) {
     ctx.unc().resolveAt(old->getNextNode(), {ctx.unc().idOf(old)});   // un-copied before the store
     return;
@@ -2357,6 +2402,7 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB) {
   });
   // A result the program reads is musl's value by tape::rewriteDeferredResults (cq-dbtpi), so none is read here unless
   // the callee is not raise's prototype: then the entry's rail under the complement, 0 under every candidate flag.
+  tape::storeFailureErrno(ctx, CB);   // owner 2026-11-13: EINVAL with the complement's -1
   if (!re.empty())
     spine::bindOperand(ctx, &CB, Operand{re[0], true});
 }

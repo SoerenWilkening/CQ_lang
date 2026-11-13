@@ -1,6 +1,7 @@
 // Private to pass/lib/calls: what Calls.cpp and Finalize.cpp share of the clone table (rule 19, §1.3, §1.4).
 #pragma once
 
+#include "cq/Lowering.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -28,4 +29,9 @@ std::vector<TableRow> takeTableRows(const llvm::Module &);
 llvm::Constant *sigString(llvm::Module &, llvm::FunctionType *);
 // §1.4: @__cq_act_<fn>, internal i32 0.
 llvm::GlobalVariable *activationCounter(llvm::Module &, llvm::StringRef fn);
+// Rule 16, owner 2026-11-12 and 2026-11-13 (errno of a computed failure value): EINVAL (22) stored at errno through the
+// module's accessor (__errno_location or __error, never declared by the pass; none: no store), under the predicate in
+// scope and where the argument `arg` (an integer of the original call) is above `max` as unsigned. Calls.cpp; the one
+// accessor rule signal uses.
+void storeEinvalAbove(LoweringContext &, llvm::Value *arg, uint64_t max);
 } // namespace cq::calls

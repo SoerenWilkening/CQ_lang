@@ -15,6 +15,7 @@
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
 #include "../../bus/BusInternal.h"
+#include "../../calls/CallsInternal.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
 #include "cq/Predicate.h"
@@ -500,6 +501,7 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
     }
     ctx.bindFields(&CB, ops);
   }
+  storeFailureErrno(ctx, CB);
   // Rule 16: a noreturn callee with a rail argument and no predicate: abort_i1 of the seed.
   if (!flag && CB.doesNotReturn())
     abortArm(ctx, CB, ctl);
@@ -598,6 +600,10 @@ struct OutFn {
   OutKind kind;
   unsigned first;   // the format (Fmt..VWFmt) or the value argument (UChar, Wc, Ws, Range, Length)
   unsigned max = 0; // Range: the largest valid value
+  // Range: musl sets errno to EINVAL with the -1 (owner ruling 2026-11-13, CR rule 16 Results): fseek.c
+  // __fseeko_unlocked (`errno = EINVAL; return -1;`), raise.c (tkill's -EINVAL through __syscall_ret); setvbuf.c
+  // returns -1 with no store.
+  bool einval = false;
 };
 
 // By C name (a Mach-O asm label "\01_n" names n). Decisions by the ruling's criterion and musl's source, beyond the
@@ -621,7 +627,7 @@ std::optional<OutFn> outputFunction(const Function &F) {
     static const std::map<std::string, OutFn, std::less<>> status = {
         {"fclose", {OutKind::Status, 0}},     {"remove", {OutKind::Status, 0}}, {"rename", {OutKind::Status, 0}},
         {"fsetpos", {OutKind::Status, 0}},    {"close", {OutKind::Status, 0}},
-        {"fseek", {OutKind::Range, 2, 2}},    {"fseeko", {OutKind::Range, 2, 2}},
+        {"fseek", {OutKind::Range, 2, 2, true}}, {"fseeko", {OutKind::Range, 2, 2, true}},
         {"setvbuf", {OutKind::Range, 2, 2}},  {"write", {OutKind::Length, 2}},
     };
     if (auto it = status.find(c); it != status.end()) {
@@ -637,7 +643,7 @@ std::optional<OutFn> outputFunction(const Function &F) {
       if (!hostCallee(F) || ft->isVarArg() || ft->getNumParams() != 1 || !ft->getReturnType()->isIntegerTy(32) ||
           !ft->getParamType(0)->isIntegerTy(32))
         return std::nullopt;
-      return OutFn{OutKind::Range, 0, 64};
+      return OutFn{OutKind::Range, 0, 64, true};
     }
   }
   StringRef n = F.getName();
@@ -727,6 +733,21 @@ AllocaInst *entryAlloca(Function &F, Type *ty, uint64_t n, const Twine &name) {
 }
 
 } // namespace
+
+// Owner ruling 2026-11-13 (errno of a computed failure value): where outputFunction says musl stores EINVAL with its -1
+// (a function of the arguments alone), the store under the same test, through the accessor signal uses
+// (calls::storeEinvalAbove), whether the program reads the result or not. The errno of a failed host operation is never
+// produced.
+void storeFailureErrno(LoweringContext &ctx, CallBase &CB) {
+  if (ctx.S.pure)
+    return;
+  const Function *F = calleeOf(CB);
+  std::optional<OutFn> o = F && hostCallee(*F) && CB.getFunctionType() == F->getFunctionType() ? outputFunction(*F)
+                                                                                                  : std::nullopt;
+  if (!o || o->kind != OutKind::Range || !o->einval)
+    return;
+  calls::storeEinvalAbove(ctx, CB.getArgOperand(o->first), o->max);
+}
 
 bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
   // The C library calls outputFunction names that some specialization makes effect entries (rule 16; raise: its

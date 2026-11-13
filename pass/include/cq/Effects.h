@@ -28,7 +28,11 @@ namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &)
                        // write succeeds: a bundle result entry (__cq_count_*, lifted by rule 18) or a template
                        // over the arguments; the result's uses read that value and the effect has no result.
                        // True when the module changed (taint is then recomputed).
-                       bool rewriteDeferredResults(llvm::Module &, const TaintInfo &); }
+                       bool rewriteDeferredResults(llvm::Module &, const TaintInfo &);
+                       // Owner ruling 2026-11-13 (CR rule 16 Results): the errno store that belongs to a computed
+                       // failure value (fseek, fseeko: whence outside {0, 1, 2}; raise: sig outside [0, 64]), made
+                       // at the call (an effect entry, or raise's signal-table call) by ordinary lowered code.
+                       void storeFailureErrno(LoweringContext &, llvm::CallBase &); }
 namespace cq::invert { // cq-4593 (cq-arch 2026-11-02, CR rule 17, §1.3): a __cq_invert_begin/_end call becomes
                        // cqrt_invert_begin/_end where the walker reaches it (the region's code is lowered as
                        // anywhere else); CQ.h's asm fence beside a marker (isMarkerFence) emits nothing.
