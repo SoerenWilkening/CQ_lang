@@ -1591,5 +1591,41 @@ int na_exit(int x0, double th) {
         self.assertFalse(r[1].outcome.startswith("cap:"), r[1].outcome)  # exit(3) in trip 1: within K, ends early
 
 
+class TraceParse(unittest.TestCase):
+    """cq-p9pty: the trace readers' fast path (json.loads's own scanner) gives json.loads's value, and raises or marks a
+    bad line as json.loads did, on every kind of line (no build needed)."""
+    LINES = ['{"ev":"x","a":[1,2.5,"\\u00e9",null,true]}', ' {"a":1} ', '{"a":1}x', '{"a":1', '1,2', '﻿{}',
+             '', '1e400', '"s"', '{"a":"\x01"}', '[1,2]\n', '1\r', '{"a":1}{"b":2}']
+
+    def _same(self, a, b):
+        self.assertEqual(repr(a), repr(b))
+
+    def test_oracle_trace_pairs(self):
+        import json
+        for e in self.LINES:
+            line = f"3\t{e}"
+            try:
+                want = (3, json.loads(e))
+            except json.JSONDecodeError as x:
+                with self.assertRaises(json.JSONDecodeError) as cm:
+                    list(oracle._trace_pairs(line))
+                self.assertEqual(str(cm.exception), str(x), e)
+                continue
+            got = list(oracle._trace_pairs(line + "\n"))
+            self.assertEqual(len(got), 1, e)
+            self._same(got[0], want)
+
+    def test_evaluator_line_event(self):
+        import json
+        from cqcheck import run
+        for e in self.LINES:
+            for line in (e, e + "\n"):
+                try:
+                    want = json.loads(line)
+                except json.JSONDecodeError:
+                    want = {"ev": run._BAD, "line": line.strip()}
+                self._same(run._line_event(line), want)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

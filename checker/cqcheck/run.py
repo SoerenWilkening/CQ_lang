@@ -2824,7 +2824,24 @@ def _with_bad(events: List[dict], torn: bool = True) -> Tuple[List[dict], List[d
 
 
 _LINE_CHUNK = 1 << 20
+_SCAN_ONCE = json.JSONDecoder().scan_once     # json.loads's scanner (json.decoder.JSONDecoder.raw_decode)
 _EXIT_HEAD = '{"ev":"exit","live":['
+
+
+def _line_event(line: str) -> Any:
+    """The event of one trace line: json.loads(line), or {"ev": _BAD, "line"} when it does not parse. cq-p9pty: a
+    line that is one JSON value and its newline is read by json.loads's own scanner, without loads's Python frames per
+    line (a large example's traces have 10^6 lines); any other goes through json.loads as before."""
+    try:
+        e, end = _SCAN_ONCE(line, 0)
+    except (StopIteration, ValueError):
+        end = -1
+    if end >= 0 and (end == len(line) or (end == len(line) - 1 and line[end] == "\n")):
+        return e
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return {"ev": _BAD, "line": line.strip()}
 
 
 def _trace_events(f) -> Iterable[Tuple[str, Optional[dict]]]:
@@ -2922,10 +2939,7 @@ def _stream_shots(trace: Path, side: str, items: Sequence[Tuple[dict, str, Optio
             if e is None:
                 if not line.strip() or line.startswith(_UNREAD):
                     continue
-                try:
-                    e = json.loads(line)
-                except json.JSONDecodeError:
-                    e = {"ev": _BAD, "line": line.strip()}
+                e = _line_event(line)
             ev = e.get("ev") if isinstance(e, dict) else None
             if ev == "shot":
                 cur = open_shots[e["k"]] = []
