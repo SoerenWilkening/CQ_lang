@@ -69,6 +69,7 @@ void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) { unimple
 void lowerIndirect(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerIndirect"); }
 void lowerSignal(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerSignal"); }
 void lowerRaise(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerRaise"); }
+void storeEinvalAbove(LoweringContext &, Value *, uint64_t) { unimplemented("calls: calls::storeEinvalAbove"); }
 void noteRun(LoweringContext &) {}
 void insertActivationCounter(LoweringContext &) {}
 ArrayRef<MintSlot> mintSites(const TaintInfo &, const Specialization &) { return {}; }
