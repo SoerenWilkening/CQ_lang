@@ -4592,6 +4592,10 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                 if "empty" in e:
                     e["empty"] += "; no integer argument to construct inputs from (cq-oou2)"
         return
+    # cq-824x: and the inputs derived from a trip-0 guard on the parent loop's induction variable
+    o1_ = sorted(Path(example_dir).glob("*.O1.ll"))[0]
+    known = set(cands)
+    cands += [c for c in trip_route_inputs(g, D.read_module(o1_), o1_, searcher.pb.ins.loops, out) if c not in known]
     obs = searcher.observe([(c, list(a)) for c, a in cands])
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     smp = [{"call": c, "args": list(a)} for c, a in cands]
@@ -4689,6 +4693,72 @@ def _arg_distance(g: "Gen", ci: int, args: Sequence[str]) -> int:
     return d
 
 
+def zero_route(mod: "D.Module", loops: Sequence[Loop], key: str):
+    """(function, header, gaps.zero_routes, the parent loop) of the loop `key` (pb.ins.loops: global ids),
+    or None when its trip 0 is not of that shape (cq-824x)."""
+    from cqcheck import gaps
+    lp = next((x for x in loops if x.key() == key), None)
+    if lp is None or lp.parent is None or lp.fn not in mod.functions:
+        return None
+    o = next((x for x in loops if x.id == lp.parent), None)
+    if o is None:
+        return None
+    f = mod.functions[lp.fn]
+    rs = gaps.zero_routes(f, lp.header, lp.blocks, o.header, o.blocks, [x.blocks for x in loops if x.fn == lp.fn])
+    return (f, lp.header, rs, o) if rs else None
+
+
+ROUTE_WINDOW = 8              # route inputs: argument values n - 8 .. n + 8 and 0 .. 8 tried on the count
+
+
+def trip_route_inputs(g: "Gen", mod: "D.Module", o1: Path, loops: Sequence[Loop],
+                      out: List[dict]) -> List[Tuple[int, Tuple[str, ...]]]:
+    """Constructed inputs derived from the loop bound (cq-824x): for an empty trip-0 target whose
+    zero is a guard on the parent loop's induction variable (gaps.zero_routes: the skip comes on that
+    loop's trip n), each drivers.txt call of the parent loop's function with one integer argument
+    changed so that LLVM ScalarEvolution's backedge-taken count of the parent loop, an expression of
+    the function's parameters, is exactly n (n + 1 trips: the cheapest activation that reaches the
+    skip). The argument values tried are a window around n and around 0; a candidate only, run on the
+    C oracle like every constructed input."""
+    from cqcheck import gaps
+    res: List[Tuple[int, Tuple[str, ...]]] = []
+    sym = None
+    for lpo in out:
+        if "empty" not in lpo["trips"].get("0", {}):
+            continue
+        zr = zero_route(mod, loops, lpo["loop"])
+        if not zr:
+            continue
+        f, _, routes, o = zr
+        if sym is None:
+            sym = gaps.scev_symbolic_counts(o1, LLVM_BIN)
+        expr = sym.get(o.key())
+        if expr is None:
+            continue
+        for ci, call in enumerate(g.spec.calls):
+            if "@" + call["fn"] != f.name or len(f.params) != len(g.base[ci]):
+                continue
+            params: Dict[str, Tuple[int, int]] = {}
+            slots = {}
+            for j, (ptext, name) in enumerate(f.params):
+                ct = g.cts[ci][j]
+                ty = ptext.split()[0] if ptext else ""
+                if (name == f"%{j}" and ty == f"i{ct.bits}" and ct.kind == "i" and ct.bits > 1
+                        and str(g.base[ci][j]).startswith("0x")):
+                    params[name] = (ct.bits, int(g.base[ci][j], 16) & ((1 << ct.bits) - 1))
+                    slots[name] = j
+            for name, j in slots.items():
+                if j not in g.quantum_slots(ci) + g.classical_slots(ci) or not re.search(re.escape(name) + r"(?![-\w.$])", expr):
+                    continue
+                w = params[name][0]
+                for r in routes:
+                    for x in sorted({v for v in range(r.trips - ROUTE_WINDOW, r.trips + ROUTE_WINDOW + 1)}
+                                    | set(range(ROUTE_WINDOW + 1))):
+                        if 0 <= x < 1 << (w - 1) and gaps.scev_eval(expr, {**params, name: (w, x)}) == r.trips:
+                            res.append((ci, tuple(g.with_values(ci, {j: x}))))
+    return list(dict.fromkeys(res))
+
+
 UNCOVERED_LISTED = 5          # stopped inputs named in an uncovered line (all are counted)
 
 
@@ -4722,18 +4792,37 @@ def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: Li
     facts = gaps.loop_facts(example_dir, LLVM_BIN, spec)
     todo = [(lpo, t) for lpo, t in todo if not facts.get(lpo["loop"], gaps.LoopFacts()).impossible(lpo["loop"], int(t))]
     budget = cost_budget()
+    o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     for lpo, t in todo:
         over = open_stops(lpo["loop"], int(t)) if open_stops else list(over_all)
         if not over:
             continue
+        # cq-824x: a lower bound N on the header executions of every input reaching it (gaps.zero_trip_cost);
+        # N > budget: unreachable within the budget, said with N, still uncovered (never green)
+        need = None
+        if int(t) == 0:
+            zr = zero_route(D.read_module(o1), searcher.pb.ins.loops, lpo["loop"])
+            need = gaps.zero_trip_cost(o1, LLVM_BIN, zr[0], zr[1], zr[2]) if zr else None
+            if need and need[0] <= budget:
+                need = None
         over.sort(key=lambda i: ("subst" in smp[i], _arg_distance(g, cands[i][0], cands[i][1]), i))
         listed = [{k: v for k, v in smp[i].items()} for i in over[:UNCOVERED_LISTED]]
         names = "; ".join(json.dumps(w, sort_keys=True) for w in listed)
         zero = f" ({lpo['zero']})" if int(t) == 0 and lpo.get("zero") else ""
         ub = (" Every in-budget reach of it is undefined as LLVM defines it, which proves nothing while the "
               "budget stopped inputs (cq-hsan)." if ub_only and (lpo["loop"], t) in ub_only else "")
+        if need:
+            lpo["trips"][t] = {
+                "empty": (f"uncovered: unreachable within the budget: needs {need[0]} header executions: every input "
+                          f"that runs {t} trips of {lpo['loop']}{zero} executes at least {need[0]} loop headers in the "
+                          f"C oracle before it, more than the cost budget of {budget}: {need[1]}; {len(over)} "
+                          f"constructed inputs ran past the budget and were stopped there, the nearest the drivers.txt "
+                          f"call: {names}.{ub} Never compared, never green (CR §6; cq-g8md; cq-824x)"),
+                "uncovered": {"stopped": listed, "n_stopped": len(over), "cost": f"> {budget}", "budget": budget,
+                              "needs": need[0], "bound": need[1]}}
+            continue
         lpo["trips"][t] = {
-            "empty": (f"uncovered: no input within the cost budget of {budget} loop-header executions (C oracle) "
+            "empty": (f"uncovered: not found: no input within the cost budget of {budget} loop-header executions (C oracle) "
                       f"runs {t} trips of {lpo['loop']}{zero}; {len(over)} constructed inputs ran past the budget "
                       f"(cost > {budget} each) and were stopped there, nothing runs past it, so whether they reach "
                       f"it is not known; the nearest the drivers.txt call: {names}.{ub} Never compared, never "

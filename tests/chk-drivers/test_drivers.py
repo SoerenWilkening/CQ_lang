@@ -1752,6 +1752,59 @@ class CostBudget(unittest.TestCase):
         self.assertNotIn("proof", t0)
         self.assertEqual(t0["uncovered"]["stopped"][0]["args"], ["0x00000010"])
 
+    def test_unreachable_within_the_budget_says_what_it_needs(self):
+        # cq-824x: trip 0 needs t >= 13, and every such input first runs 12 trips of j, each entering the
+        # inner loop for 1000 header executions: 13 + 12000 = 12013 > 4096, proved (gaps.zero_trip_cost),
+        # so the line says "unreachable within the budget: needs 12013", still uncovered, never a sample
+        e, _, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096"})
+        t0 = e["trips"]["0"]
+        self.assertNotIn("sample", t0)
+        self.assertEqual(t0["uncovered"]["needs"], 12013)
+        self.assertTrue(t0["empty"].startswith("uncovered: unreachable within the budget: needs 12013 header "
+                                               "executions"), t0["empty"])
+        from cqcheck import gaps
+        ss = SampleSet("x", [{"call": 0, "args": ["0x0"]}], {"trips": {"loops": [
+            {"loop": "f:%12", "trips": {"0": t0, "3": {"sample": 0}, "4": {"sample": 0}, "5": {"sample": 0}}}]}})
+        found = [g_ for g_ in gaps.sample_gaps(D.driver_spec("117_qpe_counting", D.example_dir("117_qpe_counting")),
+                                               ss, Path("."), S.LLVM_BIN) if g_.where.startswith("trips")]
+        self.assertEqual([g_.kind for g_ in found], [gaps.UNCOVERED])
+
+    def test_the_bound_input_reaches_it_within_the_budget(self):
+        # cq-824x (a): at 12100 the cheapest reach is t = 13 (12013 header executions), which no generic
+        # constructed value hits (t = 15, 16, 17 cost 14000 and more); the input derived from the guard
+        # (j == 12 on trip 12) and the j loop's count t - 1 is t = 13: a sample
+        e, _, g = self.target(COST_C, {"CQ_COST_BUDGET": "12100"})
+        t0 = e["trips"]["0"]
+        self.assertIn("sample", t0)
+        self.assertEqual(g.samples[t0["sample"]]["args"], ["0x0000000d"])
+        # mutant: no derived input: not found, uncovered, and the bound (12013 <= 12100) proves nothing
+        orig = S.trip_route_inputs
+        S.trip_route_inputs = lambda *a, **k: []
+        try:
+            e, _, _ = self.target(COST_C, {"CQ_COST_BUDGET": "12100"})
+        finally:
+            S.trip_route_inputs = orig
+        t0 = e["trips"]["0"]
+        self.assertNotIn("needs", t0["uncovered"])
+        self.assertTrue(t0["empty"].startswith("uncovered: not found: "), t0["empty"])
+
+    def test_117_trip_zero_needs_2_to_the_31(self):
+        # cq-824x: qpe_counting:%65 trip 0 is the guard %47 == 31 (1 << 31 folded by -O1), after j = 0..30,
+        # each running 2^j inner header executions: 2^31 - 1 + 32 executions of %46's header
+        from cqcheck import gaps
+        o1 = sorted(D.example_dir("117_qpe_counting").glob("*.O1.ll"))[0]
+        mod = D.read_module(o1)
+        ins = S.Instrumenter(mod, None)
+        f = mod.functions["@qpe_counting"]
+        loops = ins.find_loops(f)
+        (lp,) = [x for x in loops if x.header == "%65"]
+        o = loops[lp.parent]
+        rs = gaps.zero_routes(f, lp.header, lp.blocks, o.header, o.blocks, [x.blocks for x in loops])
+        self.assertEqual([(r.guard, r.iv, r.skip_at, r.trips) for r in rs], [("%46", "%47", 31, 31)])
+        n, why = gaps.zero_trip_cost(o1, S.LLVM_BIN, f, lp.header, rs)
+        self.assertEqual(n, (1 << 31) - 1 + 32)
+        self.assertIn("1073741824", why)
+
     def test_gaps_and_report(self):
         from cqcheck import gaps, report
         from cqcheck.contracts import Verdict
