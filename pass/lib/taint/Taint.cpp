@@ -2295,6 +2295,10 @@ void Analyzer::transferCall(CallBase &CB) {
   // Pure: with classical arguments under a quantum predicate it is executed unguarded and merged (rule 9).
   if (CB.doesNotAccessMemory() && CB.willReturn() && !qArg)
     return;
+  // Owner ruling 2026-11-13 (CR rule 16, §6): a call of the errno accessor (a Darwin module's __error, which <errno.h>
+  // does not declare const) is no host effect, no effect entry and no event: made as it stands, unguarded.
+  if (errnoAccessor(*G))
+    return;
   // Ordinary host call: made as it stands.
   if (!qArg && !qPred && !(streamCallee(*G) && ptrArg) && !eventPrecedes(CB))
     return;

@@ -297,6 +297,27 @@ CASES = [
     ("sig_error", "se_rail", [], "pass", [r"call void @cqrt_qram_store_i32_hl_controlled\("]),
     ("sig_noerrno", "sn_const", [], "pass", []),
     ("sig_noerrno", "sn_rail", [], "pass", []),
+    # Owner ruling 2026-11-13 (errno of a computed failure value, CR rule 16 Results): EINVAL (22) through the module's errno
+    # accessor (a Darwin module's __error) with fseek's and fseeko's -1 (whence outside {0, 1, 2}) and raise's (sig outside
+    # [0, 64]): a constant (the test at compile time), a classical run-time value (the test's outcome a seed), a rail (the
+    # icmp template); setvbuf's -1 stores none; no accessor, no store. The accessor call is no effect entry (owner
+    # 2026-11-13). The rejects remove the controlled EINVAL store: errno then reads 0 where the C program reads 22.
+    ("err_fseek", "fk_const", [], "pass", [r"call ptr @__error\(\)\n\s*%\d+ = ptrtoint", r"@cqrt_alloc_i32\(i32 22\)"]),
+    ("err_fseek", "fk_cls", [], "pass", [r"icmp ugt i32 %\d+, 2\n\s*%\d+ = call i32 @cqrt_alloc_i1\(i1 %\d+\)"]),
+    ("err_fseek", "fk_rail", [], "pass", [r"@cq_template_icmp_ugt_i32_hl\(i32 %\d+, i32 2\)"]),
+    ("err_fseek", "fk_unread", [], "pass", []),
+    ("err_fseek", "fk_rail", [], r"reject: cqrt_qram_store_i32_hl_controlled\(", []),
+    ("err_fseeko", "fo_const", [], "pass", []),
+    ("err_fseeko", "fo_cls", [], "pass", []),
+    ("err_fseeko", "fo_rail", [], "pass", [r"@cq_template_icmp_ugt_i32_hl\(i32 %\d+, i32 2\)"]),
+    ("err_fseeko", "fo_unread", [], "pass", []),
+    ("err_fseeko", "fo_rail", [], r"reject: cqrt_qram_store_i32_hl_controlled\(", []),
+    ("err_raise", "rs_const", [], "pass", []),
+    ("err_raise", "rs_cls", [], "pass", []),
+    ("err_raise", "rs_rail", [], "pass", [r"@cq_template_icmp_ugt_i32_hl\(i32 %\d+, i32 64\)"]),
+    ("err_raise", "rs_rail", [], r"reject: cqrt_qram_store_i32_hl_controlled\(", []),
+    ("err_setvbuf", "sv_rail", [], "pass", []),
+    ("err_noerrno", "ne_rail", [], "pass", []),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
     ("mint2", "mint2", [], "pass", [r"call void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, double %\d+, i32 %\d+\)"]),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).

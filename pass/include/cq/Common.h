@@ -53,6 +53,10 @@ bool hostCallee(const llvm::Function &F);
 // _timedlock, _unlock, _init, _destroy, and musl's internal names __pthread_mutex_lock, _trylock, _timedlock, _unlock
 // of the same functions, which a lifted mtx_* body calls (owner ruling 2026-11-12 on cq-dbtpi).
 bool rule24Mutex(llvm::StringRef cname);
+// CR rule 16 (owner rulings 2026-11-12 signal's EINVAL store, 2026-11-13 errno accessor): F is an errno accessor,
+// __errno_location (musl, glibc) or __error (a Darwin-built module), by name and signature int *(void). A call of one
+// returns an address and has no effect: no effect entry, no event; it is made as it stands, unguarded.
+bool errnoAccessor(const llvm::Function &F);
 // The C name of a callee: the function's own, or the libm function an LLVM math intrinsic stands for (rule 18).
 std::string calleeName(const llvm::Function &F, const llvm::Value *at);
 // cq-z6q1 (CR rule 14; 189): the exit of the loop headed by `header` from block `exiting` has an exit count

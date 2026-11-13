@@ -285,6 +285,11 @@ bool rule24Mutex(StringRef n) {
   return false;
 }
 
+bool errnoAccessor(const Function &F) {
+  return (F.getName() == "__errno_location" || F.getName() == "__error") && !F.arg_size() && !F.isVarArg() &&
+         F.getReturnType()->isPointerTy();
+}
+
 // "A body the bundle has for one of them is never lifted for the call" (CR rule 16).
 bool hostCallee(const Function &F) {
   if (F.isDeclaration())

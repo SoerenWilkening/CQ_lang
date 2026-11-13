@@ -87,6 +87,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace llvm;
@@ -112,6 +113,40 @@ static cl::opt<unsigned> KGlobal("cq-oracle-k-default", cl::value_desc("k"),
                                  cl::desc("global loop cutoff K, as cq-lower's -cq-k-default"));
 
 namespace {
+
+// Owner ruling 2026-11-12 (signal's EINVAL store) and 2026-11-13 (errno of a computed failure value): the errno accessors
+// a store of EINVAL goes through, the pass's rule (calls/Calls.cpp errnoAccessors): __errno_location (musl, glibc) or
+// __error (Darwin; after drivers.rename_effects the stand-in's wrapper cqd_fx___error, whose result is the C oracle's
+// errno cell, fx_call.h FX_ERRNO_CELL), by name and signature int *(void); with both, each one the module calls,
+// __errno_location first, or __errno_location alone when it calls neither; neither present: none (no store).
+SmallVector<Function *, 2> errnoAccessors(Module &M) {
+  auto accessor = [&](std::initializer_list<StringRef> names) -> Function * {
+    for (StringRef n : names)
+      if (Function *f = M.getFunction(n); f && f->arg_empty() && !f->isVarArg() && f->getReturnType()->isPointerTy())
+        return f;
+    return nullptr;
+  };
+  auto called = [](Function *f) {
+    for (const User *u : f->users())
+      if (auto *c = dyn_cast<CallBase>(u); c && c->getCalledOperand() == f)
+        return true;
+    return false;
+  };
+  SmallVector<Function *, 2> acc;
+  for (Function *f : {accessor({"__errno_location"}), accessor({"cqd_fx___error", "__error"})})
+    if (f)
+      acc.push_back(f);
+  if (acc.size() == 2 && (called(acc[0]) || called(acc[1]))) {
+    SmallVector<Function *, 2> used;
+    for (Function *f : acc)
+      if (called(f))
+        used.push_back(f);
+    acc = used;
+  } else if (acc.size() == 2) {
+    acc.pop_back();
+  }
+  return acc;
+}
 
 [[noreturn]] void unimplemented(const Twine &what, const Value *at = nullptr) {
   std::string s;
@@ -3263,36 +3298,8 @@ public:
           CB->getType()->isPointerTy() && CB->getArgOperand(0)->getType()->isIntegerTy(32) &&
           CB->getArgOperand(1)->getType()->isPointerTy()) {
         // Owner ruling 2026-11-12 (signal's EINVAL store): through whichever accessor the module declares or defines for
-        // its own errno reads, __errno_location (musl, glibc) or __error (Darwin; here the stand-in's wrapper
-        // cqd_fx___error, drivers.effect_callees, whose result is the C oracle's errno cell, fx_call.h FX_ERRNO_CELL),
-        // recognised by name and signature int *(void); with both, each one the module calls, __errno_location first,
-        // or __errno_location alone when it calls neither; neither present: no store (the pass's rule,
-        // calls/Calls.cpp errnoAddresses)
-        auto accessor = [&](std::initializer_list<StringRef> names) -> Function * {
-          for (StringRef n : names)
-            if (Function *f = M.getFunction(n); f && f->arg_empty() && !f->isVarArg() && f->getReturnType()->isPointerTy())
-              return f;
-          return nullptr;
-        };
-        auto called = [](Function *f) {
-          for (const User *u : f->users())
-            if (auto *c = dyn_cast<CallBase>(u); c && c->getCalledOperand() == f)
-              return true;
-          return false;
-        };
-        SmallVector<Function *, 2> acc;
-        for (Function *f : {accessor({"__errno_location"}), accessor({"cqd_fx___error", "__error"})})
-          if (f)
-            acc.push_back(f);
-        if (acc.size() == 2 && (called(acc[0]) || called(acc[1]))) {
-          SmallVector<Function *, 2> used;
-          for (Function *f : acc)
-            if (called(f))
-              used.push_back(f);
-          acc = used;
-        } else if (acc.size() == 2) {
-          acc.pop_back();
-        }
+        // its own errno reads (errnoAccessors, the pass's rule)
+        SmallVector<Function *, 2> acc = errnoAccessors(M);
         Constant *null = ConstantPointerNull::get(cast<PointerType>(Ptr));
         IRBuilder<>(CB).CreateCall(hook("__cqo_signal_errloc", Void, {Ptr, Ptr}),
                                    {acc.size() > 0 ? (Value *)acc[0] : null, acc.size() > 1 ? (Value *)acc[1] : null});
@@ -3713,6 +3720,21 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
               break;
             }
           }
+    // Owner ruling 2026-11-13 (errno of a computed failure value): likewise for fseek, fseeko (whence) and raise (sig),
+    // whose dropped musl bodies may have been __errno_location's only callers; the pass stores EINVAL through it at each
+    // such call whose argument is not a constant inside the valid range (calls/Calls.cpp storeEinvalAbove), and so does
+    // cq-oracle-output-results.
+    if (Function *el = M.getFunction("__errno_location");
+        changed && el && !el->isDeclaration() && el->arg_empty() && el->getReturnType()->isPointerTy())
+      for (auto [name, arg, max] : {std::tuple<const char *, unsigned, uint64_t>{"fseek", 2, 2}, {"fseeko", 2, 2},
+                                    {"raise", 0, 64}})
+        if (Function *f = M.getFunction(name); f && f->isDeclaration())
+          for (User *U : f->users())
+            if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledOperand() == f && CB->arg_size() > arg) {
+              auto *k = dyn_cast<ConstantInt>(CB->getArgOperand(arg));
+              if (!k || k->getValue().ugt(max))
+                taken.insert(el);
+            }
     if (changed)
       dropUnreached(M, taken);
     return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
@@ -3971,6 +3993,30 @@ struct Pass : PassInfoMixin<Pass> {
           entrySites.insert(CB);
       }
     }
+    // Owner ruling 2026-11-13 (errno of a computed failure value; CR rule 16 Results): at every effect-entry site, read or
+    // not, musl's EINVAL with the -1 where it is a function of the arguments alone: fseek, fseeko (fseek.c
+    // __fseeko_unlocked, whence outside {0, 1, 2}) and raise (raise.c, sig outside [0, 64]); setvbuf stores none. It goes
+    // through each errno accessor the pass's rule picks (errnoAccessors), before the call; no accessor, no store.
+    if (SmallVector<Function *, 2> acc = errnoAccessors(M); !acc.empty())
+      for (CallBase *CB : entrySites) {
+        auto *F = cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+        std::optional<Fn> o = outputFunction(*F);
+        StringRef n = F->getName();
+        if (n.starts_with("\01_"))
+          n = n.drop_front(2);
+        if (n.ends_with("_unlocked"))
+          n = n.drop_back(strlen("_unlocked"));
+        uint64_t max = o->kind == Kind::Sig64 ? 64 : 2;
+        if (!(o->kind == Kind::Sig64 || (o->kind == Kind::Sel3 && (n == "fseek" || n == "fseeko"))))
+          continue;
+        Value *a = CB->getArgOperand(o->first);
+        IRBuilder<> B(CB);
+        Instruction *then = SplitBlockAndInsertIfThen(B.CreateICmpUGT(a, ConstantInt::get(a->getType(), max)),
+                                                      CB->getIterator(), false);
+        IRBuilder<> T(then);
+        for (Function *f : acc)
+          T.CreateStore(ConstantInt::get(Type::getInt32Ty(M.getContext()), 22), T.CreateCall(f));
+      }
     SmallVector<CallBase *, 16> sites;
     for (CallBase *CB : entrySites) {
       auto *F = cast<Function>(CB->getCalledOperand()->stripPointerCasts());
