@@ -15,7 +15,9 @@ and K+1 for every loop, and a seeded set over the classical arguments. sampling.
                   stopped some constructed input (owner rulings 2026-11-01, cq-g8md, cq-hsan; CR §6,
                   coverage): reported with the stopped inputs and their cost "> budget" (nothing runs
                   past it), never compared, never counted green, never dead, never removed; not
-                  failing (the gate: no comparison failed and every uncovered target listed);
+                  failing (the gate: no comparison failed and every uncovered target listed); its line
+                  says "not found" (the search found no input within the budget) or "unreachable within
+                  the budget: needs N header executions" (zero_trip_cost proved N > budget, cq-824x);
   NOTE            the totalization rows (CR §2 rows an instruction can reach) the search did not hit:
                   reported, never failing. They are sampling.py's own coverage aid, not a class
                   CLAUDE.md "Inputs" lists (orchestrator decision under CLAUDE.md Inputs, cq-h4pn,
@@ -395,6 +397,199 @@ def _region_may_exit(f: "D.Function", header: str, blocks: set) -> bool:
     if exiting - region:
         return False
     return bool(exiting)
+
+
+# --------------------------------------------------------------------------------------------
+# The cost of trip 0 behind a guard on an outer induction variable (cq-824x, cq-e4sw)
+#
+# Owner rulings 2026-11-01 (cq-g8md): nothing runs past the cost budget; a trip target no input
+# reaches within it is uncovered. Two different facts hide behind "uncovered": the search did not
+# find a cheap input, or no input of any kind reaches the target cheaply. The second is proved here
+# for one shape, 117's: the C oracle reports 0 trips of a loop L only on guard skips (no header run
+# exits before a trip begins), and every guard is a test P == C (or P != C) in L's parent loop O,
+# where P is an induction variable of O (a header phi from the constant s outside O, P + d on every
+# latch, d = +1 or -1), the guard's block lies in O but in no loop nested in it, and every path from
+# O's header to a latch of O passes it. An activation of O runs P = s, s + d, ... (mod 2^w); its
+# guard skips L for the first time on the trip with P == C, after n = (C - s) * d (mod 2^w) trips,
+# each of which reached the guard with P != C and so entered L (guard_skips' walk: unconditional
+# branches only from the guard to L's header). In the trip with P = v, L runs h(v) header executions,
+# h(v) - 1 the exact constant backedge-taken count LLVM's ScalarEvolution computes on a copy of the
+# function with P replaced by v and instsimplify run (an h(v) LLVM leaves open counts 1, the least
+# an entered loop runs). Every input that runs 0 trips of L therefore executes at least
+#     N = (n + 1) + sum of h(v) over those n trips
+# loop headers before the C oracle records it (the n + 1 header executions of O included; at most
+# ZERO_COST_EVALS of the h(v) are computed, each other trip counts 1). N is a lower bound, never an
+# estimate: with N > budget the target is unreachable within the budget for every input of the
+# domain, which the uncovered line says with N (sampling.uncovered_targets). Whether such a target
+# counts as covered is the owner's question; it stays uncovered.
+
+ZERO_COST_EVALS = 64
+
+
+@dataclass(frozen=True)
+class ZeroRoute:
+    guard: str      # the guard block in O
+    iv: str         # P, a phi in O's header
+    width: int
+    start: int      # s, bit pattern at width
+    step: int       # d: +1 or -1
+    skip_at: int    # C, bit pattern at width
+    trips: int      # n: the trips of O before the one whose guard skips L
+
+
+_INT = re.compile(r"-?\d+")
+
+
+def _int_const(tok: str, w: int) -> Optional[int]:
+    if w == 1 and tok in ("true", "false"):
+        return int(tok == "true")
+    return int(tok) & ((1 << w) - 1) if _INT.fullmatch(tok) else None
+
+
+def zero_routes(f: "D.Function", header: str, blocks: set, outer_header: str, outer_blocks: set,
+                loop_blocks: Sequence[set]) -> Optional[List[ZeroRoute]]:
+    """The guard skips by which the C oracle reports 0 trips of the loop at `header`, each as a
+    ZeroRoute on an induction variable of its parent loop (at `outer_header`), or None when trip 0
+    may arise otherwise (a header run that exits, no guard skip) or a guard is not of that shape.
+    `loop_blocks`: the block sets of every loop of `f` (to find the guard's innermost loop)."""
+    if _region_may_exit(f, header, blocks):
+        return None
+    skips = guard_skips(f, header, blocks)
+    if not skips:
+        return None
+    preds = f.preds()
+    latches = [p for p in preds.get(outer_header, []) if p in outer_blocks]
+    out: List[ZeroRoute] = []
+    for g, skip in skips:
+        if g not in outer_blocks or any(g in s and s < outer_blocks for s in loop_blocks):
+            return None
+        m = re.fullmatch(r"br i1 (%\S+), label (%\S+), label (%\S+)", f.blocks[g][-1].text.strip())
+        c = f.defs.get(m.group(1)) if m else None
+        mc = re.fullmatch(r"(%\S+) = icmp (eq|ne) (i\d+) (\S+), (\S+)", c.text.strip()) if c else None
+        if not mc:
+            return None
+        w = int(mc.group(3)[1:])
+        a, b = mc.group(4), mc.group(5)
+        iv, cst = (a, _int_const(b, w)) if _int_const(a, w) is None else (b, _int_const(a, w))
+        if cst is None:
+            return None
+        # the skip is taken exactly where P == C
+        if not ((mc.group(2) == "eq" and skip == m.group(2) and skip != m.group(3))
+                or (mc.group(2) == "ne" and skip == m.group(3) and skip != m.group(2))):
+            return None
+        phi = f.defs.get(iv)
+        mp = re.fullmatch(re.escape(iv) + r" = phi (i\d+) (.*)", phi.text.strip()) if phi else None
+        if not mp or phi.block != outer_header or int(mp.group(1)[1:]) != w:
+            return None
+        start, steps = set(), set()
+        for val, frm in re.findall(r"\[\s*([^,\]]+?)\s*,\s*(%[^\s\]]+)\s*\]", mp.group(2)):
+            if frm not in outer_blocks:
+                start.add(_int_const(val, w))
+                continue
+            st = f.defs.get(val)
+            ma = re.fullmatch(re.escape(val) + r" = add (?:(?:nuw|nsw) )*i\d+ (\S+), (\S+)", st.text.strip()) if st else None
+            if not ma or iv not in (ma.group(1), ma.group(2)):
+                return None
+            other = ma.group(2) if ma.group(1) == iv else ma.group(1)
+            steps.add(_int_const(other, w))
+        if len(start) != 1 or None in start or len(steps) != 1:
+            return None
+        s, d = start.pop(), steps.pop()
+        mask = (1 << w) - 1
+        if d not in (1, mask):
+            return None
+        d = 1 if d == 1 else -1
+        # every trip of O that goes on to the next passes the guard
+        seen, work = {outer_header}, [outer_header]
+        while work and g != outer_header:
+            b0 = work.pop()
+            for n_ in f.blocks[b0][-1].successors():
+                if n_ in outer_blocks and n_ != g and n_ not in seen:
+                    seen.add(n_)
+                    work.append(n_)
+        if g != outer_header and any(lt in seen for lt in latches):
+            return None
+        out.append(ZeroRoute(g, iv, w, s, d, cst, ((cst - s) * d) & mask))
+    return out
+
+
+def _signed_text(v: int, w: int) -> str:
+    if w == 1:
+        return "true" if v else "false"
+    return str(v - (1 << w) if v >> (w - 1) & 1 else v)
+
+
+def zero_trip_cost(o1: Path, llvm_bin: Path, f: "D.Function", header: str,
+                   routes: Sequence[ZeroRoute]) -> Optional[Tuple[int, str]]:
+    """(N, why): every input on which the C oracle reports 0 trips of the loop at `header` executes at
+    least N loop headers first (the comment above), from `routes` (zero_routes); None when the
+    function cannot be copied as the bound needs."""
+    text = o1.read_text()
+    if re.search(r"^%\d+ = type", text, re.M):
+        return None
+    m = re.search(r"^define [^\n]*" + re.escape(f.name) + r"\(.*?^\}\n?", text, re.M | re.S)
+    if not m or " asm " in m.group(0):
+        return None
+    body = m.group(0)
+    lines = body.split("\n")
+    entry_n = sum(1 for _, pn in f.params if re.fullmatch(r"%\d+", pn))
+    has_entry_label = len(lines) > 1 and re.match(r"^[-\w.$\"]+:", lines[1]) is not None
+    copies, slots = [], []
+    for ri, r in enumerate(routes):
+        for i in range(min(r.trips, ZERO_COST_EVALS)):
+            v = (r.start + i * r.step) & ((1 << r.width) - 1)
+            name = f"{f.name}.cqz{ri}.{i}"
+            out = []
+            for k, ln in enumerate(lines):
+                if not re.match(r"\s*" + re.escape(r.iv) + r" = ", ln):
+                    ln = re.sub(re.escape(r.iv) + r"(?![-\w.$])", _signed_text(v, r.width), ln)
+                ln = re.sub(r"%(\d+)(?![-\w.$])", r"%cqv\1", ln)
+                ln = re.sub(r"^(\d+):", r"cqv\1:", ln)
+                if k == 0:
+                    ln = ln.replace(f.name + "(", name + "(", 1)
+                    ln = re.sub(r" comdat(\([^)]*\))?", "", ln)
+                    out.append(ln)
+                    if not has_entry_label:
+                        out.append(f"cqv{entry_n}:")
+                    continue
+                out.append(ln)
+            copies.append("\n".join(out))
+            slots.append((ri, v, name))
+    if not copies:
+        return None
+    with tempfile.TemporaryDirectory(prefix="cq-zero-") as tmp:
+        src = Path(tmp) / "copies.ll"
+        src.write_text(text + "\n" + "\n".join(copies) + "\n")
+        r_ = subprocess.run([str(llvm_bin / "opt"), "-passes=instsimplify,print<scalar-evolution>",
+                             "-disable-output", str(src)], capture_output=True, text=True)
+    if r_.returncode != 0:
+        return None
+    hdr = "%cqv" + header[1:] if re.fullmatch(r"%\d+", header) else header
+    exact: Dict[str, int] = {}
+    fn = None
+    for line in r_.stderr.splitlines() + r_.stdout.splitlines():
+        mf = _SCEV_FN.match(line)
+        if mf:
+            fn = "@" + mf.group(1)
+            continue
+        me = _SCEV_EXACT.match(line)
+        if me and fn and me.group(1) == hdr:
+            exact[fn] = int(me.group(3)) % (1 << int(me.group(2)))
+    best: Optional[Tuple[int, str]] = None
+    for ri, r in enumerate(routes):
+        hs = [exact[n] + 1 if n in exact else 1 for ri2, _, n in slots if ri2 == ri]
+        n_ = r.trips
+        total = (n_ + 1) + sum(hs) + (n_ - len(hs))
+        shown = ", ".join(str(h) for h in hs[:3]) + (f", ..., {hs[-1]}" if len(hs) > 3 else "")
+        why = (f"the guard in {r.guard} skips the loop only where {r.iv} == {_signed_text(r.skip_at, r.width)}, and "
+               f"{r.iv} runs {_signed_text(r.start, r.width)}, {_signed_text((r.start + r.step) & ((1 << r.width) - 1), r.width)}, "
+               f"... in each activation of the enclosing loop, so {n_} trips of it come first (with {n_ + 1} executions of "
+               f"its header), each entering the loop at {header}, which runs h = {shown or 'none'} header executions in "
+               f"them (LLVM ScalarEvolution on a copy with {r.iv} fixed, after instsimplify"
+               + (f"; the first {len(hs)} trips computed, each other counted 1" if len(hs) < n_ else "") + ")")
+        if best is None or total < best[0]:
+            best = (total, why)
+    return best
 
 
 def _trip_fact_lines(args: List[str], o1: Path, llvm_bin: Path, tmax: int) -> str:
