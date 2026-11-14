@@ -998,7 +998,9 @@ void lowerElementWise(LoweringContext &ctx, Instruction &I) {
     }
     Operand r = quantumLane(ctx, I, ops);
     out.push_back(r);
-    if (r.handle && (ops.empty() || r.v != ops[0].v))
+    // cq-941o: no lane rule 6 inside a loop unit, as the spine's lowerInstruction (no ruleSixAfter): inside a rule-14
+    // trip the mirror reads every old value, and a value from before the loop is read by every trip.
+    if (r.handle && (ops.empty() || r.v != ops[0].v) && !ctx.loopUnit())
       laneRuleSix(ctx, I, l, ops, r.v, dem);
   }
   bindResult(ctx, &I, out);
