@@ -1833,6 +1833,7 @@ def overtaken_twin_module(text: str) -> str:
 
 _AK_ALLOC = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cqrt_alloc_i1\(i1 (?:false|0)\)\s*$")
 _AK_TOKEN = re.compile(r"%[-\w.$]+")
+_AK_PHI = re.compile(r"^\s+(%[-\w.$]+) = phi i32 ")
 # the gates that write an i1 rail named last and read only the others: and_i1(a, b, t), copy_i1(a, t), xor_i1(a, t)
 _AK_WRITE = re.compile(r"^\s+(?:tail |notail )?call void @cqrt_(?:and_i1\(i32 (%[-\w.$]+), i32 (%[-\w.$]+)|"
                        r"(?:copy|xor)_i1\(i32 (%[-\w.$]+)), i32 (%[-\w.$]+)\)\s*$")
@@ -1849,11 +1850,33 @@ def _ak_allocs(lines: List[str], lo: int, hi: int) -> List[int]:
     if not cand:
         return []
     at = set(cand.values())
+    # The chain's end merged at a classical exit of the chain (CR rule 14: at a classical test "the chain ends there,
+    # `a_j` is ... through a classical `phi` of handles"; rule 27 "Cutoff": the received-K cut "is a classical exit of
+    # the chain", a_K there the test's predicate, cq-9kcq, cq-wkzu9): an i32 phi that nothing reads but other such phis
+    # holds the kept a_K of whichever path ran. Its incomings are no read of an a_K candidate; every other use still is.
+    phis: Dict[str, int] = {}
+    for i in range(lo, hi):
+        m = _AK_PHI.match(lines[i])
+        if m:
+            phis[m.group(1)] = i
+    users: Dict[str, List[int]] = {p: [] for p in phis}
+    for i in range(lo, hi):
+        for t in _AK_TOKEN.findall(lines[i]):
+            if t in users and i != phis[t]:
+                users[t].append(i)
+    sink = set(phis)
+    while True:
+        lines_in = {phis[p] for p in sink}
+        drop = {p for p in sink if any(i not in lines_in for i in users[p])}
+        if not drop:
+            break
+        sink -= drop
+    sink_lines = {phis[p] for p in sink}
     written: Set[str] = set()
     bad: Set[str] = set()
     for i in range(lo, hi):
         line = lines[i]
-        if i in at:
+        if i in at or i in sink_lines:
             continue
         toks = [t for t in _AK_TOKEN.findall(line) if t in cand]
         if not toks:

@@ -90,6 +90,16 @@ MUTANTS = {
     "table_k": [
         ("__cq_q_kf_11_t_ctl@tk_f", "own_k", r"icmp ult i32 (\d+), %\d+", r"icmp ult i32 \1, 4"),
     ],
+    # cq-9kcq with owner ruling Q2 (2026-11-14): a by-name helper of a table clone ignores @__cq_k (its own K 4 where kh_1
+    # passed 2); a table clone does not restore @__cq_k at its returns, so kh_after's by-name call of h1 after the table
+    # call runs at 2 instead of its own 4.
+    "table_kh": [
+        ("__cq_q_h1_11@kh_1", "helper_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
+        ("__cq_q_t1_11_t_ctl@kh_after", "no_restore", r"  store i32 %\d+, ptr @__cq_k, align 4\n  ret", r"  ret"),
+        # the helper's quantum-depth recursion, and the K a helper passes through a pointer, at its own K 4
+        ("__cq_q_hr_1_ctl@kh_rec", "rec_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
+        ("__cq_q_hp_11_ctl@kh_ptr", "ptr_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
+    ],
     # cq-nmzv3's sibling (review R1 t2): the second call of g, behind `if (c)`, unguarded
     "q3_phantom": [
         ("phantom", "second_unguarded", r"(?s)(  br i1 (%[\w.]+), label %[\w.]+, label %[\w.]+\n.*?)"
@@ -98,7 +108,7 @@ MUTANTS = {
          r"\1  br label \2\n"),
     ],
 }
-_ALL = ("wrong_value", "hoist_trips", "own_k")   # mutants applied at every match, not the first only
+_ALL = ("wrong_value", "hoist_trips", "own_k", "no_restore")   # mutants applied at every match, not the first only
 NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer
 
 
