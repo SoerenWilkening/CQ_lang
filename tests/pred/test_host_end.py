@@ -29,6 +29,14 @@ def RETURN(fn):
     return new if new != fn else sub(r"  tail call void @exit\(i32 noundef 1\) #\d+\n", "")(fn)
 
 
+# Owner ruling 2026-11-14 Q1 (cq-9tang, ABI 1.11): abort_i1 of the entry's alloc_i1(true) seed (classical-valued 1) does not
+# return, the shot ends there. GOES_ON: a lowered program that goes on after it with a host exit of another status; the
+# run must end at the abort, so the exit is never observed and the verdict stays PASS. NO_END_ABORT: the abort_i1 of the
+# seed omitted, the run reaches `unreachable` instead of ending.
+GOES_ON = sub(r"(  call void @cqrt_abort_i1\((i32 %\d+)\)\n)  unreachable\n", r"\1  call void @exit(i32 9)\n  unreachable\n")
+NO_END_ABORT = sub(r"  call void @cqrt_abort_i1\(i32 %\d+\)\n  unreachable\n", "  unreachable\n")
+
+
 # exit where C returns; another status
 EXITS = sub(r"(\n  ret i32 %\d+\n)", r"\n  call void @exit(i32 0)\1")
 STATUS = sub(r"@exit\(i32 noundef 1\)", "@exit(i32 noundef 7)")
@@ -47,9 +55,10 @@ def REAL(fn):
                r"mqe:\n  call void @exit(i32 1)\n  unreachable\n\nmqc:\n")(fn)
 
 
-# Owner ruling 2026-11-11 Q7 (cq-edr1f): an exit is the ordinary host call only where no event can precede it. HOST and
-# LOOP hold events, so every exit in them is now an effect entry behind an abort flag; the real host exits and their
-# mutants are REAL_EXIT's (the same classical and classical_switch in a module with no event).
+# Owner ruling 2026-11-11 Q7 (cq-edr1f): an exit is the ordinary host call only where no event can precede it; owner
+# ruling 2026-11-14: on a path inside the lowered code. HOST's classical and LOOP's classical_switch exit before any event
+# of their function and no in-module caller calls them, so their exits are real host exits although the module holds
+# events (cases 17 to 22); REAL_EXIT is the same in a module with no event.
 HOST, LOOP, REAL_EXIT = "noreturn_host_end", "noreturn_classical_loop", "noreturn_real_exit"
 CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (LOOP, "classical_switch", None, None),
@@ -69,6 +78,14 @@ CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (HOST, "quantum", NO_FLAG, "no kept abort flag"),
     (HOST, "quantum", LEAK, "a leak"),
     (HOST, "quantum", REAL, "a leak"),
+    (LOOP, "classical_switch", RETURN, "a leak"),
+    (LOOP, "classical_switch", EXITS, "returns"),
+    (LOOP, "classical_switch", STATUS, "status 7 and the C program ends with"),
+    (HOST, "classical", RETURN, "no kept abort flag"),
+    (HOST, "classical", EXITS, "returns"),
+    (HOST, "classical", STATUS, "status 7 and the C program ends with"),
+    (HOST, "classical_after_arm", GOES_ON, None),
+    (HOST, "classical_after_arm", NO_END_ABORT, "killed by signal 4"),
 ]
 
 

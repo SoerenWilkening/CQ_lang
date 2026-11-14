@@ -17,6 +17,7 @@
 // kernel tier 1). Inside any other module every function is rewritten unless it has no bus access, no cq_* call and
 // no call (rule 19, TaintInfo::isTainted).
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -260,15 +261,15 @@ bool quantumLoop(BasicBlock *BB, const LoopInfo &LI, ArrayRef<const cq::Speciali
   return false;
 }
 
-// Rule 16: "The `unreachable` after an unconditional `noreturn` call is a return of zero-valued results". A noreturn call on a
-// classical path that some clone lowers to abort_i1 (a _ctl clone's predicate, an effect entry's seed) comes back: where that
-// flag reads 0 the program goes on, so the path returns instead of running into `unreachable`. A call another clone keeps as
-// the host call never gets there. A noreturn call through a pointer is rule 19's dispatch, and the table clone it calls
-// comes back. Runs before unifyReturns. A loop that any clone runs on a quantum condition keeps its arm
-// (rule 14's abort arm under the trip's flag), and longjmp and a thread's exit are rule 24's.
-// A noreturn-attributed F (cq-zfrb item 2; owner ruling 2026-11-11 Q7, cq-edr1f: its exits after an event are effect
-// entries) is rewritten the same way and comes back too: it loses the attribute (returnAfterCalls then rewrites the
-// `unreachable` after each call of it).
+// Rule 16: "The `unreachable` after an unconditional `noreturn` call is a return of zero-valued results", only under a
+// quantum predicate (owner ruling 2026-11-14 Q1, cq-9tang): a noreturn call on a classical path of a _ctl clone is abort_i1
+// of the clone's predicate, and where it reads 0 the program goes on, so the path returns instead of running into
+// `unreachable`. So does a call through an address rail (rule 19's dispatch over the candidates' _ctl clones). The body is
+// shared by every specialization: what ends there in another one (a host call, an entry under a true seed) gets its
+// `unreachable` back after the construction (endAtNoreturn). Runs before unifyReturns. A loop that any clone runs on a
+// quantum condition keeps its arm (rule 14's abort arm under the trip's flag), and longjmp and a thread's exit are rule
+// 24's. A noreturn-attributed F (cq-zfrb item 2) is rewritten the same way and comes back too: it loses the attribute
+// (returnAfterCalls then rewrites the `unreachable` after each call of it; endAtNoreturn gives it back where it ends).
 bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopInfo &LI) {
   bool changed = false;
   SmallVector<const cq::Specialization *, 4> specs;
@@ -293,8 +294,11 @@ bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopIn
     // A call through a pointer is rule 19's dispatch over table clones in every clone (calls::lowerIndirect), and a
     // table clone comes back (its noreturn exits are effect entries: the table clone is called after an event), so
     // every clone that reaches the call classically goes on after it (cq-W2 item 1, R3/p11.c).
+    // Owner ruling 2026-11-14 Q1 (cq-9tang): only under a quantum predicate: a _ctl clone's (abort_i1 of it), or a call
+    // through an address rail (rule 19's dispatch calls each candidate's _ctl clone under its quantum flag). An entry under
+    // a true seed (an event before it, a rail argument) ends the shot at abort_i1 (endAtNoreturn).
     if (none_of(specs, [&](const cq::Specialization *S) {
-          return !T.controlTainted(&BB, *S) && (indirect || S->ctl || T.isEffectEntry(*CB, *S));
+          return !T.controlTainted(&BB, *S) && (S->ctl || (indirect && T.isQuantum(CB->getCalledOperand(), *S)));
         }))
       continue;
     if (quantumLoop(&BB, LI, specs, T))
@@ -372,6 +376,77 @@ SmallVector<Function *, 4> returnAfterCalls(Module &M, SmallVector<Function *, 4
     }
   }
   return changedFns;
+}
+
+// Owner rulings 2026-11-14 (scope of Q7; Q1, cq-9tang; CR rule 16 noreturn, ABI 1.11). returnFromClassicalAborts and
+// returnAfterCalls rewrite the body every specialization of a function is built from, so that a _ctl clone, whose noreturn
+// call is abort_i1 of a quantum predicate, comes back (the zero-valued return, only under a quantum predicate). Every other
+// output function ends where its program ends:
+// - after a call of a `noreturn` callee: the ordinary host call (an own symbol no event precedes inside the lowered code,
+//   which stays as it is) or a function that itself ends below;
+// - after cqrt_abort_i1 of a fresh alloc_i1(true) seed: classical-valued 1, abort_i1 does not return and the shot ends
+//   there (Q1): the entry under the true seed of rule 16's noreturn bullet, rule 14's loop with no exit edge.
+// The rest of the block is `unreachable` and the dead blocks go. A function with no return left after such a cut gets
+// `noreturn` back when it had it in the input (`wasNoreturn`, by name: the own symbol keeps it), and otherwise only where a
+// call of it goes on after the call; its call sites then get it too, so its callers end after the call in turn (iterated).
+// No attribute is added where nothing needs it (a table clone reached through the clone table alone): the module's
+// attribute groups, and with them the text of every function left as it is, stay as they were.
+bool trueSeed(const Value *v) {
+  auto *A = dyn_cast<CallBase>(v);
+  const Function *G = A ? A->getCalledFunction() : nullptr;
+  if (!G || G->getName() != "cqrt_alloc_i1" || A->arg_size() != 1)
+    return false;
+  auto *c = dyn_cast<ConstantInt>(A->getArgOperand(0));
+  if (!c || !c->isOne())
+    return false;
+  // A seed is never written (rule 7): it is read as a predicate (tape) or an abort flag only.
+  return all_of(A->users(), [](const User *U) {
+    auto *CB = dyn_cast<CallBase>(U);
+    const Function *H = CB ? CB->getCalledFunction() : nullptr;
+    return H && (H->getName().starts_with("cqrt_tape_") || H->getName() == "cqrt_abort_i1");
+  });
+}
+
+void endAtNoreturn(Module &M, const std::set<std::string> &wasNoreturn) {
+  bool again = true;
+  while (again) {
+    again = false;
+    for (Function &F : M) {
+      if (F.isDeclaration())
+        continue;
+      SmallVector<Instruction *, 4> cuts;
+      for (BasicBlock &BB : F)
+        for (Instruction &I : BB) {
+          auto *CB = dyn_cast<CallBase>(&I);
+          if (!CB || CB->isInlineAsm() || CB->hasFnAttr(Attribute::ReturnsTwice) || isa<UnreachableInst>(CB->getNextNode()))
+            continue;
+          Function *G = CB->getCalledFunction();
+          if (!G)
+            continue;
+          if (G->doesNotReturn() || (G->getName() == "cqrt_abort_i1" && CB->arg_size() == 1 && trueSeed(CB->getArgOperand(0))))
+            cuts.push_back(CB->getNextNode());
+        }
+      if (cuts.empty())
+        continue;
+      for (Instruction *I : cuts)
+        changeToUnreachable(I);
+      removeUnreachableBlocks(F);
+      bool returns = any_of(F, [](BasicBlock &BB) { return isa<ReturnInst>(BB.getTerminator()); });
+      if (returns || F.doesNotReturn())
+        continue;
+      bool goesOn = any_of(F.users(), [&](const User *U) {
+        auto *CB = dyn_cast<CallBase>(U);
+        return CB && CB->getCalledFunction() == &F && !isa<UnreachableInst>(CB->getNextNode());
+      });
+      if (!wasNoreturn.count(F.getName().str()) && !goesOn)
+        continue;
+      F.addFnAttr(Attribute::NoReturn);
+      for (User *U : F.users())
+        if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledFunction() == &F)
+          CB->addFnAttr(Attribute::NoReturn);
+      again = true;
+    }
+  }
 }
 
 // Rule 26: an aggregate is its scalar fields. A loop-carried aggregate (a cmpxchg's { i32, i1 } carried round musl's
@@ -1157,6 +1232,12 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
+    // The functions the input marks `noreturn` (endAtNoreturn gives the attribute back where the program ends).
+    std::set<std::string> wasNoreturn;
+    for (Function &F : M)
+      if (!F.isDeclaration() && F.doesNotReturn())
+        wasNoreturn.insert(F.getName().str());
+
     // 0. Rules 16, 22, 24: library calls that are memory operations under another name (calls/LibCalls.h).
     cq::calls::canonicalizeLibCalls(M);
 
@@ -1346,6 +1427,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
+    // 5b. Owner rulings 2026-11-14 (scope of Q7; Q1): what does not come back ends there (endAtNoreturn).
+    endAtNoreturn(M, wasNoreturn);
 
     // CR rule 13 (b137e75): a lowered computed goto compares its address with blockaddress constants, which a
     // clone (or another lowered function) may take of another function's block. The textual IR names such a

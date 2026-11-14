@@ -26,7 +26,6 @@
 #include "cq/Bus.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -36,8 +35,6 @@
 #include "llvm/Transforms/Utils/LowerAtomic.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/MDBuilder.h"
-#include "llvm/ADT/SetVector.h"
 
 using namespace llvm;
 
@@ -88,8 +85,8 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
 
 // Rule 24 (106): the thread primitives of a tainted function, collapsed to the sequential schedule in the
 // IR before the final taint. pthread_create(t, attr, f, p) is the call f(p) at its place (a direct call when
-// f is a function of the type void *(void *), else an indirect one: rules 18, 19 and 27 lower it as any
-// call), its result left in the thread id *t when some pthread_join of the module asks for it (the
+// f is a function, else an indirect one resolved through the clone table at run time; which functions f can
+// denote is never analysed: rules 18, 19 and 27 lower it as any call), its result left in the thread id *t when some pthread_join of the module asks for it (the
 // pthread_t a pointer on Darwin, an integer on Linux), the status 0; pthread_join(t, r) stores that result
 // through r when r is not null, status 0; the mutex calls are no-ops, status 0. A call through another
 // type than void *(void *) is undefined behaviour (C17 7.26.5.1 thrd_start_t, POSIX), outside the domain.
@@ -124,29 +121,6 @@ SmallVector<Function *, 8> collapseThreads(Module &M, const TaintInfo &T) {
         FunctionType *ft = FunctionType::get(ptrTy, {ptrTy}, false);
         Value *fn = CB->getArgOperand(2);
         CallInst *r = B.CreateCall(ft, fn, {CB->getArgOperand(3)});
-        // A start routine chosen at run time among known functions (selects and phis of them): its
-        // candidates as clang records them for an indirect call (!callees), for rule 19's dispatch.
-        if (!r->getCalledFunction()) {
-          SmallSetVector<Function *, 4> cands;
-          SmallVector<Value *, 4> work{fn};
-          SmallPtrSet<Value *, 8> seen;
-          bool known = true;
-          while (!work.empty() && known) {
-            Value *v = work.pop_back_val()->stripPointerCasts();
-            if (!seen.insert(v).second)
-              continue;
-            if (auto *g = dyn_cast<Function>(v))
-              cands.insert(g);
-            else if (auto *sel = dyn_cast<SelectInst>(v))
-              work.append({sel->getTrueValue(), sel->getFalseValue()});
-            else if (auto *phi = dyn_cast<PHINode>(v))
-              work.append(phi->incoming_values().begin(), phi->incoming_values().end());
-            else
-              known = false;
-          }
-          if (known && !cands.empty())
-            r->setMetadata(LLVMContext::MD_callees, MDBuilder(C).createCallees(cands.getArrayRef()));
-        }
         if (tidTy)
           B.CreateStore(tidTy->isPointerTy() ? static_cast<Value *>(r) : B.CreatePtrToInt(r, tidTy),
                         CB->getArgOperand(0));

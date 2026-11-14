@@ -475,22 +475,21 @@ __attribute__((constructor(101))) static void cqd_init(void) {
     C->hdrcap = CQD_HDR_CAP; C->hang_s = HANG_CPU_S;
     P = cqd_map(4096, 1);
 }
-/* threads: single-thread collapse (CR rule 24), as cqo_rt.c does (cq-nfv3). __DATA is restored per
- * sample, so the thread table starts empty in every sample. */
-static void *cqd_thread_results[1024];
-static unsigned cqd_nthreads;
+/* threads: single-thread collapse (CR rule 24), as cqo_rt.c does (cq-nfv3): the _r forms when some join of
+ * the module asks for a result (_thread_names). */
 int __cqd_pthread_create(pthread_t *t, const pthread_attr_t *a, void *(*fn)(void *), void *arg) {
-    (void)a;
-    if (cqd_nthreads >= 1024) return EAGAIN;
-    unsigned id = cqd_nthreads++;
-    *t = (pthread_t)(uintptr_t)(id + 1);
-    cqd_thread_results[id] = fn(arg);
+    (void)t; (void)a;
+    fn(arg);
     return 0;
 }
-int __cqd_pthread_join(pthread_t t, void **ret) {
-    uintptr_t id = (uintptr_t)t;
-    if (id == 0 || id > cqd_nthreads) return ESRCH;
-    if (ret) *ret = cqd_thread_results[id - 1];
+int __cqd_pthread_join(pthread_t t, void **ret) { (void)t; (void)ret; return 0; }
+int __cqd_pthread_create_r(pthread_t *t, const pthread_attr_t *a, void *(*fn)(void *), void *arg) {
+    (void)a;
+    *t = (pthread_t)(uintptr_t)fn(arg);
+    return 0;
+}
+int __cqd_pthread_join_r(pthread_t t, void **ret) {
+    if (ret) *ret = (void *)(uintptr_t)t;
     return 0;
 }
 int __cqd_pthread_detach(pthread_t t) { (void)t; return 0; }
@@ -2046,6 +2045,20 @@ def _driver_main(spec: DriverSpec) -> str:
     return "\n".join(out) + "\n"
 
 
+_JOIN_CALL = re.compile(r'call i32 @(?:pthread_join|"\\01_pthread_join")\((.*)\)')
+
+
+def _thread_names(ll: str) -> str:
+    """The thread calls of a probe module as RUNTIME_C's collapse (CR rule 24; cqo_rt.c, OracleInstr.cpp
+    replaceLibrary): the _r forms when some pthread_join of the module has a second operand other than the null
+    constant. Darwin's asm-label spelling @"\\01_pthread_join" is the same function (cq-cj4r)."""
+    asks = any(not m.group(1).rstrip().endswith(" null") for m in _JOIN_CALL.finditer(ll))
+    r = "_r" if asks else ""
+    ll = re.sub(r'@(?:pthread_create|"\\01_pthread_create")(?=[\s(])', "@__cqd_pthread_create" + r, ll)
+    ll = re.sub(r'@(?:pthread_join|"\\01_pthread_join")(?=[\s(])', "@__cqd_pthread_join" + r, ll)
+    return re.sub(r'@(?:pthread_detach|"\\01_pthread_detach")(?=[\s(])', "@__cqd_pthread_detach", ll)
+
+
 # Process state a sample can change that the in-process runner does not restore: such a module runs
 # every sample in a worker of its own (cqd_isolate), as a child forked per sample would.
 _ISOLATE_CALLS = {"@signal", "@sigaction", "@sigprocmask", "@pthread_sigmask", "@pthread_create",
@@ -2169,7 +2182,7 @@ class ProbeBuild:
         # threads: single-thread collapse (CR rule 24), as the C oracle runs them (cqo_rt.c): the
         # start routine runs to completion inside pthread_create, so every probe observation is a
         # function of the input (cq-nfv3: 106's real threads raced on the probe's buffer and counters)
-        ll = re.sub(r"@pthread_(create|join|detach)\b", r"@__cqd_pthread_\1", ll)
+        ll = _thread_names(ll)
         # rulings Q8: no direct host call runs for real here either (a real fgets would read the server's
         # own batch pipe: 210); the same stand-ins as the C oracle, so the same inputs reach the same paths
         # cq-8bq66 (CR rule 16): a stream call by name is the host's whatever the module defines, as in the C oracle

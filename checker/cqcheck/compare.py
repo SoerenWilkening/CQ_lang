@@ -241,8 +241,10 @@ on. On an ended sample:
   the host call (outputs["host_end"]) with the status the C program exits with (outputs["exit_status"]):
   a noreturn callee with classical arguments and no quantum predicate is rule 16's ordinary host call,
   made as it stands, so the circuit does end there.
-The leak rule is skipped on a real host exit and nowhere else (_real_exits, owner ruling cq-tdqrq): such
-a call ends the shot as it stands, so rails are live by construction. Both sides must end that way with
+The leak rule is skipped on a real host exit (_real_exits, owner ruling cq-tdqrq) and on a shot that ended at
+cqrt_abort_i1 of a classical-valued 1 (outputs["abort_end"], owner ruling 2026-11-14 Q1: the shot ends there as at
+process exit) on a sample where the C program ends early, and nowhere else: such an end leaves rails live by construction.
+An abort end where the C program returns is the abort rule's failure (a flag of ours reads 1). Both sides must end that way with
 the same status, and no abort flag of ours reads 1. An exit under a quantum condition is no real host
 exit: among the samples with the same classical arguments and the same C measurements so far, one that
 does not make that exit shows the condition was quantum, and the leak rule stays in force.
@@ -1994,7 +1996,7 @@ def _lowered_only(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
     (`_final_flags`, `excluded`). A real host exit (_real_exits) is the lowered run's own: ours ended in a host call
     with no abort flag reading 1 (whether the C program exits alike is a comparison against C, skipped)."""
     why = _dirty_frees(k, "our", o)
-    if (o.outputs or {}).get("host_end") is None or _flag_on(o):
+    if ((o.outputs or {}).get("host_end") is None or _flag_on(o)) and not ((o.outputs or {}).get("abort_end") and _ended(c)):
         why += _leaks(k, o, c, cut, excluded=True)
     return [f"{w} (an input excluded from the comparison against C; checked on the lowered run alone)" for w in why]
 
@@ -2377,7 +2379,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             reasons += why
         for side, rr in (("our", o), ("oracle", r)) if oracle == "ref" else (("our", o),):
             reasons += _dirty_frees(k, side, rr)
-        if oracle == "c" and k not in real_exits:
+        if oracle == "c" and k not in real_exits and not ((o.outputs or {}).get("abort_end") and ended[k]):
             reasons += _leaks(k, o, r_by[k], capped[k] or ended[k])
         if oracle == "c" and ended[k]:
             reasons += _exit_mismatch(k, o, r_by[k])

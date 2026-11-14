@@ -20,6 +20,7 @@ The owned example's acceptance is `python3 -m cqcheck run 48_volatile_global --o
 Outputs go to build/tests/eff-conc/out/.
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -57,11 +58,21 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"],
            # cq-lyzw (rule 24, 106): thread calls collapsed in the IR.
            "conc_threads.O1.ll": ["p_join_qresult"],
+           # cq-20fz (rule 24 with rules 19 and 27): a run-time start routine (a table load; an address rail), a
+           # bodiless routine on the root list handed quantum memory (its declared clone), a join of a quantum
+           # job's result; a global pthread_t; a join whose result pointer is null at run time.
+           "conc_threads_rt.O1.ll": ["p_thr_plain", "p_thr_qresult", "p_thr_table", "p_thr_qsel", "p_thr_ext",
+                                     "p_thr_global", "p_thr_nullres"],
+           "conc_threads_noask.O1.ll": ["p_thr_noask"],
+           "conc_threads_indirect.O1.ll": ["p_runtime_qjob"],
            # cq-il07 (rule 24): a volatile read of an internal constant under a quantum predicate (musl exp10l).
            "vol_const_pred.O1.ll": ["e_vol_const_pred"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 _NOVOLFX = r"volatile"   # no plain volatile access and no `volatile_store`/`volatile_load` effect entry
+_THR = r'call [^\n]*@(pthread_|"\\01_pthread_)'   # rule 24: no thread call is left
+# Rule 27 root lists (-cq-roots, and CQ_ROOTS_EXTRA for the checker's stand-in) per module.
+ROOTS = {"conc_threads_rt.O1.ll": ["ext_job"]}
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_vol_observable": (r"cqrt_qram_load_i32_hl\([^\n]*@obs_counter[\s\S]*cqrt_qram_store_i32_hl\([^\n]*@obs_counter",
@@ -74,9 +85,9 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "f_chain": (r"cqrt_qram_swap_i32_hl", None), "f_ends": (r"cqrt_qram_swap_i32_hl", None),
           "f_under": (r"cqrt_qram_swap_i32_hl_controlled", None), "f_select": (r"cq_template_select_i32", None),
           "f_bool": (r"cqrt_qram_swap_i1_hl", None), "f_fneg": (r"cqrt_qram_swap_f64_hl", None), "f_fwd": (None, None),
-          "p_join_result": (r"call ptr @job\(", r"@pthread_(create|join)\("),
+          "p_join_result": (r"call i32 @job\(", _THR),
           "p_rmw_qram": (r"cqrt_qram_swap_i32\(i32 %\d+, i32 %\d+, i32 %\d+\)[\s\S]*cqrt_qram_store_i32\(", r"atomicrmw|cmpxchg"),
-          "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
+          "p_runtime_routine": (r"@__cq_clone_at\(", _THR),   # a bus load is a rail: an address rail
           "p_vol_atomic": (r"cqrt_qram_store_i32_hl\([^\n]*@vcell[\s\S]*cqrt_qram_load_i32_hl\([^\n]*@vcell", r"volatile"),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ,
           "vol_quantum_observable": (r"cqrt_qram_store_i32_hl\([^\n]*@sink", _NOVOLFX),
@@ -102,7 +113,12 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_sjh_pred": (r"call i32 @setjmp\([\s\S]*cqrt_abort_i1\(", r"call [^\n]*@longjmp\("),
           "p_vol_global_store": (r"cqrt_qram_store_i32\w*\(", None),   # cq-1jvr6
           "e_vol_const_pred": (r"call i32 @__cq_q_p_vol_const_pred_\d+\(", None),
-          "p_join_qresult": (r"call ptr @__cq_q_qjob_1\(", r"@\\01_pthread_join\(|@pthread_create\(")}
+          "p_join_qresult": (r"call ptr @qjob\(", _THR),
+          "p_thr_plain": (r"call ptr @boxjob\(", _THR), "p_thr_qresult": (r"call i32 @qret\(", _THR),
+          "p_thr_table": (r"@__cq_clone_resolve\(", _THR), "p_thr_qsel": (r"@__cq_clone_at\(", _THR),
+          "p_thr_ext": (r"call i32 @__cq_q_ext_job_1_t\(", _THR), "p_thr_global": (None, _THR),
+          "p_thr_nullres": (r"call i32 @qret\(", _THR), "p_thr_noask": (r"call ptr @njob\(", _THR),
+          "p_runtime_qjob": (r"@__cq_clone_resolve\(", _THR)}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",
                                             "p20", "p21"]:
     SHAPES[_e] = _NOSJ
@@ -114,7 +130,12 @@ def body(module: str, fn: str) -> str:
 
 
 def lower(a, src: Path, dest: Path):
-    return subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(src), "-o",
+    extra = []
+    if src.name in ROOTS:
+        rf = dest.with_suffix(".roots")
+        rf.write_text("".join(r + "\n" for r in ROOTS[src.name]))
+        extra = [f"-cq-roots={rf}"]
+    return subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", *extra, "-S", str(src), "-o",
                            str(dest)], capture_output=True, text=True)
 
 
@@ -163,7 +184,8 @@ def main() -> int:
             if mustnot and re.search(mustnot, b):
                 why.append("present: " + mustnot)
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
-                                "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")
+                                "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker",
+                               env=dict(os.environ, CQ_ROOTS_EXTRA=",".join(ROOTS.get(mod, []))))
             if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
                 why.append("cqcheck user: " + (c.stdout + c.stderr).strip()[-2000:])
             failures += bool(why)

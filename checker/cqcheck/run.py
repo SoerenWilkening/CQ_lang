@@ -57,7 +57,8 @@ RunResult fields (JSON-serializable):
   outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": {...},
               "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
               sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6); "q2" the host calls given a pointer into an object holding a QUANTUM cell (rulings Q2, rt_bus.c cqe__q2_check; it only narrows the C side's decision, compare.py); "deferred_r" the names of the entries deferred with a result rail, predicate 1 (ruling cq-dbtpi, _deferred_read; it only narrows the C side's decision); "host_end", present only when the sample ended in the program's own
-              exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
+              exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "abort_end", present only when
+              the shot ended at cqrt_abort_i1 of a classical-valued 1 (owner ruling 2026-11-14 Q1, core.c cqe__abort_end); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
               functions ({"ev":"out_mem","table":"object","name","addr","size"}) and "regions" the host ranges a pointer may
@@ -1153,6 +1154,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     q2: List[dict] = []
     last_exit: Optional[dict] = None
     host_end: Optional[int] = None
+    abort_end = False
     for e in events:
         ev = e.get("ev")
         if ev in _ROT_EVENTS:
@@ -1189,6 +1191,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             last_exit = e
         elif ev == "host_end":
             host_end = e.get("code")
+        elif ev == "abort_end":
+            abort_end = True
         elif ev == "out_mem":
             if e.get("table") == "object":      # the driver's lines (_OUT_PRELUDE), kept by the same compact filter
                 objects.append({k: e[k] for k in ("name", "addr", "size") if k in e})
@@ -1222,6 +1226,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
     if host_end is not None:
         outputs["host_end"] = host_end
+    if abort_end:
+        outputs["abort_end"] = True     # owner ruling 2026-11-14 Q1: the shot ended at abort_i1 of a classical 1 (core.c)
     rr = RunResult(side=side, sample=sample, outputs=outputs,
                    measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
     if tape_seq:      # cq-92sw6: the sequence as compared, packed (compare.tape_pack); never the entries themselves

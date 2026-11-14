@@ -5,8 +5,8 @@
 // USERCHECK direct
 // CR rule 14 "No live exit" with owner ruling 2026-11-11 Q7: a K-loop whose only exit leads to a noreturn arm runs its K
 // trips, the arm under each trip's exit flag. The arm post-dominates the loop, so taint now makes every block of an
-// exit arm control dependent on the exiting branch: in viacall the in-module quit (it came back: its exit is an effect
-// entry) is called as its _ctl clone under the flag. Before: quit's own symbol was called on every trip unconditionally,
+// exit arm control dependent on the exiting branch: in viacall the in-module quit is called as its _ctl clone under the
+// flag (abort_i1 of it; the clone comes back, a quantum predicate, owner ruling 2026-11-14 Q1). Before: quit's own symbol was called on every trip unconditionally,
 // so its entry fired on trip 0 (C prints "1\nt0\nt1\n" for b = 3; ours stopped after "t0"). direct is the control.
 __attribute__((noinline)) void quit(int c) { exit(c); }
 void viacall(int b, int c) {

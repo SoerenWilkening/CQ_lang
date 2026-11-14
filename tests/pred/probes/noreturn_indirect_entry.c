@@ -1,11 +1,12 @@
 #include "CQ.h"
 #include <stdlib.h>
 // USERCHECK f
-// CR rule 16 ("The unreachable after an unconditional noreturn call is a return of zero-valued results") with owner
-// ruling 2026-11-11 Q7: quit is called through a noreturn-typed function pointer after an abort event. The call is rule
-// 19's dispatch over table clones, and quit's table clone comes back (its exit is the effect entry exit, then abort_i1
-// of its seed), so the `unreachable` after the indirect call is a return of zero. Before: it stayed (SIGILL on every
-// sample that reached the call).
+// CR rule 16 ("The unreachable after an unconditional noreturn call is a return of zero-valued results", under a quantum
+// predicate only: owner ruling 2026-11-14 Q1) with owner ruling 2026-11-11 Q7: quit is called through a noreturn-typed
+// function pointer after an abort event. The pointer is read from the bus, an address rail, so the call is rule 19's
+// dispatch over the candidates' _ctl clones under their quantum flags, and those come back: the `unreachable` after the
+// indirect call is a return of zero. quit's table clone _t (a classical pointer's) ends the shot at abort_i1 of its true
+// seed. Before 18b74c94: the `unreachable` stayed (SIGILL on every sample that reached the call).
 __attribute__((noinline, noreturn)) void quit(int c) { exit(c); }
 typedef void (*nfp)(int) __attribute__((noreturn));
 nfp volatile H = quit;
