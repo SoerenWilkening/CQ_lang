@@ -96,6 +96,9 @@ MUTANTS = {
     "table_kh": [
         ("__cq_q_h1_11@kh_1", "helper_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
         ("__cq_q_t1_11_t_ctl@kh_after", "no_restore", r"  store i32 %\d+, ptr @__cq_k, align 4\n  ret", r"  ret"),
+        # the helper's quantum-depth recursion, and the K a helper passes through a pointer, at its own K 4
+        ("__cq_q_hr_1_ctl@kh_rec", "rec_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
+        ("__cq_q_hp_11_ctl@kh_ptr", "ptr_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
     ],
     # cq-nmzv3's sibling (review R1 t2): the second call of g, behind `if (c)`, unguarded
     "q3_phantom": [

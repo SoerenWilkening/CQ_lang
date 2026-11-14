@@ -107,6 +107,11 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 // bus access. Made on first need, in a module that defines a table clone; calls::finalize has every table clone, its _ctl
 // form and their twins store their K actual on entry and the value found back at every return.
 llvm::GlobalVariable *receivedKGlobal(llvm::Module &M);
+// Owner ruling Q2: in a clone or own symbol (not a table clone) that a table clone of its module reaches by name, the K a
+// cut of it uses in place of K: umin(@__cq_k, K), @__cq_k loaded once in the entry block of the function lowered;
+// nullptr in any other function (it cuts at K). For its K-loops, its quantum-depth recursion, and the K it passes on
+// (an indirect call's, a declared clone's).
+llvm::Value *receivedKBelow(cq::LoweringContext &ctx, unsigned K);
 
 llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed,
                                const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0 = nullptr);

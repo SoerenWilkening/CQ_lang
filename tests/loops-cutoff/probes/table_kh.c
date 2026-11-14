@@ -28,6 +28,19 @@ __attribute__((noinline)) static unsigned h3(unsigned x, unsigned a) BODY_H3
 __attribute__((noinline)) static unsigned h6(unsigned x, unsigned c) BODY_H6
 /* h5: reached only from t5, which g3k calls at K 3 */
 __attribute__((noinline)) static unsigned h5(unsigned x, unsigned a) BODY_H1
+/* hr: quantum-depth recursion (rule 14) in a helper: cut at the received K */
+#define BODY_HR { if (x & 1) { unsigned r = HR_SELF(x >> 1); return r * r + 1; } return x; }
+#define HR_SELF hr
+__attribute__((noinline)) static unsigned hr(unsigned x) BODY_HR
+#undef HR_SELF
+/* tq: a table function holding a K-loop, reached only through pq from the helper hp, which passes its received K on */
+__attribute__((noinline)) static unsigned tq(unsigned x, unsigned a) {
+  unsigned n = 0;
+  while (x & 2) { x = (x >> 2) | (a << 30); n++; }   /* a value function of its own: no other loop's a_K matches it */
+  return n;
+}
+unsigned (*volatile pq)(unsigned, unsigned) = tq;
+__attribute__((noinline)) static unsigned hp(unsigned x, unsigned a) { return pq(x, a) * 2; }
 #ifdef TABLE_K_C
 /* the C side: the by-name calls from ordinary entries go to copies at the helpers' own K */
 __attribute__((noinline)) static unsigned h1o(unsigned x, unsigned a) BODY_H1
@@ -40,6 +53,13 @@ CQ_K(h3, 2)
 CQ_K(h6, 2)
 CQ_K(h1o, 4)
 CQ_K(h2o, 4)
+CQ_K(hr, 2)
+CQ_K(tq, 2)
+#define HR_SELF hro
+__attribute__((noinline)) static unsigned hro(unsigned x) BODY_HR
+#undef HR_SELF
+CQ_K(hro, 4)
+#define HRD hro
 CQ_K(t2, 2)
 CQ_K(r6, 2)
 CQ_K(t5, 3)
@@ -48,43 +68,47 @@ CQ_K(g3k, 3)
 #else
 #define H1D h1
 #define H2D h2
+#define HRD hr
 CQ_K(g3k, 3)
 #endif
 
-/* The table functions, each of its own C type: rule 19's dispatch over a rail pointer runs every function of the
- * pointer's type under its predicate, and a by-name helper's K-loop is not under it (the helper's a_K of a function not
- * selected is kept as well); one candidate per type keeps this probe to the received K.
+/* The table functions, all of one C type: rule 19's dispatch over a rail pointer runs every one of them under its
+ * predicate, each calling its helpers by name unguarded (CR rule 19: a callee of templates on SSA values only), so the
+ * helpers of the functions not selected keep their a_K too, a cut one included (cq-wkzu9).
  * t1, t3, t6: no loop of their own; their helpers' loops are cut at the K they receive */
 __attribute__((noinline)) static unsigned t1(unsigned x, unsigned a) { return h1(x, a) + 1; }
-__attribute__((noinline)) static unsigned t3(unsigned x, unsigned short a) { return h3(x, a) ^ 5; }
-__attribute__((noinline)) static unsigned long long t6(unsigned x, unsigned c) { return h6(x, c); }
-/* t7, t8: one type, for the classical pointer (only the function it holds runs) */
-__attribute__((noinline)) static unsigned t7(unsigned x, unsigned a, unsigned b) { return h1(x, a) + b; }
-__attribute__((noinline)) static unsigned t8(unsigned x, unsigned a, unsigned b) { return h3(x, a) ^ b; }
+__attribute__((noinline)) static unsigned t3(unsigned x, unsigned a) { return h3(x, a) ^ 5; }
+__attribute__((noinline)) static unsigned t6(unsigned x, unsigned c) { return h6(x, c); }
 /* t2 holds a K-loop itself and calls a helper (both cut at the received K) */
-__attribute__((noinline)) static unsigned t2(unsigned x, unsigned long long a) {
+__attribute__((noinline)) static unsigned t2(unsigned x, unsigned a) {
   unsigned n = 0;
   while (x > 9) { x = x * a + 1; n++; }
   return n * 100 + h2(x, a);
 }
 /* t5: like t2, with its own helper; called only from g3k (K 3) */
-__attribute__((noinline)) static unsigned t5(unsigned x, unsigned char a) {
+__attribute__((noinline)) static unsigned t5(unsigned x, unsigned a) {
   unsigned m = h5(x, a + 1), n = 0;
   while (x > 9) { x = x * a + 1; n++; }
   return n * 100 + m;
 }
 /* r6: rule 6 in the table clone's own cut loop: a carried s adding a measured outcome (review2 R1 m1 with no classical
- * conjunct), cut at the received K */
+ * conjunct), cut at the received K. Of its own type and reached through a classical pointer: a measurement in a K-loop
+ * of a _t_ctl clone fails on its own (cq-jr1r0), at any K. */
 __attribute__((noinline)) static unsigned short r6(unsigned x, unsigned m) {
   unsigned s = 0;
   while (x > 2) { x -= 3; s += cq_measure(x & 1); }
   return s * 256 + x + m;
 }
 unsigned (*volatile p1)(unsigned, unsigned) = t1;
-unsigned (*volatile p2)(unsigned, unsigned long long) = t2;
-unsigned (*volatile p3)(unsigned, unsigned short) = t3;
-unsigned long long (*volatile p6)(unsigned, unsigned) = t6;
-unsigned (*volatile p5)(unsigned, unsigned char) = t5;
+unsigned (*volatile p2)(unsigned, unsigned) = t2;
+unsigned (*volatile p3)(unsigned, unsigned) = t3;
+unsigned (*volatile p6)(unsigned, unsigned) = t6;
+unsigned (*volatile p5)(unsigned, unsigned) = t5;
+/* t7: a helper's quantum-depth recursion; t8: a helper calling through a pointer */
+__attribute__((noinline)) static unsigned t7(unsigned x, unsigned a) { return hr(x) + a; }
+__attribute__((noinline)) static unsigned t8(unsigned x, unsigned a) { return hp(x, a) + 1; }
+unsigned (*volatile p7)(unsigned, unsigned) = t7;
+unsigned (*volatile p8)(unsigned, unsigned) = t8;
 
 CQ_K(kh_1, 2)
 CQ_K(kh_2, 2)
@@ -95,12 +119,14 @@ CQ_K(kh_cls, 2)
 CQ_K(kh_twin, 2)
 CQ_K(kh_after, 2)
 CQ_K(kh_seq, 2)
+CQ_K(kh_rec, 2)
+CQ_K(kh_ptr, 2)
 
 /* a rail pointer (the _ctl table clone) at received K 2 */
 unsigned kh_1(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(p1(x, a)); }
 unsigned kh_2(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(p2(x, a)); }
-unsigned kh_3(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(p3(x, (unsigned short)a)); }
-unsigned kh_6(unsigned x0, double th, unsigned c) { unsigned x = x0; cq_theta(&x, th); return (unsigned)cq_measure(p6(x, c)); }
+unsigned kh_3(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(p3(x, a)); }
+unsigned kh_6(unsigned x0, double th, unsigned c) { unsigned x = x0; cq_theta(&x, th); return cq_measure(p6(x, c)); }
 /* r6 through a classical pointer (its forward table clone; r6 or q6 on m's low bit) */
 __attribute__((noinline)) static unsigned short q6(unsigned x, unsigned m) { return (unsigned short)(x + m); }
 unsigned kh_r6(unsigned x0, double th, unsigned m) {
@@ -111,8 +137,8 @@ unsigned kh_r6(unsigned x0, double th, unsigned m) {
 /* a classical pointer: the forward table clone */
 unsigned kh_cls(unsigned x0, double th, unsigned a, unsigned sel) {
   unsigned x = x0; cq_theta(&x, th);
-  unsigned (*fp)(unsigned, unsigned, unsigned) = (sel & 1) ? t7 : t8;
-  return cq_measure(fp(x, a, 5));
+  unsigned (*fp)(unsigned, unsigned) = (sel & 1) ? t1 : t3;
+  return cq_measure(fp(x, a));
 }
 /* the result read by something other than a measurement: the table clone's twin runs (and the helper's twin in it) */
 unsigned kh_twin(unsigned x0, double th, unsigned a) {
@@ -130,11 +156,11 @@ unsigned kh_after(unsigned x0, double th, unsigned a) {
 }
 /* a second table clone with another K afterwards: g3k (K 3) calls t5 through a pointer, passing its own K 3 (t5 and its
  * helper h5 cut at 3); then a by-name call of h2 from this entry runs at its own K 4 */
-__attribute__((noinline)) unsigned g3k(unsigned x, unsigned char a, unsigned short b) { return p5(x, a) + b; }
+__attribute__((noinline)) unsigned g3k(unsigned x, unsigned a) { return p5(x, a); }
 unsigned kh_seq(unsigned x0, double th, unsigned a) {
   unsigned x = x0; cq_theta(&x, th);
   unsigned r = p1(x, a);
-  unsigned s = g3k(x, (unsigned char)a, 1);
+  unsigned s = g3k(x, a);
   unsigned d = H2D(x, a);
   return cq_measure(r) * 1000000 + cq_measure(s) * 1000 + cq_measure(d);
 }
@@ -143,3 +169,12 @@ unsigned kh_direct(unsigned x0, double th, unsigned a) {
   unsigned x = x0; cq_theta(&x, th);
   return cq_measure(H1D(x, a)) * 1000 + cq_measure(H2D(x, a));
 }
+/* a helper's recursion cut at the received K 2 (own K 4), then the same helper by name from this ordinary entry at 4 */
+unsigned kh_rec(unsigned x0, double th, unsigned a) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned r = p7(x, a);
+  unsigned d = HRD(x >> 3);
+  return cq_measure(r) * 1000 + cq_measure(d);
+}
+/* a helper calling through a pointer passes the K it received (2) to the table clone it reaches (tq, own K 4) */
+unsigned kh_ptr(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(p8(x, a)); }

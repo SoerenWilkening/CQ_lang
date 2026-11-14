@@ -2869,9 +2869,7 @@ static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
 static Value *receivedKOf(LoweringContext &ctx, unsigned K) {
   if (ctx.S.table)
     return spine::shared(ctx).tableK;
-  if (reachedFromTable(ctx))
-    return loadedReceivedK(ctx, K);
-  return nullptr;
+  return exits::receivedKBelow(ctx, K);
 }
 
 void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64_t> B) {
@@ -2900,6 +2898,12 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
 }
 
 namespace exits {
+
+Value *receivedKBelow(LoweringContext &ctx, unsigned K) {
+  if (ctx.S.table || !reachedFromTable(ctx))
+    return nullptr;
+  return loadedReceivedK(ctx, K);
+}
 
 GlobalVariable *receivedKGlobal(Module &M) {
   constexpr const char *name = "__cq_k";

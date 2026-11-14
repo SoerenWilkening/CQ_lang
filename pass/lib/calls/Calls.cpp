@@ -28,6 +28,7 @@
 #include "cq/Calls.h"
 #include "cq/Order.h"
 #include "CallsInternal.h"
+#include "../loops/cutoff/Exits.h"
 
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
@@ -685,6 +686,10 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
     K = ctx.K(*tmp);
     tmp->eraseFromParent();
   }
+  // Owner ruling Q2 (CR 1.4 "Received K", rule 27 "Cutoff"): in a function a table clone reaches by name, the K received
+  // through @__cq_k is passed down, the smaller of it and the callee's own.
+  if (Value *r = loops::exits::receivedKBelow(ctx, K))
+    return r;
   return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), K);
 }
 
@@ -1150,6 +1155,9 @@ Constant *sigString(Module &M, FunctionType *FT) {
 Value *enclosingK(LoweringContext &ctx) {
   if (ctx.S.table)
     return spine::shared(ctx).tableK;
+  // Owner ruling Q2: in a function a table clone reaches by name, umin(@__cq_k, its own K).
+  if (Value *r = loops::exits::receivedKBelow(ctx, ctx.K(*ctx.S.F)))
+    return r;
   return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), ctx.K(*ctx.S.F));
 }
 
@@ -1174,11 +1182,32 @@ void insertActivationCounter(LoweringContext &ctx) {
   LLVMContext &LC = ctx.M.getContext();
   Type *i32 = Type::getInt32Ty(LC);
   GlobalVariable *act = activationCounter(ctx.M, F.getName());
-  Value *K = S.table ? static_cast<Value *>(C.getArg(C.arg_size() - 1)) : ConstantInt::get(i32, ctx.K(F));
+  Value *K = S.table ? static_cast<Value *>(C.getArg(C.arg_size() - 1)) : nullptr;
+  // Owner ruling Q2 (CR 1.4 "Received K"; rule 27 "Cutoff": "quantum-depth recursion is cut at K"): in a function a table
+  // clone reaches by name the cut is at umin(@__cq_k, own K); the load (made for the body's K-loops or here) moves into
+  // the new entry block, ahead of the counter, so it stays the one load on entry.
+  if (!K)
+    if (Value *r = loops::exits::receivedKBelow(ctx, ctx.K(F)))
+      K = r;
   BasicBlock *body = &C.getEntryBlock();
   BasicBlock *entry = BasicBlock::Create(LC, "", &C, body);
   BasicBlock *cut = BasicBlock::Create(LC, "", &C);
   IRBuilder<> B(entry);
+  if (K && !S.table) {
+    GlobalVariable *g = loops::exits::receivedKGlobal(ctx.M);
+    SmallVector<Instruction *, 4> hoist;
+    for (Instruction &I : *body)
+      if (auto *l = dyn_cast<LoadInst>(&I); l && l->getPointerOperand() == g) {
+        hoist.push_back(l);
+        for (User *u : l->users())
+          if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->getIntrinsicID() == Intrinsic::umin && II->getParent() == body)
+            hoist.push_back(II);
+      }
+    for (Instruction *I : hoist)
+      I->moveBefore(*entry, entry->end());
+  }
+  if (!K)
+    K = ConstantInt::get(i32, ctx.K(F));
   Value *d = B.CreateLoad(i32, act);
   B.CreateStore(B.CreateAdd(d, ConstantInt::get(i32, 1)), act);
   B.CreateCondBr(B.CreateICmpULT(d, K), body, cut);
