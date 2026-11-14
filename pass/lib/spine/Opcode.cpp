@@ -584,6 +584,17 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   // formal is the caller's rail, which the caller, with no record of the callee, uncomputes and frees (rule 19).
   Value *target = x.v;
   bool every = !ctx.S.table && spine::measuredOnEveryPath(ctx, call.getArgOperand(0));
+  // cq-qb3n (rules 2, 5): a classical join inside a loop trip (not the header's carried phi) names rails each measured
+  // on some classical paths only (an arm's result, the previous trip's seed, trip 0's initial value), which the trip's
+  // reverse undoes. The join is measured on every path, but its arms are not: the measurement reads a kept copy.
+  if (every)
+    if (auto *jp = dyn_cast<PHINode>(call.getArgOperand(0)); jp && isa<PHINode>(x.v)) {
+      const BasicBlock *jb = jp->getParent();
+      auto &dt = spine::shared(ctx).dt(*jp->getFunction());
+      bool header = any_of(jp->blocks(), [&](const BasicBlock *u) { return dt.dominates(jb, u); });
+      bool cyclic = any_of(successors(jb), [&](const BasicBlock *s) { return isPotentiallyReachable(s, jb, nullptr, &dt); });
+      every = header || !cyclic;
+    }
   if (!every) {
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
     ctx.unc().recordExternal(c, Role::Measured);
