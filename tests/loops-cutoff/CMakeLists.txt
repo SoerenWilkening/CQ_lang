@@ -267,3 +267,11 @@ add_test(NAME loops-cutoff-table-k
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_k=table_k_c.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-lv2ba (CR rules 14, 16): a classically bounded sub-loop with an abort arm behind a classical condition of a K-trip,
+# its counter read after it: a rail on the run path (the sub-loop's only way on is its quantum exit), a |0> seed on the
+# skip path. §6-checked against its C program.
+add_test(NAME loops-cutoff-sub-abort-skip
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/sub_abort_skip.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

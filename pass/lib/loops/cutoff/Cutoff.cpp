@@ -1275,7 +1275,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     // The values on the skip path: a |0> seed per rail field (minted before the branch), 0 per classical one.
     LLVMContext &Cx = ctx.M.getContext();
-    auto skipFields = [&](const Value *v, Type *ty) {
+    auto skipFields = [&](const Value *v, Type *ty, bool rails) {
       SmallVector<Type *, 4> leaves;
       std::function<void(Type *)> walk = [&](Type *t) {
         if (auto *st = dyn_cast<StructType>(t)) {
@@ -1293,7 +1293,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       };
       walk(ty);
       SmallVector<Operand, 4> f;
-      if (!isQ(v)) {
+      if (!rails) {
         f.push_back(Operand{Constant::getNullValue(ty), false});
         return f;
       }
@@ -1307,9 +1307,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     };
     std::vector<SmallVector<Operand, 4>> skipOut, skipPhi;
     for (Instruction *I : outs)
-      skipOut.push_back(skipFields(I, I->getType()));
+      skipOut.push_back(skipFields(I, I->getType(), isQ(I)));
     for (PHINode *P : cBound)
-      skipPhi.push_back(skipFields(P, P->getType()));
+      skipPhi.push_back(skipFields(P, P->getType(), isQ(P)));
     BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out()), *Skip = BasicBlock::Create(Cx, "", &ctx.out()),
                *Join = BasicBlock::Create(Cx, "", &ctx.out());
     // Where S is skipped it took no noreturn arm.
@@ -1319,7 +1319,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       ctx.unc().recordSeed(z);
       noStop = z;
     }
-    ctx.B().CreateCondBr(g, Run, Skip);
+    BranchInst *br = ctx.B().CreateCondBr(g, Run, Skip);
     if (segHook)
       segHook(Run);
     ctx.B().SetInsertPoint(Run);
@@ -1327,10 +1327,31 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     BasicBlock *ran = ctx.B().GetInsertBlock();
     ctx.B().CreateBr(Join);
     BranchInst::Create(Join, Skip);
-    if (segHook) {
+    if (segHook)
       segHook(Skip);
+    // cq-lv2ba: a value classical by taint that the run path binds to a rail (a header phi of S read after S whose only
+    // way on is its quantum exit: its value there is a rail) is a |0> seed per field on the skip path too. Known only
+    // now, so minted where the branch leaves from; in a segment of a classically bounded loop's trip (segHook), in Skip,
+    // a record of the scope its reverse undoes on the skip path only (as the classical-part branch below does).
+    auto railAfterRun = [&](const Value *v, SmallVector<Operand, 4> &skip) {
+      if (skip.size() != 1 || skip.front().handle)
+        return;
+      SmallVector<Operand, 4> run = ctx.fields(v);
+      if (run.empty() || !all_of(run, [](const Operand &o) { return o.handle; }))
+        return;
+      IRBuilderBase::InsertPointGuard keep(ctx.B());
+      if (segHook)
+        ctx.B().SetInsertPoint(Skip->getTerminator());
+      else
+        ctx.B().SetInsertPoint(br);
+      skip = skipFields(v, v->getType(), true);
+    };
+    for (size_t k = 0; k < outs.size(); ++k)
+      railAfterRun(outs[k], skipOut[k]);
+    for (size_t k = 0; k < cBound.size(); ++k)
+      railAfterRun(cBound[k], skipPhi[k]);
+    if (segHook)
       segHook(Join);
-    }
     ctx.B().SetInsertPoint(Join);
     if (subStop && noStop) {
       PHINode *ph = ctx.B().CreatePHI(subStop->getType(), 2);
