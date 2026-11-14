@@ -65,7 +65,10 @@ RULE6 = {"r_b3": [("frozen", "i32"), ("measured", "i32")],
          "r_sub": [("frozen", "i32"), ("measured", "i32")],
          "r_live": [("frozen", "i32"), ("measured", "i32"), ("measured", "i32")],
          "r_fneg": [("frozen", "f64"), ("measured", "f64")],
-         "r_c3": [("frozen", "i32"), ("measured", "i32")]}
+         "r_c3": [("frozen", "i32"), ("measured", "i32")],
+         # owner 2026-11-11 Q4 (cq-padp): a final value read only by an uncomputed flag is not cleaned per trip
+         "r_padp": [("measured", "i32")],
+         "r_opnd": [("frozen", "i32"), ("measured", "i32"), ("rule6_image", "i32")]}
 # cq-fx3s / cq-aqbw: the reverse loop deferred until after the readers of the loop's exit values (no copy-out).
 DEFERRED_PROBE = PROBES / "deferred.O1.ll"
 DEFERRED = {"f_arm": [("frozen", "i32"), ("measured", "i32")],
@@ -222,7 +225,7 @@ def check_kept(probe: Path, lowered: Path, entry: str, want, pick=None) -> str:
         work = Path(tmp)
         lowp = work / f"user_{entry}.lowered.ll"
         lowp.write_text(lowered.read_text())
-        spec, exdir = user.build_spec(probe.read_text(), entry, work, user.handle_cell_params(lowp, entry))
+        spec, exdir = user.build_spec(probe.read_text(), entry, work)
         c_module = next(exdir.glob("*.O1.ll"))
         ss = sampling.sample_set(spec, exdir, exempt_baseline=False)
         pick = pick or (lambda args: int(args[-1], 16) in (2, 3))
@@ -231,7 +234,8 @@ def check_kept(probe: Path, lowered: Path, entry: str, want, pick=None) -> str:
             return "no sample selected"
         hist = collections.Counter()
         for r in run.run_samples(lowp, spec, chosen, "ours", 4, c_module=c_module):
-            hist[tuple(sorted((k.get("role"), k.get("w")) for k in (r.kept or [])))] += 1
+            # a kept row with "n" stands for n rails (cqcheck.kept)
+            hist[tuple(sorted((k.get("role"), k.get("w")) for k in (r.kept or []) for _ in range(k.get("n", 1))))] += 1
         if set(hist) != {tuple(sorted(want))}:
             return "kept rails " + str(dict(hist)) + ", want " + str(sorted(want))
     return ""

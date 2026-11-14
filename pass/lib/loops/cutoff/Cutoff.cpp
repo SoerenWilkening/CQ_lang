@@ -44,8 +44,9 @@
 // start (rule 9). A purely classical condition stays a classical branch in every trip copy (rule 8, cq-jws5r:
 // underClassical; a mixed condition's classical factor too, cq-kbygn: tripEdgeFactored): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
 // on the classical paths that reach it, its effects under the quantum part of its predicate alone. What stays a seed
-// rail (rule 7) is a classical term of a predicate read as data outside such a branch: the chain's exit test, a
-// merge's select condition and a term rule 8 cannot factor out (`c || q`). In a K-loop that is one node of a classically
+// rail (rule 7) is a classical term of a predicate read as data outside such a branch: an exit edge's flag, a
+// merge's select condition and a term rule 8 cannot factor out (`c || q`). The chain's test branches on its classical
+// factor at each test (owner ruling Q10, chainTest). In a K-loop that is one node of a classically
 // bounded loop's trip (cq-kk46l) each block such a branch makes (Run, Skip, Join) is a segment of that loop's walk
 // (segHook): its own Uncompute scope, mirrored by the reverse loop on the path that ran it (come-from), and the skip
 // path's |0> seeds are minted in Skip, a record of the Skip segment. A read after a top-level loop that
@@ -279,7 +280,7 @@ private:
     if (p.isBottom())
       internalError("loops-cutoff: a trip predicate conjoined with false", at);
     // A classical term still in p (underClassical branches on the classical paths and hands the quantum part on;
-    // the chain's exit test and a merge keep theirs) is seeded by pred's flag synthesis from its
+    // an exit edge's flag and a merge keep theirs) is seeded by pred's flag synthesis from its
     // classical value in this trip (rule 7) and joined by and_i1/or_i1, as rule 8 does for a classical term it
     // cannot factor out. The conjunction with the trip predicate is quantum, so the effects under it are the
     // quantum-predicate forms of rules 16 and 19.
@@ -351,19 +352,14 @@ private:
       return std::nullopt;
     return f;
   }
-  // Is br a test of the innermost loop holding it (an edge out of that loop or a back edge to its header)? Rule 14's
-  // chain reads such a test whole: whether its classical conjunct is a branch around the test waits for CQ_spec (Q10).
-  bool loopTest(const BranchInst *br) {
-    const Loop *l = A.LI.getLoopFor(br->getParent());
-    return l && any_of(successors(br->getParent()),
-                       [&](const BasicBlock *s) { return !l->contains(s) || s == l->getHeader(); });
-  }
-  // The condition under which a trip goes from p to its successor b: a br that is no loop test with a factorable mixed
-  // condition is read on its Boolean function, so its classical factor is a classical term of the trip's predicates,
-  // which underClassical makes a real branch (rule 8); every other edge is tripEdge's.
+  // The condition under which a trip goes from p to its successor b: a br with a factorable mixed condition is read on
+  // its Boolean function, so its classical factor is a classical term of the trip's predicates, which underClassical
+  // makes a real branch (rule 8); every other edge is tripEdge's. A loop test too (owner ruling Q10, 2026-11-11; CR rule
+  // 14: "A classical conjunct `C` of the exit test (`while (c && q)`) is a classical branch AT EACH TEST (rule 8)"): the
+  // chain's test (chainTest in lowerLoop) branches on the classical factor of the predicate of going on.
   Pred tripEdgeFactored(const BasicBlock *p, const BasicBlock *b) {
     auto *br = dyn_cast<BranchInst>(p->getTerminator());
-    if (!br || loopTest(br))
+    if (!br)
       return tripEdge(p, b);
     std::optional<Pred> f = factoredCond(br);
     if (!f)
@@ -371,7 +367,7 @@ private:
     return br->getSuccessor(0) == b ? *f : !*f;
   }
   // Is the quantum i1 I read whole by a br of the unit (an atom of its trip predicates, computed as data)?
-  bool readWhole(const BranchInst *br) { return loopTest(br) || !factoredCond(br); }
+  bool readWhole(const BranchInst *br) { return !factoredCond(br); }
   // The classical part of tripEdge as a classical i1 of the current trip: a quantum condition counts
   // as true. A classical phi's incoming edge is chosen by classical conditions alone (taint: a phi
   // whose choice depends on a quantum condition is quantum), so among edges whose classical part
@@ -492,7 +488,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     checkTerminator(t);
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional() && !isQ(br->getCondition()))
       classicalTerms = true;
-    if (auto *br = dyn_cast<BranchInst>(t); br && !loopTest(br) && factoredCond(br))
+    if (auto *br = dyn_cast<BranchInst>(t); br && factoredCond(br))
       classicalTerms = true;   // cq-kbygn: a mixed condition's classical factor
     if (auto *sw = dyn_cast<SwitchInst>(t); sw && !isQ(sw->getCondition()))
       classicalTerms = true;
@@ -2236,6 +2232,243 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (BasicBlock *b : U.arm)
       forget(b);
   };
+
+  // Owner ruling Q10 (2026-11-11), CR rule 14: "A classical conjunct `C` of the exit test (`while (c && q)`) is a
+  // classical branch AT EACH TEST (rule 8): where `C` is false the chain ends there, `a_j` is a `|0>` seed through a
+  // classical `phi` of handles and no later trip is emitted; where it is true `a_j = a_{j-1} & Q_j`." A test of the
+  // chain is the predicate `go` of going on to the next trip's body (cont, regionCont: the trip's own predicates, over
+  // the factored edges of tripEdgeFactored), so C is go's classical factor and Q its quantum part (go = C & Q, rule 8),
+  // C read from this trip's classical values. With C true the chain goes on in the branch: every later trip and test
+  // is lowered inside it, and the branches are closed after the last trip (closeTests), innermost first. At each join
+  // everything the trips after the test changed is a classical phi of handles: the chain's end (a |0> seed where the
+  // test ended it), the carried state and the values of the unit read after it (the state at the test where it ended,
+  // the general capture's and the exit rails' accumulators, the noreturn arms' stop rail). A test with no classical
+  // factor is conj as before.
+  struct Snap {
+    std::vector<std::optional<SmallVector<Operand, 4>>> vals;   // per tracked value
+    Value *stop = nullptr, *armK = nullptr;
+    std::vector<std::optional<Operand>> exitR, qindR;            // per header phi
+    std::vector<SmallVector<Operand, 2>> xacc;
+    std::vector<Operand> cphi;
+  };
+  struct OpenTest {
+    BranchInst *br;
+    BasicBlock *Skip, *Join;
+    Snap snap;
+  };
+  std::vector<OpenTest> openTests;
+  // The values whose binding a later trip may change and that something after the loop may read: the header phis, the
+  // continuation's phis, and every value of the unit with a user outside it. In the loop's block order (deterministic).
+  std::vector<const Value *> tracked;
+  {
+    SmallPtrSet<const BasicBlock *, 32> unitSet(L.block_begin(), L.block_end());
+    unitSet.insert(U.arm.begin(), U.arm.end());
+    unitSet.insert(U.abort.begin(), U.abort.end());
+    SmallPtrSet<const Value *, 32> seen;
+    auto visit = [&](BasicBlock *b) {
+      for (Instruction &I : *b) {
+        if (I.getType()->isVoidTy())
+          continue;
+        bool out = (isa<PHINode>(I) && b == H) || any_of(I.users(), [&](const User *u) {
+                     auto *ui = cast<Instruction>(u);
+                     return !unitSet.count(ui->getParent());
+                   });
+        if (out && seen.insert(&I).second)
+          tracked.push_back(&I);
+      }
+    };
+    for (BasicBlock *b : L.blocks())
+      visit(b);
+    for (BasicBlock *b : U.arm)
+      visit(b);
+    for (BasicBlock *b : U.abort)
+      visit(b);
+    if (U.cont)
+      for (PHINode &P : U.cont->phis())
+        if (seen.insert(&P).second)
+          tracked.push_back(&P);
+  }
+  auto takeSnap = [&]() {
+    Snap s;
+    for (const Value *v : tracked)
+      s.vals.push_back(ctx.bound(v) ? std::optional<SmallVector<Operand, 4>>(ctx.fields(v)) : std::nullopt);
+    s.stop = stopAcc;
+    s.armK = armKept;
+    for (PHINode *h : hphis) {
+      auto e = exitRail.find(h);
+      s.exitR.push_back(e != exitRail.end() ? std::optional<Operand>(e->second) : std::nullopt);
+      auto qi = qind.find(h);
+      s.qindR.push_back(qi != qind.end() ? qi->second.exitRail : std::nullopt);
+    }
+    for (XAcc &xa : xaccs)
+      s.xacc.push_back(xa.acc);
+    for (CPhi &cp : cphis)
+      s.cphi.push_back(cp.acc);
+    return s;
+  };
+  // The test: go is the predicate of going on (non-bottom). `between` runs after C and Q's flag are read and before the
+  // branch (the body form's advance: a test reads its trip's values, the state then advances on both paths).
+  auto chainTest = [&](Value *q, const Pred &go, const Instruction *tat, const std::function<void()> &between) -> Value * {
+    Pred C = go.isBottom() ? Pred::top() : go.classicalFactor(ctx.T, ctx.S);
+    if (C.isTop()) {
+      Value *qn = conj(q, go, tat);
+      between();
+      return qn;
+    }
+    LLVMContext &Cx = ctx.M.getContext();
+    Pred Q = go.quantumPart(ctx.T, ctx.S);
+    Value *g = classicalValue(ctx, C);
+    Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q);
+    between();
+    if (auto *k = dyn_cast<ConstantInt>(g); k && k->isOne())
+      return fQ ? andRail(q, fQ) : q;
+    OpenTest o;
+    o.snap = takeSnap();
+    BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
+    o.Skip = BasicBlock::Create(Cx, "", &ctx.out());
+    o.Join = BasicBlock::Create(Cx, "", &ctx.out());
+    o.br = ctx.B().CreateCondBr(g, Run, o.Skip);
+    BranchInst::Create(o.Join, o.Skip);
+    ctx.unc().noteClassicalArm(o.Join, o.Skip);
+    openTests.push_back(std::move(o));
+    if (segHook)
+      segHook(Run);
+    ctx.B().SetInsertPoint(Run);
+    return fQ ? andRail(q, fQ) : q;
+  };
+  // Closes the open tests, innermost first; q is the chain's last predicate in the innermost branch. Returns the merged
+  // chain end.
+  auto closeTests = [&](Value *q) -> Value * {
+    LLVMContext &Cx = ctx.M.getContext();
+    RailType i1{Kind::Int, 1};
+    auto zero = [&](RailType w) -> Value * {
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(Cx, w))});
+      ctx.unc().recordSeed(z);
+      return z;
+    };
+    while (!openTests.empty()) {
+      OpenTest o = std::move(openTests.back());
+      openTests.pop_back();
+      Snap now = takeSnap();
+      // One merged field: (run side, skip side), each a handle or a classical value.
+      struct F {
+        Operand run, skip;
+        bool zeroSkip = false;   // the skip side is a |0> seed of rail type w, minted on the skip path
+        RailType w{};
+      };
+      auto fieldsDiffer = [](const Operand &a, const Operand &b) { return a.v != b.v || a.handle != b.handle; };
+      // A rail on the run side and a classical value on the skip side (or the reverse): the classical side is a seed
+      // rail of its value (rule 7), minted on its own path.
+      std::vector<std::pair<size_t, SmallVector<F, 4>>> vals;   // tracked index -> fields
+      for (size_t k = 0; k < tracked.size(); ++k) {
+        const auto &b = o.snap.vals[k], &n = now.vals[k];
+        if (!n)
+          continue;
+        if (!b) {
+          // Bound only by the trips after the test: nothing reads it where the test ended the chain.
+          spine::shared(ctx).binds.erase(tracked[k]);
+          continue;
+        }
+        if (b->size() != n->size())
+          internalError("loops-cutoff: a value of a K-loop with a different number of fields after a classical exit "
+                        "test",
+                        tracked[k]);
+        bool diff = false;
+        for (size_t f = 0; f < n->size(); ++f)
+          diff |= fieldsDiffer((*n)[f], (*b)[f]);
+        if (!diff)
+          continue;
+        SmallVector<F, 4> fs;
+        for (size_t f = 0; f < n->size(); ++f)
+          fs.push_back(F{(*n)[f], (*b)[f]});
+        vals.push_back({k, std::move(fs)});
+      }
+      // The run side's seeds for a classical run value against a skip rail, at the end of the branch.
+      auto seedOf = [&](Operand &x) {
+        Type *t = x.v->getType();
+        if (t->isPointerTy())
+          x = Operand{seedRail(ctx.B().CreatePtrToInt(x.v, ctx.B().getInt64Ty()), ctx.B().getInt64Ty()), true};
+        else
+          x = Operand{seedRail(x.v, t), true};
+      };
+      for (auto &[k, fs] : vals)
+        for (F &f : fs)
+          if (!f.run.handle && f.skip.handle)
+            seedOf(f.run);
+      std::vector<std::pair<Operand, Operand>> exitF, qindF, xaccF, cphiF;   // (run, skip)
+      std::vector<std::pair<size_t, size_t>> exitAt, qindAt, xaccAt;          // (index, field)
+      for (size_t i = 0; i < hphis.size(); ++i) {
+        if (now.exitR[i] && o.snap.exitR[i] && fieldsDiffer(*now.exitR[i], *o.snap.exitR[i])) {
+          exitF.push_back({*now.exitR[i], *o.snap.exitR[i]});
+          exitAt.push_back({i, 0});
+        }
+        if (now.qindR[i] && o.snap.qindR[i] && now.qindR[i]->v && o.snap.qindR[i]->v &&
+            fieldsDiffer(*now.qindR[i], *o.snap.qindR[i])) {
+          qindF.push_back({*now.qindR[i], *o.snap.qindR[i]});
+          qindAt.push_back({i, 0});
+        }
+      }
+      for (size_t i = 0; i < xaccs.size(); ++i)
+        for (size_t f = 0; f < now.xacc[i].size() && f < o.snap.xacc[i].size(); ++f)
+          if (fieldsDiffer(now.xacc[i][f], o.snap.xacc[i][f])) {
+            xaccF.push_back({now.xacc[i][f], o.snap.xacc[i][f]});
+            xaccAt.push_back({i, f});
+          }
+      for (size_t i = 0; i < cphis.size(); ++i)
+        cphiF.push_back({now.cphi[i], o.snap.cphi[i]});
+      BasicBlock *ran = ctx.B().GetInsertBlock();
+      ctx.B().CreateBr(o.Join);
+      // The skip path's values, minted where the branch leaves from (in a segment of a classically bounded loop's trip,
+      // segHook: in Skip), as underClassical does.
+      if (segHook) {
+        segHook(o.Skip);
+        ctx.B().SetInsertPoint(o.Skip->getTerminator());
+      } else {
+        ctx.B().SetInsertPoint(o.br);
+      }
+      Value *qSkip = zero(i1);   // a_j where the test ended the chain
+      Value *stopSkip = now.stop && now.stop != o.snap.stop ? (o.snap.stop ? o.snap.stop : zero(i1)) : nullptr;
+      Value *armSkip = now.armK && now.armK != o.snap.armK ? (o.snap.armK ? o.snap.armK : zero(i1)) : nullptr;
+      for (auto &[k, fs] : vals)
+        for (F &f : fs)
+          if (f.run.handle && !f.skip.handle)
+            seedOf(f.skip);
+      if (segHook)
+        segHook(o.Join);
+      ctx.B().SetInsertPoint(o.Join);
+      auto phiOf = [&](const Operand &run, const Operand &skip) -> Operand {
+        if (!fieldsDiffer(run, skip))
+          return run;
+        PHINode *ph = ctx.B().CreatePHI(run.v->getType(), 2);
+        ph->addIncoming(run.v, ran);
+        ph->addIncoming(skip.v, o.Skip);
+        if (run.handle && ctx.unc().recorded(run.v) && ctx.unc().recorded(skip.v))
+          ctx.unc().recordMerge(ph);
+        return Operand{ph, run.handle};
+      };
+      q = phiOf(Operand{q, true}, Operand{qSkip, true}).v;
+      if (stopSkip)
+        stopAcc = phiOf(Operand{now.stop, true}, Operand{stopSkip, true}).v;
+      if (armSkip)
+        armKept = phiOf(Operand{now.armK, true}, Operand{armSkip, true}).v;
+      for (auto &[k, fs] : vals) {
+        SmallVector<Operand, 4> out;
+        for (F &f : fs)
+          out.push_back(phiOf(f.run, f.skip));
+        ctx.rebind(tracked[k], out);
+      }
+      for (size_t i = 0; i < exitF.size(); ++i)
+        exitRail[hphis[exitAt[i].first]] = phiOf(exitF[i].first, exitF[i].second);
+      for (size_t i = 0; i < qindF.size(); ++i)
+        qind.find(hphis[qindAt[i].first])->second.exitRail = phiOf(qindF[i].first, qindF[i].second);
+      for (size_t i = 0; i < xaccF.size(); ++i)
+        xaccs[xaccAt[i].first].acc[xaccAt[i].second] = phiOf(xaccF[i].first, xaccF[i].second);
+      for (size_t i = 0; i < cphiF.size(); ++i)
+        cphis[i].acc = phiOf(cphiF[i].first, cphiF[i].second);
+    }
+    return q;
+  };
+
   if (regionForm) {
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
@@ -2244,11 +2477,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     bool bodyExits = multi && any_of(exiting, [&](BasicBlock *e) {
                        return !region.count(e) && any_of(successors(e), liveEdge);
                      });
+    auto none = [] {};
     lowerBlocks(q, inRegion);
     abortArms(q, inRegion);
     if (multi)
       capture(q, inRegion);
-    q = conj(q, regionCont, at);
+    q = chainTest(q, regionCont, at, none);
     for (unsigned j = 0; j < c; ++j) {
       if (j)
         forgetLastTrip();
@@ -2256,8 +2490,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       abortArms(q, inBody);
       if (multi)
         capture(q, inBody);
-      Value *qb = bodyExits ? conj(q, cont, latch->getTerminator()) : q;
-      advance(q);
+      Value *qb = bodyExits ? chainTest(q, cont, latch->getTerminator(), [&] { advance(q); }) : (advance(q), q);
       // Rule 14 with two exit tests per trip (189, ruling Q15): a_K is the predicate after the K-th latch test; no
       // header test of a (K+1)-th trip is made.
       if (bodyExits && j + 1 == c) {
@@ -2268,7 +2501,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       abortArms(qb, inRegion);
       if (multi)
         capture(qb, inRegion);
-      q = conj(qb, regionCont, at);
+      q = chainTest(qb, regionCont, at, none);
     }
   } else {
     auto all = [](const BasicBlock *) { return true; };
@@ -2281,11 +2514,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         capture(q, all);
       // With no exit edge at all (CR rule 14 "No live exit": every path of a trip takes a back edge) the
       // predicate stays q: every trip runs where the loop runs.
-      Value *qn = conj(q, cont, latch->getTerminator());
-      advance(q);
-      q = qn;
+      q = chainTest(q, cont, latch->getTerminator(), [&] { advance(q); });
     }
   }
+  q = closeTests(q);
   if (q == seed) {
     // CR rule 14 "No live exit": a loop with no exit edge runs K trips and then abort_i1 on its seed (the
     // program's continuation is unreachable). The flag is a copy of the seed, kept (rule 16, 45).

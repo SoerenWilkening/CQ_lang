@@ -190,6 +190,15 @@ add_test(NAME loops-cutoff-trip-factor
           --br-in pa_mixed=4 --br-in pb_nested=8
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_factor.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-kbygn exit-test part (owner ruling Q10; CR rule 14): the classical conjunct of a K-loop's exit test is a `br` at each
+# of the K tests (the chain ends where it is false, no later trip), for `while (c && q)`, `do ... while (c && q)` and a c
+# that changes in the loop. Each entry §6-checked against its C program; the mutant without test 0's br is rejected.
+add_test(NAME loops-cutoff-exit-conjunct
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          --br-in ec_while=8 --br-in ec_do=8 --br-in ec_vary=8
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_conjunct.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-7jd1z (CR rules 8, 9, 13 with rule 14): a quantum switch's case atom carried to a classical join is a phi in the
 # scrutinee's own type (musl wcsrtombs: the exit hub of a K-loop behind a classical bound test); switches in a K-trip on
 # a narrowed and a widened scrutinee, a default arm, two cases sharing a successor. Each entry §6-checked.
