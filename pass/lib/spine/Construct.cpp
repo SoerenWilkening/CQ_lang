@@ -2797,6 +2797,18 @@ const Value *registerMintSite(LoweringContext &ctx, Value *rail) {
       bestPos = p->second;
     }
   }
+  // cq-8plep: a register no original value is bound to any more (a rail minted in one trip of a rule-14 K-loop: the
+  // trip's values are rebound by the next trip and by the exit) has its mint site where its first non-diagonal gate was
+  // emitted (Shared::gateAt), the original instruction being lowered then. The K trips' registers share that site.
+  if (!best)
+    if (auto rt = sh.rotations.find(rail); rt != sh.rotations.end())
+      for (CallInst *g : rt->second)
+        if (auto ga = sh.gateAt.find(g); ga != sh.gateAt.end())
+          for (const Instruction *at : ga->second)
+            if (auto p = pos.find(at); p != pos.end() && p->second < bestPos) {
+              best = at;
+              bestPos = p->second;
+            }
   if (!best)
     internalError("spine: a live register bound to no original value of its function (rule 19 mint site)",
                   dyn_cast<Instruction>(rail));
