@@ -217,6 +217,19 @@ entry:
   ret i32 %r
 }
 
+; cq-fqlf (rule 23, principle 1): a call of an environment body with classical data while FLAGS holds is never the own
+; symbol; the classical root @peek_root stays classical.
+define i32 @peek_root(i32 %m) {
+  %t = call i32 @fetestexcept(i32 %m)
+  ret i32 %t
+}
+define i32 @calls_peek(double %x0, double %th, double %c) {
+  %x = call double @cq_theta_f64(double %x0, double %th)
+  %y = call double @llvm.experimental.constrained.fmul.f64(double %x, double %c, metadata !"round.dynamic", metadata !"fpexcept.strict")
+  %p = call i32 @peek_root(i32 32)
+  ret i32 %p
+}
+
 declare double @cq_theta_f64(double, double)
 declare i32 @cq_theta_ui32(i32, double)
 declare i32 @fetestexcept(i32)
@@ -283,6 +296,8 @@ int main() {
   expect("call_under_pred", {{"g", true}});
   expect("env_objects", {{"t0", false}, {"t1", true}, {"t2", false}});
   expect("flag_objects", {{"t0", false}, {"t1", true}});
+  expect("peek_root", {{"t", false}});
+  expect("calls_peek", {{"p", true}});
   outs() << "taint_fenv: " << (checks - failures) << "/" << checks << " checks pass\n";
   return failures ? 1 : 0;
 }
