@@ -1960,7 +1960,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   // from the bus as the new flags rail and mode, and copies the object for its host call (bus stores).
   auto kindOf = [](Value *ptr) { return fenvObjectKindOf(ptr); };
   auto savedIn = [&](Value *ptr) {
-    auto it = st.fenvSaved.find(ptr);
+    auto it = st.fenvSaved.find({cur, ptr});
     return it == st.fenvSaved.end() ? uint8_t(0) : it->second;
   };
   auto saveTo = [&](Value *ptr, uint8_t bits) {
@@ -1971,7 +1971,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
       }
       return;
     }
-    uint8_t &x = st.fenvSaved[ptr];
+    uint8_t &x = st.fenvSaved[{cur, ptr}];
     if ((x | bits) != x) {
       x |= bits;
       st.changed = true;
@@ -2003,11 +2003,11 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   } else if (cname == "fetestexcept") {
     resQ = q || (now & 2);
   } else if (cname == "fegetexceptflag") {
-    saveTo(actuals[0], (now & 2) | (q ? 2 : 0));
+    saveTo(actuals[0], (now & 2) | (rail ? 2 : 0));
   } else if (cname == "fesetexceptflag") {
     fenvAssign(1, restoreMemory(actuals[0]) || rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
   } else if (cname == "fegetenv" || cname == "feholdexcept") {
-    saveTo(actuals[0], now | (q ? 3 : 0));
+    saveTo(actuals[0], now | (rail ? 3 : 0));
     if (cname == "feholdexcept")
       fenvAssign(1, bit(rail));
   } else if (cname == "fesetenv" || cname == "feupdateenv") {

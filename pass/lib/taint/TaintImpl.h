@@ -184,8 +184,9 @@ struct ImplState {
   llvm::DenseSet<const llvm::Function *> calledAfter;
   bool moduleHasEvent = false;
   // Rule 23: the concrete environment facts saved into each fenv_t / fexcept_t object (fegetenv,
-  // feholdexcept, fegetexceptflag), joined over every save; an object never saved holds none.
-  std::map<const llvm::Value *, uint8_t> fenvSaved;   // key: the alloca or constant; nullptr: any other object
+  // feholdexcept, fegetexceptflag), joined over every save of the same specialization; an object never saved holds
+  // none. Per specialization (cq-1bbg): a clone's quantum save never reaches the own symbol's object (principle 1).
+  std::map<std::pair<const SpecState *, const llvm::Value *>, uint8_t> fenvSaved;   // key: the spec and the alloca
   // Published result.
   std::vector<Specialization> published;
   std::vector<SpecState *> publishedState;
