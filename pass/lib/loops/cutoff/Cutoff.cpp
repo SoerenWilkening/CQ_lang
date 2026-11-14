@@ -167,6 +167,10 @@ public:
   // nullptr. Every K-loop of the clone, nested ones included, is cut at it (lowerLoop's kCut).
   Value *receivedK = nullptr;
   Value *stopRail() const { return stopped; }   // the last lowerLoop's XOR of its noreturn arms' flags
+  // Owner ruling Q10 (CR rule 14, rule 8): the classical conjunct of the next lowerLoop's trip-0 test (its pre-header
+  // guard) that its caller did not branch on, or nullptr. lowerLoop opens a test on it before trip 0 (closeTests joins
+  // it like the later tests); taken by that call alone, not by the K-loops nested in its trips.
+  Value *test0 = nullptr;
 
 private:
   LoweringContext &ctx;
@@ -440,6 +444,8 @@ private:
 };
 
 void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
+  Value *t0 = test0;
+  test0 = nullptr;
   BasicBlock *H = L.getHeader();
   // The latches (rule 14: a `continue` is one more back edge of the same chain). A trip ends on one
   // back edge or one exit edge; `latch` is the latch the body form's exits leave from (the one live
@@ -1073,8 +1079,25 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // only when its final value is read after the loop.
   DenseSet<const PHINode *> six;
   DenseSet<const Value *> sixSeeds;   // a seed as trip 0's old rail is freed directly, not cleaned (rule 6, rule 7)
+  // Q10's classical exit tests split the chain like a received-K cut, but each test is a classical branch whose two
+  // paths are known: per rail of the chain, the number of tests open where it was made; a clean-up whose trip lies
+  // behind a later test is registered after closeTests under that test's "went on" flag (sixGuard).
+  DenseMap<const Value *, size_t> sixDepth;
+  struct SixLater {
+    RailId old;
+    abi::TemplateSpec inverse;
+    SmallVector<Operand, 3> ops;
+    size_t test;   // the index of the test the clean-up's trip lies behind
+    // The old rail was made from a seed (trip 0): no clean-up reads it as an image, so where the test ended the chain
+    // it is no register of rule 6 but garbage, undone by its own item (rule 5) after the readers after the loop.
+    bool plainElse;
+  };
+  DenseSet<const Value *> seedBorn;
+  std::vector<SixLater> sixLater;
   // cq-9kcq: not in a loop a received-K cut may end after any trip (kCut): there trip j's old rail is the final register
-  // on the cut path and cleaned by trip j+1 on the other; the chain stays garbage, undone by the spine (149's s).
+  // on the cut path and cleaned by trip j+1 on the other; the chain stays garbage, undone by the spine (149's s). Owner
+  // ruling Q10's classical exit tests split the chain too, but at a classical branch whose join is closeTests': there the
+  // old rail is cleaned under the test's "went on" flag (sixLater) and is the final register where the test ended it.
   if (top && !multi && latches.size() == 1 && !(receivedK && c > 1)) {
     DominatorTree &DT = spine::shared(ctx).dt(*H->getParent());
     BasicBlock *pre = L.getLoopPredecessor();
@@ -2134,6 +2157,31 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     RailType w = railOf(h->getType());
     return Operand{selectChain(ctx, arms, w), true};
   };
+  // Owner ruling Q10 (2026-11-11), CR rule 14: "A classical conjunct `C` of the exit test (`while (c && q)`) is a
+  // classical branch AT EACH TEST (rule 8): where `C` is false the chain ends there, `a_j` is a `|0>` seed through a
+  // classical `phi` of handles and no later trip is emitted; where it is true `a_j = a_{j-1} & Q_j`." A test of the
+  // chain is the predicate `go` of going on to the next trip's body (cont, regionCont: the trip's own predicates, over
+  // the factored edges of tripEdgeFactored), so C is go's classical factor and Q its quantum part (go = C & Q, rule 8),
+  // C read from this trip's classical values. With C true the chain goes on in the branch: every later trip and test
+  // is lowered inside it, and the branches are closed after the last trip (closeTests), innermost first. At each join
+  // everything the trips after the test changed is a classical phi of handles: the chain's end (a |0> seed where the
+  // test ended it), the carried state and the values of the unit read after it (the state at the test where it ended,
+  // the general capture's and the exit rails' accumulators, the noreturn arms' stop rail). A test with no classical
+  // factor is conj as before.
+  struct Snap {
+    std::vector<std::optional<SmallVector<Operand, 4>>> vals;   // per tracked value
+    Value *stop = nullptr, *armK = nullptr;
+    std::vector<std::optional<Operand>> exitR, qindR;            // per header phi
+    std::vector<SmallVector<Operand, 2>> xacc;
+    std::vector<Operand> cphi;
+  };
+  struct OpenTest {
+    BranchInst *br;
+    BasicBlock *Skip, *Join;
+    Snap snap;
+    Value *cut = nullptr;   // a received-K cut (kCut): the chain's predicate at the test, a_K where the branch skips
+  };
+  std::vector<OpenTest> openTests;
   auto advance = [&](Value *q) {
     // This trip's state: a rule-6 inverse reads the trip's operands, and the loop below advances them one by one.
     DenseMap<const Value *, Operand> tripState;
@@ -2203,8 +2251,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         // t = q ? U^-1(y') : y'. The arm's U^-1(y') is garbage the clean-up reads, noted as a use of the old rail so the
         // clean-up follows it; U itself is uncomputed first (its _unc reads the old rail).
         ctx.unc().setRole(ctx.unc().idOf(sel), Role::UserRegister);
-        if (sixSeeds.count(cur.v))
+        size_t made = sixDepth.lookup(cur.v);
+        sixDepth[sel] = openTests.size();
+        if (sixSeeds.count(cur.v)) {
+          seedBorn.insert(sel);
           continue;
+        }
         RailId old = ctx.unc().idOf(cur.v);
         auto *Up = cast<Instruction>(h->getIncomingValueForBlock(latch));
         auto inv = spine::inverseStep(
@@ -2219,7 +2271,18 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         abi::TemplateSpec ss;
         ss.op = "select";
         ss.w = railOf(h->getType());
-        ctx.unc().cleanupBijective(old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}});
+        if (openTests.size() > made) {
+          // A classical exit test (Q10) lies between the old rail and this trip: where it ended the chain the old rail
+          // is the final register, kept; where it went on (this trip ran) it is cleaned here. The clean-up is made
+          // under that test's "went on" flag once the tests are closed (sixLater); its image waits for it (pin).
+          if (openTests.size() != made + 1)
+            internalError("loops-cutoff: rule 6 clean-up across more than one classical exit test", h);
+          ctx.unc().pin(ctx.unc().idOf(inner));
+          sixLater.push_back(
+              {old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}}, made, seedBorn.count(cur.v) != 0});
+        } else {
+          ctx.unc().cleanupBijective(old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}});
+        }
       }
     }
   };
@@ -2241,31 +2304,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       forget(b);
   };
 
-  // Owner ruling Q10 (2026-11-11), CR rule 14: "A classical conjunct `C` of the exit test (`while (c && q)`) is a
-  // classical branch AT EACH TEST (rule 8): where `C` is false the chain ends there, `a_j` is a `|0>` seed through a
-  // classical `phi` of handles and no later trip is emitted; where it is true `a_j = a_{j-1} & Q_j`." A test of the
-  // chain is the predicate `go` of going on to the next trip's body (cont, regionCont: the trip's own predicates, over
-  // the factored edges of tripEdgeFactored), so C is go's classical factor and Q its quantum part (go = C & Q, rule 8),
-  // C read from this trip's classical values. With C true the chain goes on in the branch: every later trip and test
-  // is lowered inside it, and the branches are closed after the last trip (closeTests), innermost first. At each join
-  // everything the trips after the test changed is a classical phi of handles: the chain's end (a |0> seed where the
-  // test ended it), the carried state and the values of the unit read after it (the state at the test where it ended,
-  // the general capture's and the exit rails' accumulators, the noreturn arms' stop rail). A test with no classical
-  // factor is conj as before.
-  struct Snap {
-    std::vector<std::optional<SmallVector<Operand, 4>>> vals;   // per tracked value
-    Value *stop = nullptr, *armK = nullptr;
-    std::vector<std::optional<Operand>> exitR, qindR;            // per header phi
-    std::vector<SmallVector<Operand, 2>> xacc;
-    std::vector<Operand> cphi;
-  };
-  struct OpenTest {
-    BranchInst *br;
-    BasicBlock *Skip, *Join;
-    Snap snap;
-    Value *cut = nullptr;   // a received-K cut (kCut): the chain's predicate at the test, a_K where the branch skips
-  };
-  std::vector<OpenTest> openTests;
   // The values whose binding a later trip may change and that something after the loop may read: the header phis, the
   // continuation's phis, and every value of the unit with a user outside it. In the loop's block order (deterministic).
   std::vector<const Value *> tracked;
@@ -2347,6 +2385,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   };
   // Closes the open tests, innermost first; q is the chain's last predicate in the innermost branch. Returns the merged
   // chain end.
+  std::vector<std::pair<size_t, Value *>> sixGuard;   // test index -> its "went on" flag at the current join
+  SmallPtrSet<PHINode *, 8> chainPhis;                  // closeTests' phis of the chain's end
   auto closeTests = [&](Value *q) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
     RailType i1{Kind::Int, 1};
@@ -2459,6 +2499,23 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (segHook)
         segHook(o.Join);
       ctx.B().SetInsertPoint(o.Join);
+      // Rule 6 across the tests (sixLater): "the test at index t went on", a classical i1 that holds after every join
+      // (false on each skip path from that test outwards).
+      {
+        size_t t = openTests.size();
+        for (auto &[k, g] : sixGuard) {
+          PHINode *ph = ctx.B().CreatePHI(Type::getInt1Ty(Cx), 2);
+          ph->addIncoming(g, ran);
+          ph->addIncoming(ConstantInt::getFalse(Cx), o.Skip);
+          g = ph;
+        }
+        if (any_of(sixLater, [&](const SixLater &e) { return e.test == t; })) {
+          PHINode *ph = ctx.B().CreatePHI(Type::getInt1Ty(Cx), 2);
+          ph->addIncoming(ConstantInt::getTrue(Cx), ran);
+          ph->addIncoming(ConstantInt::getFalse(Cx), o.Skip);
+          sixGuard.push_back({t, ph});
+        }
+      }
       auto phiOf = [&](const Operand &run, const Operand &skip) -> Operand {
         if (!fieldsDiffer(run, skip))
           return run;
@@ -2470,6 +2527,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         return Operand{ph, run.handle};
       };
       q = phiOf(Operand{q, true}, Operand{qSkip, true}).v;
+      if (auto *ph = dyn_cast<PHINode>(q))
+        chainPhis.insert(ph);
       if (stopSkip)
         stopAcc = phiOf(Operand{now.stop, true}, Operand{stopSkip, true}).v;
       if (armSkip)
@@ -2520,6 +2579,25 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.B().SetInsertPoint(Run);
   };
 
+  if (t0) {
+    // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
+    // seed through closeTests' phi, the state its initial value) and no trip is emitted.
+    if (auto *k = dyn_cast<ConstantInt>(t0); !(k && k->isOne())) {
+      OpenTest o;
+      o.snap = takeSnap();
+      LLVMContext &Cx = ctx.M.getContext();
+      BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
+      o.Skip = BasicBlock::Create(Cx, "", &ctx.out());
+      o.Join = BasicBlock::Create(Cx, "", &ctx.out());
+      o.br = ctx.B().CreateCondBr(t0, Run, o.Skip);
+      BranchInst::Create(o.Join, o.Skip);
+      ctx.unc().noteClassicalArm(o.Join, o.Skip);
+      openTests.push_back(std::move(o));
+      if (segHook)
+        segHook(Run);
+      ctx.B().SetInsertPoint(Run);
+    }
+  }
   if (regionForm) {
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
@@ -2574,6 +2652,18 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
   }
   q = closeTests(q);
+  for (SixLater &e : sixLater) {
+    Value *g = nullptr;
+    for (auto &[k, v] : sixGuard)
+      if (k == e.test)
+        g = v;
+    if (!g)
+      internalError("loops-cutoff: a rule 6 clean-up behind a classical exit test that was never closed", at);
+    ctx.unc().unpin(ctx.unc().idOf(e.ops[1].v));
+    if (e.plainElse)
+      ctx.unc().setRole(e.old, Role::Garbage);
+    ctx.unc().cleanupBijectiveUnder(e.old, g, e.inverse, e.ops, /*everyPath=*/false);
+  }
   if (q == seed) {
     // CR rule 14 "No live exit": a loop with no exit edge runs K trips and then abort_i1 on its seed (the
     // program's continuation is unreachable). The flag is a copy of the seed, kept (rule 16, 45).
@@ -2590,7 +2680,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   } else if (keep || cutMade) {
     // With a received-K cut a_K is kept also where c = B (min(K_received, B) may be below B); the full chain's end then
     // reads 0 (no leak, a known basis state).
-    ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
+    if (segHook && chainPhis.count(dyn_cast<PHINode>(q))) {
+      // In a classically bounded loop's trip the reverse loop mirrors each segment's records whatever merge keeps them:
+      // the chain's end through the tests' joins is kept arm by arm. Each arm exists on its own path only (the chain's
+      // last predicate in the innermost Run, a |0> seed or a_K's copy in each Skip), so where it exists it is a_K.
+      std::function<void(Value *)> keepArms = [&](Value *v) {
+        if (auto *ph = dyn_cast<PHINode>(v); ph && chainPhis.count(ph)) {
+          for (Value *in : ph->incoming_values())
+            keepArms(in);
+          return;
+        }
+        ctx.unc().setRole(ctx.unc().idOf(v), Role::KeptOverflow);
+      };
+      keepArms(q);
+    } else {
+      ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
+    }
   }
   if (armKept)
     ctx.unc().setRole(ctx.unc().idOf(armKept), Role::KeptOverflow);
@@ -2607,8 +2712,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto it = exitRail.find(h);
     return it != exitRail.end() ? it->second : ctx.operand(h);
   };
-  for (auto &[v, h] : exitRebinds)
-    ctx.rebind(v, {exitOf(h)});
+  for (auto &[v, h] : exitRebinds) {
+    // A trip-0 test (test0) that skips every trip leaves v unbound where it ended the chain (closeTests).
+    if (ctx.bound(v))
+      ctx.rebind(v, {exitOf(h)});
+    else
+      ctx.bindFields(v, {exitOf(h)});
+  }
   for (auto &[P, h] : exitPhis) {
     Operand f = exitOf(h);
     unitBound.insert(P);
@@ -2773,7 +2883,8 @@ bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p
 }
 
 
-Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook) {
+Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook,
+                         Value *test0) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
   Loop *mL = A.LI.getLoopFor(L.getHeader());
@@ -2786,6 +2897,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
   C.segHook = segHook;
+  C.test0 = test0;
   if (ctx.S.table)
     C.receivedK = spine::shared(ctx).tableK;   // cq-9kcq: CR rule 27 "Cutoff", §1.4
   C.lowerLoop(*mL, seed, c, !B || *B > K, false);

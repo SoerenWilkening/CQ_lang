@@ -99,8 +99,11 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 // its continuation that has an incoming from the unit (cq::LoweringContext::addJoinArm for an incoming not
 // lowered yet) and rebinds its values read after it; the builder is left where the last branch joined.
 // Returns the XOR of the flags of the noreturn arms it took (a rail, nullptr when none or no K-loop encloses L).
+// test0 (owner ruling Q10, CR rule 14 and rule 8): a classical i1, the classical factor of the predicate of entering L
+// that the caller's walk does not establish (a classical conjunct of the pre-header guard, the trip-0 test), or nullptr:
+// a real branch on it before trip 0, closed with the unit's own exit tests; where it is false no trip is emitted.
 llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed,
-                               const std::function<void(llvm::BasicBlock *)> &segHook);
+                               const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0 = nullptr);
 
 // CR rule 14 (case 1 or 3 inside a quantum-exit loop's trip, cq-h5uj): a classically bounded loop L of one
 // unrolled trip of a K-loop (a sub-loop of its body or a loop of its exit arm), lowered by loops-classical

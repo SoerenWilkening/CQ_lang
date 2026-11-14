@@ -770,6 +770,10 @@ bool Unit::liveAfterLoop(Loop &L, const Value *fin) {
         continue;   // the chain itself (the caller checked that nothing else in L reads it)
       if (keeps(*I))
         return true;
+      // A void call keeps() lets pass (a cq_phi, its angle a rail or not, Q4: a phase is no rotation of its angle; an
+      // assume-like or debug intrinsic) reads the value and leaves nothing behind that could keep it.
+      if (isa<CallBase>(I) && I->getType()->isVoidTy())
+        continue;
       if (I->isTerminator()) {
         if (!isa<BranchInst>(I) && !isa<SwitchInst>(I))
           return true;
@@ -3146,7 +3150,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             was.insert(&P);
         auto keepTail = tailBindsOf(sl);
         // cq-kk46l: its classical branches are segments of this walk (segHook); the walk goes on where the last joined.
-        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook()));
+        // Owner ruling Q10 (CR rule 14, rule 8): the classical conjunct of the edge into the sub-loop (its pre-header
+        // guard, `(m & 1) && y > 2`, is trip 0's test) that this walk has not established is a classical branch before
+        // trip 0, not dropped from the seed.
+        Value *t0 = nullptr;
+        if (Pred cf = cfOf(ctx.preds().block(b)); !(curFact & !cf).isBottom())
+          t0 = classicalValue(ctx, cf);
+        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook(), t0));
         clearTail(sl, keepTail);
         followInsert();
         for (PHINode &P : C->phis())

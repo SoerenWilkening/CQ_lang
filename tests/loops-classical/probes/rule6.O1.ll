@@ -212,6 +212,34 @@ define i32 @r_opnd(i32 noundef %0, double noundef %1, i32 noundef %2) local_unna
   br i1 %19, label %6, label %12, !llvm.loop !15
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @r_phang(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  %5 = icmp sgt i32 %2, 0
+  br i1 %5, label %12, label %9
+
+6:                                                ; preds = %12
+  %7 = uitofp nneg i32 %17 to double
+  %8 = fmul double %7, 2.500000e-01
+  br label %9
+
+9:                                                ; preds = %6, %3
+  %10 = phi double [ 0.000000e+00, %3 ], [ %8, %6 ]
+  tail call void @cq_phi(double noundef %10) #4
+  %11 = tail call i32 @cq_measure_si32(i32 noundef %4) #4
+  ret i32 %11
+
+12:                                               ; preds = %3, %12
+  %13 = phi i32 [ %18, %12 ], [ 0, %3 ]
+  %14 = phi i32 [ %17, %12 ], [ 0, %3 ]
+  %15 = lshr i32 %4, %13
+  %16 = and i32 %15, 1
+  %17 = add nuw nsw i32 %16, %14
+  %18 = add nuw nsw i32 %13, 1
+  %19 = icmp eq i32 %18, %2
+  br i1 %19, label %6, label %12, !llvm.loop !16
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none) }
@@ -237,3 +265,4 @@ attributes #4 = { nounwind }
 !13 = distinct !{!13, !7, !8}
 !14 = distinct !{!14, !7, !8}
 !15 = distinct !{!15, !7, !8}
+!16 = distinct !{!16, !7, !8}

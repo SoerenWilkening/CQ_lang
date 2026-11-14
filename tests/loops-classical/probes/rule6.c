@@ -64,3 +64,12 @@ int r_opnd(int x0, double th, int n) {
   for (int i = 0; i < n; i++) v += (x >> i) & 1;
   return cq_measure(v * 3 + 1);
 }
+/* Q4 (review R2 q6): the final value read only as the angle of a phase (a quantum-angle cq_phi rotates no rail of it):
+ * the chain is garbage, undone by the reverse loop after the phase; keeps the measured x only */
+int r_phang(int x0, double th, int n) {
+  int x = x0; cq_theta(&x, th);
+  int v = 0;
+  for (int i = 0; i < n; i++) v += (x >> i) & 1;
+  cq_phi(v * 0.25);
+  return cq_measure(x);
+}

@@ -199,6 +199,20 @@ add_test(NAME loops-cutoff-exit-conjunct
           --br-in ec_while=8 --br-in ec_do=8 --br-in ec_vary=8
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_conjunct.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# Review R1 m1 (CR rule 6 "In a rolled loop", owner ruling Q4, with Q10's tests): rule 6's per-trip clean of a carried
+# value across the classical exit tests, cleaned under each test's "went on" flag. Each entry §6-checked.
+add_test(NAME loops-cutoff-conjunct-r6
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/conjunct_r6.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# Review R1 n1 (owner ruling Q10, CR rule 14, rule 8): a K-loop nested in a classically bounded loop branches on its
+# pre-header guard's classical conjunct before trip 0, and keeps a_K per outer trip through the tests' joins. §6-checked.
+add_test(NAME loops-cutoff-conjunct-nest
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/conjunct_nest.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-7jd1z (CR rules 8, 9, 13 with rule 14): a quantum switch's case atom carried to a classical join is a phi in the
 # scrutinee's own type (musl wcsrtombs: the exit hub of a K-loop behind a classical bound test); switches in a K-trip on
 # a narrowed and a widened scrutinee, a default arm, two cases sharing a successor. Each entry §6-checked.
