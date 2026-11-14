@@ -316,6 +316,23 @@ bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopIn
   return changed;
 }
 
+// CR rule 16 noreturn (cq-euke1): a function with no return and a dead end (`unreachable`) under a quantum predicate in
+// some specialization, outside a loop some clone runs on a quantum condition (rule 14's arm, the loop module's): the spine
+// ends the walk at such an end with the zero-valued return (Construct.cpp emitTerminator), so the function comes back.
+bool returnsAtQuantumDeadEnd(Function &F, const cq::TaintInfo &T, const LoopInfo &LI) {
+  if (any_of(F, [](const BasicBlock &BB) { return isa<ReturnInst>(BB.getTerminator()); }))
+    return false;
+  SmallVector<const cq::Specialization *, 4> specs;
+  for (const cq::Specialization &S : T.specializations())
+    if (S.F == &F)
+      specs.push_back(&S);
+  for (BasicBlock &BB : F)
+    if (isa<UnreachableInst>(BB.getTerminator()) && !quantumLoop(&BB, LI, specs, T) &&
+        any_of(specs, [&](const cq::Specialization *S) { return T.controlTainted(&BB, *S); }))
+      return true;
+  return false;
+}
+
 // Rule 16 (cq-zfrb item 2, ruling Q7): a call of a function returnFromClassicalAborts made come back (it lost `noreturn`) is
 // a noreturn call lowered to abort_i1 inside the callee: where the callee's flag reads 0 the caller goes on, so "the
 // `unreachable` after an unconditional `noreturn` call is a return of zero-valued results" in the caller as well, on a
@@ -1344,6 +1361,18 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
         FAM.invalidate(*F, PreservedAnalyses::none());
         if (wasNoreturn)
           nowReturning.push_back(F);
+      }
+      // CR rule 16 noreturn (cq-euke1): a function with no return whose dead end lies under a quantum predicate gets the
+      // zero-valued return there from the spine (the walk's last such end), so it comes back like the functions above.
+      for (Function *F : Tainted) {
+        if (!F->doesNotReturn() || !returnsAtQuantumDeadEnd(*F, T, FAM.getResult<LoopAnalysis>(*F)))
+          continue;
+        trace("quantum dead end returns: @" + F->getName());
+        for (Attribute::AttrKind A : {Attribute::Range, Attribute::NonNull, Attribute::Dereferenceable, Attribute::DereferenceableOrNull})
+          F->removeRetAttr(A);
+        F->removeFnAttr(Attribute::NoReturn);
+        CFGChanged = true;
+        nowReturning.push_back(F);
       }
       for (Function *G : returnAfterCalls(M, nowReturning, T, FAM)) {
         trace("calls of a returning abort: changed @" + G->getName());
