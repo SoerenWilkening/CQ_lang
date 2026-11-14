@@ -4054,6 +4054,8 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
   impl->rails[oldRail].cleanup = std::move(cl);
 }
 
+bool Uncompute::hasCleanup(RailId oldRail) const { return impl->rails[oldRail].cleanup.has_value(); }
+
 bool Uncompute::withdrawCleanup(RailId oldRail) {
   Impl::Rail &x = impl->rail(oldRail, "withdrawCleanup");
   if (!x.cleanup || !x.cleanup->alts.empty() || x.released || !x.exitsDone.empty())

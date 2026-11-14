@@ -825,6 +825,10 @@ void laneRuleSix(LoweringContext &ctx, Instruction &I, unsigned l, ArrayRef<Oper
     }
     if (!dead)
       continue;
+    // cq-z6bul: an earlier update already cleans this rail from its own image (spine's rule 6 at a scalar
+    // y' = y + k whose clean-up point is after this lane's reader); the rail has one clean-up.
+    if (ctx.unc().hasCleanup(ctx.unc().idOf(h)))
+      continue;
     if (z.v && candidates == 2) {
       int zl = I.getOperand(1 - i)->getType()->isVectorTy() ? int(l) : -1;
       if (laneReads(ctx, {I.getOperand(1 - i), zl}, aliases))

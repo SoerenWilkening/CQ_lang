@@ -121,6 +121,8 @@ public:
   // cq-2p9g (CR rule 6, the composite update): withdraws oldRail's unguarded clean-up while nothing has placed it yet;
   // false (nothing changed) otherwise.
   bool withdrawCleanup(RailId oldRail);
+  // Has a rule 6 clean-up (cleanupBijective or cleanupBijectiveUnder) been requested for oldRail?
+  bool hasCleanup(RailId oldRail) const;
   void flushBefore(llvm::Instruction *point);       // due _unc + cqrt_free, reverse dependency order
   // U7 (cq-nqa6, CR rules 5, 8, 9): flushBefore, and also, before P, the item of each arm-local rail (defined
   // in a block that does not dominate P, every use and reader item before P, every path from its block
