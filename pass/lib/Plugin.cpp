@@ -221,14 +221,54 @@ bool unifyReturns(Function &F) {
   return true;
 }
 
+// A loop (its outermost one) that some clone runs on a quantum condition: a block of it control-dependent on a tainted
+// terminator, or an exiting branch on a quantum condition (a loop whose only exit is a noreturn arm post-dominates
+// nothing and leaves no block control-dependent: rule 14's "No live exit", its arm under each trip's exit flag).
+bool quantumLoopOf(const Loop *L, ArrayRef<const cq::Specialization *> specs, const cq::TaintInfo &T) {
+  if (!L)
+    return false;
+  L = L->getOutermostLoop();
+  for (const BasicBlock *X : L->blocks())
+    for (const cq::Specialization *S : specs) {
+      if (T.controlTainted(X, *S))
+        return true;
+      if (!L->isLoopExiting(X))
+        continue;
+      const Instruction *t = X->getTerminator();
+      if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional() && T.isQuantum(br->getCondition(), *S))
+        return true;
+      if (auto *sw = dyn_cast<SwitchInst>(t); sw && T.isQuantum(sw->getCondition(), *S))
+        return true;
+    }
+  return false;
+}
+
+// The block lies in such a loop, or in the exit arm (its noreturn arm included, rule 14) of a loop every clone runs on a
+// quantum condition: there no clone has the arm on a classical path (noexit.O1.ll's na_only). An arm that some clone
+// reaches classically (a table clone's quantum formals aside) comes back, as before.
+bool quantumLoop(BasicBlock *BB, const LoopInfo &LI, ArrayRef<const cq::Specialization *> specs, const cq::TaintInfo &T) {
+  if (quantumLoopOf(LI.getLoopFor(BB), specs, T))
+    return true;
+  if (specs.empty())
+    return false;
+  for (Loop *L : LI.getLoopsInPreorder()) {
+    cq::loops::exits::Unit u = cq::loops::exits::unitOf(*L);
+    if ((is_contained(u.arm, BB) || is_contained(u.abort, BB) || is_contained(u.tail, BB)) &&
+        all_of(specs, [&](const cq::Specialization *S) { return quantumLoopOf(L, {S}, T); }))
+      return true;
+  }
+  return false;
+}
+
 // Rule 16: "The `unreachable` after an unconditional `noreturn` call is a return of zero-valued results". A noreturn call on a
 // classical path that some clone lowers to abort_i1 (a _ctl clone's predicate, an effect entry's seed) comes back: where that
 // flag reads 0 the program goes on, so the path returns instead of running into `unreachable`. A call another clone keeps as
 // the host call never gets there. Runs before unifyReturns. A loop that any clone runs on a quantum condition keeps its arm
 // (rule 14's abort arm under the trip's flag), and longjmp and a thread's exit are rule 24's.
+// A noreturn-attributed F (cq-zfrb item 2; owner ruling 2026-11-11 Q7, cq-edr1f: its exits after an event are effect
+// entries) is rewritten the same way and comes back too: it loses the attribute (returnAfterCalls then rewrites the
+// `unreachable` after each call of it).
 bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopInfo &LI) {
-  if (F.doesNotReturn())
-    return false;
   bool changed = false;
   SmallVector<const cq::Specialization *, 4> specs;
   for (const cq::Specialization &S : T.specializations())
@@ -247,22 +287,81 @@ bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopIn
           return !T.controlTainted(&BB, *S) && (S->ctl || T.isEffectEntry(*CB, *S));
         }))
       continue;
-    bool quantumLoop = false;
-    if (const Loop *L = LI.getLoopFor(&BB))
-      for (const BasicBlock *X : L->getOutermostLoop()->blocks())
-        for (const cq::Specialization *S : specs)
-          quantumLoop = quantumLoop || T.controlTainted(X, *S);
-    if (quantumLoop)
+    if (quantumLoop(&BB, LI, specs, T))
       continue;
     Type *RT = F.getReturnType();
     ReturnInst::Create(F.getContext(), RT->isVoidTy() ? nullptr : Constant::getNullValue(RT), U->getIterator());
     U->eraseFromParent();
     changed = true;
   }
-  if (changed)
+  if (changed) {
     for (Attribute::AttrKind A : {Attribute::Range, Attribute::NonNull, Attribute::Dereferenceable, Attribute::DereferenceableOrNull})
       F.removeRetAttr(A);   // the zero result of the new path
+    F.removeFnAttr(Attribute::NoReturn);
+  }
   return changed;
+}
+
+// Rule 16 (cq-zfrb item 2, ruling Q7): a call of a function returnFromClassicalAborts made come back (it lost `noreturn`) is
+// a noreturn call lowered to abort_i1 inside the callee: where the callee's flag reads 0 the caller goes on, so "the
+// `unreachable` after an unconditional `noreturn` call is a return of zero-valued results" in the caller as well, on a
+// path no clone of the caller runs under a quantum predicate (there the arm is the predicate's, rules 9 and 16) and outside
+// a loop some clone runs on a quantum condition (rule 14's arm). A caller that loses its last `unreachable` that way and was
+// `noreturn` itself loses the attribute, and its callers follow (a worklist over the module, in module order). Returns the
+// functions it changed.
+SmallVector<Function *, 4> returnAfterCalls(Module &M, SmallVector<Function *, 4> work, const cq::TaintInfo &T,
+                                            FunctionAnalysisManager &FAM) {
+  SmallVector<Function *, 4> changedFns;
+  SmallPtrSet<Function *, 8> done(work.begin(), work.end());
+  while (!work.empty()) {
+    SmallPtrSet<Function *, 8> back(work.begin(), work.end());
+    work.clear();
+    for (Function &G : M) {
+      if (G.isDeclaration())
+        continue;
+      SmallVector<const cq::Specialization *, 4> specs;
+      for (const cq::Specialization &S : T.specializations())
+        if (S.F == &G)
+          specs.push_back(&S);
+      SmallVector<CallBase *, 4> sites;
+      for (BasicBlock &BB : G)
+        for (Instruction &I : BB)
+          if (auto *CB = dyn_cast<CallBase>(&I))
+            if (auto *Callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()); Callee && back.count(Callee))
+              sites.push_back(CB);
+      if (sites.empty())
+        continue;
+      const LoopInfo &LI = FAM.getResult<LoopAnalysis>(G);
+      bool changed = false;
+      for (CallBase *CB : sites) {
+        CB->removeFnAttr(Attribute::NoReturn);
+        auto *U = dyn_cast_or_null<UnreachableInst>(CB->getNextNonDebugInstruction());
+        if (!U)
+          continue;
+        BasicBlock *BB = CB->getParent();
+        if (!specs.empty() && all_of(specs, [&](const cq::Specialization *S) { return T.controlTainted(BB, *S); }))
+          continue;
+        if (quantumLoop(BB, LI, specs, T))
+          continue;
+        Type *RT = G.getReturnType();
+        ReturnInst::Create(G.getContext(), RT->isVoidTy() ? nullptr : Constant::getNullValue(RT), U->getIterator());
+        U->eraseFromParent();
+        changed = true;
+      }
+      if (!changed)
+        continue;
+      for (Attribute::AttrKind A : {Attribute::Range, Attribute::NonNull, Attribute::Dereferenceable, Attribute::DereferenceableOrNull})
+        G.removeRetAttr(A);
+      FAM.invalidate(G, PreservedAnalyses::none());
+      changedFns.push_back(&G);
+      if (G.doesNotReturn()) {
+        G.removeFnAttr(Attribute::NoReturn);
+        if (done.insert(&G).second)
+          work.push_back(&G);
+      }
+    }
+  }
+  return changedFns;
 }
 
 // Rule 26: an aggregate is its scalar fields. A loop-carried aggregate (a cmpxchg's { i32, i1 } carried round musl's
@@ -1135,12 +1234,22 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
-    for (Function *F : Tainted) {
-      if (!returnFromClassicalAborts(*F, T, FAM.getResult<LoopAnalysis>(*F)))
-        continue;
-      trace("classical abort arms: changed @" + F->getName());
-      CFGChanged = true;
-      FAM.invalidate(*F, PreservedAnalyses::none());
+    {
+      SmallVector<Function *, 4> nowReturning;
+      for (Function *F : Tainted) {
+        bool wasNoreturn = F->doesNotReturn();
+        if (!returnFromClassicalAborts(*F, T, FAM.getResult<LoopAnalysis>(*F)))
+          continue;
+        trace("classical abort arms: changed @" + F->getName());
+        CFGChanged = true;
+        FAM.invalidate(*F, PreservedAnalyses::none());
+        if (wasNoreturn)
+          nowReturning.push_back(F);
+      }
+      for (Function *G : returnAfterCalls(M, nowReturning, T, FAM)) {
+        trace("calls of a returning abort: changed @" + G->getName());
+        CFGChanged = true;
+      }
     }
     for (Function *F : Tainted) {
       if (!unifyReturns(*F))

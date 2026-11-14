@@ -32,7 +32,7 @@ Fails on any of:
             with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
-            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw); raise with no handler, its field wrong (cq-njo63); signal's previous handler where none was registered (cq-t0xnq). --rv3 runs this group alone
+            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); exit(5) after a quantum abort made as it stands, or its entry without abort_i1 (cq-edr1f); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf); a phase in a quantum arm (static collapse) deleted (cq-xidq); an abort, _Exit, trap or _exit end changed (cq-yd85w); fesetround's module body is the host's (cq-du1gw); raise with no handler, its field wrong (cq-njo63); signal's previous handler where none was registered (cq-t0xnq). --rv3 runs this group alone
   dbtpi     owner ruling 2026-11-12 cq-dbtpi (src/dbtpi): a program that reads a deferred fwide's result on every input is
             not PASS (STRUCTURE ONLY) (exit 3), or a planted dirty free or leak in its lowering is not rejected (exit 1:
             the lowered run alone is judged on excluded inputs, owner ruling 2026-11-12 "verdict for excluded inputs";
@@ -337,6 +337,12 @@ RV3 = {
     # cq-byjad: rule 16's effect entry of a noreturn call with a rail argument; a wrong status field, no abort
     "exitrail": [("wrong_status", r"cqrt_tape_write_i32\(i32 %2, i32 %11\)", "cqrt_tape_write_i32(i32 %2, i32 %12)"),
                  ("no_abort", r"  call void @cqrt_abort_i1\(i32 %12\)\n", "")],
+    # cq-edr1f (owner ruling 2026-11-11 Q7, CR rule 16 noreturn): exit(5) after a quantum abort is the effect entry exit
+    # under a |1> seed, then abort_i1 of it; the call made as it stands (performed past a fired abort, status 5 where C
+    # aborts) and the entry without its abort_i1 are rejected
+    "edr1f": [("ordinary", r"  call void @cqrt_tape_effect_controlled\(i32 %18, i32 %4, ptr @\.cq\.effect\.exit, i32 1\)\n"
+               r"  call void @cqrt_abort_i1\(i32 %18\)\n", "  call void @exit(i32 5)\n"),
+              ("no_abort", r"  call void @cqrt_abort_i1\(i32 %18\)\n", "")],
     "2in7d": [("no_ak", r"  call void @cqrt_and_i1\(i32 %40, i32 %48, i32 %49\)\n", ""),
               ("no_xor", r"cq_template_xor_i32_hl\(", "cq_template_or_i32_hl(")],
     "li3wr": [("second_return", r"cq_template_add_i32_hl\(i32 %4, i32 6\)", "cq_template_add_i32_hl(i32 %4, i32 7)")],

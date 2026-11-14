@@ -454,6 +454,15 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   Value *flag = bus::accessControl(ctx);
   LLVMContext &C = ctx.M.getContext();
 
+  // Rule 16 noreturn: under a quantum predicate it is abort_i1(pred) alone, never an entry. Taint makes a noreturn call
+  // an entry only where its control dependence sees no quantum predicate (a rail argument, or an event before it, ruling
+  // 2026-11-11 Q7); a K-loop's trip exit flag is one it does not see (CR rule 14 "No live exit": the arm may post-dominate
+  // the loop), and there the call is the abort arm on that flag.
+  if (flag && CB.doesNotReturn()) {
+    abortArm(ctx, CB, flag);
+    return;
+  }
+
   // A format at an address rail has no ptr for tape_fmt: it falls to the effect entry printf with its address a field.
   if (libFunc(*F, LibFunc_printf) && !bus::address(ctx, CB.getArgOperand(0)).handle) {
     Operand f = ctx.operand(CB.getArgOperand(0));
