@@ -30,7 +30,8 @@ static const char *IR = R"(
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
-@_FE_DFL_ENV = external global [32 x i8]
+; Rule 23: a constant global (musl's FE_DFL_ENV is a constant pointer) is the constant case, never memory.
+@_FE_DFL_ENV = external constant [32 x i8]
 
 ; FLAGS: a raise under a quantum predicate reaches the test after the join; a test before it does not.
 define i32 @flags_join(double %x0, double %th, double %k) {
