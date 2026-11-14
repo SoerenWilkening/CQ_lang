@@ -40,6 +40,7 @@ ENTRIES = {
         "p_constagg": 7,    # mul, add, sub, xor, and rule 6's inverses of add, sub and xor
     },
     "widen.ll": None,      # cq-oa67: cq-lower, cq-verify and §6 only (no template count asserted)
+    "mulconst.ll": None,   # cq-z6bul: one rule 6 clean-up per rail across the scalar and lane forms
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 FWD = re.compile(r"call [^@]*@cq_template_\w+?(?<!_unc)\(")
