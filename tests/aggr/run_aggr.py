@@ -41,6 +41,7 @@ ENTRIES = {
     },
     "widen.ll": None,      # cq-oa67: cq-lower, cq-verify and §6 only (no template count asserted)
     "mulconst.ll": None,   # cq-z6bul: one rule 6 clean-up per rail across the scalar and lane forms
+    "loopinv.O1.ll": None,  # cq-941o: no lane rule 6 inside a loop unit (a lane every trip reads)
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 FWD = re.compile(r"call [^@]*@cq_template_\w+?(?<!_unc)\(")

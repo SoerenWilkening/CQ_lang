@@ -85,6 +85,7 @@ INPLACE = {
     },
     "inplace_loop": {"ip_loop_theta_out": False, "ip_loop_theta_other": False, "ip_loop_theta_measure": False,
                      "ip_loop_theta_after": False},
+    "keptstore": {"ks_phi": False},       # cq-xoc4: a merge stored behind a classical branch is kept only where stored
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
