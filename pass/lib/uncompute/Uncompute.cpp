@@ -968,7 +968,11 @@ struct Uncompute::Impl {
     // cq-dw87k: a clean-up under a guard that does not cover every path leaves x's plain item, which reads what it reads, on the
     // other paths: x is still a garbage reader of g.
     bool cleaned = rails[x].cleanup && (rails[x].cleanup->alts.empty() || rails[x].cleanup->everyPath);
-    if (depth > 64 || (cleaned && !viaCleanups) || rails[x].role != Role::Garbage || rails[x].released)
+    // cq-jt90l (CR rule 6, "when the old value is still needed to uncompute other rails"): a seed whose writes are
+    // not all preserving (a trip flag, a flag's and_i1) is undone through those records like garbage, and they read
+    // what they read: g = x, y' = c ? x + 1 : x with c's _unc reading a classical loop's trip flags that tested x.
+    bool undoes = rails[x].role == Role::Garbage || (rails[x].role == Role::Seed && !directRelease(x));
+    if (depth > 64 || (cleaned && !viaCleanups) || !undoes || rails[x].released)
       return false;
     if (auto f = failed.find(x); f != failed.end() && f->second <= depth)
       return false;
@@ -981,9 +985,12 @@ struct Uncompute::Impl {
         cleaned = false;
       viaCleanups = true;
     }
-    for (RailId y : cleaned ? rails[x].cleanup->reads : itemReads(x))
-      if (y == g || garbageReadsAt(y, g, depth + 1, failed))
-        return true;
+    // cq-jt90l: a read of a merge reads every rail it may name (readersOf's names, order()'s edges): the select's
+    // condition above reads the loop's exit merge, whose arms read the trip flags.
+    for (RailId y0 : cleaned ? rails[x].cleanup->reads : itemReads(x))
+      for (RailId y : leaves(y0))
+        if (y == g || y0 == g || garbageReadsAt(y, g, depth + 1, failed))
+          return true;
     auto [f, ins] = failed.try_emplace(x, depth);
     if (!ins && depth < f->second)
       f->second = depth;
