@@ -132,6 +132,11 @@ struct SpecState {
   llvm::DenseSet<const llvm::CallBase *> aborts;   // a noreturn call under a quantum predicate
   bool hasNoreturn = false;   // a noreturn call on any path: an abort event once the clone takes a predicate (rule 19)
   bool hasEventT = false;
+  // Rule 16 noreturn, owner ruling 2026-11-14 (scope of Q7): this specialization is reached after an event on a path inside
+  // the lowered code: a table clone (its caller is not in view, CR rule 16), or a call of it by name is preceded by an event
+  // in its caller, or its caller is so reached (the least fixpoint). Never because its function is externally visible or
+  // address-taken: an unknown caller is no path inside the lowered code.
+  bool reachedAfterEvent = false;
   // Rule 20 (b): the allocas of F this specialization demoted (bus-resident); every other is host-resident.
   llvm::SmallPtrSet<const llvm::AllocaInst *, 4> demoted;
   // Rule 24: each volatile access of this specialization, read off its pointer operand on the pristine module.

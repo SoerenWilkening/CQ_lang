@@ -47,9 +47,10 @@ def REAL(fn):
                r"mqe:\n  call void @exit(i32 1)\n  unreachable\n\nmqc:\n")(fn)
 
 
-# Owner ruling 2026-11-11 Q7 (cq-edr1f): an exit is the ordinary host call only where no event can precede it. HOST and
-# LOOP hold events, so every exit in them is now an effect entry behind an abort flag; the real host exits and their
-# mutants are REAL_EXIT's (the same classical and classical_switch in a module with no event).
+# Owner ruling 2026-11-11 Q7 (cq-edr1f): an exit is the ordinary host call only where no event can precede it; owner
+# ruling 2026-11-14: on a path inside the lowered code. HOST's classical and LOOP's classical_switch exit before any event
+# of their function and no in-module caller calls them, so their exits are real host exits although the module holds
+# events (cases 17 to 22); REAL_EXIT is the same in a module with no event.
 HOST, LOOP, REAL_EXIT = "noreturn_host_end", "noreturn_classical_loop", "noreturn_real_exit"
 CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (LOOP, "classical_switch", None, None),
@@ -69,6 +70,12 @@ CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (HOST, "quantum", NO_FLAG, "no kept abort flag"),
     (HOST, "quantum", LEAK, "a leak"),
     (HOST, "quantum", REAL, "a leak"),
+    (LOOP, "classical_switch", RETURN, "a leak"),
+    (LOOP, "classical_switch", EXITS, "returns"),
+    (LOOP, "classical_switch", STATUS, "status 7 and the C program ends with"),
+    (HOST, "classical", RETURN, "no kept abort flag"),
+    (HOST, "classical", EXITS, "returns"),
+    (HOST, "classical", STATUS, "status 7 and the C program ends with"),
 ]
 
 

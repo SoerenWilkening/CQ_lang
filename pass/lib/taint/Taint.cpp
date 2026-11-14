@@ -288,7 +288,9 @@ private:
   void fenvAfterCall(CallBase &CB);
 
   // Specializations.
-  bool eventPrecedes(const CallBase &CB);
+  // Rule 16: may a tape or abort event precede the call? `inLowered` (a noreturn call, owner ruling 2026-11-14): only on a
+  // path inside the lowered code, never because the function is externally visible or address-taken.
+  bool eventPrecedes(const CallBase &CB, bool inLowered = false);
   void propagateEvents();
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
                      std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {}, bool plain = false, bool table = false,
@@ -2147,7 +2149,7 @@ void Analyzer::transferCall(CallBase &CB) {
         if (blockCT(CB.getParent()) || cur->ctl) {
           if (cur->aborts.insert(&CB).second)
             st.changed = true;
-        } else if (eventPrecedes(CB) && cur->effectEntries.insert(&CB).second) {
+        } else if (eventPrecedes(CB, /*inLowered=*/true) && cur->effectEntries.insert(&CB).second) {
           st.changed = true;
         }
       }
@@ -2268,11 +2270,12 @@ void Analyzer::transferCall(CallBase &CB) {
       for (Value *A : actuals)
         q = q || L(A).any();
       // Owner ruling 2026-11-11 Q7 (cq-edr1f): also with classical arguments where a tape or abort event can precede
-      // it (the ordinary-host-call test). longjmp and a thread's exit are rule 24's, never this bullet's.
+      // it; owner ruling 2026-11-14: on a path inside the lowered code only (eventPrecedes' inLowered). longjmp and a
+      // thread's exit are rule 24's, never this bullet's.
       StringRef gn = G->getName();
       bool jump = gn == "longjmp" || gn == "_longjmp" || gn == "siglongjmp" || gn == "__longjmp_chk" ||
                   gn == "pthread_exit" || gn == "thrd_exit";
-      if ((q || (!jump && eventPrecedes(CB))) && cur->effectEntries.insert(&CB).second)   // rule 16: the effect entry
+      if ((q || (!jump && eventPrecedes(CB, /*inLowered=*/true))) && cur->effectEntries.insert(&CB).second)   // rule 16: the effect entry
         st.changed = true;                                                                   // of its name, then abort_i1
     }
     return;
@@ -2362,10 +2365,12 @@ void Analyzer::transferCall(CallBase &CB) {
 }
 
 // Rule 16: may a tape or abort event precede the call? One from which the call is reachable in its function's CFG, or
-// its function is called after an event (propagateEvents).
-bool Analyzer::eventPrecedes(const CallBase &CB) {
+// its function is called after an event (propagateEvents). inLowered (a noreturn call, owner ruling 2026-11-14): the
+// specialization is reached after an event inside the lowered code (reachedAfterEvent), not merely its function called
+// after one, which holds of every externally visible or address-taken function of a module with an event.
+bool Analyzer::eventPrecedes(const CallBase &CB, bool inLowered) {
   // Rule 16: inside a table clone every function is called after an event, always: its caller is not in view.
-  if (cur->table || st.calledAfter.count(cur->F))
+  if (cur->table || (inLowered ? cur->reachedAfterEvent : st.calledAfter.count(cur->F) != 0))
     return true;
   auto hasEvent = [&](const CallBase &X) {
     if (cur->effectEntries.count(&X) || cur->aborts.count(&X))
@@ -2384,8 +2389,17 @@ bool Analyzer::eventPrecedes(const CallBase &CB) {
   FnInfo &fi = fn(CB.getFunction());
   for (const BasicBlock *BB : fi.rpo)
     for (const Instruction &I : *BB)
-      if (auto *X = dyn_cast<CallBase>(&I); X && X != &CB && hasEvent(*X) && isPotentiallyReachable(X, &CB, nullptr, fi.DT.get(), fi.LI.get()))
-        return true;
+      if (auto *X = dyn_cast<CallBase>(&I); X && X != &CB && hasEvent(*X)) {
+        if (isPotentiallyReachable(X, &CB, nullptr, fi.DT.get(), fi.LI.get()))
+          return true;
+        // inLowered: an abort under a quantum predicate is abort_i1 of it, and the lowered code goes on past the arm: the
+        // event precedes what the arm's quantum branches reach (owner ruling 2026-11-14, "a path inside the lowered code").
+        if (inLowered && cur->aborts.count(X))
+          if (auto it = cur->cdt.find(X->getParent()); it != cur->cdt.end())
+            for (const BasicBlock *A : it->second)
+              if (isPotentiallyReachable(A->getTerminator(), &CB, nullptr, fi.DT.get(), fi.LI.get()))
+                return true;
+      }
   // A call of itself on a cycle: an entry of this very call precedes it on the next trip.
   return cur->effectEntries.count(&CB) != 0;
 }
@@ -2433,6 +2447,21 @@ void Analyzer::propagateEvents() {
       for (SpecState *C : v)
         if (!C->declared)
           add(C->F);
+  }
+  // Owner ruling 2026-11-14 (rule 16 noreturn, scope of Q7): the same fact per specialization and inside the lowered code
+  // only: a table clone, or a callee whose call is preceded by an event in its caller or whose caller is so reached.
+  for (auto &S : st.specs) {
+    if (S->declared)
+      continue;
+    SpecState *saved = cur;
+    cur = S.get();
+    for (auto &[CB, v] : S->callees)
+      for (SpecState *C : v)
+        if (!C->declared && !C->reachedAfterEvent && (S->table || S->reachedAfterEvent || eventPrecedes(*CB, true))) {
+          C->reachedAfterEvent = true;
+          st.changed = true;
+        }
+    cur = saved;
   }
   if (!st.moduleHasEvent)
     return;
