@@ -263,7 +263,8 @@ bool quantumLoop(BasicBlock *BB, const LoopInfo &LI, ArrayRef<const cq::Speciali
 // Rule 16: "The `unreachable` after an unconditional `noreturn` call is a return of zero-valued results". A noreturn call on a
 // classical path that some clone lowers to abort_i1 (a _ctl clone's predicate, an effect entry's seed) comes back: where that
 // flag reads 0 the program goes on, so the path returns instead of running into `unreachable`. A call another clone keeps as
-// the host call never gets there. Runs before unifyReturns. A loop that any clone runs on a quantum condition keeps its arm
+// the host call never gets there. A noreturn call through a pointer is rule 19's dispatch, and the table clone it calls
+// comes back. Runs before unifyReturns. A loop that any clone runs on a quantum condition keeps its arm
 // (rule 14's abort arm under the trip's flag), and longjmp and a thread's exit are rule 24's.
 // A noreturn-attributed F (cq-zfrb item 2; owner ruling 2026-11-11 Q7, cq-edr1f: its exits after an event are effect
 // entries) is rewritten the same way and comes back too: it loses the attribute (returnAfterCalls then rewrites the
@@ -277,14 +278,23 @@ bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopIn
   for (BasicBlock &BB : F) {
     auto *U = dyn_cast<UnreachableInst>(BB.getTerminator());
     auto *CB = U ? dyn_cast_or_null<CallBase>(U->getPrevNonDebugInstruction()) : nullptr;
-    const Function *G = CB ? CB->getCalledFunction() : nullptr;
-    if (!G || !CB->doesNotReturn() || CB->hasFnAttr(Attribute::ReturnsTwice))
+    if (!CB || CB->isInlineAsm() || !CB->doesNotReturn() || CB->hasFnAttr(Attribute::ReturnsTwice))
       continue;
-    StringRef n = G->getName();
-    if (n == "longjmp" || n == "_longjmp" || n == "siglongjmp" || n == "__longjmp_chk" || n == "pthread_exit" || n == "thrd_exit")
+    const Function *G = CB->getCalledFunction();
+    bool indirect = !isa<Function>(CB->getCalledOperand()->stripPointerCasts());
+    if (!G && !indirect)
       continue;
+    if (G) {
+      StringRef n = G->getName();
+      if (n == "longjmp" || n == "_longjmp" || n == "siglongjmp" || n == "__longjmp_chk" || n == "pthread_exit" ||
+          n == "thrd_exit")
+        continue;
+    }
+    // A call through a pointer is rule 19's dispatch over table clones in every clone (calls::lowerIndirect), and a
+    // table clone comes back (its noreturn exits are effect entries: the table clone is called after an event), so
+    // every clone that reaches the call classically goes on after it (cq-W2 item 1, R3/p11.c).
     if (none_of(specs, [&](const cq::Specialization *S) {
-          return !T.controlTainted(&BB, *S) && (S->ctl || T.isEffectEntry(*CB, *S));
+          return !T.controlTainted(&BB, *S) && (indirect || S->ctl || T.isEffectEntry(*CB, *S));
         }))
       continue;
     if (quantumLoop(&BB, LI, specs, T))
