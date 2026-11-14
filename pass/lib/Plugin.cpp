@@ -374,6 +374,43 @@ SmallVector<Function *, 4> returnAfterCalls(Module &M, SmallVector<Function *, 4
   return changedFns;
 }
 
+// Owner ruling 2026-11-14 (scope of Q7, CR rule 16 noreturn, NORTHSTAR principle 1). returnFromClassicalAborts and
+// returnAfterCalls rewrite the body every specialization of a function is built from, so a clone whose noreturn call became
+// an effect entry or abort_i1 (a table clone, a _ctl clone, a clone reached after an event) comes back. The function's
+// OWN symbol (§1.4) may still make the call as the ordinary host call (no event precedes it inside the lowered code): there
+// the program really ends, and the own symbol stays as it is: `unreachable` right after the call, and `noreturn` again when
+// the function had it and no return is left. A call of an own symbol that is `noreturn` again ends there too (its callers,
+// iterated). `cameBack`: the functions step 2 rewrote, each with whether it was `noreturn`; only their own symbols change.
+void restoreHostExits(Module &M, const std::vector<std::pair<std::string, bool>> &cameBack) {
+  bool again = true;
+  while (again) {
+    again = false;
+    for (const auto &[name, wasNoreturn] : cameBack) {
+      Function *F = M.getFunction(name);
+      if (!F || F->isDeclaration())
+        continue;
+      SmallVector<Instruction *, 4> cuts;
+      for (BasicBlock &BB : *F)
+        for (Instruction &I : BB)
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && !CB->isInlineAsm() && !CB->hasFnAttr(Attribute::ReturnsTwice))
+            if (Function *G = CB->getCalledFunction(); G && G->doesNotReturn() && !isa<UnreachableInst>(CB->getNextNode()))
+              cuts.push_back(CB->getNextNode());
+      for (Instruction *I : cuts)
+        changeToUnreachable(I);
+      if (!cuts.empty())
+        removeUnreachableBlocks(*F);
+      bool returns = any_of(*F, [](BasicBlock &BB) { return isa<ReturnInst>(BB.getTerminator()); });
+      if (wasNoreturn && !returns && !F->doesNotReturn()) {
+        F->addFnAttr(Attribute::NoReturn);
+        for (User *U : F->users())
+          if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledFunction() == F)
+            CB->addFnAttr(Attribute::NoReturn);
+        again = true;
+      }
+    }
+  }
+}
+
 // Rule 26: an aggregate is its scalar fields. A loop-carried aggregate (a cmpxchg's { i32, i1 } carried round musl's
 // __lockfile) is one phi per field, so the loop modules carry scalars only. No CFG change.
 bool splitCarriedAggregates(Function &F) {
@@ -1244,7 +1281,14 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
+    // Owner ruling 2026-11-14: the functions whose shared body comes back below, and whether each was `noreturn`
+    // (restoreHostExits, after the construction).
+    std::vector<std::pair<std::string, bool>> cameBack;
     {
+      SmallPtrSet<Function *, 8> wasNoreturn;
+      for (Function &F : M)
+        if (!F.isDeclaration() && F.doesNotReturn())
+          wasNoreturn.insert(&F);
       SmallVector<Function *, 4> nowReturning;
       for (Function *F : Tainted) {
         bool wasNoreturn = F->doesNotReturn();
@@ -1253,12 +1297,14 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
         trace("classical abort arms: changed @" + F->getName());
         CFGChanged = true;
         FAM.invalidate(*F, PreservedAnalyses::none());
+        cameBack.push_back({F->getName().str(), wasNoreturn});
         if (wasNoreturn)
           nowReturning.push_back(F);
       }
       for (Function *G : returnAfterCalls(M, nowReturning, T, FAM)) {
         trace("calls of a returning abort: changed @" + G->getName());
         CFGChanged = true;
+        cameBack.push_back({G->getName().str(), wasNoreturn.count(G) != 0});
       }
     }
     for (Function *F : Tainted) {
@@ -1346,6 +1392,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
+    // 5b. Owner ruling 2026-11-14: an own symbol that makes its noreturn call as the ordinary host call ends there.
+    restoreHostExits(M, cameBack);
 
     // CR rule 13 (b137e75): a lowered computed goto compares its address with blockaddress constants, which a
     // clone (or another lowered function) may take of another function's block. The textual IR names such a
