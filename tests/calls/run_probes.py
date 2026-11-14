@@ -133,6 +133,36 @@ CASES = [
     # Rule 19: a call through a function pointer: a classical pointer (measured, unmeasured with the twin at rule 18's
     # position, under a predicate, all arguments classical), an address rail, a table clone that mints a register.
     ("indirect_mixed", "im_struct", [], "pass", [r"@__cq_clone_resolve"]),
+    # cq-yrgm, cq-95tw (CR rule 19 "Function pointers", §1.3, BACKEND_ABI §1.14): every address-taken or externally visible
+    # function has its row registered by __cq_register in llvm.global_ctors, its _t, _t_ctl and their twins defined with no call
+    # site needed: a global table, a callback a bodiless library function receives (qsort, an effect entry: the performed call reaches the own symbol), an entry
+    # parameter (a registered callee; abs, which has no row: rule 16's host boundary), functions nothing calls by name, and
+    # escaping functions of several shapes. ep itself is not driven: the checker passes a data object as its pointer.
+    ("fnptr_global_table", "gt", [], "pass", [
+        r"@llvm\.global_ctors = appending global \[1 x \{ i32, ptr, ptr \}\] \[\{ i32, ptr, ptr \} \{ i32 65535, ptr @__cq_register, ptr null \}\]",
+        r"call void @__cq_clone_register\(ptr @inc, ptr @\.cq\.sig[.\d]*, ptr @__cq_q_inc_1_t, ptr @__cq_q_inc_1_t_ctl, ptr @__cq_q_inc_1_t_unc, ptr @__cq_q_inc_1_t_ctl_unc\)",
+        r"call void @__cq_clone_register\(ptr @dbl, ", r"@__cq_clone_count\(ptr @\.cq\.sig\)", r"@__cq_clone_at\(ptr @\.cq\.sig, "]),
+    ("fnptr_callback_lib", "cb", [], "pass", [
+        r"call void @cqrt_tape_write_i64_lit\(i32 %\w+, i64 ptrtoint \(ptr @cmp to i64\)\)\n  call void @cqrt_tape_effect_controlled\(i32 %\w+, i32 %\w+, ptr @\.cq\.effect\.qsort, i32 4\)",
+        r"call void @__cq_clone_register\(ptr @cmp, ptr @\.cq\.sig[.\d]*, ptr @__cq_q_cmp_11_t, ptr @__cq_q_cmp_11_t_ctl, ptr @__cq_q_cmp_11_t_unc, ptr @__cq_q_cmp_11_t_ctl_unc\)",
+        r"define internal void @__cq_q_cmp_11_t_ctl_unc\("]),
+    ("fnptr_entry_param", "ep_drv", [], "pass", [
+        r"call void @__cq_clone_register\(ptr @sq, ", r"call void @__cq_clone_register\(ptr @neg, ",
+        r"define i32 @ep\([^\n]*\n(?:(?!\n}\n)[\s\S])*@__cq_clone_resolve\(ptr %0, i32 0\)(?:(?!\n}\n)[\s\S])*"
+        r"@cqrt_tape_effect_i32_controlled\(i32 %\w+, i32 %\w+, ptr null, i32 2\)"]),
+    ("fnptr_entry_param", "ep_host", [], "pass", []),
+    ("fnptr_never_called", "nc", [], "pass", [
+        r"call void @__cq_clone_register\(ptr @ext_add, ptr @\.cq\.sig[.\d]*, ptr @__cq_q_ext_add_11_t, ptr @__cq_q_ext_add_11_t_ctl, ptr @__cq_q_ext_add_11_t_unc, ptr @__cq_q_ext_add_11_t_ctl_unc\)",
+        r"call void @__cq_clone_register\(ptr @rot, ptr @\.cq\.sig[.\d]*, ptr @__cq_q_rot_11_t, ptr @__cq_q_rot_11_t_ctl, ptr @__cq_q_rot_11_t_unc, ptr @__cq_q_rot_11_t_ctl_unc\)",
+        r"define internal i32 @__cq_q_ext_add_11_t\(", r"define internal i32 @__cq_q_ext_add_11_t_ctl\(",
+        r"define internal void @__cq_q_ext_add_11_t_unc\(", r"define internal void @__cq_q_ext_add_11_t_ctl_unc\(",
+        r"define internal i32 @__cq_q_rot_11_t\(", r"define internal void @__cq_q_rot_11_t_ctl_unc\("]),
+    ("fnptr_never_called", "nc_esc", [], "pass", []),
+    ("fnptr_shapes", "s_va", [], "pass", [r"call void @__cq_clone_register\(ptr @sumv, ptr @\.cq\.sig[.\d]*, ptr @__cq_q_sumv_10_t, "]),
+    ("fnptr_shapes", "s_by", [], "pass", [r"call void @__cq_clone_register\(ptr @bysum, "]),
+    ("fnptr_shapes", "s_fp", [], "pass", [r"call void @__cq_clone_register\(ptr @half, "]),
+    ("fnptr_shapes", "s_rec", [], "pass", [r"call void @__cq_clone_register\(ptr @rec, "]),
+    ("fnptr_shapes", "s_wr", [], "pass", [r"call void @__cq_clone_register\(ptr @wr, "]),
     ("fp_classical", "fp_classical", [], "pass", [r"@__cq_clone_resolve"]),
     ("fp_under_pred", "fp_under_pred", [], "pass", [r"@__cq_clone_resolve\(ptr %\w+, i32 1\)", r"@__cq_clone_resolve\(ptr %\w+, i32 3\)"]),
     ("fp_rail_unmeasured", "fp_rail_unmeasured", [], "pass", [r"@__cq_clone_count"]),
