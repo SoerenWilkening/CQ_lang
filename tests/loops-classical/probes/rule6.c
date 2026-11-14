@@ -46,3 +46,21 @@ int r_c3(int x0, double th, int k, int n) {
   for (int i = 0; i < n; i++) { s += x; if (x == i + k) break; }
   return cq_measure(s);
 }
+/* cq-padp, owner 2026-11-11 Q4: v's final value is read only by a phase's flag (uncomputed), so its chain is garbage,
+ * undone by the reverse loop after that reader: keeps the measured x only */
+int r_padp(int x0, double th, int s, int n) {
+  int x = x0; cq_theta(&x, th);
+  int v = 0;
+  for (int i = 0; i < n; i++) v += (x >> i) & 1;
+  if (__builtin_popcount(v & s) & 1) cq_phi(3.14159);
+  cq_theta(&x, -th);
+  return cq_measure(x);
+}
+/* Q4: the final value is an operand of a measured (kept) rail: cleaned per trip; keeps x, the measured value and v's
+ * final rail (rule 6's image, never uncomputed) */
+int r_opnd(int x0, double th, int n) {
+  int x = x0; cq_theta(&x, th);
+  int v = 0;
+  for (int i = 0; i < n; i++) v += (x >> i) & 1;
+  return cq_measure(v * 3 + 1);
+}
