@@ -804,7 +804,12 @@ bool unifySubLoopExits(Function &F) {
 // the hub then branches on which edge came in. The hub is the loop's continuation, so the measurement is no part of a trip. Inside an outer
 // loop the same holds for one of its trips: once per outer trip, after the inner loop's trips (owner, cq-2z29a).
 bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
+  // A hub phi this rewrite made has no taint answer: it is asked through the value it stands for (cq-q7u9y: a second
+  // measurement of the arm reads a value the first rewrite routed through the hub).
+  DenseMap<const Value *, const Value *> origin;
   auto quantum = [&](const Value *v) {
+    for (auto it = origin.find(v); it != origin.end(); it = origin.find(v))
+      v = it->second;
     return any_of(T.specializations(), [&](const cq::Specialization &S) { return S.F == &F && T.isQuantum(v, S); });
   };
   LLVMContext &C = F.getContext();
@@ -913,6 +918,7 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
         Value *arg = cm->getArgOperand(0);
         PHINode *h = PHINode::Create(arg->getType(), from.size(), arg->getName() + ".hub");
         h->insertBefore(cm);
+        origin[h] = arg;
         for (size_t e = 0; e < from.size(); ++e)
           h->addIncoming(e ? static_cast<Value *>(PoisonValue::get(arg->getType())) : arg, from[e]);
         cm->setArgOperand(0, h);
@@ -922,6 +928,7 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
         for (PHINode &P : x->phis()) {
           PHINode *h = PHINode::Create(P.getType(), from.size(), P.getName() + ".hub");
           h->insertBefore(cm);
+          origin[h] = &P;
           for (size_t e = 0; e < from.size(); ++e)
             h->addIncoming(e && to[e] == x ? P.getIncomingValueForBlock(edges[e - 1].first) : PoisonValue::get(P.getType()), from[e]);
           for (size_t e = 1; e < from.size(); ++e)
@@ -962,6 +969,7 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
           if (!h) {
             h = PHINode::Create(I->getType(), from.size(), I->getName() + ".hub");
             h->insertBefore(&E->front());
+            origin[h] = I;
             for (size_t e = 0; e < from.size(); ++e) {
               BasicBlock *src = e ? edges[e - 1].first : &BB;
               bool reach = I->getParent() == src ? true : Old.dominates(I->getParent(), src);
