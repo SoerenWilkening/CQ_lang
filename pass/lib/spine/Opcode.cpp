@@ -721,10 +721,32 @@ bool cleanable(LoweringContext &ctx, Value *y) {
 // every cycle (a read in a sibling arm of a branch that joined before `at`). cq-oqih: a read in a
 // sibling arm of `at`'s own branch (neither block reaches the other) is not earlier: a quantum branch
 // emits every arm, the sibling after `at`'s (49, 158), and the rail is one rail on every path.
+// cq-qasj (rules 25, 26: a lane or field move emits no gate): an insertelement, insertvalue, shufflevector,
+// extractelement or extractvalue user of a value naming rail h names h itself in one lane or field. Once lowered, it is
+// an alias when one of its bound lanes or fields is h; not lowered yet, it may be one.
+bool aggrAlias(spine::Shared &sh, const Instruction *ui, const Value *h) {
+  if (!(isa<InsertValueInst>(ui) || isa<ExtractValueInst>(ui) || isa<InsertElementInst>(ui) ||
+        isa<ExtractElementInst>(ui) || isa<ShuffleVectorInst>(ui)))
+    return false;
+  auto bi = sh.binds.find(ui);
+  if (bi == sh.binds.end())
+    return true;
+  return h && any_of(bi->second, [&](const Operand &o) { return o.handle && o.v == h; });
+}
+
 bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const Instruction *> also = {}) {
   DominatorTree &DT = spine::shared(ctx).dt(*at->getFunction());
   SmallVector<const Use *, 8> uses;
   spine::readingUses(spine::shared(ctx), y, uses);   // through skipped zexts (cq-su3p)
+  {
+    // cq-qasj: a reader of a lane or field alias of y reads y.
+    const Value *h = ctx.bound(y) && ctx.operand(y).handle ? ctx.operand(y).v : nullptr;
+    SmallPtrSet<const Value *, 8> seenA;
+    for (size_t i = 0; i < uses.size(); ++i)
+      if (auto *ui = dyn_cast<Instruction>(uses[i]->getUser());
+          ui && ui != at && aggrAlias(spine::shared(ctx), ui, h) && seenA.insert(ui).second)
+        spine::readingUses(spine::shared(ctx), ui, uses);
+  }
   std::optional<DenseSet<const BasicBlock *>> reach;
   auto reachesAt = [&](const BasicBlock *from) {
     DenseSet<const BasicBlock *> seen;
@@ -876,6 +898,8 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
   // A user not lowered yet that may name the rail itself (a freeze, a cast the spine may skip, a
   // classical select or an aggregate or vector carrying it) is followed as an alias.
   auto mayAlias = [&](const Instruction *ui) {
+    if (aggrAlias(sh, ui, h))
+      return true;   // cq-qasj: a lowered lane or field move that names the rail
     if (sh.binds.count(ui))
       return false;
     if (auto *sel = dyn_cast<SelectInst>(ui))
