@@ -51,7 +51,7 @@ bool provablyNotNaN(const Value *v) {
 enum class Comm { No, Int, Fp };
 
 Comm commutativity(StringRef op) {
-  static const char *ints[] = {"add", "mul", "and", "or", "xor", "smax", "smin", "umax", "umin", "uadd_sat",
+  static const char *ints[] = {"add", "mul", "and", "or", "xor", "smax", "smin", "umax", "umin", "uadd_sat", "sadd_sat",
                                "uadd_overflow", "sadd_overflow", "umul_overflow", "smul_overflow"};
   for (const char *o : ints)
     if (op == o)
