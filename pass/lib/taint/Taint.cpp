@@ -550,6 +550,34 @@ FnInfo &Analyzer::fn(const Function *F) {
       }
     }
   }
+  // CR rule 14 "No live exit": an exit edge of a loop into a noreturn arm (a dead end in no loop around the exiting
+  // block) is taken per trip under that trip's exit flag, and the arm's blocks run under it. Where the loop has no live
+  // exit the arm post-dominates the loop and the walk above stops at it: every block of the arm is control dependent
+  // on the exiting branch as well (R3/p10.c viacall: an in-module callee in the arm is called under the flag).
+  for (const Loop *Lp : info->LI->getLoopsInPreorder()) {
+    SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exitEdges;
+    Lp->getExitEdges(exitEdges);
+    for (const auto &edge : exitEdges) {
+      const BasicBlock *A = edge.first, *S = edge.second;
+      auto inLoopAround = [&](const BasicBlock *X) {
+        for (const Loop *l = info->LI->getLoopFor(X); l; l = l->getParentLoop())
+          if (l->contains(A))
+            return true;
+        return false;
+      };
+      if (!dead.isDeadEnd(S) || inLoopAround(S))
+        continue;
+      SmallVector<const BasicBlock *, 8> work{S};
+      SmallPtrSet<const BasicBlock *, 8> seen{S};
+      while (!work.empty()) {
+        const BasicBlock *X = work.pop_back_val();
+        addParent(X, A);
+        for (const BasicBlock *Y : successors(X))
+          if (!inLoopAround(Y) && seen.insert(Y).second)
+            work.push_back(Y);
+      }
+    }
+  }
   // Post-dominance over the live subgraph: pdom(Y) = {Y} | AND over Y's live successors of pdom(s).
   std::vector<const BasicBlock *> liveBlocks;
   DenseMap<const BasicBlock *, unsigned> liveIdx;
