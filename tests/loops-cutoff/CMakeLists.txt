@@ -223,6 +223,13 @@ add_test(NAME loops-cutoff-ctl-helper
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/ctl_helper.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-bxikv (CR rules 8, 14): a register rotated in place behind a classical branch of every trip is carried in place (one
+# rail on both paths of the branch), no per-trip copy.
+add_test(NAME loops-cutoff-trip-register
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_register.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # Review R1 m1 (CR rule 6 "In a rolled loop", owner ruling Q4, with Q10's tests): rule 6's per-trip clean of a carried
 # value across the classical exit tests, cleaned under each test's "went on" flag. Each entry §6-checked.
 add_test(NAME loops-cutoff-conjunct-r6

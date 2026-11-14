@@ -1457,6 +1457,32 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     std::vector<std::optional<SmallVector<Operand, 4>>> before;
     for (Instruction *I : outs)
       before.push_back(fieldsOf(I));
+    // cq-bxikv: the rails the part's outputs are computed from that are bound before the branch (its operands outside the
+    // part, through the part's own instructions). A part that updates one of them in place (a cq_theta of a carried
+    // register) binds its output to that rail: the rail is live on both paths, so its join is that rail itself, not a phi
+    // with a fresh |0> seed (which made the carried register look like a new value each trip and copied it per trip).
+    SmallPtrSet<const Value *, 8> priorRails;
+    {
+      SmallPtrSet<const Value *, 16> seen;
+      SmallVector<const Value *, 16> work(outs.begin(), outs.end());
+      while (!work.empty()) {
+        const Value *v = work.pop_back_val();
+        if (!seen.insert(v).second)
+          continue;
+        auto *I = dyn_cast<Instruction>(v);
+        if (I && in.count(I->getParent())) {
+          for (const Use &U : I->operands())
+            work.push_back(U.get());
+          continue;
+        }
+        if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
+          continue;
+        if (auto f = fieldsOf(v))
+          for (const Operand &o : *f)
+            if (o.handle)
+              priorRails.insert(o.v);
+      }
+    }
     BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out()), *Skip = BasicBlock::Create(Cx, "", &ctx.out()),
                *Join = BasicBlock::Create(Cx, "", &ctx.out());
     // The branch first: the uncompute spine reads the output CFG where the part is lowered (a store a classical branch can
@@ -1519,6 +1545,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         const Operand &r = (*now)[f];
         if (!r.handle)
           j.skip.push_back(Operand{Constant::getNullValue(r.v->getType()), false});
+        else if (priorRails.count(r.v))
+          j.skip.push_back(r);   // cq-bxikv: the same rail on both paths
         else if (now->size() == leaves.size())
           j.skip.push_back(Operand{zero(railOf(leaves[f])), true});
         else if (now->size() == 1 && (outs[k]->getType()->isIntegerTy() || outs[k]->getType()->isFloatingPointTy() ||
@@ -1536,7 +1564,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (segHook)
       segHook(Join);
     ctx.B().SetInsertPoint(Join);
-    auto phiOf = [&](Value *run, Value *skip, bool rail) {
+    auto phiOf = [&](Value *run, Value *skip, bool rail) -> Value * {
+      if (rail && run == skip)
+        return run;   // cq-bxikv: one rail on both paths is that rail
       PHINode *ph = ctx.B().CreatePHI(run->getType(), 2);
       ph->addIncoming(run, ran);
       ph->addIncoming(skip, Skip);
