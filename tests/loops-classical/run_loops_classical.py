@@ -68,7 +68,9 @@ RULE6 = {"r_b3": [("frozen", "i32"), ("measured", "i32")],
          "r_c3": [("frozen", "i32"), ("measured", "i32")],
          # owner 2026-11-11 Q4 (cq-padp): a final value read only by an uncomputed flag is not cleaned per trip
          "r_padp": [("measured", "i32")],
-         "r_opnd": [("frozen", "i32"), ("measured", "i32"), ("rule6_image", "i32")]}
+         "r_opnd": [("frozen", "i32"), ("measured", "i32"), ("rule6_image", "i32")],
+         # Q4 (review R2 q6): read only as a phase's angle (a phase rotates no rail of it): not cleaned per trip
+         "r_phang": [("measured", "i32")]}
 # cq-fx3s / cq-aqbw: the reverse loop deferred until after the readers of the loop's exit values (no copy-out).
 DEFERRED_PROBE = PROBES / "deferred.O1.ll"
 DEFERRED = {"f_arm": [("frozen", "i32"), ("measured", "i32")],

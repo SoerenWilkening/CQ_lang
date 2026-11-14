@@ -770,6 +770,10 @@ bool Unit::liveAfterLoop(Loop &L, const Value *fin) {
         continue;   // the chain itself (the caller checked that nothing else in L reads it)
       if (keeps(*I))
         return true;
+      // A void call keeps() lets pass (a cq_phi, its angle a rail or not, Q4: a phase is no rotation of its angle; an
+      // assume-like or debug intrinsic) reads the value and leaves nothing behind that could keep it.
+      if (isa<CallBase>(I) && I->getType()->isVoidTy())
+        continue;
       if (I->isTerminator()) {
         if (!isa<BranchInst>(I) && !isa<SwitchInst>(I))
           return true;
