@@ -79,6 +79,11 @@ MUTANTS = {
         ("mix", "unguarded", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
         ("mixc", "unguarded_c", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
     ],
+    # owner ruling Q10 (cq-kbygn exit-test part; CR rule 14): the classical br of test 0 on c dropped, so the chain goes on
+    # where c is 0 (a_1 = a_0 & q), and trips C never runs change acc and *f
+    "exit_conjunct": [
+        ("ec_do", "no_test_branch", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
+    ],
     # cq-nmzv3's sibling (review R1 t2): the second call of g, behind `if (c)`, unguarded
     "q3_phantom": [
         ("phantom", "second_unguarded", r"(?s)(  br i1 (%[\w.]+), label %[\w.]+, label %[\w.]+\n.*?)"
