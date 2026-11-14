@@ -31,9 +31,10 @@
 //  last rail is the register (kept, never mirrored nor copied out). Trip 0 cleans the initial rail: a
 //  seed minted for the loop, this function's own rail when nothing reads it once the loop is entered
 //  (lcw-h2 c2: the register before the loop), or else a copy of it. Case 3 cleans through the advancing
-//  select (125). An unrotated chain is a register only when its final value is read after the loop.
+//  select (125). An unrotated chain is a register only when its final value is live after the loop as something
+//  never uncomputed (owner 2026-11-11 Q4, liveAfterLoop); else it is garbage, undone by the reverse loop.
 //  An update chain may sit past a quantum arm's merge, and a merge of an arm's update with the carried value
-//  itself is cleaned with the composite inverse, its final rail kept whether read or not; a bus load copy as
+//  itself is cleaned with the composite inverse, under the same Q4 condition; a bus load copy as
 //  the initial rail is excepted on trip 0 under a classical branch (planRuleSixMerges, 109).
 //
 //  Per-trip uncompute (rule 5, as early as allowed). Before the reverse, each segment is flushed at
@@ -484,8 +485,9 @@ private:
   // (Uncompute::cleanupBijective), so the trip's last U is the carried register itself (kept, never
   // undone by the reverse loop, never copied out). Case 3 asks the same of the select advancing it:
   // y'' = a ? F(y) : y, t = a ? F^-1(y'') : y'' (125), the trip-local U_i uncomputed first.
-  // A garbage U (no rotation) is a register only when the loop's final value is read after the
-  // loop: else rule 5 uncomputes the whole chain and the old value is never dead (rule 6, 42).
+  // A garbage U (no rotation) is a register only when the loop's final value is live after the loop as
+  // something never uncomputed (owner Q4): else rule 5 uncomputes the whole chain and the old value is never dead
+  // (rule 6, 42).
   struct R6 {
     PHINode *p;
     SmallVector<Instruction *, 2> U;   // the update chain, U.back() the next value's rail
@@ -493,7 +495,8 @@ private:
     bool initDirect;   // the initial rail is this function's own and dead after the loop entry: trip 0 cleans it
     // A merge of an arm's update with p itself (109's overflow_arg_area): the next value is the merge, cleaned with the
     // composite inverse a ? y' : U^-1(y'). Rule 6's rolled-loop clause: the trip predicate does not read p, the final
-    // rail stays allocated whether or not it is read, and a bus load copy as the initial rail is excepted on trip 0.
+    // rail is live after the loop as something never uncomputed (owner Q4), and a bus load copy as the initial rail is
+    // excepted on trip 0.
     bool merge = false;
     bool initLoad = false;
   };
@@ -507,6 +510,7 @@ private:
   }
   void planRuleSix(Loop &L, Case c);
   void planRuleSixMerges(Loop &L);
+  bool liveAfterLoop(Loop &L, const Value *fin);
   void cleanInvariantOnExit(Loop &L, BasicBlock *T);
   // cq-j5mq: a loop with several classical exit edges into one exit block. T's phi naming the edge taken, and per edge
   // the segment block it leaves from: the reverse starts at that segment.
@@ -636,7 +640,6 @@ void Unit::planRuleSix(Loop &L, Case c) {
     chain.push_back(U);
     // Nothing else in the loop reads the chain (the clean-up of the next trip frees it); a reader after
     // the loop reads the final rail.
-    bool live = false;
     for (const Instruction *x : chain)
       for (const User *usr : x->users()) {
         if (usr == &p || is_contained(chain, usr))
@@ -644,10 +647,10 @@ void Unit::planRuleSix(Loop &L, Case c) {
         auto *ui = dyn_cast<Instruction>(usr);
         if (!ui || L.contains(ui))
           ok = false;
-        else
-          live = true;
       }
-    if (!ok || (!rotated && !live))
+    // Owner 2026-11-11 Q4 (cq-padp): an unrotated chain is cleaned per trip only when its final value is live after the
+    // loop as something never uncomputed; else it is garbage, undone by the reverse loop after its last reader.
+    if (!ok || (!rotated && !liveAfterLoop(L, U)))
       continue;
     plan6.push_back({&p, ups, rotated, initDead(L, p.getIncomingValueForBlock(pre), &p)});
   }
@@ -715,7 +718,9 @@ void Unit::planRuleSixMerges(Loop &L) {
         work.push_back(ui);
       }
     }
-    if (!ok)
+    // Owner 2026-11-11 Q4: only a final value live after the loop as something never uncomputed (95, 109's
+    // overflow_arg_area is not: its chain is garbage, undone by the reverse loop).
+    if (!ok || !liveAfterLoop(L, M))
       continue;
     const Value *init = p.getIncomingValueForBlock(pre);
     R6 r{&p, {Up}, false, initDead(L, init, &p)};
@@ -723,6 +728,85 @@ void Unit::planRuleSixMerges(Loop &L) {
     r.initLoad = isa<LoadInst>(init) && isQ(init);
     plan6.push_back(std::move(r));
   }
+}
+
+// Owner 2026-11-11 Q4 (CR rule 6, "In a rolled loop"): is the final carried value `fin` live after L as something never
+// uncomputed (measured, returned, stored, rotated, an operand of a kept rail)? Forward over the values computed from fin
+// outside L: a return, a store, a load (an address rail), a call other than cq_phi or a template/libm intrinsic (measured,
+// rotated, or handed to a callee that may keep it) is such a use. Arithmetic, casts, compares, selects and phis pass the
+// question on to their result. A conditional branch or switch on such a value passes it on to the merges its region
+// feeds, and is a use itself when its region (up to its immediate post-dominator) holds a store, a load, a return or such
+// a call: a flag controlling a kept store or a measurement is kept. A flag read by phases alone is uncomputed (cq-padp).
+bool Unit::liveAfterLoop(Loop &L, const Value *fin) {
+  std::unique_ptr<PostDominatorTree> PDT;
+  SmallPtrSet<const Value *, 16> seen;
+  SmallVector<const Value *, 16> work{fin};
+  auto keeps = [&](const Instruction &I) {
+    if (isa<ReturnInst>(I) || isa<StoreInst>(I) || isa<LoadInst>(I) || isa<ResumeInst>(I) || I.isAtomic())
+      return true;
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB || isa<DbgInfoIntrinsic>(CB))
+      return false;
+    if (auto *II = dyn_cast<IntrinsicInst>(CB); II && II->isAssumeLikeIntrinsic())
+      return false;
+    switch (calls::classify(*CB, ctx.T, ctx.S)) {
+    case calls::Class::Phi:
+    case calls::Class::TemplateIntrinsic:
+    case calls::Class::LibmIntrinsic:
+      return false;
+    default:
+      return true;
+    }
+  };
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    for (const User *usr : v->users()) {
+      auto *I = dyn_cast<Instruction>(usr);
+      if (!I)
+        return true;
+      if (L.contains(I))
+        continue;   // the chain itself (the caller checked that nothing else in L reads it)
+      if (keeps(*I))
+        return true;
+      if (I->isTerminator()) {
+        if (!isa<BranchInst>(I) && !isa<SwitchInst>(I))
+          return true;
+        // The region the branch decides: blocks reached from it before its immediate post-dominator.
+        if (!PDT)
+          PDT = std::make_unique<PostDominatorTree>(F);
+        BasicBlock *B = const_cast<BasicBlock *>(I->getParent());
+        auto *node = PDT->getNode(B);
+        BasicBlock *J = node && node->getIDom() ? node->getIDom()->getBlock() : nullptr;
+        if (!J)
+          return true;
+        SmallPtrSet<BasicBlock *, 8> region;
+        SmallVector<BasicBlock *, 8> bw(succ_begin(B), succ_end(B));
+        while (!bw.empty()) {
+          BasicBlock *x = bw.pop_back_val();
+          if (x == J || x == B || !region.insert(x).second)
+            continue;
+          for (Instruction &y : *x)
+            if (keeps(y))
+              return true;
+          bw.append(succ_begin(x), succ_end(x));
+        }
+        // The merges fed by the region or by the branch's own edges depend on the condition.
+        region.insert(B);
+        for (BasicBlock *x : region)
+          for (BasicBlock *s : successors(x))
+            for (PHINode &ph : s->phis())
+              if (any_of(ph.blocks(), [&](BasicBlock *pb) { return region.contains(pb); }))
+                work.push_back(&ph);
+        continue;
+      }
+      if (I->getType()->isVoidTy())
+        return true;
+      work.push_back(I);
+    }
+  }
+  return false;
 }
 
 // CR rule 6 in a rolled loop (75): a loop-invariant kept rail x (a rotated register) whose only reader is an update
