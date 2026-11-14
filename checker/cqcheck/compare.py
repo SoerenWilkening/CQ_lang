@@ -2120,11 +2120,15 @@ def _real_exits(keys: Sequence[str], o_by: Dict[str, RunResult], r_by: Dict[str,
 
 
 def _exit_mismatch(k: str, o: RunResult, c: RunResult) -> List[str]:
-    """Ours ended in a host call as the first end of the shot, and the C program ended otherwise."""
+    """Ours ended in a host call and the C program ended otherwise. Also where an abort flag of ours reads 1 before that
+    call (owner ruling 2026-11-11 Q7, cq-edr1f; CR rule 16 noreturn, BACKEND_ABI §1.11 end of the shot): a noreturn
+    callee an event can precede is an effect entry behind that flag, never performed after a flag reading 1, so a host
+    exit past a fired abort is the call made as it stands where rule 16 forbids it, and its status is not the C end."""
     code = (o.outputs or {}).get("host_end")
-    if code is None or _flag_on(o) or code == (c.outputs or {}).get("exit_status"):
+    if code is None or code == (c.outputs or {}).get("exit_status"):
         return []
-    return [f"sample {k}: ours ended in a host call with status {code} and the C program ends with "
+    after = " after an abort flag of ours that reads 1" if _flag_on(o) else ""
+    return [f"sample {k}: ours ended in a host call with status {code}{after} and the C program ends with "
             f"{(c.outputs or {}).get('exit_status', 'no exit')} ({(c.outputs or {}).get('end')})"]
 
 
