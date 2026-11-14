@@ -854,16 +854,35 @@ bool Analyzer::measuredRead(const Value *V) {
   // computed from its incoming values and the conditions that choose among them (its flags). Rules 2, 14 (owner, cq-2z29a): a
   // loop-carried value with a rail among its incoming values is a rail in every trip. A rule 14 exit read wins.
   enum : uint8_t { No, Classical, Measured, Busy };
-  DenseMap<const Value *, uint8_t> memo;
-  std::function<uint8_t(const Value *)> cls = [&](const Value *x) -> uint8_t {
+  // Rule 3 (cq-qzj6): a vector is its elements; the spine collapses per element, so a read of one element (an
+  // extractelement) asks only that element's sources. elem -1: the whole value.
+  auto elemLanes = [](Type *t) -> unsigned {
+    auto *vt = dyn_cast<FixedVectorType>(t);
+    Type *e = vt ? vt->getElementType() : t;
+    return e->isIntegerTy() ? std::max(1u, (e->getIntegerBitWidth() + 7) / 8) : 1u;
+  };
+  auto rawElem = [&](const Value *x, int elem) {
+    Lanes l = L(x);
+    if (elem < 0 || !isa<FixedVectorType>(x->getType()))
+      return anyLane(l);
+    unsigned n = elemLanes(x->getType());
+    for (unsigned k = elem * n; k < (elem + 1) * n && k < l.size(); ++k)
+      if (l.test(k))
+        return true;
+    return false;
+  };
+  std::map<std::pair<const Value *, int>, uint8_t> memo;
+  std::function<uint8_t(const Value *, int)> cls = [&](const Value *x, int elem) -> uint8_t {
     if (isa<Constant>(x) || isa<BasicBlock>(x) || isa<MetadataAsValue>(x) || isa<InlineAsm>(x))
       return Classical;
-    auto mi = memo.find(x);
+    if (!isa<FixedVectorType>(x->getType()))
+      elem = -1;
+    auto mi = memo.find({x, elem});
     if (mi != memo.end())
       return mi->second == Busy ? No : mi->second;
-    memo[x] = Busy;
+    memo[{x, elem}] = Busy;
     uint8_t r = [&]() -> uint8_t {
-      if (!raw(x))
+      if (!rawElem(x, elem))
         return Classical;
       auto *I = dyn_cast<Instruction>(x);
       if (I && I->getFunction() == cur->F && isa<PHINode>(I))
@@ -878,7 +897,12 @@ bool Analyzer::measuredRead(const Value *V) {
       curUser = nullptr;
       if (ex)
         return No;
-      SmallVector<const Value *, 8> srcs;
+      SmallVector<std::pair<const Value *, int>, 8> srcs;
+      auto lanewise = [&](const Value *o) {   // the same element of an operand of the same shape, else all of it
+        auto *vt = dyn_cast<FixedVectorType>(o->getType());
+        auto *it = dyn_cast<FixedVectorType>(I->getType());
+        srcs.push_back({o, vt && it && vt->getNumElements() == it->getNumElements() ? elem : -1});
+      };
       if (auto *P = dyn_cast<PHINode>(I)) {
         const BasicBlock *J = P->getParent();
         SmallPtrSet<const BasicBlock *, 8> terms;
@@ -888,7 +912,7 @@ bool Analyzer::measuredRead(const Value *V) {
         };
         addCdt(J);
         for (unsigned k = 0; k < P->getNumIncomingValues(); ++k) {
-          srcs.push_back(P->getIncomingValue(k));
+          srcs.push_back({P->getIncomingValue(k), elem});
           const BasicBlock *B = P->getIncomingBlock(k);
           addCdt(B);
           if (cur->taintedTerm.count(B))
@@ -896,28 +920,71 @@ bool Analyzer::measuredRead(const Value *V) {
         }
         for (const BasicBlock *T : terms)   // the result is order-free: every source must be classical or measured
           if (const Value *c = terminatorCondition(T->getTerminator()))
-            srcs.push_back(c);
+            srcs.push_back({c, -1});
+      } else if (auto *IE = dyn_cast<InsertElementInst>(I)) {
+        // Rule 3's representation changes (cq-qzj6): a lane move reads the element it moves.
+        auto *ci = dyn_cast<ConstantInt>(IE->getOperand(2));
+        if (!ci) {
+          for (const Use &u : I->operands())
+            srcs.push_back({u.get(), -1});
+        } else if (elem < 0) {
+          srcs.push_back({IE->getOperand(0), -1});
+          srcs.push_back({IE->getOperand(1), -1});
+        } else if (ci->getZExtValue() == unsigned(elem)) {
+          srcs.push_back({IE->getOperand(1), -1});
+        } else {
+          srcs.push_back({IE->getOperand(0), elem});
+        }
+      } else if (auto *EE = dyn_cast<ExtractElementInst>(I)) {
+        if (auto *ci = dyn_cast<ConstantInt>(EE->getIndexOperand()))
+          srcs.push_back({EE->getVectorOperand(), int(ci->getZExtValue())});
+        else
+          for (const Use &u : I->operands())
+            srcs.push_back({u.get(), -1});
+      } else if (auto *SV = dyn_cast<ShuffleVectorInst>(I)) {
+        int m = elem < 0 ? -1 : SV->getMaskValue(elem);
+        unsigned n0 = cast<FixedVectorType>(SV->getOperand(0)->getType())->getNumElements();
+        if (elem >= 0 && m < 0)
+          return Classical;   // a poison element
+        if (m < 0) {
+          srcs.push_back({SV->getOperand(0), -1});
+          srcs.push_back({SV->getOperand(1), -1});
+        } else if (unsigned(m) < n0) {
+          srcs.push_back({SV->getOperand(0), m});
+        } else {
+          srcs.push_back({SV->getOperand(1), int(m - n0)});
+        }
+      } else if (isa<InsertValueInst>(I) || isa<ExtractValueInst>(I)) {
+        for (const Use &u : I->operands())   // a field move: computed from its operands like a cast
+          srcs.push_back({u.get(), -1});
       } else if (isa<BinaryOperator>(I) || isa<CmpInst>(I) || isa<CastInst>(I) || isa<SelectInst>(I) || isa<FreezeInst>(I) ||
-                 isa<UnaryOperator>(I) ||
-                 (isa<IntrinsicInst>(I) && !I->mayReadOrWriteMemory() && !isa<ConstrainedFPIntrinsic>(I))) {
+                 isa<UnaryOperator>(I)) {
         for (const Use &u : I->operands())
-          srcs.push_back(u.get());
+          lanewise(u.get());
+      } else if (isa<IntrinsicInst>(I) && !I->mayReadOrWriteMemory() && !isa<ConstrainedFPIntrinsic>(I)) {
+        for (const Use &u : I->operands())
+          srcs.push_back({u.get(), -1});
       } else {
         return No;
       }
       uint8_t c = Classical;
-      for (const Value *s : srcs) {
-        uint8_t k = cls(s);
+      for (auto [s, e] : srcs) {
+        uint8_t k = cls(s, e);
         if (k == No)
           return No;
         c = std::max(c, k);
       }
       return c;
     }();
-    memo[x] = r;
+    memo[{x, elem}] = r;
     return r;
   };
-  bool res = cls(V) == Measured;
+  // An extractelement reads one element of V: only that element's sources count (cq-qzj6).
+  int e0 = -1;
+  if (auto *EE = dyn_cast<ExtractElementInst>(user); EE && EE->getVectorOperand() == V && points.size() == 1)
+    if (auto *ci = dyn_cast<ConstantInt>(EE->getIndexOperand()))
+      e0 = int(ci->getZExtValue());
+  bool res = cls(V, e0) == Measured;
   curUser = user;
   return res;
 }
@@ -3244,6 +3311,60 @@ void Analyzer::finish() {
 namespace cq {
 using namespace taintimpl;
 
+// CR rule 8 (cq-4l9jj): pred factors a quantum branch condition on its Boolean function, and a classical literal one edge's
+// condition implies (`c && q` taken, `c || q` not taken) stays a classical branch around the quantum part. So for the
+// measurement walks below such a branch is a classical choice: its arms do not both run. Implied literals are read through
+// the connectives pred expands (and, or, not, an i1 select); does the condition, taken or not, imply a classical literal?
+static bool impliesClassical(function_ref<bool(const Value *)> isQuantum, const Value *c, bool taken, unsigned depth = 0) {
+  if (isa<Constant>(c) || depth > 16)
+    return false;
+  if (!isQuantum(c))
+    return true;
+  const unsigned d = depth + 1;
+  if (auto *bo = dyn_cast<BinaryOperator>(c); bo && bo->getType()->isIntegerTy(1)) {
+    const Value *a = bo->getOperand(0), *b = bo->getOperand(1);
+    switch (bo->getOpcode()) {
+    case Instruction::And:   // taken: either's literal; not taken: one on each side (a common one is not tracked)
+      return taken ? impliesClassical(isQuantum, a, true, d) || impliesClassical(isQuantum, b, true, d)
+                   : impliesClassical(isQuantum, a, false, d) && impliesClassical(isQuantum, b, false, d);
+    case Instruction::Or:
+      return taken ? impliesClassical(isQuantum, a, true, d) && impliesClassical(isQuantum, b, true, d)
+                   : impliesClassical(isQuantum, a, false, d) || impliesClassical(isQuantum, b, false, d);
+    case Instruction::Xor:
+      if (auto *k = dyn_cast<ConstantInt>(b); k && k->isOne())
+        return impliesClassical(isQuantum, a, !taken, d);
+      if (auto *k = dyn_cast<ConstantInt>(a); k && k->isOne())
+        return impliesClassical(isQuantum, b, !taken, d);
+      return false;
+    default:
+      return false;
+    }
+  }
+  // select c, t, f (-O1's `c && q` is select c, q, false): a literal both alternatives imply, a classical c among them.
+  if (auto *si = dyn_cast<SelectInst>(c); si && si->getType()->isIntegerTy(1) && si->getCondition()->getType()->isIntegerTy(1)) {
+    const Value *s = si->getCondition();
+    // Does the edge arise on side `v` (chosen when s reads sv)? Absent: v is the constant the edge never takes.
+    auto present = [&](const Value *v) {
+      auto *k = dyn_cast<ConstantInt>(v);
+      return !k || k->isOne() == taken;
+    };
+    const Value *t = si->getTrueValue(), *f = si->getFalseValue();
+    bool pt = present(t), pf = present(f);
+    if (!pt && !pf)
+      return false;
+    if (pt != pf)   // the edge only on one side: it implies s (or not s), and what that side implies
+      return impliesClassical(isQuantum, s, pt, d) || impliesClassical(isQuantum, pt ? t : f, taken, d);
+    // Both sides: approximated as a classical literal on each value side (a common one is not tracked).
+    return !isa<Constant>(t) && !isa<Constant>(f) && impliesClassical(isQuantum, t, taken, d) &&
+           impliesClassical(isQuantum, f, taken, d);
+  }
+  return false;
+}
+
+static bool hasClassicalFactor(function_ref<bool(const Value *)> isQuantum, const Value *c) {
+  return c->getType()->isIntegerTy(1) && (impliesClassical(isQuantum, c, true) || impliesClassical(isQuantum, c, false));
+}
+
 // CR rule 2, spine::measuredOnEveryPath: taint asks it before TaintInfo is published (rule 18, its twins).
 bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Value *v, const Instruction *also) {
   auto strip = [](const Value *v) {
@@ -3284,7 +3405,7 @@ bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Valu
   auto quantumBranch = [&](const BasicBlock *b) {
     const Instruction *t = b->getTerminator();
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
-      return isQuantum(br->getCondition());
+      return isQuantum(br->getCondition()) && !hasClassicalFactor(isQuantum, br->getCondition());   // rule 8, cq-4l9jj
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return isQuantum(sw->getCondition());
     if (auto *ib = dyn_cast<IndirectBrInst>(t))
@@ -3407,7 +3528,7 @@ bool measuredBefore(function_ref<bool(const Value *)> isQuantum, const Value *v,
   auto quantumBranch = [&](const BasicBlock *b) {
     const Instruction *t = b->getTerminator();
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
-      return isQuantum(br->getCondition());
+      return isQuantum(br->getCondition()) && !hasClassicalFactor(isQuantum, br->getCondition());   // rule 8, cq-4l9jj
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return isQuantum(sw->getCondition());
     if (auto *ib = dyn_cast<IndirectBrInst>(t))
