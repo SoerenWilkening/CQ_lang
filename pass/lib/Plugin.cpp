@@ -17,6 +17,7 @@
 // kernel tier 1). Inside any other module every function is rewritten unless it has no bus access, no cq_* call and
 // no call (rule 19, TaintInfo::isTainted).
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -385,8 +386,11 @@ SmallVector<Function *, 4> returnAfterCalls(Module &M, SmallVector<Function *, 4
 //   which stays as it is) or a function that itself ends below;
 // - after cqrt_abort_i1 of a fresh alloc_i1(true) seed: classical-valued 1, abort_i1 does not return and the shot ends
 //   there (Q1): the entry under the true seed of rule 16's noreturn bullet, rule 14's loop with no exit edge.
-// The rest of the block is `unreachable`, the dead blocks go, and a function with no return left (after such a cut) is
-// `noreturn`, its call sites too, so its callers end after the call in turn (iterated).
+// The rest of the block is `unreachable` and the dead blocks go. A function with no return left after such a cut gets
+// `noreturn` back when it had it in the input (`wasNoreturn`, by name: the own symbol keeps it), and otherwise only where a
+// call of it goes on after the call; its call sites then get it too, so its callers end after the call in turn (iterated).
+// No attribute is added where nothing needs it (a table clone reached through the clone table alone): the module's
+// attribute groups, and with them the text of every function left as it is, stay as they were.
 bool trueSeed(const Value *v) {
   auto *A = dyn_cast<CallBase>(v);
   const Function *G = A ? A->getCalledFunction() : nullptr;
@@ -403,7 +407,7 @@ bool trueSeed(const Value *v) {
   });
 }
 
-void endAtNoreturn(Module &M) {
+void endAtNoreturn(Module &M, const std::set<std::string> &wasNoreturn) {
   bool again = true;
   while (again) {
     again = false;
@@ -428,13 +432,19 @@ void endAtNoreturn(Module &M) {
         changeToUnreachable(I);
       removeUnreachableBlocks(F);
       bool returns = any_of(F, [](BasicBlock &BB) { return isa<ReturnInst>(BB.getTerminator()); });
-      if (!returns && !F.doesNotReturn()) {
-        F.addFnAttr(Attribute::NoReturn);
-        for (User *U : F.users())
-          if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledFunction() == &F)
-            CB->addFnAttr(Attribute::NoReturn);
-        again = true;
-      }
+      if (returns || F.doesNotReturn())
+        continue;
+      bool goesOn = any_of(F.users(), [&](const User *U) {
+        auto *CB = dyn_cast<CallBase>(U);
+        return CB && CB->getCalledFunction() == &F && !isa<UnreachableInst>(CB->getNextNode());
+      });
+      if (!wasNoreturn.count(F.getName().str()) && !goesOn)
+        continue;
+      F.addFnAttr(Attribute::NoReturn);
+      for (User *U : F.users())
+        if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledFunction() == &F)
+          CB->addFnAttr(Attribute::NoReturn);
+      again = true;
     }
   }
 }
@@ -1222,6 +1232,12 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
+    // The functions the input marks `noreturn` (endAtNoreturn gives the attribute back where the program ends).
+    std::set<std::string> wasNoreturn;
+    for (Function &F : M)
+      if (!F.isDeclaration() && F.doesNotReturn())
+        wasNoreturn.insert(F.getName().str());
+
     // 0. Rules 16, 22, 24: library calls that are memory operations under another name (calls/LibCalls.h).
     cq::calls::canonicalizeLibCalls(M);
 
@@ -1412,7 +1428,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
     // 5b. Owner rulings 2026-11-14 (scope of Q7; Q1): what does not come back ends there (endAtNoreturn).
-    endAtNoreturn(M);
+    endAtNoreturn(M, wasNoreturn);
 
     // CR rule 13 (b137e75): a lowered computed goto compares its address with blockaddress constants, which a
     // clone (or another lowered function) may take of another function's block. The textual IR names such a
