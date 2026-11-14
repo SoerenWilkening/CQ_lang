@@ -65,6 +65,8 @@ def probes(a) -> int:
     failures = 0
     here = Path(__file__).parent / "probes"
     for p in sorted(here.glob("*.ll")) + sorted(here.glob("deferred_*.c")):
+        if p.name.endswith(".control.ll") or (a.probe and not any(p.name.startswith(x) for x in a.probe)):
+            continue   # a control module, lowered by the probe that names it (`; SAME`)
         dest = OUT / ("probe_" + p.stem + ".ll")
         src = p.read_text()
         r = cqcc_lower(a, p, dest) if p.suffix == ".c" else lower(a, p, dest)
@@ -95,6 +97,22 @@ def probes(a) -> int:
                         reasons.append(f"{m.group(2)}: '{text}' occurs {got} times, expected {n}")
                 elif not check_pattern(m.group(3)).search(body):
                     reasons.append(f"{m.group(2)}: missing '{m.group(3)}'")
+            # `; IDENTITY <fn>`: <fn>'s lowered definition is byte-identical to the pass's identity (opt with no passes).
+            ident = re.findall(r"^; IDENTITY (\w+)$", src, re.M)
+            if ident:
+                plain = subprocess.run([a.opt, "-S", str(p)], capture_output=True, text=True).stdout
+                for fn in ident:
+                    want = function_text(plain, fn)
+                    if not want or function_text(module, fn) != want:
+                        reasons.append(f"{fn}: not the pass's identity")
+            # `; SAME <fn> <other.ll>`: <fn>'s lowered definition is byte-identical to its lowering in the probe
+            # <other.ll> (a control module).
+            for fn, other in re.findall(r"^; SAME (\w+) (\S+)$", src, re.M):
+                odest = OUT / ("probe_" + Path(other).stem + ".same.ll")
+                r2 = lower(a, p.parent / other, odest)
+                want = function_text(odest.read_text(), fn) if r2.returncode == 0 else ""
+                if not want or function_text(module, fn) != want:
+                    reasons.append(f"{fn}: lowered otherwise than in {other}")
         failures += bool(reasons)
         print(f"{'ok' if not reasons else 'FAIL':4} probe {p.name}" + "".join("\n     " + x for x in reasons))
     return failures
@@ -134,6 +152,7 @@ def main() -> int:
     ap.add_argument("--spec", required=True)
     ap.add_argument("--show-diff", action="store_true")
     ap.add_argument("--probes-only", action="store_true")
+    ap.add_argument("--probe", action="append", help="only the probes whose file name starts with this (repeatable)")
     ap.add_argument("examples", nargs="*")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)

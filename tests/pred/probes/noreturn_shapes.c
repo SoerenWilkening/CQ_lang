@@ -63,9 +63,10 @@ int siblings(int a, int b) {
   }
   return cq_measure(s);
 }
-// cq-o75xb: a classical guard into a noreturn arm. Owner ruling 2026-11-11 Q7 (cq-edr1f): this module holds abort events
-// and the function is externally visible, so an event can precede the exit: the effect entry exit under a |1> seed,
-// then abort_i1 of it (a real host exit is noreturn_real_exit.c's).
+// cq-o75xb: a classical guard into a noreturn arm. Owner ruling 2026-11-14 (scope of Q7): the first exit comes before
+// every event of the function and no in-module caller calls it, so it is rule 16's ordinary host call although the
+// module holds abort events: the program really exits there. The exit in the loop follows the loop's quantum abort
+// arms, under the trip's quantum predicate: abort_i1.
 int classical_guard(int a, int c) {
   cq_theta(&a, 1.0);
   if (c & 1) exit(0);

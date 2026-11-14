@@ -290,7 +290,7 @@ static int keep_event(const char *s) {
     return 1;
   const char *n = s + sizeof pre - 1;
   static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "ret\"",
-                               "violation\"", "exit\"", "host_end\"", "effect\"", "shot\"", "shot_end\"", "free\"",
+                               "violation\"", "exit\"", "host_end\"", "abort_end\"", "effect\"", "shot\"", "shot_end\"", "free\"",
                                "out_mem\"", "tape\",\"op\":\"shot\""};
   for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
     if (!strncmp(n, keep[i], strlen(keep[i])))
@@ -2662,7 +2662,7 @@ __attribute__((constructor(100))) static void shot_ctor(void) {
 
 /* -- the shared state -- */
 
-enum { J_NONE, J_EXIT, J_SIGNAL };
+enum { J_NONE, J_EXIT, J_SIGNAL, J_ABORT };
 
 struct shot_state {
   sigjmp_buf jb;          /* the driver's sigsetjmp, in the worker */
@@ -3164,6 +3164,20 @@ __attribute__((noreturn)) void cqe__host_signal_end(int sig) {
   signal(sig, SIG_DFL);
   raise(sig);
   real__exit(128 + sig);
+}
+
+/* Owner ruling 2026-11-14 Q1 (cq-9tang; CR rule 16, ABI 1.11): cqrt_abort_i1 of a flag that is classical-valued 1 (a known
+ * rail reading 1: a fresh alloc_i1(true) seed) does not return. The shot ends there as at process exit: rt_tape.c's
+ * handler records the abort event first, then this ends the sample's run; the end of the shot (the tape performed in
+ * order, the noreturn entry among it; the kept rails) is reported as on a return, with no "ret" and no host_end (the
+ * program made no host exit), and an "abort_end" event marks it. */
+void cqe__abort_end(void) {
+  if (sample_running()) {
+    R->jkind = J_ABORT;
+    R->code = 0;
+    R->ran_fns = 0;
+    siglongjmp(R->jb, 1);
+  }
 }
 
 /* -- capture files -- */
@@ -3809,6 +3823,11 @@ void cqe__shot_end(void) { shot_finish(0, 1); }
 
 /* The driver's sigsetjmp returned again: the sample called exit/_exit, or raised a signal. */
 void cqe__shot_resume(void) {
+  if (R->jkind == J_ABORT) {
+    cqe__logf("{\"ev\":\"abort_end\"}"); /* ruling Q1: the shot ended at abort_i1 of a classical 1 */
+    shot_finish(0, 1);
+    return;
+  }
   if (R->jkind == J_EXIT) {
     cqe__logf("{\"ev\":\"host_end\",\"code\":%d}", R->code); /* rule 16: the program itself made the host exit */
     if (R->ran_fns < 0)
