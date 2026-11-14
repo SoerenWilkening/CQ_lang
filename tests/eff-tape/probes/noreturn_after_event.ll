@@ -32,3 +32,5 @@ ok:
 ; CHECK after_abort: call void @cqrt_tape_effect_controlled(i32 %{{s}}, i32 %{{t}}, ptr @.cq.effect.exit, i32 1)
 ; CHECK-COUNT after_abort: call void @cqrt_abort_i1( 2
 ; CHECK-COUNT after_abort: call void @exit( 0
+; Owner ruling 2026-11-14 Q1 (cq-9tang): abort_i1 of the true seed does not return; the `unreachable` after it stays.
+; CHECK-COUNT after_abort: unreachable 1
