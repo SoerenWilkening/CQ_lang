@@ -576,6 +576,19 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   // outs, does not compute it (169: "__cq_q_ilogb_1_unc itself keeps nothing"). Its test is the twin's
   // garbage as in the forward, uncomputed there. A recursion's overflow predicate kept by its first outside
   // caller (cq-ew5z: alloc_i1(0); and_i1(p, ovf, k), or copy_i1(ovf, k) with no predicate) is the same.
+  // A K-loop's chain end merged at a classical exit of the chain (CR rule 14, Q10's tests; rule 27 "Cutoff", a received-K
+  // cut, cq-wkzu9) is a phi of the arms' a_K that nothing reads: gone first, so that each arm's a_K is the form above.
+  for (bool changed = true; changed;) {
+    changed = false;
+    SmallVector<PHINode *, 8> unread;
+    for (Instruction &I : instructions(twin))
+      if (auto *ph = dyn_cast<PHINode>(&I); ph && ph->use_empty() && ph->getType()->isIntegerTy(32))
+        unread.push_back(ph);
+    for (PHINode *ph : unread) {
+      ph->eraseFromParent();
+      changed = true;
+    }
+  }
   SmallVector<CallInst *, 2> keptK;
   for (Instruction &I : instructions(twin)) {
     auto *a = dyn_cast<CallInst>(&I);

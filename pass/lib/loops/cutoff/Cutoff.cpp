@@ -2484,6 +2484,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       } else if (o.cut == seed) {
         qSkip = seed;   // no exit edge: the chain stays the seed (CR rule 14 "No live exit", below)
       } else {
+        // a_K exists on the cut path only (CR rule 27 "Cutoff": the cut is a classical exit of the chain, rule 14): made
+        // in Skip, never on the path that goes on, so it is the kept overflow predicate there and nothing else
+        // (cq-wkzu9: made before the branch it was a record on the other path, uncomputed and freed there).
+        IRBuilderBase::InsertPointGuard keep(ctx.B());
+        ctx.B().SetInsertPoint(o.Skip->getTerminator());
         CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
         RailId fid = ctx.unc().recordSeed(f);
         abi::CoreSpec cp{abi::Core::Copy, i1};

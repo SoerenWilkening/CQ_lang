@@ -209,6 +209,14 @@ add_test(NAME loops-cutoff-table-kh
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_kh=table_kh_c.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_kh.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-wkzu9 (CR rule 19 "Address rail", rule 14, rule 27 "Cutoff"): table functions of one type calling by-name helpers that
+# hold a K-loop (one with Q10's classical conjunct), dispatched over a rail pointer: the helpers of the candidates not
+# selected run unguarded and keep their a_K, merged by a phi across the cut's and the test's joins; their twins keep none.
+add_test(NAME loops-cutoff-ctl-helper
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/ctl_helper.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # Review R1 m1 (CR rule 6 "In a rolled loop", owner ruling Q4, with Q10's tests): rule 6's per-trip clean of a carried
 # value across the classical exit tests, cleaned under each test's "went on" flag. Each entry §6-checked.
 add_test(NAME loops-cutoff-conjunct-r6
