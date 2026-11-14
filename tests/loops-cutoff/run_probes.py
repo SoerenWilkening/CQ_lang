@@ -84,6 +84,12 @@ MUTANTS = {
     "exit_conjunct": [
         ("ec_do", "no_test_branch", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
     ],
+    # cq-9kcq (CR rule 27 "Cutoff", §1.4): the table clone's cut compares against the clone's own K 4 instead of the K it
+    # received, so it runs 4 trips where tk_f passed 2 (checked through tk_f, whose pointer is a rail: the dispatch calls
+    # the _ctl table clone; a mutant entry "fn@entry").
+    "table_k": [
+        ("__cq_q_kf_11_t_ctl@tk_f", "own_k", r"icmp ult i32 (\d+), %\d+", r"icmp ult i32 \1, 4"),
+    ],
     # cq-nmzv3's sibling (review R1 t2): the second call of g, behind `if (c)`, unguarded
     "q3_phantom": [
         ("phantom", "second_unguarded", r"(?s)(  br i1 (%[\w.]+), label %[\w.]+, label %[\w.]+\n.*?)"
@@ -92,7 +98,7 @@ MUTANTS = {
          r"\1  br label \2\n"),
     ],
 }
-_ALL = ("wrong_value", "hoist_trips")      # mutants applied at every match, not the first only
+_ALL = ("wrong_value", "hoist_trips", "own_k")   # mutants applied at every match, not the first only
 NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer
 
 
@@ -104,6 +110,8 @@ def mutants(a, probe: Path, mod: str, out: Path) -> int:
         mod = subprocess.run([a.opt, "-passes=instnamer", "-S", "-"], input=mod, capture_output=True, text=True,
                              check=True).stdout
     for e, name, old, new in MUTANTS.get(stem, []):
+        e, _, entry = e.partition("@")   # "fn@entry": the mutated function is not the entry checked
+        entry = entry or e
         b = body(mod, e)
         if not re.search(old, b):
             print(f"FAIL {probe.name} mutant {name}: {old!r} is not in @{e}")
@@ -116,13 +124,24 @@ def mutants(a, probe: Path, mod: str, out: Path) -> int:
             print(f"FAIL {probe.name} mutant {name}: not valid IR: " + (v.stderr.strip().splitlines() or ["?"])[0])
             failures += 1
             continue
-        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(low),
-                            "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker", timeout=a.timeout)
+        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(c_side(a, probe)), "--lowered",
+                            str(low), "--entry", entry], capture_output=True, text=True, cwd=ROOT / "checker",
+                            timeout=a.timeout)
         rejected = c.returncode == 1 and "FAIL" in c.stdout
         print(("ok   " if rejected else "FAIL ") + f"{probe.name} mutant {name}: "
               + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1][:200])
         failures += not rejected
     return failures
+
+
+def c_side(a, probe: Path) -> Path:
+    """The C program the §6 check reads: the probe itself, or --c-side's file for it (cq-9kcq: a received K the C
+    oracle cannot resolve per function, given there as CQ_K lines of the callees)."""
+    for spec in a.c_side or []:
+        name, f = spec.split("=", 1)
+        if name == probe.name.replace(".O1.ll", ""):
+            return probe.parent / f
+    return probe
 
 
 def body(module: str, fn: str) -> str:
@@ -179,7 +198,7 @@ def one(a, probe: Path) -> int:
                 "cqrt_measure" in t for t in re.findall(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M)):
             why.append("a twin measures")
         try:
-            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered",
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(c_side(a, probe)), "--lowered",
                                 str(lowered), "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker",
                                timeout=a.timeout)
             if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
@@ -201,6 +220,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=240, help="seconds for one entry's §6 check")
     ap.add_argument("--br-in", action="append", help="NAME=N: function NAME must hold at least N conditional br (cq-jws5r)")
     ap.add_argument("--calls-in", action="append", help="NAME=CALLEE=N: the calls of CALLEE function NAME must hold")
+    ap.add_argument("--c-side", action="append",
+                    help="PROBE=FILE: the §6 check reads its C program from FILE (next to the probe), not the probe")
     ap.add_argument("probes", nargs="+")
     a = ap.parse_args()
     fails = sum(one(a, Path(p).resolve()) for p in a.probes)

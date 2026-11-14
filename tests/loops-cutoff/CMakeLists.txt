@@ -207,3 +207,12 @@ add_test(NAME loops-cutoff-trip-switch
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_switch.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-9kcq (CR rule 27 "Cutoff", §1.4, rule 19): a K-loop in a table clone runs on the K the clone receives: each callee
+# (body form, two exits, nested, do-while, continue, return, a bus-load exit) is called through a pointer from an entry at
+# K 2 while its own K is 4. Each entry §6-checked against table_k_c.O1.ll (the callees at the received K, the C oracle's
+# per-function resolution); the mutant that compares with the own K is rejected.
+add_test(NAME loops-cutoff-table-k
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_k=table_k_c.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
