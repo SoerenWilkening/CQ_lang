@@ -2224,8 +2224,13 @@ void Analyzer::transferCall(CallBase &CB) {
       bool q = false;
       for (Value *A : actuals)
         q = q || L(A).any();
-      if (q && cur->effectEntries.insert(&CB).second)   // rule 16: the effect entry of its name, then abort_i1
-        st.changed = true;
+      // Owner ruling 2026-11-11 Q7 (cq-edr1f): also with classical arguments where a tape or abort event can precede
+      // it (the ordinary-host-call test). longjmp and a thread's exit are rule 24's, never this bullet's.
+      StringRef gn = G->getName();
+      bool jump = gn == "longjmp" || gn == "_longjmp" || gn == "siglongjmp" || gn == "__longjmp_chk" ||
+                  gn == "pthread_exit" || gn == "thrd_exit";
+      if ((q || (!jump && eventPrecedes(CB))) && cur->effectEntries.insert(&CB).second)   // rule 16: the effect entry
+        st.changed = true;                                                                   // of its name, then abort_i1
     }
     return;
   }
