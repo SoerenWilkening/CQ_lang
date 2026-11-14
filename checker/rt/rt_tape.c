@@ -90,6 +90,7 @@
 
 /* core.c's rail attributes (the family path's only use: classical-valuedness and exit roles) */
 int cqe__known(int32_t h);
+void cqe__abort_end(void); /* core.c: ruling Q1, abort_i1 of a classical 1 ends the shot */
 int cqe__trace_all(void); /* core.c (cq-9hzgh): the tape bookkeeping events are not in a compact trace */
 void cqe__setrole(int32_t h, int role);
 #define ROLE_TAPE 2
@@ -1114,6 +1115,10 @@ static void op_abort(int32_t fh, const char *sym) {
     log_line(&b);
   }
   advance();
+  /* Owner ruling 2026-11-14 Q1 (cq-9tang; ABI 1.11): a flag that is classical-valued 1 does not return; the shot ends here.
+   * A flag under a quantum predicate is no known rail, whatever it reads on this basis input. */
+  if (fv == 1 && e->pred_known)
+    cqe__abort_end();
 }
 
 /* ---------- printf on measured fields ---------- */

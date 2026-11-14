@@ -29,6 +29,14 @@ def RETURN(fn):
     return new if new != fn else sub(r"  tail call void @exit\(i32 noundef 1\) #\d+\n", "")(fn)
 
 
+# Owner ruling 2026-11-14 Q1 (cq-9tang, ABI 1.11): abort_i1 of the entry's alloc_i1(true) seed (classical-valued 1) does not
+# return, the shot ends there. GOES_ON: a lowered program that goes on after it with a host exit of another status; the
+# run must end at the abort, so the exit is never observed and the verdict stays PASS. NO_END_ABORT: the abort_i1 of the
+# seed omitted, the run reaches `unreachable` instead of ending.
+GOES_ON = sub(r"(  call void @cqrt_abort_i1\((i32 %\d+)\)\n)  unreachable\n", r"\1  call void @exit(i32 9)\n  unreachable\n")
+NO_END_ABORT = sub(r"  call void @cqrt_abort_i1\(i32 %\d+\)\n  unreachable\n", "  unreachable\n")
+
+
 # exit where C returns; another status
 EXITS = sub(r"(\n  ret i32 %\d+\n)", r"\n  call void @exit(i32 0)\1")
 STATUS = sub(r"@exit\(i32 noundef 1\)", "@exit(i32 noundef 7)")
@@ -76,6 +84,8 @@ CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (HOST, "classical", RETURN, "no kept abort flag"),
     (HOST, "classical", EXITS, "returns"),
     (HOST, "classical", STATUS, "status 7 and the C program ends with"),
+    (HOST, "classical_after_arm", GOES_ON, None),
+    (HOST, "classical_after_arm", NO_END_ABORT, "killed by signal 4"),
 ]
 
 
