@@ -167,6 +167,10 @@ public:
   // nullptr. Every K-loop of the clone, nested ones included, is cut at it (lowerLoop's kCut).
   Value *receivedK = nullptr;
   Value *stopRail() const { return stopped; }   // the last lowerLoop's XOR of its noreturn arms' flags
+  // Owner ruling Q10 (CR rule 14, rule 8): the classical conjunct of the next lowerLoop's trip-0 test (its pre-header
+  // guard) that its caller did not branch on, or nullptr. lowerLoop opens a test on it before trip 0 (closeTests joins
+  // it like the later tests); taken by that call alone, not by the K-loops nested in its trips.
+  Value *test0 = nullptr;
 
 private:
   LoweringContext &ctx;
@@ -440,6 +444,8 @@ private:
 };
 
 void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
+  Value *t0 = test0;
+  test0 = nullptr;
   BasicBlock *H = L.getHeader();
   // The latches (rule 14: a `continue` is one more back edge of the same chain). A trip ends on one
   // back edge or one exit edge; `latch` is the latch the body form's exits leave from (the one live
@@ -2380,6 +2386,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // Closes the open tests, innermost first; q is the chain's last predicate in the innermost branch. Returns the merged
   // chain end.
   std::vector<std::pair<size_t, Value *>> sixGuard;   // test index -> its "went on" flag at the current join
+  SmallPtrSet<PHINode *, 8> chainPhis;                  // closeTests' phis of the chain's end
   auto closeTests = [&](Value *q) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
     RailType i1{Kind::Int, 1};
@@ -2520,6 +2527,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         return Operand{ph, run.handle};
       };
       q = phiOf(Operand{q, true}, Operand{qSkip, true}).v;
+      if (auto *ph = dyn_cast<PHINode>(q))
+        chainPhis.insert(ph);
       if (stopSkip)
         stopAcc = phiOf(Operand{now.stop, true}, Operand{stopSkip, true}).v;
       if (armSkip)
@@ -2570,6 +2579,25 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.B().SetInsertPoint(Run);
   };
 
+  if (t0) {
+    // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
+    // seed through closeTests' phi, the state its initial value) and no trip is emitted.
+    if (auto *k = dyn_cast<ConstantInt>(t0); !(k && k->isOne())) {
+      OpenTest o;
+      o.snap = takeSnap();
+      LLVMContext &Cx = ctx.M.getContext();
+      BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
+      o.Skip = BasicBlock::Create(Cx, "", &ctx.out());
+      o.Join = BasicBlock::Create(Cx, "", &ctx.out());
+      o.br = ctx.B().CreateCondBr(t0, Run, o.Skip);
+      BranchInst::Create(o.Join, o.Skip);
+      ctx.unc().noteClassicalArm(o.Join, o.Skip);
+      openTests.push_back(std::move(o));
+      if (segHook)
+        segHook(Run);
+      ctx.B().SetInsertPoint(Run);
+    }
+  }
   if (regionForm) {
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
@@ -2652,7 +2680,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   } else if (keep || cutMade) {
     // With a received-K cut a_K is kept also where c = B (min(K_received, B) may be below B); the full chain's end then
     // reads 0 (no leak, a known basis state).
-    ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
+    if (segHook && chainPhis.count(dyn_cast<PHINode>(q))) {
+      // In a classically bounded loop's trip the reverse loop mirrors each segment's records whatever merge keeps them:
+      // the chain's end through the tests' joins is kept arm by arm. Each arm exists on its own path only (the chain's
+      // last predicate in the innermost Run, a |0> seed or a_K's copy in each Skip), so where it exists it is a_K.
+      std::function<void(Value *)> keepArms = [&](Value *v) {
+        if (auto *ph = dyn_cast<PHINode>(v); ph && chainPhis.count(ph)) {
+          for (Value *in : ph->incoming_values())
+            keepArms(in);
+          return;
+        }
+        ctx.unc().setRole(ctx.unc().idOf(v), Role::KeptOverflow);
+      };
+      keepArms(q);
+    } else {
+      ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
+    }
   }
   if (armKept)
     ctx.unc().setRole(ctx.unc().idOf(armKept), Role::KeptOverflow);
@@ -2669,8 +2712,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto it = exitRail.find(h);
     return it != exitRail.end() ? it->second : ctx.operand(h);
   };
-  for (auto &[v, h] : exitRebinds)
-    ctx.rebind(v, {exitOf(h)});
+  for (auto &[v, h] : exitRebinds) {
+    // A trip-0 test (test0) that skips every trip leaves v unbound where it ended the chain (closeTests).
+    if (ctx.bound(v))
+      ctx.rebind(v, {exitOf(h)});
+    else
+      ctx.bindFields(v, {exitOf(h)});
+  }
   for (auto &[P, h] : exitPhis) {
     Operand f = exitOf(h);
     unitBound.insert(P);
@@ -2835,7 +2883,8 @@ bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p
 }
 
 
-Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook) {
+Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook,
+                         Value *test0) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
   Loop *mL = A.LI.getLoopFor(L.getHeader());
@@ -2848,6 +2897,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
   C.segHook = segHook;
+  C.test0 = test0;
   if (ctx.S.table)
     C.receivedK = spine::shared(ctx).tableK;   // cq-9kcq: CR rule 27 "Cutoff", §1.4
   C.lowerLoop(*mL, seed, c, !B || *B > K, false);

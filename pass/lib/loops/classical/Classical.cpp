@@ -3150,7 +3150,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             was.insert(&P);
         auto keepTail = tailBindsOf(sl);
         // cq-kk46l: its classical branches are segments of this walk (segHook); the walk goes on where the last joined.
-        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook()));
+        // Owner ruling Q10 (CR rule 14, rule 8): the classical conjunct of the edge into the sub-loop (its pre-header
+        // guard, `(m & 1) && y > 2`, is trip 0's test) that this walk has not established is a classical branch before
+        // trip 0, not dropped from the seed.
+        Value *t0 = nullptr;
+        if (Pred cf = cfOf(ctx.preds().block(b)); !(curFact & !cf).isBottom())
+          t0 = classicalValue(ctx, cf);
+        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook(), t0));
         clearTail(sl, keepTail);
         followInsert();
         for (PHINode &P : C->phis())

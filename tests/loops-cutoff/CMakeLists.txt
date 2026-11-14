@@ -206,6 +206,13 @@ add_test(NAME loops-cutoff-conjunct-r6
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/conjunct_r6.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# Review R1 n1 (owner ruling Q10, CR rule 14, rule 8): a K-loop nested in a classically bounded loop branches on its
+# pre-header guard's classical conjunct before trip 0, and keeps a_K per outer trip through the tests' joins. §6-checked.
+add_test(NAME loops-cutoff-conjunct-nest
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/conjunct_nest.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-7jd1z (CR rules 8, 9, 13 with rule 14): a quantum switch's case atom carried to a classical join is a phi in the
 # scrutinee's own type (musl wcsrtombs: the exit hub of a K-loop behind a classical bound test); switches in a K-trip on
 # a narrowed and a widened scrutinee, a default arm, two cases sharing a successor. Each entry §6-checked.
