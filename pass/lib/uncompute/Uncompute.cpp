@@ -3851,6 +3851,13 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
       }
       continue;
     }
+    // cq-xoc4: a merge (a classical phi or select of handles) whose store a classical branch can bypass: keeping the merge
+    // keeps the arm it names on every path through it, the paths that skip the store included. The store reads a copy, the
+    // rail rule 5 keeps where the store ran; the merge stays garbage and its arms are undone as usual.
+    if (!Impl::keptRole(x.role) && I.isMerge(r) && Impl::bypassed(I.defBlock(r), store->getParent())) {
+      I.keepCopyForStore(r, store, h);
+      continue;
+    }
     if (!Impl::keptRole(x.role))
       setRole(r, Role::Kept);
     I.rails[r].storeKept = true;
