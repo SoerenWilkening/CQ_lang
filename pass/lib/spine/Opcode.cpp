@@ -695,6 +695,11 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   // Rule 19: a controlled copy a _ctl clone measured is never uncomputed.
   if (spine::shared(ctx).ctlMeasured.count(bi->second[0].v))
     return false;
+  // CR rule 6: "A seed (rule 7) is freed directly instead" (cq-181j: fetestexcept's host result seeded where taint
+  // records the flags quantum; a copy into the seed left it in no known basis state at its free).
+  if (Value *h = bi->second[0].v; bi->second[0].handle && ctx.unc().recorded(h) &&
+                                  ctx.unc().liveRole(ctx.unc().idOf(h)) == Role::Seed)
+    return false;
   auto *I = dyn_cast<Instruction>(y);
   if (!I || isa<PHINode>(I))
     return false;

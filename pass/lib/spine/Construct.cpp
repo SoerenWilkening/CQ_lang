@@ -328,6 +328,7 @@ private:
   void emitTerminator(BasicBlock *b);
   void noteEntryReturn(bool frozen, Instruction *t);   // rule 19 (cq-i9wk)
   void emitCloneReturn(ReturnInst *ret);
+  void emitReturn(ReturnInst *ret, Instruction *t);
   bool emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   void resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   Value *returnCopyOut(PHINode &phi);
@@ -1789,6 +1790,119 @@ void Walker::noteEntryReturn(bool frozen, Instruction *t) {
   er->second.ret = sh.out->getReturnType();
 }
 
+// The function's return (or, CR rule 16, the zero-valued return of a dead end under a quantum predicate) at t.
+void Walker::emitReturn(ReturnInst *ret, Instruction *t) {
+  IRBuilder<> &B = ctx.B();
+  if (!ctx.S.isEntry())
+    return emitCloneReturn(ret);
+  fenv::atEntryReturn(ctx, *ret);   // cq-hzji: the final rule 23 state is kept (Effects.h)
+  ReturnInst *nr;
+  if (Value *rv = ret->getReturnValue(); rv && (rv->getType()->isAggregateType() || rv->getType()->isVectorTy()) &&
+                                         returnsHandle(ctx)) {
+    // Rule 19 with rule 26: the literal struct of the leaves, each quantum leaf's rail escaped (a
+    // classical value of a leaf another return makes quantum: a seed rail of it, rule 7).
+    SmallVector<Type *, 4> types;
+    SmallVector<bool, 4> q;
+    entryLeaves(ctx, types, q);
+    SmallVector<Operand, 4> leaves = aggr::flattenResult(ctx, rv);
+    auto *st = dyn_cast<StructType>(sh.out->getReturnType());
+    if (!st || leaves.size() != types.size() || st->getNumElements() != types.size())
+      internalError("spine: an entry's aggregate return does not match its leaves", t);
+    Value *agg = PoisonValue::get(st);
+    for (unsigned k = 0; k < leaves.size(); ++k) {
+      Value *v = leaves[k].v;
+      if (leaves[k].handle) {
+        if (!q[k])
+          internalError("spine: an entry's return leaf that is a rail where taint records it classical", t);
+        ctx.unc().setRole(ctx.unc().idOf(v), Role::Escaped);
+      } else if (q[k]) {
+        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(types[k])}, {v});
+        ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
+        v = a;
+      }
+      if (v->getType() != st->getElementType(k))
+        internalError("spine: an entry's return leaf of another type than its field", t);
+      agg = B.CreateInsertValue(agg, v, {k});
+    }
+    // Rule 19 (cq-i9wk): frozen when every quantum leaf is a frozen rail (a seeded classical leaf is not).
+    {
+      bool frozen = true;
+      for (unsigned k = 0; k < leaves.size(); ++k)
+        if (q[k])
+          frozen = frozen && leaves[k].handle && spine::frozenRail(sh, leaves[k].v);
+      noteEntryReturn(frozen, t);
+      entryReturns[sh.orig].leafQ.assign(q.begin(), q.end());
+    }
+    nr = B.CreateRet(agg);
+  } else if (Value *rv = ret->getReturnValue()) {
+    Operand op = ctx.operand(rv);
+    Value *v = op.v;
+    if (op.handle && sh.orig->getName() == "main") {
+      // Rule 19: a main that returns a rail makes the effect entry exit with it as its field under an alloc_i1(true)
+      // seed, then returns 0.
+      tape::lowerMainExit(ctx, op, rv->getType());
+      v = ConstantInt::get(sh.out->getReturnType(), 0);
+    } else if (op.handle) {
+      // Rule 14: a value joined over loop units (a classical choice of their exit rails, which their reverses undo) is
+      // copied out for the return; the copy escapes.
+      if (auto *jp = dyn_cast<PHINode>(rv); jp && unitBoundPhis.count(jp) && isa<PHINode>(op.v)) {
+        RailType w = jp->getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(jp->getType());
+        CallInst *f =
+            ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *c = ctx.emitCore(cp, {op.v, f});
+        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+        op = Operand{f, true};
+        v = f;
+      }
+      // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
+      // result is a clone's, cleaned by its twin.
+      noteEntryReturn(spine::frozenRail(sh, op.v), t);
+      // Rule 14: a value read in place whose reverse loop is deferred until after its readers (the return is the last):
+      // the handle that escapes is a copy, the reverse runs before the return.
+      if (ctx.unc().deferredExit(ctx.unc().idOf(op.v))) {
+        RailType w = railTypeOf(rv->getType());
+        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *c = ctx.emitCore(cp, {op.v, f});
+        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+        op.v = f;
+        v = f;
+      }
+      // §1.1: an entry returns an unmeasured quantum value as its handle; the rail escapes.
+      ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
+      Type *rt = sh.out->getReturnType();
+      if (!rt->isIntegerTy())
+        internalError("spine: an entry returning a handle in a non-integer return type", t);
+      // Rule 19: the entry's return type is the C one of 32 bits or more, or the i32 handle (set
+      // where the entry is created); a narrower one here is a return the taint did not see.
+      if (rt->getIntegerBitWidth() < 32)
+        internalError("spine: an entry returns a handle in a return type narrower than i32 (rule 19)", t);
+      v = B.CreateZExt(op.v, rt);
+    } else if (v->getType() != sh.out->getReturnType()) {
+      // Rule 19: the entry's C return type cannot hold a handle, so it returns the i32 handle on every
+      // path. A classical value returned on this one is a seed rail of its value (rule 7: alloc_<W>(v),
+      // a known basis state), escaped like any returned rail; the caller reads it as the handle it
+      // reads on the other paths.
+      Type *ct = rv->getType();
+      if (!ct->isIntegerTy() && !ct->isFloatingPointTy())
+        internalError("spine: a classical return of a handle-returning entry that is no scalar", t);
+      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ct)}, {v});
+      noteEntryReturn(false, t);   // rule 19: a seed is no register (cq-i9wk)
+      ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
+      if (sh.out->getReturnType() != a->getType())
+        internalError("spine: an entry returns a classical value of another type than its return type", t);
+      v = a;
+    }
+    nr = B.CreateRet(v);
+  } else {
+    nr = B.CreateRetVoid();
+  }
+  ctx.unc().flushAtExit(nr);
+}
+
 void Walker::emitTerminator(BasicBlock *b) {
   Instruction *t = b->getTerminator();
   sh.cur = t;
@@ -1804,121 +1918,25 @@ void Walker::emitTerminator(BasicBlock *b) {
       internalError("spine: a return under a quantum predicate beside another return (the plugin unifies the "
                     "returns of every tainted function)",
                     t);
-    if (!ctx.S.isEntry())
-      return emitCloneReturn(ret);
-    fenv::atEntryReturn(ctx, *ret);   // cq-hzji: the final rule 23 state is kept (Effects.h)
-    ReturnInst *nr;
-    if (Value *rv = ret->getReturnValue(); rv && (rv->getType()->isAggregateType() || rv->getType()->isVectorTy()) &&
-                                           returnsHandle(ctx)) {
-      // Rule 19 with rule 26: the literal struct of the leaves, each quantum leaf's rail escaped (a
-      // classical value of a leaf another return makes quantum: a seed rail of it, rule 7).
-      SmallVector<Type *, 4> types;
-      SmallVector<bool, 4> q;
-      entryLeaves(ctx, types, q);
-      SmallVector<Operand, 4> leaves = aggr::flattenResult(ctx, rv);
-      auto *st = dyn_cast<StructType>(sh.out->getReturnType());
-      if (!st || leaves.size() != types.size() || st->getNumElements() != types.size())
-        internalError("spine: an entry's aggregate return does not match its leaves", t);
-      Value *agg = PoisonValue::get(st);
-      for (unsigned k = 0; k < leaves.size(); ++k) {
-        Value *v = leaves[k].v;
-        if (leaves[k].handle) {
-          if (!q[k])
-            internalError("spine: an entry's return leaf that is a rail where taint records it classical", t);
-          ctx.unc().setRole(ctx.unc().idOf(v), Role::Escaped);
-        } else if (q[k]) {
-          CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(types[k])}, {v});
-          ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
-          v = a;
-        }
-        if (v->getType() != st->getElementType(k))
-          internalError("spine: an entry's return leaf of another type than its field", t);
-        agg = B.CreateInsertValue(agg, v, {k});
-      }
-      // Rule 19 (cq-i9wk): frozen when every quantum leaf is a frozen rail (a seeded classical leaf is not).
-      {
-        bool frozen = true;
-        for (unsigned k = 0; k < leaves.size(); ++k)
-          if (q[k])
-            frozen = frozen && leaves[k].handle && spine::frozenRail(sh, leaves[k].v);
-        noteEntryReturn(frozen, t);
-        entryReturns[sh.orig].leafQ.assign(q.begin(), q.end());
-      }
-      nr = B.CreateRet(agg);
-    } else if (Value *rv = ret->getReturnValue()) {
-      Operand op = ctx.operand(rv);
-      Value *v = op.v;
-      if (op.handle && sh.orig->getName() == "main") {
-        // Rule 19: a main that returns a rail makes the effect entry exit with it as its field under an alloc_i1(true)
-        // seed, then returns 0.
-        tape::lowerMainExit(ctx, op, rv->getType());
-        v = ConstantInt::get(sh.out->getReturnType(), 0);
-      } else if (op.handle) {
-        // Rule 14: a value joined over loop units (a classical choice of their exit rails, which their reverses undo) is
-        // copied out for the return; the copy escapes.
-        if (auto *jp = dyn_cast<PHINode>(rv); jp && unitBoundPhis.count(jp) && isa<PHINode>(op.v)) {
-          RailType w = jp->getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(jp->getType());
-          CallInst *f =
-              ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-          RailId fid = ctx.unc().recordSeed(f);
-          abi::CoreSpec cp{abi::Core::Copy, w};
-          CallInst *c = ctx.emitCore(cp, {op.v, f});
-          ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
-          op = Operand{f, true};
-          v = f;
-        }
-        // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
-        // result is a clone's, cleaned by its twin.
-        noteEntryReturn(spine::frozenRail(sh, op.v), t);
-        // Rule 14: a value read in place whose reverse loop is deferred until after its readers (the return is the last):
-        // the handle that escapes is a copy, the reverse runs before the return.
-        if (ctx.unc().deferredExit(ctx.unc().idOf(op.v))) {
-          RailType w = railTypeOf(rv->getType());
-          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-          RailId fid = ctx.unc().recordSeed(f);
-          abi::CoreSpec cp{abi::Core::Copy, w};
-          CallInst *c = ctx.emitCore(cp, {op.v, f});
-          ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
-          op.v = f;
-          v = f;
-        }
-        // §1.1: an entry returns an unmeasured quantum value as its handle; the rail escapes.
-        ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
-        Type *rt = sh.out->getReturnType();
-        if (!rt->isIntegerTy())
-          internalError("spine: an entry returning a handle in a non-integer return type", t);
-        // Rule 19: the entry's return type is the C one of 32 bits or more, or the i32 handle (set
-        // where the entry is created); a narrower one here is a return the taint did not see.
-        if (rt->getIntegerBitWidth() < 32)
-          internalError("spine: an entry returns a handle in a return type narrower than i32 (rule 19)", t);
-        v = B.CreateZExt(op.v, rt);
-      } else if (v->getType() != sh.out->getReturnType()) {
-        // Rule 19: the entry's C return type cannot hold a handle, so it returns the i32 handle on every
-        // path. A classical value returned on this one is a seed rail of its value (rule 7: alloc_<W>(v),
-        // a known basis state), escaped like any returned rail; the caller reads it as the handle it
-        // reads on the other paths.
-        Type *ct = rv->getType();
-        if (!ct->isIntegerTy() && !ct->isFloatingPointTy())
-          internalError("spine: a classical return of a handle-returning entry that is no scalar", t);
-        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ct)}, {v});
-        noteEntryReturn(false, t);   // rule 19: a seed is no register (cq-i9wk)
-        ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
-        if (sh.out->getReturnType() != a->getType())
-          internalError("spine: an entry returns a classical value of another type than its return type", t);
-        v = a;
-      }
-      nr = B.CreateRet(v);
-    } else {
-      nr = B.CreateRetVoid();
-    }
-    ctx.unc().flushAtExit(nr);
-    return;
+    return emitReturn(ret, t);
   }
 
   if (isa<UnreachableInst>(t)) {
     auto it = outEdges.find(b);
     if (it != outEdges.end() && !it->second.empty())
       return jump(b, it->second.front());
+    // CR rule 16 noreturn (cq-euke1): under a quantum predicate the `unreachable` after the noreturn call (lowered to
+    // abort_i1 of the predicate) is a return of zero-valued results, built as the return of a zero of the C return type
+    // (a stand-in placed before t in the original block for the walk, removed after): the run goes on where the flag
+    // reads 0. Owner ruling 2026-11-14 Q1: with no quantum predicate (the call under a true seed) it stays.
+    if (ctx.T.controlTainted(b, ctx.S)) {
+      Type *RT = sh.orig->getReturnType();
+      ReturnInst *z = ReturnInst::Create(b->getContext(), RT->isVoidTy() ? nullptr : Constant::getNullValue(RT),
+                                         t->getIterator());
+      emitReturn(z, t);
+      z->eraseFromParent();
+      return;
+    }
     B.CreateUnreachable();
     return;
   }

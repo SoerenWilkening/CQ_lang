@@ -65,7 +65,7 @@ std::string describe(const Value *v) {
 
 const Function *functionOf(const Value *v) {
   if (auto *I = dyn_cast<Instruction>(v))
-    return I->getFunction();
+    return I->getParent() ? I->getFunction() : nullptr;   // a detached key (eff-fenv's probe key) is in none
   if (auto *A = dyn_cast<Argument>(v))
     return A->getParent();
   return nullptr;
@@ -560,6 +560,11 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
     if (w == v || w == &T || ops.size() != 1 || !ops.front().handle ||
         (ops.front().v != h && !aliases.count(ops.front().v)))
       continue;
+    // cq-181j (CR rule 23): eff-fenv binds the MODE or FLAGS rail to a detached probe key (no block, no reader in the
+    // IR). The environment holds that rail to the end of the function, so it is read after T: the copy is rotated, the
+    // environment keeps its rail (C: `int m = fegetround(); cq_theta(&m, t);` rotates m, never the FPU mode).
+    if (auto *wi = dyn_cast<Instruction>(w); wi && !wi->getParent())
+      return rotateCopy();
     const Function *F = functionOf(w);
     const Instruction *P = F ? pointIn(sh, &T, F) : nullptr;
     if (!P)
