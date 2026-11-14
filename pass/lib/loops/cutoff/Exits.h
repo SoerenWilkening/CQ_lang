@@ -25,7 +25,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 
-namespace llvm { class Loop; class LoopInfo; class PHINode; class ScalarEvolution; class Value; class DominatorTree; }
+namespace llvm { class Loop; class LoopInfo; class PHINode; class ScalarEvolution; class Value; class DominatorTree; class GlobalVariable; class Module; }
 namespace cq { class LoweringContext; }
 
 namespace cq::loops::exits {
@@ -102,6 +102,12 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 // test0 (owner ruling Q10, CR rule 14 and rule 8): a classical i1, the classical factor of the predicate of entering L
 // that the caller's walk does not establish (a classical conjunct of the pre-header guard, the trip-0 test), or nullptr:
 // a real branch on it before trip 0, closed with the unit's own exit tests; where it is false no trip is emitted.
+// Owner ruling Q2 of 2026-11-14 (cq-9kcq; CR 1.4 "Received K", rule 27 "Cutoff"): `@__cq_k = internal global i32 -1`, the
+// received K of the table clone running (all ones: no cut). Compiler state like @__cq_act_<fn>: plain loads and stores, no
+// bus access. Made on first need, in a module that defines a table clone; calls::finalize has every table clone, its _ctl
+// form and their twins store their K actual on entry and the value found back at every return.
+llvm::GlobalVariable *receivedKGlobal(llvm::Module &M);
+
 llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed,
                                const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0 = nullptr);
 

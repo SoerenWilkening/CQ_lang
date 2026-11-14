@@ -17,8 +17,9 @@
 // (CR §6, rule 14 "Irreducible control flow"); the references' rolled push/pop loops are one
 // spelling of the same gate sequence.
 // In a table clone (cq-9kcq, CR rule 27 "Cutoff", §1.4) the trips are cut at the K the clone receives, a classical
-// branch before each trip after the first (kCut); a received K above the clone's own c still runs c trips (the rolled
-// form, not built).
+// branch before each trip after the first (kCut); in a function a table clone of the module reaches by name, at the
+// smaller of @__cq_k and its own K (owner ruling Q2 of 2026-11-14); a received K above the clone's own c still runs c
+// trips (the rolled form, not built).
 //
 // Two trip shapes, by the header's test region (the C oracle's definition, cq-arch T1.2 and CR rule
 // 14 for header-tested loops 09, 37, 54, 189): the header plus the blocks it reaches through single-
@@ -89,6 +90,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
@@ -2806,6 +2808,67 @@ static bool guardIsTripZero(const Loop &L, ScalarEvolution &SE) {
          equalAtTripZero(gc->getOperand(1), lc->getOperand(0), L, SE, gb);
 }
 
+// Owner ruling Q2 of 2026-11-14 (cq-9kcq; CR 1.4 "Received K", rule 27 "Cutoff": "calls inside the library are rule 18's
+// and pass the received K down"). Can a table clone of this module reach the function being lowered by name? Decided per
+// function, conservatively: every defined function a direct call reaches, transitively, from the body of a function taint
+// gives a table clone (a function reached from elsewhere as well loads @__cq_k too, and reads -1 = no cut there). The
+// table function itself is reached only through a call by name of it.
+static bool reachedFromTable(LoweringContext &ctx) {
+  SmallPtrSet<const Function *, 32> reached;
+  SmallVector<const Function *, 32> work;
+  for (const Specialization &S : ctx.T.specializations())
+    if (S.table && S.F)
+      work.push_back(S.F);
+  SmallPtrSet<const Function *, 32> walked;
+  while (!work.empty()) {
+    const Function *F = work.pop_back_val();
+    if (!walked.insert(F).second || F->isDeclaration())
+      continue;
+    for (const Instruction &I : instructions(*F))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (const Function *G = CB->getCalledFunction(); G && !G->isDeclaration() && reached.insert(G).second)
+          work.push_back(G);
+  }
+  return reached.count(ctx.S.F) != 0;
+}
+
+// Owner ruling Q2: in a function a table clone can reach by name, the K its K-loops are cut at: @__cq_k loaded once on
+// entry (the first block of the function lowered), the smaller of it and the loop's own K (unsigned).
+static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
+  GlobalVariable *g = exits::receivedKGlobal(ctx.M);
+  Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+  BasicBlock &E = ctx.out().getEntryBlock();
+  LoadInst *ld = nullptr;
+  for (Instruction &I : E)
+    if (auto *l = dyn_cast<LoadInst>(&I); l && l->getPointerOperand() == g) {
+      ld = l;
+      break;
+    }
+  if (!ld) {
+    BasicBlock::iterator at = E.getFirstInsertionPt();
+    while (at != E.end() && isa<AllocaInst>(*at))
+      ++at;
+    IRBuilder<> EB(&E, at);
+    ld = EB.CreateLoad(i32, g);
+  }
+  Constant *k = ConstantInt::get(i32, K);
+  for (User *u : ld->users())
+    if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->getIntrinsicID() == Intrinsic::umin && II->getArgOperand(1) == k)
+      return II;
+  IRBuilder<> EB(ld->getNextNode());
+  return EB.CreateBinaryIntrinsic(Intrinsic::umin, ld, k);
+}
+
+// cq-9kcq: the K a K-loop of the function being lowered is cut at, or nullptr: a table clone's received K (its trailing
+// classical i32, CR §1.4), or in a function a table clone reaches by name the loaded one (owner ruling Q2).
+static Value *receivedKOf(LoweringContext &ctx, unsigned K) {
+  if (ctx.S.table)
+    return spine::shared(ctx).tableK;
+  if (reachedFromTable(ctx))
+    return loadedReceivedK(ctx, K);
+  return nullptr;
+}
+
 void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64_t> B) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
@@ -2822,8 +2885,7 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
   }
   Cutoff U(ctx, A);
   U.seedPred = ctx.currentPredicate();
-  if (ctx.S.table)
-    U.receivedK = spine::shared(ctx).tableK;   // cq-9kcq: CR rule 27 "Cutoff", §1.4
+  U.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
   spine::Shared &sh = spine::shared(ctx);
   Value *savedZero = sh.tripZeroRail;
   if (guardIsTripZero(*mL, A.SE))
@@ -2833,6 +2895,16 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
 }
 
 namespace exits {
+
+GlobalVariable *receivedKGlobal(Module &M) {
+  constexpr const char *name = "__cq_k";
+  if (GlobalVariable *g = M.getGlobalVariable(name, /*AllowInternal=*/true))
+    return g;
+  Type *i32 = Type::getInt32Ty(M.getContext());
+  auto *g = new GlobalVariable(M, i32, false, GlobalValue::InternalLinkage, ConstantInt::get(i32, -1, true), name);
+  g->setAlignment(Align(4));
+  return g;
+}
 
 // Is the initial value of p a rail this function made for itself (a template result, or a classical
 // value cq_theta minted, rotated in place any number of times) that nothing reads once the loop is
@@ -2897,8 +2969,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   Cutoff C(ctx, A);
   C.segHook = segHook;
   C.test0 = test0;
-  if (ctx.S.table)
-    C.receivedK = spine::shared(ctx).tableK;   // cq-9kcq: CR rule 27 "Cutoff", §1.4
+  C.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
   C.lowerLoop(*mL, seed, c, !B || *B > K, false);
   return C.stopRail();
 }

@@ -199,6 +199,16 @@ add_test(NAME loops-cutoff-exit-conjunct
           --br-in ec_while=8 --br-in ec_do=8 --br-in ec_vary=8
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_conjunct.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-9kcq with owner rulings Q2 and Q3 of 2026-11-14 (CR 1.4 "Received K", rule 27 "Cutoff", rule 6): @__cq_k carries the
+# received K to the helpers a table clone calls by name (one level, nested, a helper also called from an ordinary entry,
+# the _ctl, forward and twin forms, restored at every return of a table clone); rule 6's per-trip clean in a loop the
+# received K cuts (a helper's carried sum, a carried value adding a measured outcome). Each entry §6-checked against
+# table_kh_c.O1.ll; the mutants that ignore @__cq_k in a helper or drop its restore are rejected.
+add_test(NAME loops-cutoff-table-kh
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_kh=table_kh_c.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_kh.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # Review R1 m1 (CR rule 6 "In a rolled loop", owner ruling Q4, with Q10's tests): rule 6's per-trip clean of a carried
 # value across the classical exit tests, cleaned under each test's "went on" flag. Each entry §6-checked.
 add_test(NAME loops-cutoff-conjunct-r6

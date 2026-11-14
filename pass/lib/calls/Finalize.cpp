@@ -33,6 +33,7 @@
 #include "LibCalls.h"
 #include "cq/Common.h"
 #include "../spine/SpineInternal.h"
+#include "../loops/cutoff/Exits.h"
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -766,6 +767,40 @@ void defineTwins(Module &M) {
 
 
 
+// Owner ruling Q2 of 2026-11-14 (cq-9kcq; CR 1.4 "Received K", rule 27 "Cutoff"): in a module that defines a table clone,
+// `@__cq_k = internal global i32 -1`; each table clone, its _ctl form and their twins (every defined clone whose §1.4
+// reading is a table one) store their K actual (the trailing classical i32) on entry and store the value they found back
+// at every return. A function a table clone reaches by name loads it (loops-cutoff). Plain loads and stores, like
+// @__cq_act_<fn>: no bus access, no memory version change.
+void storeReceivedK(Module &M) {
+  SmallVector<Function *, 8> tables;
+  for (Function &F : M)
+    if (!F.isDeclaration() && isClone(F))
+      if (std::optional<abi::CloneSpec> s = abi::parseClone(F.getName()); s && s->table)
+        tables.push_back(&F);
+  if (tables.empty())
+    return;
+  GlobalVariable *g = loops::exits::receivedKGlobal(M);
+  Type *i32 = Type::getInt32Ty(M.getContext());
+  for (Function *F : tables) {
+    Argument *K = F->arg_empty() ? nullptr : F->getArg(F->arg_size() - 1);
+    if (!K || K->getType() != i32) {
+      noteUnbuilt("calls: calls::finalize: a table clone whose last parameter is no i32 K: @__cq_k not set", F);
+      continue;
+    }
+    BasicBlock &E = F->getEntryBlock();
+    BasicBlock::iterator at = E.getFirstInsertionPt();
+    while (at != E.end() && isa<AllocaInst>(*at))
+      ++at;
+    IRBuilder<> EB(&E, at);
+    Value *old = EB.CreateLoad(i32, g);
+    EB.CreateStore(K, g);
+    for (BasicBlock &BB : *F)
+      if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+        IRBuilder<>(R).CreateStore(old, g);
+  }
+}
+
 } // namespace
 
 // §1.4: every function, parameter and return attribute that states a memory, capture, nullness, range or purity fact is
@@ -823,6 +858,7 @@ void finalize(Module &M) {
       settleRegisters(*F, std::optional<abi::CloneSpec>(abi::parseClone(F->getName()))->table ? 0 : mintCount(*F));
   defineTableClones(M);
   defineTwins(M);
+  storeReceivedK(M);
   for (Function &F : M)
     for (Instruction &I : instructions(F)) {
       I.setMetadata("cq.mint", nullptr);
