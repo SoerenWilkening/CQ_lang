@@ -117,7 +117,26 @@ out:
   ret i32 %e
 }
 
+; cq-4l9jj (p5.c): a branch on (classical && quantum) is a classical choice for measuredOnEveryPath (rule 8: pred factors
+; the classical conjunct out as a classical branch), so a measurement in its taken arm is not on every path.
+define i32 @cq_and(i32 %c, i1 %b0) {
+entry:
+  %b = tail call i1 @cq_theta_i1(i1 %b0, double 1.000000e+00)
+  %v = zext i1 %b to i32
+  %r = mul i32 %v, 3
+  %c1 = and i32 %c, 1
+  %cc = icmp ne i32 %c1, 0
+  %t = and i1 %cc, %b
+  br i1 %t, label %arm, label %join
+arm:
+  %m = tail call i32 @cq_measure_si32(i32 %r)
+  br label %join
+join:
+  ret i32 0
+}
+
 declare i32 @cq_theta_si32(i32, double)
+declare i1 @cq_theta_i1(i1, double)
 declare i32 @cq_measure_si32(i32)
 declare void @cq_phi(double)
 )";
@@ -189,6 +208,13 @@ int main() {
 
   Function &L = *M->getFunction("inloop");
   expectQ(T, L, {{"go", true}, {"w", false}, {"e", true}});
+
+  Function &Q = *M->getFunction("cq_and");
+  if (const cq::Specialization *S = entryOf(T, &Q)) {
+    auto isQ = [&](const Value *v) { return T.isQuantum(v, *S); };
+    CHECK(T.isQuantum(named(Q, "t"), *S), "@cq_and %t: quantum");
+    CHECK(!cq::measuredOnEveryPath(isQ, named(Q, "r"), nullptr), "@cq_and %r: measured only where c && b");
+  }
 
   outs() << "taint_measured: " << checks << " checks, " << failures << " failures\n";
   return failures ? 1 : 0;

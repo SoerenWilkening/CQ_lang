@@ -3244,6 +3244,60 @@ void Analyzer::finish() {
 namespace cq {
 using namespace taintimpl;
 
+// CR rule 8 (cq-4l9jj): pred factors a quantum branch condition on its Boolean function, and a classical literal one edge's
+// condition implies (`c && q` taken, `c || q` not taken) stays a classical branch around the quantum part. So for the
+// measurement walks below such a branch is a classical choice: its arms do not both run. Implied literals are read through
+// the connectives pred expands (and, or, not, an i1 select); does the condition, taken or not, imply a classical literal?
+static bool impliesClassical(function_ref<bool(const Value *)> isQuantum, const Value *c, bool taken, unsigned depth = 0) {
+  if (isa<Constant>(c) || depth > 16)
+    return false;
+  if (!isQuantum(c))
+    return true;
+  const unsigned d = depth + 1;
+  if (auto *bo = dyn_cast<BinaryOperator>(c); bo && bo->getType()->isIntegerTy(1)) {
+    const Value *a = bo->getOperand(0), *b = bo->getOperand(1);
+    switch (bo->getOpcode()) {
+    case Instruction::And:   // taken: either's literal; not taken: one on each side (a common one is not tracked)
+      return taken ? impliesClassical(isQuantum, a, true, d) || impliesClassical(isQuantum, b, true, d)
+                   : impliesClassical(isQuantum, a, false, d) && impliesClassical(isQuantum, b, false, d);
+    case Instruction::Or:
+      return taken ? impliesClassical(isQuantum, a, true, d) && impliesClassical(isQuantum, b, true, d)
+                   : impliesClassical(isQuantum, a, false, d) || impliesClassical(isQuantum, b, false, d);
+    case Instruction::Xor:
+      if (auto *k = dyn_cast<ConstantInt>(b); k && k->isOne())
+        return impliesClassical(isQuantum, a, !taken, d);
+      if (auto *k = dyn_cast<ConstantInt>(a); k && k->isOne())
+        return impliesClassical(isQuantum, b, !taken, d);
+      return false;
+    default:
+      return false;
+    }
+  }
+  // select c, t, f (-O1's `c && q` is select c, q, false): a literal both alternatives imply, a classical c among them.
+  if (auto *si = dyn_cast<SelectInst>(c); si && si->getType()->isIntegerTy(1) && si->getCondition()->getType()->isIntegerTy(1)) {
+    const Value *s = si->getCondition();
+    // Does the edge arise on side `v` (chosen when s reads sv)? Absent: v is the constant the edge never takes.
+    auto present = [&](const Value *v) {
+      auto *k = dyn_cast<ConstantInt>(v);
+      return !k || k->isOne() == taken;
+    };
+    const Value *t = si->getTrueValue(), *f = si->getFalseValue();
+    bool pt = present(t), pf = present(f);
+    if (!pt && !pf)
+      return false;
+    if (pt != pf)   // the edge only on one side: it implies s (or not s), and what that side implies
+      return impliesClassical(isQuantum, s, pt, d) || impliesClassical(isQuantum, pt ? t : f, taken, d);
+    // Both sides: approximated as a classical literal on each value side (a common one is not tracked).
+    return !isa<Constant>(t) && !isa<Constant>(f) && impliesClassical(isQuantum, t, taken, d) &&
+           impliesClassical(isQuantum, f, taken, d);
+  }
+  return false;
+}
+
+static bool hasClassicalFactor(function_ref<bool(const Value *)> isQuantum, const Value *c) {
+  return c->getType()->isIntegerTy(1) && (impliesClassical(isQuantum, c, true) || impliesClassical(isQuantum, c, false));
+}
+
 // CR rule 2, spine::measuredOnEveryPath: taint asks it before TaintInfo is published (rule 18, its twins).
 bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Value *v, const Instruction *also) {
   auto strip = [](const Value *v) {
@@ -3284,7 +3338,7 @@ bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Valu
   auto quantumBranch = [&](const BasicBlock *b) {
     const Instruction *t = b->getTerminator();
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
-      return isQuantum(br->getCondition());
+      return isQuantum(br->getCondition()) && !hasClassicalFactor(isQuantum, br->getCondition());   // rule 8, cq-4l9jj
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return isQuantum(sw->getCondition());
     if (auto *ib = dyn_cast<IndirectBrInst>(t))
@@ -3407,7 +3461,7 @@ bool measuredBefore(function_ref<bool(const Value *)> isQuantum, const Value *v,
   auto quantumBranch = [&](const BasicBlock *b) {
     const Instruction *t = b->getTerminator();
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
-      return isQuantum(br->getCondition());
+      return isQuantum(br->getCondition()) && !hasClassicalFactor(isQuantum, br->getCondition());   // rule 8, cq-4l9jj
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return isQuantum(sw->getCondition());
     if (auto *ib = dyn_cast<IndirectBrInst>(t))
