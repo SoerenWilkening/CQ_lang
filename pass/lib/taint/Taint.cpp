@@ -2108,6 +2108,21 @@ void Analyzer::transferCall(CallBase &CB) {
     case Intrinsic::ubsantrap:
       if (id == Intrinsic::trap || id == Intrinsic::ubsantrap)
         cur->hasEffect = true;
+      if (id == Intrinsic::trap) {
+        // CR rule 16 lists __builtin_trap among the noreturn callees: under a quantum predicate an abort event; with no
+        // quantum predicate where a tape or abort event can precede it, the effect entry of its name (owner ruling
+        // 2026-11-11 Q7), then abort_i1 of its seed. Otherwise the trap as it stands.
+        if (!cur->hasNoreturn) {
+          cur->hasNoreturn = true;
+          st.changed = true;
+        }
+        if (blockCT(CB.getParent()) || cur->ctl) {
+          if (cur->aborts.insert(&CB).second)
+            st.changed = true;
+        } else if (eventPrecedes(CB) && cur->effectEntries.insert(&CB).second) {
+          st.changed = true;
+        }
+      }
       return;
     case Intrinsic::vastart:
     case Intrinsic::vacopy:

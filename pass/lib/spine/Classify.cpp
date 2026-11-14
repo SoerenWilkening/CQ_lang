@@ -278,7 +278,10 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       // Rule 21 (105): the mask of an address rail: integer templates over the address.
       return qArg || qRes ? Class::TemplateIntrinsic : Class::Classical;
     case Intrinsic::trap: case Intrinsic::ubsantrap: case Intrinsic::debugtrap:
-      return qPred ? Class::Noreturn : Class::Classical;
+      // Rule 16 noreturn (__builtin_trap), ruling Q7: where an event can precede it, the effect entry __builtin_trap.
+      if (qPred)
+        return Class::Noreturn;
+      return T.isEffectEntry(CB, S) ? Class::HostEffect : Class::Classical;
     case Intrinsic::vacopy:
       // Rule 16 (109): va_copy(d, s) is memcpy(d, s, 24), so rule 22 decides as for memcpy: classical only when both
       // va_lists are host-resident objects, in the own symbol too (cq-f0rb6: musl vfprintf's va_copy of the caller's

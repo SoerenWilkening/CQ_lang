@@ -2731,6 +2731,7 @@ def _fields_match(ours: List[Any], other: List[Any]) -> bool:
 
 
 _EXITS = ("exit", "_exit", "_Exit")
+_ENTRY_NAME = {"llvm.trap": "__builtin_trap"}
 
 
 def _without_exit_entry(o: RunResult, c: RunResult, nf: List[Any], nr: List[Any]) -> List[Any]:
@@ -2743,6 +2744,8 @@ def _without_exit_entry(o: RunResult, c: RunResult, nf: List[Any], nr: List[Any]
     if not end.startswith("noreturn:") or len(nf) != len(nr) + 1:
         return nf
     callee = end.split(":", 1)[1]
+    # CR rule 16's noreturn bullet names llvm.trap by its C name: the oracle's end is llvm.trap, the entry __builtin_trap
+    callee = _ENTRY_NAME.get(callee, callee)
     last = nf[-1]
     if last["name"] != callee:
         return nf
