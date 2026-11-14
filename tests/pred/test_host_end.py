@@ -47,7 +47,10 @@ def REAL(fn):
                r"mqe:\n  call void @exit(i32 1)\n  unreachable\n\nmqc:\n")(fn)
 
 
-HOST, LOOP = "noreturn_host_end", "noreturn_classical_loop"
+# Owner ruling 2026-11-11 Q7 (cq-edr1f): an exit is the ordinary host call only where no event can precede it. HOST and
+# LOOP hold events, so every exit in them is now an effect entry behind an abort flag; the real host exits and their
+# mutants are REAL_EXIT's (the same classical and classical_switch in a module with no event).
+HOST, LOOP, REAL_EXIT = "noreturn_host_end", "noreturn_classical_loop", "noreturn_real_exit"
 CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (LOOP, "classical_switch", None, None),
     (LOOP, "classical_switch_arm", None, None),
@@ -55,12 +58,14 @@ CASES = [  # probe, entry, edit, expected reason (None: PASS)
     (HOST, "quantum", None, None),
     (HOST, "after_measure", None, None),
     (HOST, "classical_after_arm", None, None),
-    (LOOP, "classical_switch", RETURN, "a leak"),
-    (LOOP, "classical_switch", EXITS, "returns"),
-    (LOOP, "classical_switch", STATUS, "status 7 and the C program ends with"),
-    (HOST, "classical", RETURN, "no kept abort flag"),
-    (HOST, "classical", EXITS, "returns"),
-    (HOST, "classical", STATUS, "status 7 and the C program ends with"),
+    (REAL_EXIT, "classical_switch", None, None),
+    (REAL_EXIT, "classical", None, None),
+    (REAL_EXIT, "classical_switch", RETURN, "a leak"),
+    (REAL_EXIT, "classical_switch", EXITS, "returns"),
+    (REAL_EXIT, "classical_switch", STATUS, "status 7 and the C program ends with"),
+    (REAL_EXIT, "classical", RETURN, "no kept abort flag"),
+    (REAL_EXIT, "classical", EXITS, "returns"),
+    (REAL_EXIT, "classical", STATUS, "status 7 and the C program ends with"),
     (HOST, "quantum", NO_FLAG, "no kept abort flag"),
     (HOST, "quantum", LEAK, "a leak"),
     (HOST, "quantum", REAL, "a leak"),
@@ -77,16 +82,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
+    ap.add_argument("--only", type=int, nargs="*", help="run only these case numbers")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     lowered = {}
-    for probe in (HOST, LOOP):
+    for probe in (HOST, LOOP, REAL_EXIT):
         dest = OUT / f"{probe}.lowered.ll"
         subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-cq-k-default=4", "-S",
                         str(PROBES / f"{probe}.O1.ll"), "-o", str(dest)], check=True)
         lowered[probe] = dest.read_text()
     failures = 0
     for i, (probe, entry, edit, want) in enumerate(CASES):
+        if a.only and i not in a.only:
+            continue
         low = OUT / f"{i}_{entry}.lowered.ll"
         low.write_text(mutate(lowered[probe], entry, edit) if edit else lowered[probe])
         r = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--light", "--o1", str(PROBES / f"{probe}.O1.ll"),

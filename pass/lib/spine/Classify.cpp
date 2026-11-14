@@ -379,9 +379,12 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return F->getName() == "longjmp" || F->getName() == "_longjmp" || F->getName() == "siglongjmp"
                  ? Class::Longjmp
                  : Class::Noreturn;
-    if (!qArg)
+    // Rule 16: with a rail argument, or where a tape or abort event can precede it (owner ruling 2026-11-11 Q7, cq-edr1f:
+    // taint's eventPrecedes, read through its effect-entry set), the effect entry of its name, then abort_i1 of its seed.
+    // Otherwise the ordinary host call, made as it stands.
+    if (!qArg && !T.isEffectEntry(CB, S))
       return Class::Classical;
-    return Class::HostEffect;   // rule 16: the effect entry of its name, then abort_i1 of its seed
+    return Class::HostEffect;
   }
   // Rule 16 Signal table: no handler is tracked at compile time.
   if (F->getName() == "signal" && CB.arg_size() == 2)
