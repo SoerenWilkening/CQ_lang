@@ -26,7 +26,8 @@
 //     default environment (round-to-nearest, its flags discarded; owner ruling on cq-0r1i);
 //   * the fenv calls modelled as rule 23 and the references model them (the 5 IEEE flags, no
 //     FE_DENORMAL; feraiseexcept(m) raises exactly m; fesetround of an invalid mode returns 1);
-//   * threads collapsed (pthread_create runs the start routine to completion, rule 24), noreturn
+//   * threads collapsed as rule 24 says (pthread_create runs the start routine to completion; the pthread_t and
+//     the join's result written only when some join of the module asks for a result), noreturn
 //     callees, raise and `unreachable` noted in the sample status;
 //   * each call of a declared host-effect function (remove, unlink, rename, raise: compare.py
 //     HOST_EFFECTS) logged as an `effect` event before it runs (cq-e4jk; cqo_rt.c __cqo_fx_*);
@@ -2724,8 +2725,21 @@ public:
                                   "fesetexceptflag", "fesetround", "feupdateenv",
                                   // the host's, behind the rulings Q2 check of their object operand (cqo_rt.c)
                                   "fegetenv", "feholdexcept", "fesetenv"};
+    // CR rule 24: when some pthread_join of the module has a second operand other than the null constant, every
+    // pthread_create stores the start routine's result in *t and every join stores its pthread_t operand through r;
+    // otherwise neither writes (cqo_rt.c, the _r forms). The pass's own condition (Conc.cpp joinAskingResult).
+    bool joinAsks = false;
+    for (const char *jn : {"pthread_join", "\x01_pthread_join"})
+      if (Function *J = M.getFunction(jn); J && J->isDeclaration())
+        for (User *U : J->users())
+          if (auto *CB = dyn_cast<CallBase>(U); CB && CB->arg_size() == 2 &&
+                                                 !(isa<Constant>(CB->getArgOperand(1)) &&
+                                                   cast<Constant>(CB->getArgOperand(1))->isNullValue()))
+            joinAsks = true;
     for (const char *n : names) {
       std::string repl = std::string("__cqo_") + n;
+      if (joinAsks && (StringRef(n) == "pthread_create" || StringRef(n) == "pthread_join"))
+        repl += "_r";
       // Darwin's asm-label spelling is the same function (<pthread.h>: @"\01_pthread_join"; cq-cj4r)
       for (std::string spelled : {std::string(n), std::string("\x01_") + n}) {
         Function *F = M.getFunction(spelled);

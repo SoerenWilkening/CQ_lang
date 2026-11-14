@@ -503,21 +503,24 @@ int __cqo_feupdateenv(const fenv_t *e) {
     return 0;
 }
 
-/* threads: single-thread collapse (rule 24). pthread_create runs the routine to completion. */
-static void *thread_results[1024];
-static unsigned nthreads;
+/* threads: single-thread collapse, as CR rule 24 says. pthread_create(t, attr, f, p) is the call f(p) and
+   pthread_join(t, r) is nothing, except that when some pthread_join of the module has a second operand other
+   than the null constant (OracleInstr.cpp then calls the _r forms), every create stores f's result in *t and
+   every join stores its pthread_t operand through r (when r is not null: the C program's pthread_join writes
+   nothing through a null r). Each call returns 0. */
 int __cqo_pthread_create(pthread_t *t, const pthread_attr_t *a, void *(*fn)(void *), void *arg) {
-    (void)a;
-    if (nthreads >= 1024) return EAGAIN;
-    unsigned id = nthreads++;
-    *t = (pthread_t)(uintptr_t)(id + 1);
-    thread_results[id] = fn(arg);
+    (void)t; (void)a;
+    fn(arg);
     return 0;
 }
-int __cqo_pthread_join(pthread_t t, void **ret) {
-    uintptr_t id = (uintptr_t)t;
-    if (id == 0 || id > nthreads) return ESRCH;
-    if (ret) *ret = thread_results[id - 1];
+int __cqo_pthread_join(pthread_t t, void **ret) { (void)t; (void)ret; return 0; }
+int __cqo_pthread_create_r(pthread_t *t, const pthread_attr_t *a, void *(*fn)(void *), void *arg) {
+    (void)a;
+    *t = (pthread_t)(uintptr_t)fn(arg);
+    return 0;
+}
+int __cqo_pthread_join_r(pthread_t t, void **ret) {
+    if (ret) *ret = (void *)(uintptr_t)t;
     return 0;
 }
 int __cqo_pthread_detach(pthread_t t) { (void)t; return 0; }
