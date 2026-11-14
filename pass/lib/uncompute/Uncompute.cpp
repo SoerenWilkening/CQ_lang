@@ -744,6 +744,29 @@ struct Uncompute::Impl {
     return false;
   }
 
+  // Does the classical i1 `guard` reading true imply that block D ran before it? A guard D dominates does; a phi does when
+  // each incoming edge that may carry true leaves a block D dominates, or carries a guard that implies it in turn.
+  static bool guardImpliesRan(const Value *guard, const BasicBlock *D, unsigned depth) {
+    if (auto *k = dyn_cast<ConstantInt>(guard))
+      return k->isZero();
+    auto *gi = dyn_cast<Instruction>(guard);
+    if (!gi || !gi->getParent() || depth > 64)
+      return false;
+    if (gi->getParent() != D && dominates(D, gi->getParent()))
+      return true;
+    auto *ph = dyn_cast<PHINode>(gi);
+    if (!ph)
+      return false;
+    for (unsigned i = 0; i < ph->getNumIncomingValues(); ++i) {
+      const Value *v = ph->getIncomingValue(i);
+      if (auto *k = dyn_cast<ConstantInt>(v); k && k->isZero())
+        continue;
+      if (!dominates(D, ph->getIncomingBlock(i)) && !guardImpliesRan(v, D, depth + 1))
+        return false;
+    }
+    return true;
+  }
+
   // Does d dominate b? (b unreachable from the entry while avoiding d.)
   static bool dominates(const BasicBlock *d, const BasicBlock *b) {
     if (d == b)
@@ -2159,11 +2182,20 @@ struct Uncompute::Impl {
     }
     // cq-lshe (CR rule 6): a clean-up reads its inverse's operands, which must exist wherever the item runs; one
     // whose operand is defined on some paths to pos only (an arm) gives way to g's own uncompute.
-    if (r.cleanup && r.creator != kNone &&
-        any_of(r.cleanup->reads, [&](RailId x) {
-          auto *h = dyn_cast<Instruction>(rails[x].handle);
-          return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !cq::comesBefore(h, pos.before)));
-        })) {
+    auto notThere = [&](RailId x) {
+      auto *h = dyn_cast<Instruction>(rails[x].handle);
+      return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !cq::comesBefore(h, pos.before)));
+    };
+    // A guarded clean-up whose guard implies that the arm defining such an operand ran (a K-loop's rule 6 clean-up
+    // behind a classical exit test, CR rule 14 with owner ruling Q10) reads it only where it exists.
+    auto guardedThere = [&]() {
+      return !r.cleanup->alts.empty() && all_of(r.cleanup->alts, [&](const Cleanup::Alt &a) {
+               return all_of(a.reads, [&](RailId x) {
+                 return !notThere(x) || guardImpliesRan(a.guard, cast<Instruction>(rails[x].handle)->getParent(), 0);
+               });
+             });
+    };
+    if (r.cleanup && r.creator != kNone && any_of(r.cleanup->reads, notThere) && !guardedThere()) {
       for (RailId x : r.cleanup->reads)
         llvm::erase(rails[x].cleanupReaders, g);
       r.cleanup.reset();
