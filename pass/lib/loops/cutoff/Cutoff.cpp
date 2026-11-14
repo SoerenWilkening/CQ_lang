@@ -1094,11 +1094,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   };
   DenseSet<const Value *> seedBorn;
   std::vector<SixLater> sixLater;
-  // cq-9kcq: not in a loop a received-K cut may end after any trip (kCut): there trip j's old rail is the final register
-  // on the cut path and cleaned by trip j+1 on the other; the chain stays garbage, undone by the spine (149's s). Owner
-  // ruling Q10's classical exit tests split the chain too, but at a classical branch whose join is closeTests': there the
-  // old rail is cleaned under the test's "went on" flag (sixLater) and is the final register where the test ended it.
-  if (top && !multi && latches.size() == 1 && !(receivedK && c > 1)) {
+  // Owner ruling Q10's classical exit tests and a received-K cut (kCut; owner ruling Q3 of 2026-11-14, CR rule 27
+  // "Cutoff": "the cut is a classical exit of the chain like any other") split the chain at a classical branch whose join
+  // is closeTests': there the old rail is cleaned under the test's "went on" flag (sixLater) and is the final register
+  // where the test ended it.
+  if (top && !multi && latches.size() == 1) {
     DominatorTree &DT = spine::shared(ctx).dt(*H->getParent());
     BasicBlock *pre = L.getLoopPredecessor();
     for (PHINode *h : hphis) {
@@ -2272,14 +2272,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         ss.op = "select";
         ss.w = railOf(h->getType());
         if (openTests.size() > made) {
-          // A classical exit test (Q10) lies between the old rail and this trip: where it ended the chain the old rail
-          // is the final register, kept; where it went on (this trip ran) it is cleaned here. The clean-up is made
-          // under that test's "went on" flag once the tests are closed (sixLater); its image waits for it (pin).
-          if (openTests.size() != made + 1)
-            internalError("loops-cutoff: rule 6 clean-up across more than one classical exit test", h);
+          // Classical exit tests (Q10's, a received-K cut's) lie between the old rail and this trip: where one ended the
+          // chain the old rail is the final register, kept; where all went on (this trip ran) it is cleaned here. The
+          // tests are nested, each opened inside the one before, so "all went on" is the innermost one's "went on"
+          // flag. The clean-up is made under it once the tests are closed (sixLater); its image waits for it (pin).
           ctx.unc().pin(ctx.unc().idOf(inner));
-          sixLater.push_back(
-              {old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}}, made, seedBorn.count(cur.v) != 0});
+          sixLater.push_back({old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}},
+                              openTests.size() - 1, seedBorn.count(cur.v) != 0});
         } else {
           ctx.unc().cleanupBijective(old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}});
         }
