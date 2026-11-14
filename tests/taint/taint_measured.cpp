@@ -117,6 +117,28 @@ out:
   ret i32 %e
 }
 
+; cq-qzj6: rule 2 through rule 3's lane moves. x is measured; lane 0 of %c is computed from x only, lane 1 from k.
+define i8 @lane(i8 %x0, i8 %k0) {
+entry:
+  %x = tail call i8 @cq_theta_si8(i8 %x0, double 1.000000e+00)
+  %k = tail call i8 @cq_theta_si8(i8 %k0, double 1.000000e+00)
+  %v0 = insertelement <2 x i8> poison, i8 %x, i64 0
+  %v = insertelement <2 x i8> %v0, i8 %k, i64 1
+  %c = and <2 x i8> %v, <i8 1, i8 1>
+  %m = tail call i8 @cq_measure_si8(i8 %x)
+  %c0 = extractelement <2 x i8> %c, i64 0
+  %c1 = extractelement <2 x i8> %c, i64 1
+  %cb = icmp ne i8 %c0, 0
+  %cb1 = icmp ne i8 %c1, 0
+  %s = shufflevector <2 x i8> %c, <2 x i8> poison, <2 x i32> <i32 0, i32 0>
+  %s1 = extractelement <2 x i8> %s, i64 1
+  %cs = icmp ne i8 %s1, 0
+  %o = or i1 %cb, %cb1
+  %oo = or i1 %o, %cs
+  %r = zext i1 %oo to i8
+  ret i8 %r
+}
+
 ; cq-4l9jj (p5.c): a branch on (classical && quantum) is a classical choice for measuredOnEveryPath (rule 8: pred factors
 ; the classical conjunct out as a classical branch), so a measurement in its taken arm is not on every path.
 define i32 @cq_and(i32 %c, i1 %b0) {
@@ -136,6 +158,8 @@ join:
 }
 
 declare i32 @cq_theta_si32(i32, double)
+declare i8 @cq_theta_si8(i8, double)
+declare i8 @cq_measure_si8(i8)
 declare i1 @cq_theta_i1(i1, double)
 declare i32 @cq_measure_si32(i32)
 declare void @cq_phi(double)
@@ -208,6 +232,9 @@ int main() {
 
   Function &L = *M->getFunction("inloop");
   expectQ(T, L, {{"go", true}, {"w", false}, {"e", true}});
+
+  Function &V = *M->getFunction("lane");
+  expectQ(T, V, {{"c0", false}, {"cb", false}, {"c1", true}, {"cb1", true}, {"cs", false}});
 
   Function &Q = *M->getFunction("cq_and");
   if (const cq::Specialization *S = entryOf(T, &Q)) {
