@@ -550,6 +550,34 @@ FnInfo &Analyzer::fn(const Function *F) {
       }
     }
   }
+  // CR rule 14 "No live exit": an exit edge of a loop into a noreturn arm (a dead end in no loop around the exiting
+  // block) is taken per trip under that trip's exit flag, and the arm's blocks run under it. Where the loop has no live
+  // exit the arm post-dominates the loop and the walk above stops at it: every block of the arm is control dependent
+  // on the exiting branch as well (R3/p10.c viacall: an in-module callee in the arm is called under the flag).
+  for (const Loop *Lp : info->LI->getLoopsInPreorder()) {
+    SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exitEdges;
+    Lp->getExitEdges(exitEdges);
+    for (const auto &edge : exitEdges) {
+      const BasicBlock *A = edge.first, *S = edge.second;
+      auto inLoopAround = [&](const BasicBlock *X) {
+        for (const Loop *l = info->LI->getLoopFor(X); l; l = l->getParentLoop())
+          if (l->contains(A))
+            return true;
+        return false;
+      };
+      if (!dead.isDeadEnd(S) || inLoopAround(S))
+        continue;
+      SmallVector<const BasicBlock *, 8> work{S};
+      SmallPtrSet<const BasicBlock *, 8> seen{S};
+      while (!work.empty()) {
+        const BasicBlock *X = work.pop_back_val();
+        addParent(X, A);
+        for (const BasicBlock *Y : successors(X))
+          if (!inLoopAround(Y) && seen.insert(Y).second)
+            work.push_back(Y);
+      }
+    }
+  }
   // Post-dominance over the live subgraph: pdom(Y) = {Y} | AND over Y's live successors of pdom(s).
   std::vector<const BasicBlock *> liveBlocks;
   DenseMap<const BasicBlock *, unsigned> liveIdx;
@@ -2108,6 +2136,21 @@ void Analyzer::transferCall(CallBase &CB) {
     case Intrinsic::ubsantrap:
       if (id == Intrinsic::trap || id == Intrinsic::ubsantrap)
         cur->hasEffect = true;
+      if (id == Intrinsic::trap) {
+        // CR rule 16 lists __builtin_trap among the noreturn callees: under a quantum predicate an abort event; with no
+        // quantum predicate where a tape or abort event can precede it, the effect entry of its name (owner ruling
+        // 2026-11-11 Q7), then abort_i1 of its seed. Otherwise the trap as it stands.
+        if (!cur->hasNoreturn) {
+          cur->hasNoreturn = true;
+          st.changed = true;
+        }
+        if (blockCT(CB.getParent()) || cur->ctl) {
+          if (cur->aborts.insert(&CB).second)
+            st.changed = true;
+        } else if (eventPrecedes(CB) && cur->effectEntries.insert(&CB).second) {
+          st.changed = true;
+        }
+      }
       return;
     case Intrinsic::vastart:
     case Intrinsic::vacopy:

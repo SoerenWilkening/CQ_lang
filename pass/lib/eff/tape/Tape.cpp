@@ -486,7 +486,9 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   unsigned fields = 0;
   for (unsigned a = 0; a < CB.arg_size(); ++a)
     fields += emitField(ctx, CB, a, tape, flag);
-  Constant *name = effectName(ctx.M, calleeName(*F, &CB));
+  // CR rule 16's noreturn bullet names llvm.trap by its C name: the entry __builtin_trap.
+  Constant *name =
+      effectName(ctx.M, F->getIntrinsicID() == Intrinsic::trap ? std::string("__builtin_trap") : calleeName(*F, &CB));
   Type *rt = CB.getType();
   bool reads = !rt->isVoidTy() && !CB.use_empty();
   bool wide = reads && (rt->isAggregateType() || rt->isVectorTy());
