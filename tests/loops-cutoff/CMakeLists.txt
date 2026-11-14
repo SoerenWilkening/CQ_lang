@@ -123,6 +123,12 @@ add_test(NAME loops-cutoff-measure-arm
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_arm.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-pntr (CR rule 14): `p = x; x = f(x)` read after a K-loop; each exit value is read before any rebind.
+add_test(NAME loops-cutoff-prev-value
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in prev_value=3
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/prev_value.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-q7u9y: two measurements in sequence in a K-loop's exit arm, the loop also returning past them, each once after the trips.
 add_test(NAME loops-cutoff-measure-seq
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

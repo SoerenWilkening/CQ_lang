@@ -2748,15 +2748,28 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto it = exitRail.find(h);
     return it != exitRail.end() ? it->second : ctx.operand(h);
   };
-  for (auto &[v, h] : exitRebinds) {
+  // Every exit value is read before any is rebound (cq-pntr): a value read after the loop may itself be a header phi
+  // another carried value takes as its latch value (`p = x; x = f(x)`: p's exit value is x's header phi of the exit trip),
+  // and rebinding it first would make x's exit value read p's.
+  // The exit block's phis read theirs before the rebinds too.
+  std::vector<Operand> exitVals, exitPhiVals;
+  exitVals.reserve(exitRebinds.size());
+  for (auto &[v, h] : exitRebinds)
+    exitVals.push_back(exitOf(h));
+  exitPhiVals.reserve(exitPhis.size());
+  for (auto &[P, h] : exitPhis)
+    exitPhiVals.push_back(exitOf(h));
+  for (size_t k = 0; k < exitRebinds.size(); ++k) {
+    const Value *v = exitRebinds[k].first;
     // A trip-0 test (test0) that skips every trip leaves v unbound where it ended the chain (closeTests).
     if (ctx.bound(v))
-      ctx.rebind(v, {exitOf(h)});
+      ctx.rebind(v, {exitVals[k]});
     else
-      ctx.bindFields(v, {exitOf(h)});
+      ctx.bindFields(v, {exitVals[k]});
   }
-  for (auto &[P, h] : exitPhis) {
-    Operand f = exitOf(h);
+  for (size_t k = 0; k < exitPhis.size(); ++k) {
+    PHINode *P = exitPhis[k].first;
+    Operand f = exitPhiVals[k];
     unitBound.insert(P);
     if (top)
       ctx.bindFields(P, {f});
