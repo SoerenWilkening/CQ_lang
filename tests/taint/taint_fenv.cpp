@@ -30,7 +30,8 @@ static const char *IR = R"(
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
-@_FE_DFL_ENV = external global [32 x i8]
+; Rule 23: a constant global (musl's FE_DFL_ENV is a constant pointer) is the constant case, never memory.
+@_FE_DFL_ENV = external constant [32 x i8]
 
 ; FLAGS: a raise under a quantum predicate reaches the test after the join; a test before it does not.
 define i32 @flags_join(double %x0, double %th, double %k) {
@@ -216,7 +217,56 @@ entry:
   ret i32 %r
 }
 
+; cq-fqlf (rule 23, principle 1): a call of an environment body with classical data while FLAGS holds is never the own
+; symbol; the classical root @peek_root stays classical.
+define i32 @peek_root(i32 %m) {
+  %t = call i32 @fetestexcept(i32 %m)
+  ret i32 %t
+}
+define i32 @calls_peek(double %x0, double %th, double %c) {
+  %x = call double @cq_theta_f64(double %x0, double %th)
+  %y = call double @llvm.experimental.constrained.fmul.f64(double %x, double %c, metadata !"round.dynamic", metadata !"fpexcept.strict")
+  %p = call i32 @peek_root(i32 32)
+  ret i32 %p
+}
+
+; cq-1bbg: an object's saved part is per specialization: the clone of @save_root that @calls_save reaches saves a
+; flags rail, which never reaches the own symbol's restore.
+define i32 @save_root(double %x) {
+  %e = alloca [32 x i8]
+  %s = call i32 @fegetenv(ptr %e)
+  %y = call double @llvm.experimental.constrained.fdiv.f64(double %x, double 3.0, metadata !"round.dynamic", metadata !"fpexcept.strict")
+  %r = call i32 @fesetenv(ptr %e)
+  %t = call i32 @fetestexcept(i32 32)
+  ret i32 %t
+}
+define i32 @calls_save(double %x0, double %th, double %c) {
+  %x = call double @cq_theta_f64(double %x0, double %th)
+  %y = call double @llvm.experimental.constrained.fmul.f64(double %x, double %c, metadata !"round.dynamic", metadata !"fpexcept.strict")
+  %p = call i32 @save_root(double %y)
+  ret i32 %p
+}
+
+; cq-1bbg: a save under a quantum predicate makes the object's part select(c, saved, old), a rail.
+define i32 @save_pred(double %x0, double %th, double %k) {
+entry:
+  %e = alloca [32 x i8]
+  %x = call double @cq_theta_f64(double %x0, double %th)
+  %s0 = call i32 @fegetenv(ptr %e)
+  %z = call i32 @feraiseexcept(i32 32)
+  %c = fcmp ogt double %x, %k
+  br i1 %c, label %arm, label %join
+arm:
+  %s1 = call i32 @fegetenv(ptr %e)
+  br label %join
+join:
+  %r = call i32 @fesetenv(ptr %e)
+  %t = call i32 @fetestexcept(i32 32)
+  ret i32 %t
+}
+
 declare double @cq_theta_f64(double, double)
+declare i32 @fegetenv(ptr)
 declare i32 @cq_theta_ui32(i32, double)
 declare i32 @fetestexcept(i32)
 declare i32 @feraiseexcept(i32)
@@ -282,6 +332,10 @@ int main() {
   expect("call_under_pred", {{"g", true}});
   expect("env_objects", {{"t0", false}, {"t1", true}, {"t2", false}});
   expect("flag_objects", {{"t0", false}, {"t1", true}});
+  expect("peek_root", {{"t", false}});
+  expect("calls_peek", {{"p", true}});
+  expect("save_root", {{"t", false}});
+  expect("save_pred", {{"t", true}});
   outs() << "taint_fenv: " << (checks - failures) << "/" << checks << " checks pass\n";
   return failures ? 1 : 0;
 }

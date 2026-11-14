@@ -1853,6 +1853,13 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   bool underQ = blockCT(CB.getParent()) || cur->ctl;
   // Rule 23, §1.4 (cq-a9ij3): the mode word; a call with one is never the in-place own symbol.
   uint8_t rm = viaIntrinsic ? 0 : modeWord(G);
+  // Rule 23 (cq-fqlf): once the flags have a quantum part, a callee whose body holds or changes the environment is
+  // reached with the flags rail and the mode, whatever its data arguments. With every data argument classical that is
+  // never the own symbol (its C parameter list carries no flags, and a classical root calling it stays as it is,
+  // principle 1): the all-zero mask with 82's ABI and the mode as a handle, `_rmq` (§1.4).
+  if (!rm && !viaIntrinsic && !anyQ && !plain && (fenvNow() & 2) && !G->isDeclaration() && !hostCallee(*G) &&
+      touchesEnvT(*G))
+    rm = 2;
   // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
   // actuals give now (lanes only rise during the fixed point).
   if (!calleeMemo.empty()) {
@@ -1953,7 +1960,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   // from the bus as the new flags rail and mode, and copies the object for its host call (bus stores).
   auto kindOf = [](Value *ptr) { return fenvObjectKindOf(ptr); };
   auto savedIn = [&](Value *ptr) {
-    auto it = st.fenvSaved.find(ptr);
+    auto it = st.fenvSaved.find({cur, ptr});
     return it == st.fenvSaved.end() ? uint8_t(0) : it->second;
   };
   auto saveTo = [&](Value *ptr, uint8_t bits) {
@@ -1964,7 +1971,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
       }
       return;
     }
-    uint8_t &x = st.fenvSaved[ptr];
+    uint8_t &x = st.fenvSaved[{cur, ptr}];
     if ((x | bits) != x) {
       x |= bits;
       st.changed = true;
@@ -1996,11 +2003,11 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   } else if (cname == "fetestexcept") {
     resQ = q || (now & 2);
   } else if (cname == "fegetexceptflag") {
-    saveTo(actuals[0], (now & 2) | (q ? 2 : 0));
+    saveTo(actuals[0], (now & 2) | (rail ? 2 : 0));
   } else if (cname == "fesetexceptflag") {
     fenvAssign(1, restoreMemory(actuals[0]) || rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
   } else if (cname == "fegetenv" || cname == "feholdexcept") {
-    saveTo(actuals[0], now | (q ? 3 : 0));
+    saveTo(actuals[0], now | (rail ? 3 : 0));
     if (cname == "feholdexcept")
       fenvAssign(1, bit(rail));
   } else if (cname == "fesetenv" || cname == "feupdateenv") {
