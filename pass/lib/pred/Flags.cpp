@@ -1089,7 +1089,9 @@ class JoinRepair {
   }
 
   // The nearest block at or above U (through unique predecessors) with several predecessors.
-  BasicBlock *joinAbove(BasicBlock *U, const Value *what, const std::string &read) {
+  // cq-a24ig: `read` names the read for the internal error only; built only there (printing a value numbers the whole
+  // function).
+  BasicBlock *joinAbove(BasicBlock *U, const Value *what, function_ref<std::string()> read) {
     BasicBlock *J = U;
     SmallPtrSet<BasicBlock *, 16> seen;
     while (BasicBlock *s = J->getUniquePredecessor()) {
@@ -1104,7 +1106,7 @@ class JoinRepair {
     // not reach it is a walk that skipped a block it had to run.
     if (pred_empty(J))
       internalError("pred: a predicate or merge arm reads a value minted where it does not reach the point, on a "
-                    "path the walk took without running its block (Walker::next, cq-pfpy): " + read,
+                    "path the walk took without running its block (Walker::next, cq-pfpy): " + read(),
                     what);
     return J;
   }
@@ -1309,7 +1311,7 @@ public:
         return sink.classicalSeed(n);   // rule 7: a rail holding the constant
       return materialize(n, sink, ql);
     }
-    BasicBlock *J = joinAbove(U, what, "the predicate " + describe(n));
+    BasicBlock *J = joinAbove(U, what, [&] { return "the predicate " + describe(n); });
     {
       // Per-edge flags need every atom the point reads to exist where J's edges leave. When one is
       // minted between J and the point (a later arm's own condition), the atoms that do not reach are
@@ -1400,9 +1402,11 @@ public:
       ctx.B().SetInsertPoint(U, pt);
       return seedOf(ctx, Constant::getNullValue(ty), w);
     }
-    std::string vs;
-    raw_string_ostream(vs) << *v;
-    BasicBlock *J = joinAbove(U, what, (k.var < 0 ? "the merge arm " : "the atom ") + vs + " under " + describe(k.node));
+    BasicBlock *J = joinAbove(U, what, [&] {
+      std::string vs;
+      raw_string_ostream(vs) << *v;
+      return (k.var < 0 ? "the merge arm " : "the atom ") + vs + " under " + describe(k.node);
+    });
     auto jkey = std::make_tuple(v, k.node, k.care, k.var, J);
     if (Value *x = reentered(jkey, handle ? irTypeOf(ctx.M.getContext(), w) : v->getType()))
       return x;
