@@ -173,7 +173,11 @@ Operand LoweringContext::operand(const Value *orig) {
                       " fields (use fields())",
                   orig);
   Operand op = spine::atPhiEdge(sh, orig, it->second.front());
-  if (op.handle) {
+  // cq-amtcn: a loop-carried rail its trip measured is the outcome for a read of the measured value only; another value
+  // bound to the same rail (a second phi with the same entry incoming) is read by taint as unmeasured, so stays the rail.
+  auto cm = sh.measured.find(op.v);
+  bool otherCarried = op.handle && sh.carriedMeasured.count(op.v) && cm != sh.measured.end() && cm->second.v != orig;
+  if (op.handle && !otherCarried) {
     // Rule 2: a use after a measurement of this rail reads the classical outcome, and a rail that
     // depends only on measured rails and classical values collapses to its classical recomputation.
     if (Value *c = spine::collapse(*this, op.v))

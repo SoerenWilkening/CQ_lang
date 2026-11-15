@@ -917,9 +917,14 @@ bool Analyzer::measuredRead(const Value *V) {
       if (!rawElem(x, elem))
         return Classical;
       auto *I = dyn_cast<Instruction>(x);
+      // A loop-carried value is a rail in every trip (cq-2z29a); a read of it inside its loop that the trip's own cq_measure
+      // of it reaches on every path (measuredBefore: the walk ends where the header is entered again) denotes that trip's
+      // outcome, in every trip (owner 2026-11-15, cq-amtcn; CR rule 14). After the loop it stays the rail.
       if (I && I->getFunction() == cur->F && isa<PHINode>(I))
         if (const Loop *Lp = fn(cur->F).LI->getLoopFor(I->getParent()); Lp && Lp->getHeader() == I->getParent())
-          return No;
+          return all_of(points, [&](const auto &p) { return Lp->contains(p.first) && measuredBefore(raw, x, p.first, p.second); })
+                     ? Measured
+                     : No;
       if (all_of(points, [&](const auto &p) { return measuredBefore(raw, x, p.first, p.second); }))
         return Measured;
       if (!I || I->getFunction() != cur->F)
