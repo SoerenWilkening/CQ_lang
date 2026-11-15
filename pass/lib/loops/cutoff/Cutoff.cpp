@@ -3452,20 +3452,73 @@ std::optional<uint64_t> tripBound(const Loop &L, ScalarEvolution &SE) {
   return n;
 }
 
-// CLAUDE.md "K per loop", first match wins: the per-function flag, CQ_K(f, k) (the `used` constant
-// __cq_k_<f>), the global flag, 4.
-unsigned resolveK(const Function &F, const KOptions &KO) {
-  auto it = KO.perFunction.find(F.getName().str());
-  if (it != KO.perFunction.end() && it->second > 0)
+// The C name -cq-k=<fn>=<k> names (CR §0: "The per-function flag names every function of that C name"): the function's
+// own name, and for a static llvm-link renamed (`helper.3`) also the name without the suffix.
+static std::optional<unsigned> perFunctionK(const Function &F, const std::map<std::string, unsigned> &flags) {
+  auto it = flags.find(F.getName().str());
+  if (it == flags.end() && F.hasLocalLinkage()) {
+    auto [base, sfx] = F.getName().rsplit('.');
+    unsigned n;
+    if (!sfx.empty() && !base.empty() && !sfx.getAsInteger(10, n))
+      it = flags.find(base.str());
+  }
+  if (it != flags.end() && it->second > 0)
     return it->second;
-  if (const GlobalVariable *GV = F.getParent()->getGlobalVariable(("__cq_k_" + F.getName()).str(), true))
-    if (GV->hasInitializer())
-      if (auto *CI = dyn_cast<ConstantInt>(GV->getInitializer()))
-        if (CI->getZExtValue() > 0)
-          return unsigned(CI->getZExtValue());
+  return std::nullopt;
+}
+
+// CR §0, owner ruling 2026-11-15 (cq-z9vt): the CQ_K line of f. In a module of several units cqcc bound each line per
+// unit, before the link, onto the function it names as the string attribute "cq-k"="k" ("0": no line names it); a line
+// naming a function no unit defines stays the `used` constant __cq_k_<f>, llvm-link's copies __cq_k_<f>.N with it, and
+// the largest k counts. A single unit has only the constant.
+static std::optional<unsigned> lineK(const Function &F, StringRef attr, StringRef prefix) {
+  if (F.hasFnAttribute(attr)) {
+    unsigned v = 0;
+    if (!F.getFnAttribute(attr).getValueAsString().getAsInteger(10, v) && v > 0)
+      return v;
+    return std::nullopt;
+  }
+  std::string name = (prefix + F.getName()).str();
+  uint64_t best = 0;
+  auto take = [&](const GlobalVariable &GV) {
+    if (GV.hasInitializer())
+      if (auto *CI = dyn_cast<ConstantInt>(GV.getInitializer()))
+        best = std::max(best, CI->getZExtValue());
+  };
+  if (const GlobalVariable *GV = F.getParent()->getGlobalVariable(name, true))
+    take(*GV);
+  for (const GlobalVariable &GV : F.getParent()->globals()) {
+    StringRef n = GV.getName();
+    unsigned d;
+    if (n.size() > name.size() + 1 && n.starts_with(name) && n[name.size()] == '.' &&
+        !n.drop_front(name.size() + 1).getAsInteger(10, d))
+      take(GV);
+  }
+  if (best > 0)
+    return unsigned(best);
+  return std::nullopt;
+}
+
+// CLAUDE.md "K per loop", first match wins: the per-function flag, CQ_K(f, k) (lineK), the global flag, 4.
+unsigned resolveK(const Function &F, const KOptions &KO) {
+  if (auto k = perFunctionK(F, KO.perFunction))
+    return *k;
+  if (auto k = lineK(F, "cq-k", "__cq_k_"))
+    return *k;
   if (KO.global && *KO.global > 0)
     return *KO.global;
   return 4;
+}
+
+// §0 K2 resolves as K does (bus::K2).
+unsigned resolveK2(const Function &F, const KOptions &KO) {
+  if (auto k = perFunctionK(F, KO.k2PerFunction))
+    return *k;
+  if (auto k = lineK(F, "cq-k2", "__cq_k2_"))
+    return *k;
+  if (KO.k2Global && *KO.k2Global > 0)
+    return *KO.k2Global;
+  return 4096;
 }
 
 

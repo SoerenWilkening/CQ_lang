@@ -15,6 +15,10 @@
 
 using namespace llvm;
 
+namespace cq::loops {
+unsigned resolveK2(const llvm::Function &, const KOptions &);   // loops/cutoff/Cutoff.cpp: K2 resolved as K (CR §0)
+}
+
 namespace cq::bus {
 
 namespace {
@@ -236,17 +240,7 @@ std::optional<uint64_t> rangeBound(LoweringContext &ctx, const Value *V) {
 
 unsigned K2(const LoweringContext &cctx) {
   LoweringContext &ctx = const_cast<LoweringContext &>(cctx);
-  const Function &F = *ctx.S.F;
-  const loops::KOptions &KO = spine::shared(ctx).KO;
-  if (auto it = KO.k2PerFunction.find(F.getName().str()); it != KO.k2PerFunction.end() && it->second > 0)
-    return it->second;
-  if (const GlobalVariable *GV = F.getParent()->getGlobalVariable(("__cq_k2_" + F.getName()).str(), true))
-    if (GV->hasInitializer())
-      if (auto *CI = dyn_cast<ConstantInt>(GV->getInitializer()); CI && CI->getZExtValue() > 0)
-        return unsigned(CI->getZExtValue());
-  if (KO.k2Global && *KO.k2Global > 0)
-    return *KO.k2Global;
-  return 4096;
+  return loops::resolveK2(*ctx.S.F, spine::shared(ctx).KO);
 }
 
 void lowerAlloc(LoweringContext &ctx, Instruction &site) {

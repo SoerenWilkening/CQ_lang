@@ -13,7 +13,11 @@ Fails on any of:
   identity    a TU with no taint is not byte-identical to opt with no passes on the module cqcc gave the
               pass, or (one TU) to opt -S of clang -O1 -S -emit-llvm -include CQ.h output
   K           -cq-k / -cq-k-default do not reach the pass (its own usage errors must come back), or a
-              CQ_K line's constant is missing from the pass input or output (same TU and another TU)
+              CQ_K line's constant is missing from the pass input or output (same TU), or, in a program of several
+              TUs, a line is not bound by C scope before the link (CR §0, cq-z9vt): another TU's line does not reach
+              the function it names; the defining TU's line does not win, or without one the largest other line;
+              two statics of one name do not keep their own K, or -cq-k=f=k misses a renamed one; differing lines
+              give no warning; the lowering depends on the link order
   cq-check    --cq-check does not run `python3 -m cqcheck user` on the linked and lowered modules with
               the entry and sample count, or cqcc's status differs from cqcheck user's own
   link        -c does not give an object, or an executable built with a --backend object prints a
@@ -226,8 +230,7 @@ def test_k(tmp):
             else:
                 ok(f"K {flag} reaches the pass ({src}): its usage error, nothing emitted")
     # CQ_K lines: the used constant reaches the pass input and survives in the output
-    for name, srcs, k in (("same TU", ["kfun.c"], ("add_q", 9)),
-                          ("other TU", ["kline_other.c", "add_q2.c"], ("add_q2", 11))):
+    for name, srcs, k in (("same TU", ["kfun.c"], ("add_q", 9)),):
         d = tmp / f"kline.{k[0]}"
         out = tmp / f"kline.{k[0]}.ll"
         r = cqcc("-S", *[SRC / s for s in srcs], "--save-temps", d, "-o", out)
@@ -241,6 +244,119 @@ def test_k(tmp):
             fail(f"CQ_K {name}", f"@__cq_k_{k[0]} missing from the lowered module")
         else:
             ok(f"CQ_K {name}: @__cq_k_{k[0]} = {k[1]} reaches the pass")
+    # another TU (cq-z9vt, CR §0): the line, bound per unit before the link, reaches the pass as the attribute
+    # "cq-k"="11" of the function it names (the external add_q2), and its constant is gone
+    d = tmp / "kline.add_q2"
+    r = cqcc("-S", SRC / "kline_other.c", SRC / "add_q2.c", "--save-temps", d, "-o", tmp / "kline.add_q2.ll")
+    linked = "" if r.returncode else (d / "linked.ll").read_text()
+    if r.returncode:
+        fail("CQ_K other TU", r.stderr)
+    elif not re.search(r'^attributes #\d+ = \{[^}]*"cq-k"="11"', linked, re.M) or "@__cq_k_add_q2" in linked:
+        fail("CQ_K other TU", '"cq-k"="11" missing from the pass input, or @__cq_k_add_q2 still there')
+    else:
+        ok('CQ_K other TU: add_q2 carries "cq-k"="11" into the pass')
+
+
+def fn_body(text, name):
+    """The body of @name in a lowered module (its attribute group numbers dropped: they follow the link order), or
+    None."""
+    m = re.search(r"^define [^\n]*@%s\([^\n]*\n(?:.*\n)*?\}\n" % re.escape(name), text, re.M)
+    return re.sub(r" #\d+\b", " #", m.group(0)) if m else None
+
+
+def test_k_units(tmp):
+    """CR §0 (owner ruling 2026-11-15, cq-z9vt): CQ_K binds per unit by C scope, before the link. Each function's
+    lowered body is compared with the one-unit lowering at the K the ruling gives it, in both link orders."""
+    def low(name, *args):
+        out = tmp / f"ku.{name}.ll"
+        r = cqcc("-S", *args, "-o", out)
+        if r.returncode:
+            fail(f"CQ_K units {name}", r.stderr)
+            return None, r.stderr
+        return out.read_text(), r.stderr
+
+    refs = {}
+    for k in (2, 5):
+        refs[("f", k)] = fn_body(low(f"ref.f{k}", SRC / "kunit_def_noline.c", f"-cq-k=f={k}")[0] or "", "f")
+    for src, k in (("kunit_st2.c", 2), ("kunit_st3.c", 3), ("kunit_st2.c", 6)):
+        refs[("helper", k)] = fn_body(low(f"ref.h{k}", SRC / src, f"-cq-k=helper={k}")[0] or "", "__cq_q_helper_1")
+    if not all(refs.values()) or len(set(refs.values())) != len(refs):
+        fail("CQ_K units", "the one-unit references are missing or do not tell the K apart")
+        return
+
+    warn = re.compile(r"^cqcc: warning: CQ_K\(f, k\) differs between units", re.M)
+    for what, srcs, k in (("the defining unit's line wins", ["kunit_def.c", "kunit_use3.c"], 2),
+                          ("no line in the defining unit: the largest of the others",
+                           ["kunit_def_noline.c", "kunit_use3.c", "kunit_use5.c"], 5)):
+        for order in (srcs, srcs[::-1]):
+            text, err = low("f." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order])
+            if text is None:
+                continue
+            tag = f"CQ_K units, {what} ({' '.join(order)})"
+            if fn_body(text, "f") != refs[("f", k)]:
+                fail(tag, f"f is not lowered at K {k}")
+            elif not warn.search(err):
+                fail(tag, "no warning on the differing lines")
+            else:
+                ok(f"{tag}: K {k}, warned")
+
+    def helper_of(text, entry):
+        """The clone of the static helper the clone of `entry` calls, normalized to __cq_q_helper_1."""
+        caller = fn_body(text, f"__cq_q_{entry}_11_t") or ""
+        m = re.search(r"@(__cq_q_helper(?:\.\d+)?_1)\(", caller)
+        if not m:
+            return None
+        b = fn_body(text, m.group(1))
+        return b and re.sub(r"@__cq_q_helper\.\d+_1", "@__cq_q_helper_1", b)
+
+    for order in (["kunit_st2.c", "kunit_st3.c"], ["kunit_st3.c", "kunit_st2.c"]):
+        for flag, want in (("", {"entry2": 2, "entry3": 3}), ("-cq-k=helper=6", {"entry2": 6, "entry3": 6})):
+            text, err = low("st." + "-".join(Path(s).stem for s in order) + flag, *[SRC / s for s in order],
+                            *([flag] if flag else []))
+            if text is None:
+                continue
+            tag = f"CQ_K units, two statics of one name {flag or 'with their own lines'} ({' '.join(order)})"
+            bad = [e for e, k in want.items() if helper_of(text, e) != refs[("helper", k)]]
+            if bad:
+                fail(tag, f"the helper of {', '.join(bad)} is not lowered at its K ({want})")
+            elif "warning" in err:
+                fail(tag, "a warning for statics, which never conflict")
+            else:
+                ok(f"{tag}: {want}")
+
+    # K2 likewise: two statics mk of one name, each allocating at its own K2 (100, 200) in both link orders
+    for order in (["kunit_k2_100.c", "kunit_k2_200.c"], ["kunit_k2_200.c", "kunit_k2_100.c"]):
+        text, err = low("k2." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order])
+        if text is None:
+            continue
+        tag = f"CQ_K2 units, two statics of one name ({' '.join(order)})"
+        mks = [n for n in re.findall(r"^define [^\n]*@(__cq_q_mk[.\d]*_\d+)\(", text, re.M) if "unc" not in n]
+        ks = sorted(int(m) for n in mks for m in set(re.findall(r"\bi64 ([12]00)\b", fn_body(text, n) or "")))
+        if ks != [100, 200]:
+            fail(tag, f"the clones {mks} allocate at K2 {ks}, want [100, 200] one each")
+        else:
+            ok(f"{tag}: K2 100 and 200")
+
+    # a function no unit defines externally keeps its constants (K and K2); a static's own lines become its
+    # attributes; a static with no line is marked "0" so the constant of its name does not reach it
+    d = tmp / "ku.lib"
+    r = cqcc("-S", *[SRC / f"kunit_lib_{x}.c" for x in "abc"], "--save-temps", d, "-o", tmp / "ku.lib.ll")
+    if r.returncode:
+        fail("CQ_K units, library function", r.stderr)
+        return
+    linked = (d / "linked.ll").read_text()
+    attrs = dict(re.findall(r"^attributes (#\d+) = \{([^}]*)\}", linked, re.M))
+    fattr = {n: attrs.get(g, "") for n, g in re.findall(r"^define [^\n]*@(libf[.\d]*)\([^\n]*\) unnamed_addr (#\d+)",
+                                                          linked, re.M)}
+    own = [n for n, a in fattr.items() if '"cq-k"="7"' in a and '"cq-k2"="50"' in a]
+    marked = [n for n, a in fattr.items() if '"cq-k"="0"' in a and '"cq-k2"="0"' in a]
+    consts = (re.search(r"^@__cq_k_libf = internal constant i32 3\b", linked, re.M),
+              re.search(r"^@__cq_k2_libf = internal constant i64 100\b", linked, re.M),
+              re.search(r"^@__cq_k_libf2 = internal constant i32 2\b", linked, re.M))
+    if len(fattr) != 2 or len(own) != 1 or len(marked) != 1 or not all(consts) or "@__cq_k_libf." in linked:
+        fail("CQ_K units, library function", f"attributes {fattr}, constants {[bool(c) for c in consts]}")
+    else:
+        ok("CQ_K units, library function: constants kept, the static's own lines on it, the other static marked 0")
 
 
 def test_check(tmp):
@@ -336,6 +452,7 @@ def main():
         test_identity(spec, tmp)
         test_bundle(tmp)
         test_k(tmp)
+        test_k_units(tmp)
         test_check(tmp)
         test_plain(tmp)
         test_link(tmp)
