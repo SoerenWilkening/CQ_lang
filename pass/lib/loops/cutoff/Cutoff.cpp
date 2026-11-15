@@ -2710,6 +2710,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a sub-loop in the trip (S10, S11)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
+    else if (any_of(hphis, [&](PHINode *h) {
+               return any_of(h->users(), [&](const User *u) {
+                 auto *cb = dyn_cast<CallBase>(u);
+                 const Function *f = cb ? cb->getCalledFunction() : nullptr;
+                 return f && f->getName().starts_with("cq_measure") && L.contains(cb);
+               });
+             }))
+      // me_body, me_arm, me_reread: the trip measures the carried rail (rule 2), and the reverse undoes the select that
+      // made it, freeing a measured rail.
+      why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
     else if (rolled::changesFenvState(L))
       why = "a quantum floating-point environment change in the trip (S12: its loop-carried rule 23 state)";
     if (why) {
@@ -2760,7 +2770,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       std::function<Value *()> now;
     };
     std::vector<Carry> carry;
-    DenseMap<Value *, RailType> measurable;   // a carried value's handle phi (S4c) and its rail type
     auto phiFor = [&](Value *init, bool handle) {
       PHINode *p = B.CreatePHI(handle ? handleTy(Cx) : init->getType(), 2);
       p->addIncoming(init, E);
@@ -2789,8 +2798,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           ctx.unc().setRole(ctx.unc().idOf(o.v), Role::UserRegister);
       } else {
         p = phiFor(o.v, o.handle);
-        if (o.handle)
-          measurable[p] = railOf(h->getType());
       }
       set(h, Operand{p, o.handle});
       carry.push_back({p, [&, h, hd = o.handle]() -> Value * {
@@ -2856,31 +2863,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     segHook = nullptr;
     rTrip = nullptr;
-    {
-      // cq-9kcq S4c (CR rules 2, 14; owner 2026-11-07, cq-2z29a: a body cq_measure is one call in the rolled body, run in
-      // every trip on that trip's carried rail). The header phi names the rail the previous trip's select made, which the
-      // reverse loop undoes and frees (the last trip's is no trip's measured rail). As for a kept store of a carried
-      // value (Uncompute::noteKeptStore, cq-mmdf3, rule 5 sentence 3), the measurement reads a basis copy of it, the copy
-      // the measured rail kept for the trip (lowerMeasure's partial-measurement copy, rule 18); the carried rail, collapsed
-      // with it, is uncomputed exactly by the reverse.
-      IRBuilderBase::InsertPointGuard keepIP(B);
-      SmallVector<CallInst *, 4> ms;
-      for (auto it = Hd->getIterator(); it != ctx.out().end(); ++it)
-        for (Instruction &I : *it)
-          if (auto *cb = dyn_cast<CallInst>(&I); cb && cb->getMetadata("cq.measure") && cb->arg_size() == 1 &&
-                                                 measurable.count(cb->getArgOperand(0)))
-            ms.push_back(cb);
-      for (CallInst *m : ms) {
-        Value *p = m->getArgOperand(0);
-        RailType w = measurable.lookup(p);
-        B.SetInsertPoint(m);
-        CallInst *cpy = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(Cx, w))});
-        ctx.unc().recordExternal(cpy, Role::Measured);
-        ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {p, cpy});
-        m->setArgOperand(0, cpy);
-        ctx.unc().setRole(ctx.unc().idOf(p), Role::UserRegister);
-      }
-    }
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
     B.CreateCondBr(B.CreateICmpULT(j1, ConstantInt::get(i32, c)), Hd, Xb);
