@@ -3932,16 +3932,16 @@ static std::optional<unsigned> perFunctionK(const Function &F, const std::map<st
 }
 
 // CR §0, owner ruling 2026-11-15 (cq-z9vt): the CQ_K line of f. In a module of several units cqcc bound each line per
-// unit, before the link, onto the function it names as the string attribute "cq-k"="k" ("0": no line names it); a line
-// naming a function no unit defines stays the `used` constant __cq_k_<f>, llvm-link's copies __cq_k_<f>.N with it, and
-// the largest k counts. A single unit has only the constant. K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0): a
-// constant 0 is a line. (cqcc's attribute "0" still marks "no line"; a CQ_K(f, 0) bound per unit needs another marker.)
+// unit, before the link, onto the function it names as the string attribute "cq-k"="k" ("none": no line names it); a
+// line naming a function no unit defines stays the `used` constant __cq_k_<f>, llvm-link's copies __cq_k_<f>.N with it,
+// and the largest k counts. A single unit has only the constant. K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0):
+// a 0, as the attribute or the constant, is a line.
 static std::optional<unsigned> lineK(const Function &F, StringRef attr, StringRef prefix) {
   if (F.hasFnAttribute(attr)) {
     unsigned v = 0;
-    if (!F.getFnAttribute(attr).getValueAsString().getAsInteger(10, v) && v > 0)
+    if (!F.getFnAttribute(attr).getValueAsString().getAsInteger(10, v))
       return v;
-    return std::nullopt;
+    return std::nullopt;   // "none"
   }
   std::string name = (prefix + F.getName()).str();
   std::optional<uint64_t> best;

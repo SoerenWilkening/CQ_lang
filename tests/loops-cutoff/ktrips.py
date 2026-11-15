@@ -142,20 +142,24 @@ def counter_loops(fn_body: str):
                 if p not in loop:
                     loop.add(p)
                     todo.append(p)
+        N = value(d, c.group(2), tableK=tk)
         # the counter test before trip 0: the one block entering the header from outside the loop branches on
-        # `icmp ult i32 0, N` (the same N; with a trip-0 conjunct, `and i1` of it) to the header or the latch's exit
+        # `icmp ult i32 0, N` (the same N; with a trip-0 conjunct, `and i1` of it) to the header or the latch's exit;
+        # with a constant N of 0 the builder folded it to `false`
         top, guard = False, None
         outside = [p for p in preds[head] if p not in loop]
         if len(outside) == 1 and bl[outside[0]][0]:
-            g = re.match(r"^\s*br i1 (%[-\w.$]+), label %([-\w.$]+), label %([-\w.$]+)", bl[outside[0]][0][-1])
+            g = re.match(r"^\s*br i1 (%[-\w.$]+|false), label %([-\w.$]+), label %([-\w.$]+)", bl[outside[0]][0][-1])
             if g and g.group(2) == head and g.group(3) == m.group(3):
-                gc = d.get(g.group(1), "")
-                a = re.fullmatch(r"and i1 (%[-\w.$]+), (\S+)", gc)
-                if a:
-                    gc = d.get(a.group(1), "")
-                top = gc == "icmp ult i32 0, " + c.group(2)
+                if g.group(1) == "false":
+                    top = N == 0 and re.fullmatch(r"-?\d+", c.group(2)) is not None
+                else:
+                    gc = d.get(g.group(1), "")
+                    a = re.fullmatch(r"and i1 (%[-\w.$]+), (\S+)", gc)
+                    if a:
+                        gc = d.get(a.group(1), "")
+                    top = gc == "icmp ult i32 0, " + c.group(2)
                 guard = outside[0] if top else None
-        N = value(d, c.group(2), tableK=tk)
         if N is not None and (N < 0 or N >= 1 << 31):
             N = None   # a table clone's K parameter read as none: its own K is not in the IR
         out.append((loop, head, jphi, lab, N, top, guard))
@@ -288,6 +292,14 @@ def _selftest() -> int:
     if runs(_ROLLED.replace("select i1 %kn, i32 4, i32 %k", "select i1 %kn, i32 0, i32 %k").replace("MUTANT", ""),
             r"@cq_template_mul_i32_hl\(") != 1:
         print("FAIL ktrips: an unguarded trip loop (bottom test) with N = 0 not counted once")
+        bad += 1
+    lit = _ROLLED.replace("  br label %h\n\nh:", "  br i1 false, label %h, label %x\n\nh:")
+    if runs(lit.replace("%c = icmp ult i32 %j1, %K", "%c = icmp ult i32 %j1, 0").replace("MUTANT", ""),
+            r"@cq_template_mul_i32_hl\(") != 0:
+        print("FAIL ktrips: a constant N = 0 behind a folded guard counted as running")
+        bad += 1
+    if runs(lit.replace("MUTANT", ""), r"@cq_template_mul_i32_hl\(") != 4:
+        print("FAIL ktrips: a folded `false` branch before a loop with a run-time N read as its guard")
         bad += 1
     if runs(zero.replace("MUTANT", "").replace("%g = icmp ult i32 0, %K", "%g0 = icmp ult i32 0, %K\n  %g = and i1 %g0, %kn"),
             r"@cq_template_mul_i32_hl\(") != 0:
