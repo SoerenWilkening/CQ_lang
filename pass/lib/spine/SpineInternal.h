@@ -41,8 +41,8 @@
 //    cq_phi is rz_i1 on currentFlag(): rule 12's global-phase deletion never applies under a trip.
 //    currentPredicate() is unchanged (the block's quantum part): a consumer that tests it for top to
 //    decide "uncontrolled" does not see the trip (cq-hmv1); currentFlag() is the control.
-//  - lowerInstruction on an I that is already bound (cq-lx8f) replaces its binding: an unrolled
-//    rule-14 trip re-lowers the body. The old rails stay recorded in Uncompute and flush normally.
+//  - lowerInstruction on an I that is already bound (cq-lx8f) replaces its binding: a rule-14
+//    trip re-lowers code (the region form's header test region, before the loop and in the trip). The old rails stay recorded in Uncompute and flush normally.
 //  - A quantum phi of a unit's exit block that is unbound when the unit starts and bound when the
 //    loop module returns (cq-lx8f: an exit phi it identified with a carried value's final state) is
 //    not merged by the walker; it keeps the loop module's binding. Any other phi bound before the
@@ -118,10 +118,12 @@ struct Shared {
   llvm::DenseMap<const llvm::Value *, Measurement> measured;
   // The taint of an original value in this run's specialization (spine::isQ), for cq::measuredBefore.
   std::function<bool(const llvm::Value *)> isQ;
-  // Rules 2, 14 (owner, cq-2z29a): a loop-carried value's rail once measured: it stays the value every template of the trip reads (its next value,
-  // the exit test), and only a cq_measure of it, or of a rail computed from it, is a classical re-read (classicalRead).
+  // Rules 2, 14 (owner 2026-11-15, cq-amtcn): a loop-carried value's rail once measured. Inside its loop a direct read of the
+  // measured phi that the trip's own cq_measure reaches is that trip's outcome (Collapse.cpp carriedOutcome, taint's
+  // measuredRead), in every trip, an exit test included; another value bound to the same rail, and every read after the
+  // loop, stays the rail (LoweringContext::operand, Collapse.cpp classify).
   llvm::DenseSet<const llvm::Value *> carriedMeasured;
-  // cq-9kcq (CR rules 2, 14): the headers of the original K-loops lowered as one rolled trip (loops-cutoff, CQ_K_ROLLED).
+  // cq-9kcq (CR rules 2, 14): the headers of the original K-loops, each lowered as one rolled trip (loops-cutoff).
   // The rail a trip's carried value gets from the trip before is measured only where a next trip runs (the trip
   // counter, a classical condition), so lowerMeasure measures a kept basis copy of it, as with a classical exit test.
   llvm::DenseSet<const llvm::BasicBlock *> rolledHeaders;

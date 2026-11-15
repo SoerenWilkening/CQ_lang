@@ -1461,8 +1461,8 @@ struct Uncompute::Impl {
     // cq-a24ig: the flag is a function of the path alone, decided by dflt, the events of each block in their order with
     // their conditions, and the CFG. While the CFG stands (an active ReachCache that is not dirty), a query at a block
     // holding no event asks what an earlier query with the same events at the same block asked: its answer is reused
-    // where it still dominates `at` (a K-loop cut by the received K has thousands of items placed at a return, each of
-    // which minted its own chain of run phis over every trip copy).
+    // where it still dominates `at` (a function with many K-loops has thousands of items placed at a return, each of
+    // which would mint its own chain of run phis over every classical arm).
     std::vector<uintptr_t> memoKey;
     ReachCache *rc = activeReach();
     if (rc && rc->F != at->getFunction())
@@ -1500,8 +1500,8 @@ struct Uncompute::Impl {
     std::vector<Instruction *> ops;   // and/xor made here
     DenseMap<BasicBlock *, Value *> startOf, endOf;
     SmallPtrSet<BasicBlock *, 8> busy;
-    // cq-jws5r (CR rules 8, 14): a function whose K-loop trips branch on classical conditions has one join per branch and
-    // trip copy, and the walk below visits every one of them for every flag. Two facts cut it short there, each giving
+    // cq-jws5r (CR rules 8, 14): a function whose K-loop trips branch on classical conditions has one join per branch, and
+    // the walk below visits every one of them for every flag. Two facts cut it short there, each giving
     // the value the walk would fold its phis to: a block no event block reaches starts at dflt; and the join of a
     // noted classical arm (noteClassicalArm) whose arm reaches no event block starts with the value its branch ends
     // with (every path into the join leaves that branch, and none passes an event).

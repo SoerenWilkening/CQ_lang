@@ -11,7 +11,6 @@
 //                measured value read the outcome (LoweringContext::operand).
 #include "SpineInternal.h"
 
-#include <cstdlib>
 #include <functional>
 #include <optional>
 
@@ -546,15 +545,6 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
 }
 
 namespace {
-// cq-9kcq: the temporary switch of the rolled K-loop (loops-cutoff's rolledHere), until S14: on unless CQ_K_ROLLED=0.
-bool rolledSwitch() {
-  static const bool on = [] {
-    const char *e = std::getenv("CQ_K_ROLLED");
-    return !(e && StringRef(e) == "0");
-  }();
-  return on;
-}
-
 // Is P the header phi of a loop that holds `at`?
 bool carriedHere(LoweringContext &ctx, const PHINode *P, const Instruction &at) {
   LoopInfo LI(spine::shared(ctx).dt(*P->getFunction()));
@@ -773,9 +763,8 @@ bool cleanable(LoweringContext &ctx, Value *y) {
     return false;
   // cq-9kcq S12d (CR rules 6, 23): a rail the floating-point environment holds as its state (fegetround's result is the
   // MODE rail itself, no gate) aliases that state: eff-fenv owns it (kept as the final mode, or undone with the code that
-  // made it: a rolled loop's carried mode by its reverse loop), never rule 6. Under CQ_K_ROLLED only until S14, which
-  // drops the gate (the static copies clean it, byte-identical until then).
-  if (bi->second[0].handle && rolledSwitch() && fenv::stateRail(ctx, bi->second[0].v))
+  // made it: a rolled loop's carried mode by its reverse loop), never rule 6.
+  if (bi->second[0].handle && fenv::stateRail(ctx, bi->second[0].v))
     return false;
   // CR rule 6: "A seed (rule 7) is freed directly instead" (cq-181j: fetestexcept's host result seeded where taint
   // records the flags quantum; a copy into the seed left it in no known basis state at its free).

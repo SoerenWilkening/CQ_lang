@@ -122,7 +122,6 @@
 #include <string>
 
 #include "../../bus/BusInternal.h"
-#include "../../loops/rolled/Rolled.h"
 #include "../../taint/FenvName.h"
 #include "cq/Abi.h"
 #include "cq/Bus.h"
@@ -1153,8 +1152,8 @@ bool anyLinearizedAfter(LoweringContext &ctx, State &st, const Instruction &I, P
 // The quantum part (state or a saved part) may change here. A classically bounded loop (rule 14 cases
 // 1 and 3, loops::lowerClassical) keeps a real loop in the output: a state it changes is loop-carried,
 // a header phi over handles with its back edge and the reverse loop's mirror (not built yet: build step
-// 5). A quantum-exit loop (case 2) is unrolled trip by trip under the trip rail (cq-99f7): its changes
-// are straight-line state changes under predicateFlag, nothing more.
+// 5). A quantum-exit loop (case 2) is one rolled trip under the trip rail (cq-9kcq): the pieces it changes are carried
+// in header phis over handles (cq/FenvCarry.h), each change a state change under predicateFlag.
 void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
   if (I.getFunction() != ctx.S.F)
     return;   // not the walked function: its loops are no unit of this walk
@@ -2670,43 +2669,3 @@ const Value *pieceKey(LoweringContext &ctx, unsigned id) {
 }
 
 } // namespace cq::fenv
-
-namespace cq::loops::rolled {
-
-// cq-9kcq S12 (ROLLED_DESIGN.md §4; CR rules 14, 23). Declared in loops/rolled/Rolled.h. A trip of a quantum-exit loop runs
-// under its trip predicate, so every instruction below changes the quantum part there: a raising constrained op (bracketed,
-// FLAGS |= select(p, bits, 0)), a <fenv.h> call that writes the flags or the mode, a rounding-mode intrinsic, a direct call
-// of a body that holds or changes the environment (a clone carrying it returns the new flags, E1), and, in a function that
-// accesses the environment, an indirect call. Reads alone (fetestexcept, fegetround, a round.dynamic op) change nothing.
-bool changesFenvState(const llvm::Loop &L) {
-  using namespace llvm;
-  const Function &F = *L.getHeader()->getParent();
-  bool fenvFn = fenv::accessesEnv(F);
-  for (const BasicBlock *bb : L.blocks())
-    for (const Instruction &I : *bb) {
-      if (fenv::writesFlags(I) || fenv::writesMode(I))
-        return true;
-      auto *CB = dyn_cast<CallBase>(&I);
-      if (!CB || isa<IntrinsicInst>(CB) || CB->isInlineAsm())
-        continue;
-      if (const Function *G = CB->getCalledFunction()) {
-        SmallPtrSet<const Function *, 8> seen;
-        if (!hostCallee(*G) && fenv::bodyTouchesFenv(*G, seen))
-          return true;
-      } else if (fenvFn) {
-        return true;
-      }
-    }
-  return false;
-}
-
-
-bool changesFenvMode(const llvm::Loop &L) {
-  for (const llvm::BasicBlock *bb : L.blocks())
-    for (const llvm::Instruction &I : *bb)
-      if (fenv::writesMode(I))
-        return true;
-  return false;
-}
-
-} // namespace cq::loops::rolled

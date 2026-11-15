@@ -222,8 +222,8 @@ public:
   }
 
   void run(Case c);
-  // cq-h5uj (CR rule 14, case 1 or 3 inside a K-loop trip): the loop runs inside one unrolled trip of an
-  // enclosing quantum-exit loop, under that trip's rail `trip` (its effects controlled by it, a case-3 chain
+  // cq-h5uj (CR rule 14, case 1 or 3 under a trip rail): the loop runs under a trip of an
+  // enclosing loop, under that trip's rail `trip` (its effects controlled by it, a case-3 chain
   // seeded by it), on the classical path loops-cutoff branched on. Its reverse is deferred after the readers
   // of its exit values, guarded by "the loop's exit was passed" (the trip may skip the loop classically).
   Value *runInTrip(Case c, Value *trip) {
@@ -232,7 +232,7 @@ public:
     run(c);
     return stopFinal;
   }
-  // cq-9kcq S11 (CQ_K_ROLLED, ROLLED_DESIGN.md §3 step 7): as runInTrip, in a rolled K-trip: the unit is a trip-local
+  // cq-9kcq S11 (ROLLED_DESIGN.md §3 step 7): as runInTrip, in a rolled K-trip: the unit is a trip-local
   // sub-unit of the K-loop's region (nested, as 176's sub-loops of a classically bounded trip), its reverse placed in the
   // trip by that region's flushTrips; resetAt is the K-loop's output header (where "the sub-loop ran" is false again).
   Value *runSubInTrip(Case c, Value *trip, BasicBlock *reset) {
@@ -1572,7 +1572,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   };
   // CR rule 14 (nested K-loops, "inner chain seeded by the outer trip predicate"): a quantum-exit sub-loop
   // is one node of the trip, lowered by loops-cutoff (exits::lowerNestedCutoff) as a K-loop nested in a
-  // K-loop is: its K trips unrolled at the trip's open block under its seed (a classical branch of a trip a real
+  // K-loop is: one rolled trip inside this walk's region at the trip's open block under its seed (a classical branch of a trip a real
   // branch whose blocks are segments of this walk, cq-kk46l: branchSeg), its unit (the loop, its exit
   // arm, its noreturn and dead arms) always ending at its continuation C, every phi of C with an incoming
   // from the unit bound by it. kOf: the unit's blocks inside L -> the sub-loop.
@@ -3820,8 +3820,9 @@ Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
     internalError("loops-classical: lowerClassicalInTrip of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
   if (!trip)
     internalError("loops-classical: a loop in a K-loop trip with no trip rail", L.getHeader()->getTerminator());
-  // The unit is lowered once per unrolled trip: its phis (and the continuation phis a multi-exit case-3 unit
-  // binds) still name the previous trip's lowering, which this one replaces (as lowerInstruction does, cq-lx8f).
+  // The unit may be lowered more than once (an enclosing loop's code lowered again): its phis (and the continuation phis a
+  // multi-exit case-3 unit binds) may still name an earlier lowering, which this one replaces (as lowerInstruction does,
+  // cq-lx8f).
   spine::Shared &sh = spine::shared(ctx);
   Unit SU = unitOf(L);
   auto forget = [&](BasicBlock *b) {

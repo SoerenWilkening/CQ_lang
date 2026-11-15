@@ -660,8 +660,8 @@ void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag, con
   sh.curPred = ctx.preds().block(I.getParent()).quantumPart(ctx.T, ctx.S);
   sh.tripFlag = tripFlag;
   sh.tripConj = nullptr;
-  // cq-lx8f: an unrolled trip re-lowers the body, so I may already be bound (to the previous trip's
-  // rails). The new lowering replaces that binding; the old rails stay recorded in Uncompute (records
+  // cq-lx8f: a rule-14 trip re-lowers code (the region form's header test region, before the loop and in
+  // the trip), so I may already be bound (to the earlier lowering's rails). The new lowering replaces that binding; the old rails stay recorded in Uncompute (records
   // are keyed by rail, not by original value) and are torn down by the spine like any other.
   sh.binds.erase(&I);
   spine::dispatch(ctx, I);

@@ -62,7 +62,7 @@ public:
   void noteVersionChange(llvm::Instruction *at);
   // The original block whose instruction is being lowered: rule 18 asks the program's paths, not the new IR's order.
   void noteSourceBlock(const llvm::BasicBlock *bb);
-  // cq-jws5r (CR rules 8, 14): `join` ends a classical arm of a rule-14 trip copy: a conditional branch enters the arm
+  // cq-jws5r (CR rules 8, 14): `join` ends a classical arm of a rule-14 trip: a conditional branch enters the arm
   // or the empty block `skip`, both end at `join`, and the arm's blocks are entered through that branch only. A run
   // flag whose events the arm does not reach is read across it without a walk (no other effect).
   void noteClassicalArm(llvm::BasicBlock *join, llvm::BasicBlock *skip);
