@@ -7,9 +7,9 @@ For probes/b_bound_i32.O1.ll it checks, and fails on:
     but the one it returns (its a_3 included: B = 3 < K keeps no a_K), a freed phi freeing what it merges and a freed
     pop the value its push saved; only a_K's copy on a received-K cut path is kept (cq-9kcq, cq-dav);
   - the _b7 clone runs K = 4 trips.
-  A trip count is read from the lowered CFG, the same in both forms of a K-loop (cq-9kcq): a forward mul template
-  outside any cycle is one trip; one inside a cycle runs once per trip of that cycle's classical counter
-  (`j' = j + 1; br (j' < N)`), N evaluated with @__cq_k all ones.
+  A trip count is read from the lowered CFG, the same in both forms of a K-loop (cq-9kcq; ktrips.py, shared with
+  run_probes.py): a forward mul template outside any trip loop is one trip; one inside a rolled trip loop runs once per
+  trip of its classical counter (`j' = j + 1; br (j' < N)`), N evaluated with @__cq_k all ones.
   - bb_i32 is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 Outputs go to build/tests/loops-cutoff/out/.
 """
@@ -19,104 +19,18 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ktrips  # noqa: E402
+from ktrips import blocks, body, defs  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 PROBE = Path(__file__).parent / "probes" / "b_bound_i32.O1.ll"
 
 
-def body(module: str, fn: str) -> str:
-    m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\(.*?^}", module, re.S | re.M)
-    return m.group(0) if m else ""
-
-
-def blocks(fn_body: str):
-    """{label: (instruction lines, successor labels)} of one lowered function, and the labels in text order."""
-    out, order = {}, []
-    for line in fn_body.splitlines()[1:]:
-        m = re.match(r"^([-\w.$]+):", line)
-        if m or not order:
-            order.append(m.group(1) if m else "<entry>")
-            out[order[-1]] = ([], [])
-            if m:
-                continue
-        if line.startswith("}"):
-            break
-        if line.strip():
-            out[order[-1]][0].append(line)
-            out[order[-1]][1].extend(re.findall(r"label %([-\w.$]+)", line))
-    return out, order
-
-
-def reach(bl, frm):
-    seen, todo = set(), list(bl[frm][1])
-    while todo:
-        x = todo.pop()
-        if x not in seen and x in bl:
-            seen.add(x)
-            todo.extend(bl[x][1])
-    return seen
-
-
-def defs(fn_body: str):
-    return {m.group(1): m.group(2) for m in re.finditer(r"^\s*(%[-\w.$]+) = (.*)$", fn_body, re.M)}
-
-
-def value(d, v: str, depth=0):
-    """The integer v holds with no received K (@__cq_k = -1, owner ruling Q2: -1 is "none"), or None."""
-    if re.fullmatch(r"-?\d+", v):
-        return int(v)
-    rhs = d.get(v)
-    if rhs is None or depth > 32:
-        return None
-    if re.fullmatch(r"load i32, ptr @__cq_k(?:, align \d+)?", rhs):
-        return -1
-    m = re.fullmatch(r"icmp (eq|ne|ult|slt) i32 (\S+), (\S+)", rhs)
-    if m:
-        a, b = value(d, m.group(2), depth + 1), value(d, m.group(3), depth + 1)
-        if a is None or b is None:
-            return None
-        u = lambda x: x & 0xFFFFFFFF
-        return int({"eq": a == b, "ne": a != b, "ult": u(a) < u(b), "slt": a < b}[m.group(1)])
-    m = re.fullmatch(r"select i1 (\S+), i32 (\S+), i32 (\S+)", rhs)
-    if m:
-        c = value(d, m.group(1), depth + 1)
-        return None if c is None else value(d, m.group(2) if c else m.group(3), depth + 1)
-    m = re.fullmatch(r"(?:tail )?call i32 @llvm\.umin\.i32\(i32 (\S+), i32 (\S+)\)", rhs)
-    if m:
-        a, b = value(d, m.group(1), depth + 1), value(d, m.group(2), depth + 1)
-        return None if a is None or b is None else min(a & 0xFFFFFFFF, b & 0xFFFFFFFF)
-    return None
-
-
 def trips(fn_body: str, site: str):
-    """How many times the forward calls matching site run with no received K, from the CFG: a call outside every cycle
-    once; a call in a cycle once per trip of the cycle's classical counter (`%j1 = add i32 %j, 1`, `%j` a phi starting
-    at 0, `br i1 (icmp ult i32 %j1, N)` back into the cycle). None where a cycle has no such counter or N is unknown."""
-    bl, order = blocks(fn_body)
-    d = defs(fn_body)
-    n = 0
-    for lab in order:
-        k = sum(len(re.findall(site, l)) for l in bl[lab][0])
-        if not k:
-            continue
-        r = reach(bl, lab)
-        if lab not in r:
-            n += k
-            continue
-        cyc = {x for x in r if lab in reach(bl, x)} | {lab}
-        bound = None
-        for x in cyc:
-            for l in bl[x][0]:
-                m = re.match(r"^\s*br i1 (%[-\w.$]+), label %([-\w.$]+), label %([-\w.$]+)", l)
-                if not m or m.group(2) not in cyc or m.group(3) in cyc:
-                    continue
-                c = re.fullmatch(r"icmp ult i32 (%[-\w.$]+), (\S+)", d.get(m.group(1), ""))
-                j = c and re.fullmatch(r"add (?:nuw )?(?:nsw )?i32 (%[-\w.$]+), 1", d.get(c.group(1), ""))
-                if j and re.fullmatch(r"phi i32 .*\[ 0, %[-\w.$]+ \].*", d.get(j.group(1), "")):
-                    bound = value(d, c.group(2))
-        if bound is None:
-            return None
-        n += k * bound
-    return n
+    """How many times the forward calls matching site run with no received K, from the CFG (ktrips.runs): a call outside
+    every rolled trip loop once, one inside N times per trip loop. None where N is unknown."""
+    return ktrips.runs(fn_body, site)
 
 
 def received_k_cut(fn_body: str, lab: str) -> bool:

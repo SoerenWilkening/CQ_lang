@@ -23,6 +23,11 @@ add_test(NAME loops-cutoff-mixed-exit
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_mixed_exit.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-9kcq: run_probes.py's and run_b_bound.py's execution counts (ktrips.py) on a rolled K-loop, with the counterexamples
+# each count rejects (a measurement per trip of a carried rail, a classical br per trip, a cycle with no trip counter).
+add_test(NAME loops-cutoff-ktrips
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ktrips.py
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-b58q (owner 2026-11-02, no stops): the widened rule-14 constructions, each probe entry §6-checked against its C program.
 add_test(NAME loops-cutoff-widened
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
