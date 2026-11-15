@@ -265,14 +265,17 @@ public:
 
   // CR §0, owner ruling 2026-11-15 (cq-z9vt), as the pass's loops::resolveK reads it: cqcc binds a line per unit onto
   // the function it names as "cq-k"="k" ("0": none); a line naming a function no unit defines stays the constant
-  // __cq_k_<f>, read with llvm-link's copies __cq_k_<f>.N, the largest k. 0: no line.
-  static unsigned lineK(const Function &F) {
+  // __cq_k_<f>, read with llvm-link's copies __cq_k_<f>.N, the largest k. nullopt: no line. A constant 0 is a line
+  // (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal).
+  static std::optional<unsigned> lineK(const Function &F) {
     if (F.hasFnAttribute("cq-k")) {
       unsigned v = 0;
-      return F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v) ? 0 : v;
+      if (F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v) || v == 0)
+        return std::nullopt;
+      return v;
     }
     std::string name = ("__cq_k_" + F.getName()).str();
-    uint64_t best = 0;
+    std::optional<uint64_t> best;
     for (const GlobalVariable &GV : F.getParent()->globals()) {
       StringRef n = GV.getName();
       unsigned d;
@@ -280,9 +283,11 @@ public:
                         !n.drop_front(name.size() + 1).getAsInteger(10, d)))
         if (GV.hasInitializer())
           if (auto *CI = dyn_cast<ConstantInt>(GV.getInitializer()))
-            best = std::max(best, CI->getZExtValue());
+            best = std::max(best.value_or(0), CI->getZExtValue());
     }
-    return unsigned(best);
+    if (best)
+      return unsigned(*best);
+    return std::nullopt;
   }
 
   unsigned resolveK(const Function &F) {
@@ -290,7 +295,7 @@ public:
     for (const std::string &item : KPerFunction) {
       auto [fn, k] = StringRef(item).split('=');
       unsigned v = 0;
-      if (fn.empty() || k.getAsInteger(10, v) || v == 0)
+      if (fn.empty() || k.getAsInteger(10, v))
         report_fatal_error(Twine("cq-oracle: -cq-oracle-k: expected <fn>=<k>, got '") + item + "'", false);
       if (fn == F.getName())
         return v;
@@ -303,13 +308,13 @@ public:
         for (const std::string &item : KPerFunction) {
           auto [fn, k] = StringRef(item).split('=');
           unsigned v = 0;
-          if (fn == base && !k.getAsInteger(10, v) && v > 0)
+          if (fn == base && !k.getAsInteger(10, v))
             return v;
         }
     }
-    if (unsigned v = lineK(F))
-      return v;
-    if (KGlobal.getNumOccurrences() && KGlobal > 0)
+    if (std::optional<unsigned> v = lineK(F))
+      return *v;
+    if (KGlobal.getNumOccurrences())
       return KGlobal;
     return 4;
   }
@@ -500,8 +505,9 @@ public:
     if (KI.tableRec.lookup(&F))
       on = B.CreateOr(on, B.CreateOr(viaT, viaC));
     if (KI.entryRec.lookup(&F) || KI.tableRec.lookup(&F))
-      B.CreateCall(hook("__cqo_rec_enter", Void, {Ptr, I32, I32}),
-                   {str((F.getName() + ":recursion").str()), B.CreateZExt(on, I32), B.CreateZExt(viaC, I32)});
+      B.CreateCall(hook("__cqo_rec_enter", Void, {Ptr, I32, I32, I64}),
+                   {str((F.getName() + ":recursion").str()), B.CreateZExt(on, I32), B.CreateZExt(viaC, I32),
+                    B.getInt64(resolveK(F))});
     specSlots[&F] = slot;
     return slot;
   }
@@ -523,7 +529,7 @@ public:
             continue;
         calls.push_back(CB);
       }
-    FunctionCallee enter = hook("__cqo_rec_enter", Void, {Ptr, I32, I32});
+    FunctionCallee enter = hook("__cqo_rec_enter", Void, {Ptr, I32, I32, I64});
     FunctionCallee exitH = hook("__cqo_rec_exit", Void, {I32});
     FunctionCallee down = hook("__cqo_rec_down", Void, {Ptr, I64, I32});
     FunctionCallee up = hook("__cqo_rec_up", Void, {Ptr, I32});
@@ -559,7 +565,8 @@ public:
       if (e != KI.recEntry.end()) {
         Function *G = CB->getCalledFunction();
         Value *on = perSpec(B, F, e->second);
-        B.CreateCall(enter, {str((G->getName() + ":recursion").str()), on, perSpec(B, F, KI.entryCtl[CB])});
+        B.CreateCall(enter, {str((G->getName() + ":recursion").str()), on, perSpec(B, F, KI.entryCtl[CB]),
+                             B.getInt64(resolveK(*G))});
         IRBuilder<> A(CB->getNextNode());
         A.CreateCall(exitH, {on});
       }

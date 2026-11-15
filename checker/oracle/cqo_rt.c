@@ -1056,11 +1056,14 @@ static long long *rec_count(const char *fn) {
     return &recs[top].fn[recs[top].nfn++].d;
 }
 
-void __cqo_rec_enter(const char *id, int32_t on, int32_t ctl) {
+void __cqo_rec_enter(const char *id, int32_t on, int32_t ctl, int64_t K) {
     if (!on) return;
     if (nrecs == MAXREC) { note("internal recursion activations nested deeper than %d", MAXREC); _exit(95); }
     recs[nrecs].id = id, recs[nrecs].path = act_path, recs[nrecs].max = ctl ? 1 : 0, recs[nrecs].nfn = 0;
     nrecs++;
+    if (k_recv >= 0) K = k_recv;
+    /* owner ruling Q2 of 2026-11-15: at K = 0 a quantum-depth recursion is cut at its first _ctl activation */
+    if (ctl && K == 0) kcap(id, 0, act_path);
     if (ctl) *rec_count(id) = 1;
 }
 

@@ -576,10 +576,11 @@ _K2_ALLOC = {"malloc": "__cqo_malloc_k2", "calloc": "__cqo_calloc_k2", "aligned_
              "realloc": "__cqo_realloc_k2"}
 
 
-def _k2_line(o1_text: str, fn: str) -> int:
+def _k2_line(o1_text: str, fn: str) -> Optional[int]:
     """CR §0 CQ_K2(fn, k), as the pass's loops::resolveK2 reads it (owner ruling 2026-11-15, cq-z9vt): the attribute
     "cq-k2" cqcc bound per unit onto the definition ("0": none), else the constant __cq_k2_<fn> with llvm-link's
-    copies __cq_k2_<fn>.N, the largest k. 0: no line."""
+    copies __cq_k2_<fn>.N, the largest k. None: no line; a constant 0 is a line (owner ruling Q2 of 2026-11-15, CR §0:
+    K = 0 is legal; K2 resolves as K does)."""
     m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\((.*)$", o1_text, re.M)
     if m:
         inline = re.search(r'"cq-k2"="(\d+)"', m.group(1))
@@ -588,9 +589,9 @@ def _k2_line(o1_text: str, fn: str) -> int:
             g = re.search(r"^attributes #" + group.group(1) + r" = \{[^\n]*\}", o1_text, re.M)
             inline = g and re.search(r'"cq-k2"="(\d+)"', g.group(0))
         if inline:
-            return int(inline.group(1))
+            return int(inline.group(1)) or None
     ks = [int(v) for v in re.findall(r"^@__cq_k2_" + re.escape(fn) + r"(?:\.\d+)?\s*=[^\n]*?\bi64 (\d+)", o1_text, re.M)]
-    return max(ks, default=0)
+    return max(ks, default=None)
 
 
 def _k2_sites(text: str, o1_text: str) -> str:
@@ -650,7 +651,8 @@ def _k2_sites(text: str, o1_text: str) -> str:
         args = drivers.split_operands(drivers._balanced(line, start))
         if not any(r in tainted[fname] for i in sized[name] for r in drivers.locals_in(args[i])):
             continue
-        k2 = _k2_line(o1_text, fname[1:]) or K2_DEFAULT
+        k2 = _k2_line(o1_text, fname[1:])
+        k2 = K2_DEFAULT if k2 is None else k2
         end = start + len(drivers._balanced(line, start)) + 2
         lines[li] = line[:m.start()] + f"@{_K2_ALLOC[name]}(" + ", ".join(args + [f"i64 {k2}"]) + ")" + line[end:]
         used.add(name)

@@ -148,7 +148,7 @@ Region headerRegion(Loop *L) {
 
 // CR §0 K for the loops of F as the oracle resolves it without flags: CQ_K(f, k), else 4. The line as cqcc bound it per
 // unit (owner ruling 2026-11-15, cq-z9vt): the attribute "cq-k" ("0": none), else the constant __cq_k_<f> with
-// llvm-link's copies __cq_k_<f>.N, the largest k.
+// llvm-link's copies __cq_k_<f>.N, the largest k. A constant 0 is a line (owner ruling Q2 of 2026-11-15, CR §0).
 unsigned kOf(const Function &F) {
   if (F.hasFnAttribute("cq-k")) {
     unsigned v = 0;
@@ -157,7 +157,7 @@ unsigned kOf(const Function &F) {
     return 4;
   }
   std::string name = ("__cq_k_" + F.getName()).str();
-  uint64_t best = 0;
+  std::optional<uint64_t> best;
   for (const GlobalVariable &GV : F.getParent()->globals()) {
     StringRef n = GV.getName();
     unsigned d;
@@ -165,9 +165,9 @@ unsigned kOf(const Function &F) {
                       !n.drop_front(name.size() + 1).getAsInteger(10, d)))
       if (GV.hasInitializer())
         if (auto *CI = dyn_cast<ConstantInt>(GV.getInitializer()))
-          best = std::max(best, CI->getZExtValue());
+          best = std::max(best.value_or(0), CI->getZExtValue());
   }
-  return best > 0 ? unsigned(best) : 4;
+  return best ? unsigned(*best) : 4;
 }
 
 struct Facts {
