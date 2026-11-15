@@ -159,6 +159,10 @@ ROT_READ = ["r_after", "r_before"]
 # arm's loops, a sub-loop that also leaves its parent (printf_core's), a loop right after a loop, a guard's value at C.
 EXIT_ARM_PROBE = PROBES / "exit_arm.O1.ll"
 EXIT_ARM = ["pc5b", "pa2b", "pa1b", "pc4", "pa5", "pc3"]
+# cq-2xl5 (nr-Y40): each exit_arm entry only calls the noinline function holding the loop, lowered in place under its own
+# name; the reverse loop is there. A loop with no classical bound (scan's, wordscan's: rule 14 case 2) has none.
+LOOP_IN = {"pc5b": ("cf", True), "pa2b": ("g", True), "pa1b": ("h", True), "pa5": ("chrn", True),
+           "pc4": ("scan", False), "pc3": ("wordscan", False)}
 # cq-os2bx (owner Q1): musl __fwritex's shape, an exit arm with a call and stores runs once after the loop.
 ARM_ONCE_PROBE = PROBES / "arm_once.O1.ll"
 ARM_ONCE = ["ao_write"]
@@ -206,7 +210,14 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
             nbr = len(re.findall(r"^  br i1 ", b, re.M))
             if nbr < KNEST_CBR_BR[e] or re.search(r"@cqrt_alloc_i1\(i1 %", b):
                 why.append(f"{nbr} conditional br or a seed of a classical i1: the classical branch is seeded (rule 8)")
-        if e not in MEASURED_SEC6 + NO_REVERSE and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
+        if probe == EXIT_ARM_PROBE and e in LOOP_IN:
+            fn, rev = LOOP_IN[e]
+            lb = body(text, fn)
+            has = "@cqrt_push(" in lb and "@cqrt_pop()" in lb
+            if not lb or has != rev:
+                why.append(f"{fn}: " + ("no push/pop: the reverse loop is missing" if rev else
+                                        "push/pop in a loop with no classical bound (rule 14 case 2)"))
+        elif e not in MEASURED_SEC6 + NO_REVERSE and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
             why.append("no push/pop: the reverse loop is missing")
         t0 = time.time()
         try:
