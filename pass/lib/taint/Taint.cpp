@@ -356,7 +356,15 @@ private:
   // objects, its own formals' provenance) although no final call reaches it. The analysis therefore runs a
   // second time from nothing, each call taking at once the key the first run ended with (CalleeMemo): only
   // the specializations the program reaches contribute.
-  struct CalleeMemo { std::vector<Lanes> formal; bool ctl; std::vector<uint64_t> bounds; uint8_t rm = 0; };
+  // cq-ntqdl: boundFormals keeps each bound on the formal its call bounded (cq-qc70); without it getSpec's
+  // name-order fallback moves a bound to the first quantum integer formal.
+  struct CalleeMemo {
+    std::vector<Lanes> formal;
+    bool ctl;
+    std::vector<uint64_t> bounds;
+    std::vector<unsigned> boundFormals;
+    uint8_t rm = 0;
+  };
   std::map<std::tuple<std::string, const CallBase *, const Function *>, CalleeMemo> calleeMemo;
   void solve();
   void computeReachable();
@@ -1964,7 +1972,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
       bool inPlace = !plain && !m.ctl && m.bounds.empty() && !m.rm &&
                      llvm::none_of(m.formal, [](const Lanes &l) { return l.any(); });
       if (covers && !inPlace) {
-        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds, {}, plain, false, m.rm);
+        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds, m.boundFormals, plain, false, m.rm);
         recordCallee(CB, C);
         if (!CB.getType()->isVoidTy())
           setL(&CB, cloneResultLanes(*C, lanesOf(CB.getType())));
@@ -2910,7 +2918,7 @@ void Analyzer::run() {
         continue;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
-          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->ctl, C->bounds, C->rm};
+          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->ctl, C->bounds, C->boundFormals, C->rm};
     }
     resetAnalysis();
     solve();
