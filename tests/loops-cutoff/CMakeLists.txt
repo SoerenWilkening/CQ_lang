@@ -167,10 +167,11 @@ foreach(p q3_conjunct q3_arms q3_phantom)
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endforeach()
 # rulings Q3 (2026-11-11): a measurement behind a classical branch on an earlier outcome; run_probes.py MUTANTS: the
-# measurement hoisted above that branch is rejected.
+# measurement hoisted above that branch is rejected. Ruling of 2026-11-15 (cq-2n7j4): 3 cqrt_measure calls, as (m & 1)
+# is a classical branch (rule 8) and each arm's cq_measure is its own measure at its program point.
 add_test(NAME loops-cutoff-measure-outcome
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in meas_behind_outcome=2
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in meas_behind_outcome=3
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_outcome.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in every trip copy (the arm
