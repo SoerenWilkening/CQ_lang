@@ -1106,14 +1106,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   DenseSet<const PHINode *> six;
   DenseSet<const Value *> sixSeeds;   // a seed as trip 0's old rail is freed directly, not cleaned (rule 6, rule 7)
   if (top && !multi && latches.size() == 1) {
-    DominatorTree &DT = spine::shared(ctx).dt(*H->getParent());
     BasicBlock *pre = L.getLoopPredecessor();
     for (PHINode *h : hphis) {
       if (!pre || !isQ(h) || !(h->getType()->isIntegerTy() || h->getType()->isFloatingPointTy()) || !h->hasOneUse() ||
           exitRail.count(h) || qind.count(h))
         continue;
       auto *Up = dyn_cast<Instruction>(h->getIncomingValueForBlock(latch));
-      if (!Up || !L.contains(Up) || *h->user_begin() != Up || !DT.dominates(Up->getParent(), latch) ||
+      // cq-9kcq (rolled form): the clean-up is placed in the trip at the latch block's end, after U's own undo; both read
+      // the old rail, whose every use must lie in that block (Uncompute's flush places an item in one block). U in an
+      // earlier block of the trip (a classical branch between U and the latch) leaves the old rail to the reverse loop.
+      if (!Up || !L.contains(Up) || *h->user_begin() != Up || Up->getParent() != latch ||
           !spine::inverseStep(
               *Up, h, Operand{Up, true}, [](Value *z) { return Operand{z, false}; }, [](Value *) { return false; }))
         continue;
