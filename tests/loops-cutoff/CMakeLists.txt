@@ -103,9 +103,12 @@ add_test(NAME loops-cutoff-measure-two
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures 2
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_two.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# Owner 2026-11-15, cq-amtcn (CR rule 14): the exit test (v & 2 on the carried v after the trip's cq_measure of it) reads
+# the outcome and is classical, so f's loop is a classical loop: one cqrt_measure site in it, run once per executed trip
+# (counted once); the _ctl clone measures a controlled copy (rule 19, no collapse), so its exit stays quantum (K = 4 trips).
 add_test(NAME loops-cutoff-measure-body
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4 --measures-in __cq_q_f_1_t_ctl=4
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=1 --measures-in __cq_q_f_1_t_ctl=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_body.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME loops-cutoff-measure-reread
@@ -123,10 +126,22 @@ add_test(NAME loops-cutoff-measure-outer
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=1
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_outer.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-amtcn: the same classical loop inside the quantum arm b3: its measurement and branch run unconditionally (rule 2),
+# one cqrt_measure site run once per executed trip.
 add_test(NAME loops-cutoff-measure-arm
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=1
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_arm.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-amtcn (owner 2026-11-15, CR rule 14), the other cases: ex_pre's header test reads the carried rail before the trip's
+# measurement and stays quantum (a K-loop, K = 4 trips, its latch test on the outcome a classical br per trip); ex_conj's
+# outcome test beside the quantum !b2 is a classical conjunct of the K-loop (K = 4 trips); ex_arm is a classical loop in
+# a quantum arm (one site, once per executed trip). Each entry §6-checked against its C program.
+add_test(NAME loops-cutoff-measure-exit
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          --measures-in ex_pre=4 --measures-in ex_conj=4 --measures-in ex_arm=1
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_exit.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-pntr (CR rule 14): `p = x; x = f(x)` read after a K-loop; each exit value is read before any rebind.
 add_test(NAME loops-cutoff-prev-value

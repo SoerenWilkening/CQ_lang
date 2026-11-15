@@ -34,10 +34,12 @@ MUTANTS = {
         ("f", "extra_site", r"(  ret i32 %[\w.]+\n)", r"  %cq.a = call i32 @cqrt_alloc_i32(i32 7)\n  %cq.mx = call i32 @cqrt_measure_i32(i32 %cq.a), !cq.measure !6\n\1"),
         # a trip-2 copy with other instructions (a clean add of 0, uncomputed) around it: a call site of another shape,
         # on a trip no sample reaches
-        ("f", "other_site", r"  (%40 = call i32 @cqrt_measure_i32\(i32 %39\), !cq.measure !6\n)",
-         r"  %d0 = call i32 @cq_template_add_i32_hl(i32 %39, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d0, i32 %39, i32 0)\n"
+        # (cq-amtcn: since the exit's v & 2 reads the trip's outcome, a classical conjunct, each trip measures a kept copy
+        # of v, %94 on trip 2)
+        ("f", "other_site", r"  (%95 = call i32 @cqrt_measure_i32\(i32 %94\), !cq.measure !6\n)",
+         r"  %d0 = call i32 @cq_template_add_i32_hl(i32 %94, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d0, i32 %94, i32 0)\n"
          r"  call void @cqrt_free(i32 %d0)\n  \1"
-         r"  %d1 = call i32 @cq_template_add_i32_hl(i32 %39, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d1, i32 %39, i32 0)\n"
+         r"  %d1 = call i32 @cq_template_add_i32_hl(i32 %94, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d1, i32 %94, i32 0)\n"
          r"  call void @cqrt_free(i32 %d1)\n"),
         # v's bit 3 (b3) set as 16 instead of 8, forward and uncomputation alike: the first trip, which C reaches, measures another v
         ("f", "wrong_value", r"i32 8, i32 0\)", "i32 16, i32 0)"),

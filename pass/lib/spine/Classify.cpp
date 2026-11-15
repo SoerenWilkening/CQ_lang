@@ -492,6 +492,23 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
     out.push_back({c, positive});
   };
 
+  // Owner 2026-11-15, cq-amtcn (CR rule 14): a classical exit test that reads a trip's outcome of a loop-carried rail (a
+  // quantum header phi, read after its measurement) bounds nothing beside a quantum exit: where the quantum exit was
+  // taken the carried rail keeps its value, and so would the test. It is a classical conjunct of the K-loop.
+  std::function<bool(const Value *, SmallPtrSetImpl<const Value *> &)> readsOutcome =
+      [&](const Value *v, SmallPtrSetImpl<const Value *> &seen) -> bool {
+    auto *I = dyn_cast<Instruction>(v);
+    if (!I || !L.contains(I) || !seen.insert(I).second)
+      return false;
+    if (isa<PHINode>(I))
+      return I->getParent() == L.getHeader() && quantumValue(T, S, I);
+    return any_of(I->operands(), [&](const Use &u) { return readsOutcome(u.get(), seen); });
+  };
+  auto bounds = [&](const Value *c) {
+    SmallPtrSet<const Value *, 16> seen;
+    return !readsOutcome(c, seen);
+  };
+
   bool anyQuantum = false, classicalBound = false;
   for (BasicBlock *X : exiting) {
     const Instruction *t = X->getTerminator();
@@ -505,7 +522,7 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
       if (!q) {
         // cq-z6q1 (189): a classical exit is a bound only when LLVM computes its exit count; a test of data
         // read from memory (p->next == NULL) bounds nothing, and the loop is a K-loop.
-        if (exitCountKnown(*L.getHeader(), *X))
+        if (exitCountKnown(*L.getHeader(), *X) && bounds(br->getCondition()))
           classicalBound = true;
         continue;
       }
@@ -517,7 +534,7 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
       // cq-s7c4: a classical disjunct is a bound only when it bounds the trip count on its own, as a
       // classical exit must (cq-z6q1): `stop || q` with `stop` loop-invariant is a K-loop (case 2).
       for (auto &d : ds)
-        if (!quantumValue(T, S, d.first) && exitCondCountKnown(*L.getHeader(), *d.first, d.second))
+        if (!quantumValue(T, S, d.first) && exitCondCountKnown(*L.getHeader(), *d.first, d.second) && bounds(d.first))
           classicalBound = true;
     } else if (isa<SwitchInst>(t) || isa<IndirectBrInst>(t)) {   // rule 13: a computed goto is a switch
       if (quantumTerm(X) || internal)

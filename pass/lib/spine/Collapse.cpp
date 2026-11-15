@@ -152,6 +152,22 @@ SmallVector<Value *, 3> writeReads(const RailHist::Write &w) {
 
 enum Cls : uint8_t { No = 0, Classical = 1, Measured = 2 };
 
+// Owner 2026-11-15, cq-amtcn (CR rule 14): a loop-carried rail its trip measured denotes the outcome where the instruction
+// being lowered is inside that loop (taint's measuredRead reads it so: the trip's own measurement reaches the read); after
+// the loop it stays the rail (cq-2z29a). Only a direct read of the measured phi (LoweringContext::operand checks the
+// original value): a rail derived from it before the measurement stays a rail (classify's No), as taint keeps it quantum.
+bool carriedOutcome(Shared &sh, Value *h) {
+  auto m = sh.measured.find(h);
+  if (m == sh.measured.end() || !sh.cur)
+    return false;
+  auto *P = dyn_cast<PHINode>(m->second.v);
+  if (!P || sh.cur->getFunction() != P->getFunction())
+    return false;
+  LoopInfo LI(sh.dt(*P->getFunction()));
+  const Loop *L = LI.getLoopFor(P->getParent());
+  return L && L->getHeader() == P->getParent() && L->contains(sh.cur);
+}
+
 // cq-ihlt: `assumed` (when given) collects the rails a clone call measured that the classification
 // treats as measured: a rail noted in Shared::calleeMeasured whose clone call is before the builder's
 // point.
@@ -707,7 +723,7 @@ Value *classicalRead(LoweringContext &ctx, Value *handle) {
 
 Value *collapse(LoweringContext &ctx, Value *handle) {
   Shared &sh = shared(ctx);
-  if (sh.carriedMeasured.count(handle))
+  if (sh.carriedMeasured.count(handle) && !(measuredHere(sh, handle) && carriedOutcome(sh, handle)))
     return nullptr;
   if (Value *m = outcomeAt(ctx, handle, /*reread=*/false))
     return m;

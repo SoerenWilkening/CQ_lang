@@ -543,6 +543,50 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
   spine::bindOperand(ctx, &call, Operand{h, true});
 }
 
+namespace {
+// Is P the header phi of a loop that holds `at`?
+bool carriedHere(LoweringContext &ctx, const PHINode *P, const Instruction &at) {
+  LoopInfo LI(spine::shared(ctx).dt(*P->getFunction()));
+  const Loop *L = LI.getLoopFor(P->getParent());
+  return L && L->getHeader() == P->getParent() && L->contains(&at);
+}
+
+// Is P the header phi of a loop that holds `at` (the trip's own measurement), one of whose exits is decided by a classical
+// value: an exit branch whose condition is classical or reads a classical value through and/or/xor/select (a conjunct or
+// disjunct, rule 8), or an exit that is no conditional branch?
+bool classicalExitTest(LoweringContext &ctx, const PHINode *P, const Instruction &at) {
+  auto &sh = spine::shared(ctx);
+  LoopInfo LI(sh.dt(*P->getFunction()));
+  const Loop *L = LI.getLoopFor(P->getParent());
+  if (!L || L->getHeader() != P->getParent() || !L->contains(&at))
+    return false;
+  std::function<bool(const Value *, unsigned)> classicalLeaf = [&](const Value *c, unsigned depth) -> bool {
+    if (isa<Constant>(c))
+      return false;
+    if (!sh.isQ(c))
+      return true;
+    if (depth > 8 || !c->getType()->isIntegerTy(1))
+      return false;
+    if (auto *bo = dyn_cast<BinaryOperator>(c); bo && (bo->getOpcode() == Instruction::And ||
+                                                       bo->getOpcode() == Instruction::Or ||
+                                                       bo->getOpcode() == Instruction::Xor))
+      return classicalLeaf(bo->getOperand(0), depth + 1) || classicalLeaf(bo->getOperand(1), depth + 1);
+    if (auto *sel = dyn_cast<SelectInst>(c))
+      return classicalLeaf(sel->getCondition(), depth + 1) || classicalLeaf(sel->getTrueValue(), depth + 1) ||
+             classicalLeaf(sel->getFalseValue(), depth + 1);
+    return false;
+  };
+  SmallVector<BasicBlock *, 4> exiting;
+  L->getExitingBlocks(exiting);
+  for (const BasicBlock *X : exiting) {
+    auto *br = dyn_cast<BranchInst>(X->getTerminator());
+    if (!br || !br->isConditional() || classicalLeaf(br->getCondition(), 0))
+      return true;
+  }
+  return false;
+}
+} // namespace
+
 void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   if (call.arg_size() != 1)
     internalError("spine: cq_measure with other than one argument", &call);
@@ -569,7 +613,10 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   // cq-ihlt: a value whose only quantum sources a callee measured is classical; its sources' rails
   // are re-read in the caller right after the clone call (rule 2) and cq_measure reads it classically.
   Value *c = spine::calleeCollapse(ctx, x.v, call);
-  if (!c)
+  // cq-amtcn (owner 2026-11-15, CR rule 14): a loop-carried value's rail is measured by its trip's own cq_measure, one
+  // measure_<W> per executed trip, also where the rail is classical there (a select on do-while's seed a_0): no re-read.
+  auto *hp = dyn_cast<PHINode>(call.getArgOperand(0));
+  if (!c && !(hp && carriedHere(ctx, hp, call)))
     c = spine::classicalRead(ctx, x.v);   // cq-i962: a value computed after a collapse
   if (c) {
     spine::bindOperand(ctx, &call, Operand{c, false});
@@ -595,6 +642,12 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
       bool cyclic = any_of(successors(jb), [&](const BasicBlock *s) { return isPotentiallyReachable(s, jb, nullptr, &dt); });
       every = header || !cyclic;
     }
+  // cq-amtcn (owner 2026-11-15, CR rules 2, 14): a loop with a classical exit test (a classical loop, a test on the trip's
+  // outcome, a K-loop's classical conjunct) ends where that test says, so the rail its next trip's carried value gets (a
+  // seed, a select, a value the trip's reverse undoes) is measured on some classical paths only: a kept copy is measured.
+  if (every)
+    if (auto *hp = dyn_cast<PHINode>(call.getArgOperand(0)); hp && classicalExitTest(ctx, hp, call))
+      every = false;
   if (!every) {
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
     ctx.unc().recordExternal(c, Role::Measured);
