@@ -170,7 +170,7 @@ SUB_LEAVE_PROBE = PROBES / "sub_leave.O1.ll"
 SUB_LEAVE = ["sl_goto", "sl_nest"]
 # cq-jos4q (CR rules 2, 14): the previous trip's value measured after the loop, another exit value read in place.
 PREV_MEASURED_PROBE = PROBES / "prev_measured.O1.ll"
-PREV_MEASURED = ["pm_old", "pm_both"]
+PREV_MEASURED = ["pm_old", "pm_both", "pm_cur"]   # pm_cur: cq-gty1h, the in-place exit value measured
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 ENTRY_LIMIT = 180   # cq-1dx6: an entry with no verdict by then is a reported failure, not a silent hang
 JOBS = min(int(os.environ.get("CQCHECK_JOBS", "2")), 4)

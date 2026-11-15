@@ -4030,7 +4030,19 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (RailId x = U.idOf(h); !ownedH.count(h) && !is_contained(reads, x))
         reads.push_back(x);
     BasicBlock *Cont = newBlock();
-    BranchInst::Create(Cont, T);
+    // cq-gty1h (CR rules 2, 5, 14 case 1): the copy scope's records sit in T, so T belongs to the deferred item's region, and
+    // the loop's exit block (the one block outside the region the region branches to, where an exit rail that became kept is
+    // copied before its first use after the loop) would be Cont, the block of those uses: the kept copy landed after them.
+    // An exit rail read in place by a reader that keeps it gets an empty block J between T and Cont: J is that exit block.
+    bool keptInPlace = copyScope != ~0u && any_of(out, [&](const std::pair<const Value *, Operand> &o) {
+      return o.second.handle && !keptFinal.count(o.second.v) && ownedH.count(o.second.v) && readersKeep(o.first);
+    });
+    if (keptInPlace) {
+      BasicBlock *J = newBlock();
+      BranchInst::Create(J, T);
+      BranchInst::Create(Cont, J);
+    } else
+      BranchInst::Create(Cont, T);
     auto self = shared_from_this();
     deferred = true;
     U.recordDeferred(scs, exits,

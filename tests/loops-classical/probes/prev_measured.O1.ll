@@ -50,6 +50,27 @@ define i32 @pm_both(i32 noundef %0, double noundef %1, i32 noundef %2) local_unn
   ret i32 %16
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @pm_cur(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  %5 = tail call i32 @llvm.smax.i32(i32 %2, i32 1)
+  br label %6
+
+6:                                                ; preds = %6, %3
+  %7 = phi i32 [ %4, %3 ], [ %10, %6 ]
+  %8 = phi i32 [ 0, %3 ], [ %11, %6 ]
+  %9 = mul nsw i32 %7, 3
+  %10 = add nsw i32 %9, 1
+  %11 = add nuw nsw i32 %8, 1
+  %12 = icmp eq i32 %11, %5
+  br i1 %12, label %13, label %6, !llvm.loop !10
+
+13:                                               ; preds = %6
+  %14 = tail call i32 @cq_measure_si32(i32 noundef %10) #4
+  %15 = add nsw i32 %14, %7
+  ret i32 %15
+}
+
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.smax.i32(i32, i32) #2
 
@@ -72,3 +93,4 @@ attributes #4 = { nounwind }
 !7 = !{!"llvm.loop.mustprogress"}
 !8 = !{!"llvm.loop.unroll.disable"}
 !9 = distinct !{!9, !7, !8}
+!10 = distinct !{!10, !7, !8}
