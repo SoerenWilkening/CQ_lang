@@ -179,6 +179,9 @@ public:
   Value *test0 = nullptr;
 
 private:
+  // cq-9kcq S10 (CR rule 14: "nested inner loops keep one a_K per outer trip"): the rolled region whose trip rolledBody is
+  // lowering, or nullptr. A K-loop nested in that trip adds its header and segments to it (no region of its own).
+  rolled::Region *rolledTrip = nullptr;
   LoweringContext &ctx;
   Analyses &A;
   DenseSet<const Value *> mine;   // values this module has bound (bind, then rebind per trip)
@@ -2712,6 +2715,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
               }))
             regionOut.push_back(&I);
         }
+  // cq-9kcq S10: the loops a trip of L lowers (its sub-loops and the loops of its exit arm, nested ones included).
+  std::vector<Loop *> innerLoops;
+  for (Loop *S : L.getLoopsInPreorder())
+    if (S != &L)
+      innerLoops.push_back(S);
+  for (BasicBlock *b : U.arm) {
+    Loop *l = A.LI.getLoopFor(b);
+    if (!l || l->contains(H))
+      continue;
+    while (l->getParentLoop() && !l->getParentLoop()->contains(H))
+      l = l->getParentLoop();
+    if (l->getHeader() == b)
+      for (Loop *S : l->getLoopsInPreorder())
+        innerLoops.push_back(S);
+  }
   auto rolledHere = [&]() -> bool {
     static const bool on = [] {
       const char *e = std::getenv("CQ_K_ROLLED");
@@ -2720,23 +2738,25 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (!on)
       return false;
     const char *why = nullptr;
-    if (!top)
-      why = "a nested K-loop (S10)";
-    else if (segHook)
+    // cq-9kcq S10: a nested K-loop rolls inside the rolled trip of its enclosing K-loop (one region); in an enclosing
+    // K-loop that keeps its static copies it keeps them too.
+    if (!rolledTrip && segHook)
       why = "a K-loop in a classically bounded loop's trip (S11)";
-    else if (any_of(U.arm, [&](BasicBlock *b) {
-               Loop *l = A.LI.getLoopFor(b);
-               return l && !l->contains(H);
-             }))
-      why = "a loop of the exit arm (S10, S11)";
+    else if (!top && !rolledTrip)
+      why = "a K-loop nested in a K-loop that keeps its static copies";
     else if (cphiEarlier)
       // join_units (cq-9kcq S8): the walker's join of the earlier unit's arms reads them at the rolled header, a join whose
       // entry path never ran their blocks (pred's JoinRepair, Flags.cpp joinAbove)
       why = "a continuation phi an earlier loop unit bound (two units into one join)";
     else if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
       why = "an aggregate value of the loop read after it";
-    else if (!L.getSubLoops().empty())
-      why = "a sub-loop in the trip (S10, S11)";
+    else if (any_of(innerLoops, [&](Loop *S) { return classify(*S, ctx.T, ctx.S) != Case::QuantumExit; }))
+      // S10 rolls the nested K-loops and the K-loops of the exit arm; a classically bounded loop in the trip
+      // (classicalSub) is S11's
+      why = "a classically bounded sub-loop in the trip or its exit arm (S11)";
+    else if (any_of(innerLoops, [&](Loop *S) { return exits::hasNoreturnArm(*S); }))
+      // the trip's stop rail (stopAcc, the XOR of the nested loops' noreturn arm flags) would be minted per trip
+      why = "a noreturn arm of a nested K-loop (the stop rail as a carried accumulator)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
     else if (any_of(hphis, [&](PHINode *h) {
@@ -2784,11 +2804,37 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     LLVMContext &Cx = ctx.M.getContext();
     IRBuilder<> &B = ctx.B();
     Type *i32 = Type::getInt32Ty(Cx);
-    rreg = std::make_shared<rolled::Region>(ctx, ctx.out());
-    rreg->setDiagAt(H->getTerminator());
+    // cq-9kcq S10 (CR rule 14: "nested inner loops keep one a_K per outer trip"; ROLLED_DESIGN.md §3 step 7): a nested
+    // K-loop (top false, rolledTrip set) is no region of its own: its header and its trip's blocks are segments of the
+    // enclosing loop's region, its seeds are records of the enclosing trip's segment (undone by the enclosing reverse per
+    // outer trip), its exit block X is the segment the enclosing trip goes on in, and the come-from index of X and of its
+    // header replays its trips in the enclosing reverse. Its a_K copy is made at X in every outer trip, kept.
+    rolled::Region *RG = rolledTrip;
+    // S10: a K-loop of the exit arm runs in every trip under that trip's arm flag; its a_K is the XOR of the trips' chain
+    // ends (armKept, capture). Rolled, that XOR is an accumulator over the trips: minted before the loop (outside the
+    // region's seed scope: the reverse never undoes it) and changed in place in each trip, kept.
+    if (!armKept)
+      for (BasicBlock *b : U.arm) {
+        Loop *S = subLoopOf(b);
+        if (!S || S->getHeader() != b || classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
+          continue;
+        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
+        if (Bs && *Bs <= ctx.K(S))
+          continue;
+        RailType i1{Kind::Int, 1};
+        CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
+        ctx.unc().recordSeed(z);
+        armKept = z;
+        break;
+      }
     BasicBlock *seedHead = B.GetInsertBlock();
-    rSeedScope = ctx.unc().openScope();
-    rreg->setOwnSeedScope(rSeedScope);
+    if (top) {
+      rreg = std::make_shared<rolled::Region>(ctx, ctx.out());
+      RG = rreg.get();
+      rreg->setDiagAt(H->getTerminator());
+      rSeedScope = ctx.unc().openScope();
+      rreg->setOwnSeedScope(rSeedScope);
+    }
     // Every carried quantum value enters as a handle: a literal start is seeded first.
     for (PHINode *h : hphis)
       if (isQ(h) && !ctx.operand(h).handle && !qind.count(h))
@@ -2816,8 +2862,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Value *Krt = receivedK;
       if (Krt->getType() != i32)
         internalError("loops-cutoff: a received K that is not an i32", H->getTerminator());
-      if (bound && *bound <= 0xFFFFFFFFull) {
-        Constant *Bc = ConstantInt::get(i32, *bound);
+      // S10: a K-loop nested in the rolled trip has a bound of its own (the member is the loop lowerCutoff was given)
+      std::optional<uint64_t> bnd = rolledTrip && !top ? exits::cutoffBound(L, A.SE, ctx.T, ctx.S) : bound;
+      if (bnd && *bnd <= 0xFFFFFFFFull) {
+        Constant *Bc = ConstantInt::get(i32, *bnd);
         nRt = B.CreateBinaryIntrinsic(Intrinsic::umin, Krt, Bc);
         keepRt = B.CreateICmpULT(Krt, Bc);
       } else {
@@ -2845,7 +2893,24 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (auto *k = dyn_cast<ConstantInt>(gR); !(k && k->isOne()))
         g0 = g0 ? B.CreateAnd(g0, gR) : gR;
     bool zeroGuard = !nK || nK->isZero() || g0;
-    if (g0) {
+    if (g0 && !top) {
+      // S10: the branch's blocks are segments of the enclosing region (as test's Skip below); the |0> seed is minted in Zb
+      RailType i1{Kind::Int, 1};
+      BasicBlock *At = B.GetInsertBlock();
+      BasicBlock *Zb = BasicBlock::Create(Cx, "", &ctx.out());
+      BasicBlock *Jb = BasicBlock::Create(Cx, "", &ctx.out());
+      B.CreateCondBr(g0, Jb, Zb);
+      RG->branchSeg(Zb);
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
+      ctx.unc().recordSeed(z);
+      B.CreateBr(Jb);
+      RG->branchSeg(Jb);
+      PHINode *q0p = B.CreatePHI(handleTy(Cx), 2);
+      q0p->addIncoming(q0, At);
+      q0p->addIncoming(z, Zb);
+      ctx.unc().recordMerge(q0p);
+      q0 = q0p;
+    } else if (g0) {
       RailType i1{Kind::Int, 1};
       CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
       ctx.unc().recordSeed(z);
@@ -2874,10 +2939,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     } else {
       B.CreateBr(Hd);
     }
-    ctx.unc().closeScope(rSeedScope);
-    ctx.unc().leaveScope(rSeedScope, seedHead);
-    rreg->startSeg(Hd);
-    rreg->addHead(Hd, E);
+    if (top) {
+      ctx.unc().closeScope(rSeedScope);
+      ctx.unc().leaveScope(rSeedScope, seedHead);
+      rreg->startSeg(Hd);
+    } else {
+      RG->branchSeg(Hd);   // E ends the enclosing trip's open segment
+    }
+    RG->addHead(Hd, E);
     rHead = Hd;
     // (value, its phi in H, how the latch value is read)
     struct Carry {
@@ -2892,7 +2961,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       PHINode *p = B.CreatePHI(handle ? handleTy(Cx) : init->getType(), 2);
       p->addIncoming(init, E);
       if (handle) {
-        rreg->addExternalInit(init);
+        if (top)
+          rreg->addExternalInit(init);   // a nested loop's entry value is a rail of the enclosing trip
         ctx.unc().recordExternal(p, Role::UserRegister);
         ctx.unc().noteCarried(p);
       }
@@ -3003,10 +3073,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto all = [](const BasicBlock *) { return true; };
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
-    rTrip = rreg.get();
+    rTrip = RG;
+    rolled::Region *outerTrip = rolledTrip;
+    std::function<void(BasicBlock *)> outerHook = segHook;
+    rolledTrip = RG;
     // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
     // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
-    segHook = rreg->segHook();
+    segHook = RG->segHook();
     if (regionForm)
       lowerBlocks(qc, inBody);
     else
@@ -3055,13 +3128,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
         BasicBlock *skipB = BasicBlock::Create(Cx, "", &ctx.out());
         B.CreateCondBr(g, Run, skipB);
-        rreg->branchSeg(skipB);
+        RG->branchSeg(skipB);
         RailType i1{Kind::Int, 1};
         CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
         ctx.unc().recordSeed(z);
         B.CreateBr(Xb);
         xe.push_back({skipB, st, z});
-        rreg->branchSeg(Run);
+        RG->branchSeg(Run);
       }
       return fQ ? andRail(qin, fQ) : qin;
     };
@@ -3098,7 +3171,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     } else {
       BasicBlock *R = BasicBlock::Create(Cx, "", &ctx.out());
       B.CreateCondBr(B.CreateICmpULT(j1, nRt), R, Xb);
-      rreg->branchSeg(R);
+      RG->branchSeg(R);
       Value *qr = qn;
       lowerBlocks(qr, inRegion);
       abortArms(qr, inRegion);
@@ -3110,9 +3183,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       back = B.GetInsertBlock();
       B.CreateBr(Hd);
     }
-    segHook = nullptr;
+    segHook = outerHook;
     rTrip = nullptr;
-    rreg->endSeg();
+    rolledTrip = outerTrip;
+    if (top)
+      rreg->endSeg();
+    else
+      RG->branchSeg(Xb);   // S10: X is the segment the enclosing trip goes on in (its come-from replays the exit edge)
     rX = Xb;
     j->addIncoming(j1, back);
     if (qp)
@@ -3129,10 +3206,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     } else {
       // phis of X over the edges; a value equal on every edge (no trip changes it: a register rotated in place, rule 10) is
       // read as it is
-      PHINode *ix = B.CreatePHI(i32, xe.size());
-      for (size_t e = 0; e < xe.size(); ++e) {
-        ix->addIncoming(ConstantInt::get(i32, e), xe[e].from);
-        rreg->addExitEdge(ix, xe[e].from);
+      if (top) {
+        PHINode *ix = B.CreatePHI(i32, xe.size());
+        for (size_t e = 0; e < xe.size(); ++e) {
+          ix->addIncoming(ConstantInt::get(i32, e), xe[e].from);
+          rreg->addExitEdge(ix, xe[e].from);
+        }
       }
       for (size_t i = 0; i < carry.size(); ++i) {
         Carry &k = carry[i];
@@ -3166,9 +3245,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       BasicBlock *Skip = BasicBlock::Create(Cx, "", &ctx.out());
       Jn = BasicBlock::Create(Cx, "", &ctx.out());
       B.CreateCondBr(keepRt, Run, Skip);
-      BranchInst::Create(Jn, Skip);
-      ctx.unc().noteClassicalArm(Jn, Skip);
-      B.SetInsertPoint(Run);
+      if (top) {
+        BranchInst::Create(Jn, Skip);
+        ctx.unc().noteClassicalArm(Jn, Skip);
+        B.SetInsertPoint(Run);
+      } else {
+        RG->branchSeg(Skip);
+        B.CreateBr(Jn);
+        RG->branchSeg(Run);
+      }
     }
     RailType i1{Kind::Int, 1};
     CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
@@ -3180,7 +3265,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       return f;
     ctx.unc().setRole(fid, Role::KeptOverflow);
     B.CreateBr(Jn);
-    B.SetInsertPoint(Jn);
+    if (top)
+      B.SetInsertPoint(Jn);
+    else
+      RG->branchSeg(Jn);
     rCont = Jn;
     rKeptRt = true;
     return qn;
