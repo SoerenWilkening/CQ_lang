@@ -12,6 +12,7 @@
 //   4. reachability from the roots, twins and _pure variants, masks, names, the published list.
 // No state outlives the call: computeTaint is safe to call twice on one module (cq-5k5, option a).
 #include "TaintImpl.h"
+#include "FenvName.h"
 #include "../bus/BusInternal.h"
 #include "cq/Order.h"
 
@@ -189,16 +190,7 @@ bool hostGlobal(const GlobalVariable &GV) {
 }
 
 // <fenv.h> (C17 7.6): the floating-point environment calls rule 23 splits into host and rail parts.
-bool isFenvCall(StringRef n) {
-  static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept",
-                                "fesetexceptflag", "fetestexcept",  "fegetround",
-                                "fesetround",      "fegetenv",      "feholdexcept",
-                                "fesetenv",        "feupdateenv"};   // not the trap-enable extensions: rule 27 (CR rule 23)
-  for (const char *x : names)
-    if (n == x)
-      return true;
-  return false;
-}
+bool isFenvCall(StringRef n) { return taint_detail::isFenvName(n); }   // an asm label "\01_n" too (FenvName.h, cq-ten4)
 
 // Rule 23 (eff-fenv's envOp, read the same way): does I hold or change the environment itself? A raising
 // (fpexcept.strict) constrained op, a <fenv.h> call, a rounding intrinsic, or an indirect call.

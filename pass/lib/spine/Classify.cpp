@@ -13,6 +13,7 @@
 #include "SpineInternal.h"
 #include "../bus/BusInternal.h"
 #include "../taint/DeadEnd.h"
+#include "../taint/FenvName.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
@@ -142,15 +143,7 @@ bool isLibmIntrinsic(Intrinsic::ID id) {
 // The <fenv.h> functions (C17 7.6); taint's isFenvCall and eff-fenv's fenvFn name the same set. The
 // trap-enable extensions (feenableexcept, fedisableexcept, fegetexcept) are not C17 and have no musl body:
 // rule 27 like any bodiless callee (CR rule 23, cq-hzji).
-bool isFenvFunction(StringRef n) {
-  static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept", "fesetexceptflag",
-                                "fetestexcept",  "fegetround",      "fesetround",    "fegetenv",
-                                "feholdexcept",  "fesetenv",        "feupdateenv"};
-  for (const char *x : names)
-    if (n == x)
-      return true;
-  return false;
-}
+bool isFenvFunction(StringRef n) { return taint_detail::isFenvName(n); }   // an asm label "\01_n" too (cq-ten4)
 
 } // namespace
 
