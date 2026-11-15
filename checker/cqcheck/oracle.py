@@ -576,6 +576,23 @@ _K2_ALLOC = {"malloc": "__cqo_malloc_k2", "calloc": "__cqo_calloc_k2", "aligned_
              "realloc": "__cqo_realloc_k2"}
 
 
+def _k2_line(o1_text: str, fn: str) -> int:
+    """CR §0 CQ_K2(fn, k), as the pass's loops::resolveK2 reads it (owner ruling 2026-11-15, cq-z9vt): the attribute
+    "cq-k2" cqcc bound per unit onto the definition ("0": none), else the constant __cq_k2_<fn> with llvm-link's
+    copies __cq_k2_<fn>.N, the largest k. 0: no line."""
+    m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\((.*)$", o1_text, re.M)
+    if m:
+        inline = re.search(r'"cq-k2"="(\d+)"', m.group(1))
+        group = re.search(r"#(\d+)", m.group(1))
+        if not inline and group:
+            g = re.search(r"^attributes #" + group.group(1) + r" = \{[^\n]*\}", o1_text, re.M)
+            inline = g and re.search(r'"cq-k2"="(\d+)"', g.group(0))
+        if inline:
+            return int(inline.group(1))
+    ks = [int(v) for v in re.findall(r"^@__cq_k2_" + re.escape(fn) + r"(?:\.\d+)?\s*=[^\n]*?\bi64 (\d+)", o1_text, re.M)]
+    return max(ks, default=0)
+
+
 def _k2_sites(text: str, o1_text: str) -> str:
     """Rulings Q16, CR §6: a rail-sized allocation is made at K2 bytes, and an access at or beyond byte K2 is
     outside the block (cqo_rt.c totalizes it). Each allocation whose size derives, by SSA or through a defined
@@ -633,8 +650,7 @@ def _k2_sites(text: str, o1_text: str) -> str:
         args = drivers.split_operands(drivers._balanced(line, start))
         if not any(r in tainted[fname] for i in sized[name] for r in drivers.locals_in(args[i])):
             continue
-        fm = re.search(r"@__cq_k2_" + re.escape(fname[1:]) + r"\s*=[^\n]*?\bi64 (\d+)", o1_text)
-        k2 = int(fm.group(1)) if fm else K2_DEFAULT
+        k2 = _k2_line(o1_text, fname[1:]) or K2_DEFAULT
         end = start + len(drivers._balanced(line, start)) + 2
         lines[li] = line[:m.start()] + f"@{_K2_ALLOC[name]}(" + ", ".join(args + [f"i64 {k2}"]) + ")" + line[end:]
         used.add(name)

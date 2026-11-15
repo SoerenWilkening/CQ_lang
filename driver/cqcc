@@ -2,6 +2,8 @@
 """cqcc: the CQ compiler driver (cq-w1-driver).
 
     clang -O1 -include CQ.h, per C translation unit
+      -> with several units, CQ_K / CQ_K2 bound per unit by C scope (CR §0, cq-z9vt; bind_k_per_unit): a line naming
+         a function some unit defines becomes its attribute "cq-k" / "cq-k2"; differing lines are warned about
       -> llvm-link of the user units, then the injection bundle (bundle/manifest.json) --only-needed,
          only when the linked user module needs it (the bundle rule below)
       -> opt -load-pass-plugin=libCQLower.so -passes=cq-lower [-cq-k=...] [-cq-k-default=...]
@@ -272,6 +274,120 @@ def libm_decls(linked: Path, bundle, work: Path) -> dict:
     return out
 
 
+#                                   CQ_K / CQ_K2 per unit (CR §0, owner ruling 2026-11-15, cq-z9vt)
+# A line `CQ_K(f, k)` is clang's `@__cq_k_<f> = internal constant i32 k` in @llvm.used (`CQ_K2`: `@__cq_k2_<f>`, i64).
+# It names the f its own unit defines (a static f is that unit's alone), else the external f of that name. For an
+# external f the line of the unit defining it wins; where that unit has none, the largest k among the other units'
+# lines. llvm-link renames the internal constants (and the statics) independently, so the binding is made per unit,
+# before the link: every line bound to a definition becomes the string attribute "cq-k"="k" ("cq-k2") on that
+# definition, which the pass's resolveK reads before any constant, and the constant is dropped. "0" marks a definition
+# that no line names while some line of its name stays a constant, so resolveK does not read a constant meant for
+# another function. A line naming a function no unit defines (a library function, rule 27) stays a constant;
+# resolveK reads it with its llvm-link copies __cq_k_<f>.N, the largest k. Only a link of several units is touched:
+# a single unit goes to the pass as clang wrote it.
+K_KINDS = (("__cq_k_", "cq-k", "i32", "CQ_K"), ("__cq_k2_", "cq-k2", "i64", "CQ_K2"))
+_DEF_RE = re.compile(r'^define\s+([^@\n]*)@(?:"([^"]+)"|([-\w$.]+))\(', re.M)
+
+
+def _unit_defs(text: str) -> dict:
+    """{function name: is_local} of the bodies a unit defines."""
+    out = {}
+    for m in _DEF_RE.finditer(text):
+        out[m.group(2) or m.group(3)] = bool(re.search(r"\b(internal|private)\b", m.group(1)))
+    return out
+
+
+def _unit_lines(text: str, prefix: str, ty: str) -> dict:
+    return {m.group(1): int(m.group(2)) for m in
+            re.finditer(rf"^@{prefix}([A-Za-z_]\w*) = (?:internal |private )?(?:unnamed_addr )?constant {ty} (-?\d+)\b",
+                        text, re.M)}
+
+
+def _drop_global(text: str, name: str) -> str:
+    """The unit without the global @name and without its entry in @llvm.used / @llvm.compiler.used."""
+    text = re.sub(rf"^@{re.escape(name)} = [^\n]*\n", "", text, flags=re.M)
+
+    def used(m):
+        items = [e for e in m.group(3).split(", ") if e.strip() != f"ptr @{name}"]
+        if not items:
+            return ""
+        return f"{m.group(1)}[{len(items)} x ptr] [{', '.join(items)}]{m.group(4)}"
+    return re.sub(r"^(@llvm\.(?:compiler\.)?used = appending global )\[(\d+) x ptr\] \[([^\]\n]*)\]([^\n]*\n)",
+                  used, text, flags=re.M)
+
+
+def _add_fn_attr(text: str, fn: str, attr: str, value: int) -> str:
+    """`define ... @fn(...) [local_]unnamed_addr` followed by `"attr"="value"` among its function attributes."""
+    for m in _DEF_RE.finditer(text):
+        if (m.group(2) or m.group(3)) != fn:
+            continue
+        i, depth = m.end() - 1, 0
+        while True:   # the closing parenthesis of the parameter list
+            c = text[i]
+            depth += (c == "(") - (c == ")")
+            i += 1
+            if depth == 0:
+                break
+        rest = re.match(r"(?: (?:local_)?unnamed_addr)?(?: addrspace\(\d+\))?", text[i:])
+        j = i + rest.end()
+        return text[:j] + f' "{attr}"="{value}"' + text[j:]
+    return text
+
+
+def bind_k_per_unit(units, work: Path, names=None):
+    """The CQ_K / CQ_K2 binding of several units (comment above), as new unit files where a unit changes. Returns the
+    units to link, in the same order."""
+    names = names or [u.name for u in units]
+    texts = []
+    for i, u in enumerate(units):
+        if u.suffix == ".bc":
+            ll = work / f"unit{i}.{u.stem}.dis.ll"
+            run([tool("llvm-dis"), u, "-o", ll], f"llvm-dis of {u.name} (CQ_K binding)")
+            u = ll
+        texts.append(Path(u).read_text())
+    defs = [_unit_defs(t) for t in texts]
+    new = list(texts)
+    for prefix, attr, ty, macro in K_KINDS:
+        lines = [_unit_lines(t, prefix, ty) for t in texts]
+        for f in sorted({f for ls in lines for f in ls}):
+            ext_def = [u for u in range(len(units)) if defs[u].get(f) is False]
+            # the lines naming the external f: those of units that do not define an f of their own
+            ext_lines = [(u, lines[u][f]) for u in range(len(units)) if f in lines[u] and f not in defs[u]]
+            ext_lines += [(u, lines[u][f]) for u in ext_def if f in lines[u]]
+            own = [lines[u][f] for u in ext_def if f in lines[u]]
+            others = [lines[u][f] for u in range(len(units)) if f in lines[u] and f not in defs[u]]
+            k = max(own) if own else (max(others) if others else None)
+            if len({v for _, v in ext_lines}) > 1:
+                where = ", ".join(f"{names[u]} {v}" for u, v in ext_lines)
+                why = "the line of the unit that defines it" if own else \
+                    ("the largest line, no line in the unit that defines it" if ext_def else
+                     "the largest line, no unit defines it")
+                print(f"cqcc: warning: {macro}({f}, k) differs between units ({where}); {f} gets {k}, {why}",
+                      file=sys.stderr)
+            kept_const = bool(others) and not ext_def   # lines of a function no unit defines stay constants
+            for u in range(len(units)):
+                if f in defs[u]:
+                    if defs[u][f]:   # a static: its own unit's line only
+                        v = lines[u].get(f)
+                        if v is not None:
+                            new[u] = _add_fn_attr(new[u], f, attr, v)
+                        elif kept_const:
+                            new[u] = _add_fn_attr(new[u], f, attr, 0)
+                    elif k is not None:
+                        new[u] = _add_fn_attr(new[u], f, attr, k)
+                if f in lines[u] and (f in defs[u] or ext_def):
+                    new[u] = _drop_global(new[u], prefix + f)
+    out = []
+    for i, u in enumerate(units):
+        if new[i] == texts[i]:
+            out.append(u)
+        else:
+            p = work / f"k{i}.{u.stem}.ll"
+            p.write_text(new[i])
+            out.append(p)
+    return out
+
+
 def main(argv) -> int:
     o = parse_args(argv)
     header = SPEC_DIR / "CQ.h"
@@ -287,15 +403,17 @@ def main(argv) -> int:
 
         # 1. clang -O1 per translation unit.
         tflags = target_flags()
-        units = []
+        units, unit_names = [], []
         for i, src in enumerate(o["inputs"]):
             if src.suffix in C_SUFFIXES:
                 ll = work / f"unit{i}.{src.stem}.ll"
                 run([tool("clang"), "-O1", *tflags, "-include", header, *o["cflags"], "-S", "-emit-llvm",
                      src, "-o", ll], f"clang -O1 {src}")
                 units.append(ll)
+                unit_names.append(src.name)
             elif src.suffix in IR_SUFFIXES:
                 units.append(src)
+                unit_names.append(src.name)
         if not units:
             raise usage("no C or IR input to lower")
 
@@ -308,6 +426,7 @@ def main(argv) -> int:
         if len(units) == 1 and units[0].suffix == ".ll":
             shutil.copyfile(units[0], linked)
         else:
+            units = bind_k_per_unit(units, work, unit_names)   # CQ_K / CQ_K2 by C scope, before the link (cq-z9vt)
             run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
         bundle = bundle_files()
         # The result entries (owner ruling 2026-11-12, cq-cdf9z, cq-m7ftq; driver/cq_entries.py): a deferred output

@@ -146,14 +146,28 @@ Region headerRegion(Loop *L) {
   return R;
 }
 
-// CR §0 K for the loops of F as the oracle resolves it without flags: CQ_K(f, k), else 4.
+// CR §0 K for the loops of F as the oracle resolves it without flags: CQ_K(f, k), else 4. The line as cqcc bound it per
+// unit (owner ruling 2026-11-15, cq-z9vt): the attribute "cq-k" ("0": none), else the constant __cq_k_<f> with
+// llvm-link's copies __cq_k_<f>.N, the largest k.
 unsigned kOf(const Function &F) {
-  if (const GlobalVariable *GV = F.getParent()->getGlobalVariable(("__cq_k_" + F.getName()).str(), true))
-    if (GV->hasInitializer())
-      if (auto *CI = dyn_cast<ConstantInt>(GV->getInitializer()))
-        if (CI->getZExtValue() > 0)
-          return unsigned(CI->getZExtValue());
-  return 4;
+  if (F.hasFnAttribute("cq-k")) {
+    unsigned v = 0;
+    if (!F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v) && v > 0)
+      return v;
+    return 4;
+  }
+  std::string name = ("__cq_k_" + F.getName()).str();
+  uint64_t best = 0;
+  for (const GlobalVariable &GV : F.getParent()->globals()) {
+    StringRef n = GV.getName();
+    unsigned d;
+    if (n == name || (n.size() > name.size() + 1 && n.starts_with(name) && n[name.size()] == '.' &&
+                      !n.drop_front(name.size() + 1).getAsInteger(10, d)))
+      if (GV.hasInitializer())
+        if (auto *CI = dyn_cast<ConstantInt>(GV.getInitializer()))
+          best = std::max(best, CI->getZExtValue());
+  }
+  return best > 0 ? unsigned(best) : 4;
 }
 
 struct Facts {
