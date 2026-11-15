@@ -382,6 +382,12 @@ CASES = [
       r"  (%\w+) = call i32 @__cq_q_atan2_11_t\(i32 \1, i32 \2, i32 77\)",
       r"call void @__cq_q_atan2_11_t_unc\(", r"call void @__cq_q_sin_1_t_unc\(",
       r"define internal i32 @__cq_q_k1_11_t_pure\([^\n]*\{\n(?:[^\n]*\n)*?  %\w+ = call i32 @__cq_q_sin_1_t\("]),
+    # cq-m8biu (owner ruling 2026-11-15, CR rules 14, 19): a callee holding a quantum-exit loop whose a_K is kept is a _ctl clone under a
+    # quantum predicate (e1; e3 through a callee); a call-site bound B <= K keeps it unguarded (e2, _b3).
+    ("ctl_kept_ak", "e1", [], "pass", [r"(?m)^define i32 @e1\((?:[^\n]*\n)*?  %\w+ = call fastcc i32 @__cq_q_g_10_ctl\("]),
+    ("ctl_kept_ak", "e2", [], "pass", [r"(?m)^define i32 @e2\((?:[^\n]*\n)*?  %\w+ = call fastcc i32 @__cq_q_h_10_b3\("]),
+    ("ctl_kept_ak", "e3", [], "pass", [r"(?m)^define i32 @e3\((?:[^\n]*\n)*?  %\w+ = call fastcc i32 @__cq_q_k_10_ctl\(",
+                                       r"define internal fastcc i32 @__cq_q_k_10_ctl\((?:[^\n]*\n)*?  %\w+ = call fastcc i32 @__cq_q_g_10_ctl\("]),
     ("libm_flag", "k4", ["-cq-k=expf=9"], "pass", [r"call i32 @cqrt_tape_effect_f32_controlled\("]),
     # cq-dxii: a classical loop writing into a QRAM or slot object is not pure classical (it reaches loops-classical;
     # the QRAM probes stop there until loops-classical builds rule 14 over QRAM stores, then they become "pass").

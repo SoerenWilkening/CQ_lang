@@ -26,7 +26,9 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/DataLayout.h"
@@ -41,6 +43,10 @@ struct FnInfo {
   std::unique_ptr<llvm::DominatorTree> DT;
   std::unique_ptr<llvm::PostDominatorTree> PDT;
   std::unique_ptr<llvm::LoopInfo> LI;
+  // cq-m8biu: SCEV for the cutoff bound B of a quantum-exit loop (rule 14), made on first use.
+  std::unique_ptr<llvm::AssumptionCache> AC;
+  std::unique_ptr<llvm::TargetLibraryInfo> TLI;
+  std::unique_ptr<llvm::ScalarEvolution> SE;
   // Direct control dependence: block -> the branching blocks it is control dependent on. An edge into
   // a dead end does not restrict its siblings (cq-820w, rule 16): a block that reaches a return is
   // control dependent on A only through A's successors that reach a return too.
@@ -130,6 +136,7 @@ struct SpecState {
   // its function may not overtake are these and the calls of callees with an event.
   llvm::DenseSet<const llvm::CallBase *> effectEntries;
   llvm::DenseSet<const llvm::CallBase *> aborts;   // a noreturn call under a quantum predicate
+  bool keptAK = false;     // transitively: a quantum-exit loop whose a_K is kept, B > K or no bound (rules 14, 19; cq-m8biu)
   bool hasNoreturn = false;   // a noreturn call on any path: an abort event once the clone takes a predicate (rule 19)
   bool hasEventT = false;
   // Rule 16 noreturn, owner ruling 2026-11-14 (scope of Q7): this specialization is reached after an event on a path inside
