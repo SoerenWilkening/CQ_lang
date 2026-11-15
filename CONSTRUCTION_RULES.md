@@ -45,6 +45,10 @@ example §7 lists as regeneration owed is not normative for the construction it 
   value, lines tagged `[K]`). A lowered library ships a header of `CQ_K` lines with its defaults,
   included like `CQ.h`; its declared clones (rule 27) receive K as a classical run-time argument.
   A loop whose exit reads a value loaded from the bus is a K-loop like any other (rule 14).
+  K is an unsigned 32-bit value with no lower bound. K = 0 is legal: no trip runs, `a_K` is the
+  predicate of reaching trip 0 (the test before the first body; the seed itself in a
+  test-at-bottom loop), every carried value keeps its entry value, and a quantum-depth
+  recursion is cut at its first `_ctl` activation.
   The function of a loop is the one that holds it in the `-O1` IR: a loop clang inlined into
   `g` resolves its K as a loop of `g` (K2 likewise).
   In a program of several translation units a `CQ_K(f, k)` line names the `f` of its own unit
@@ -628,7 +632,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      final rail nothing reads after the loop, or only rails that are themselves uncomputed read,
      is not cleaned per trip: its chain is garbage like any other, pushed per trip and undone by
      the reverse loop after its last reader (the straight-line rule: the clean-up point lies
-     after the image is gone, so no clean-up exists). Regeneration owed: 95, 109 (§7). A loop-invariant rail read by such
+     after the image is gone, so no clean-up exists; 95, 109). A loop-invariant rail read by such
      an update in every trip is cleaned from the last trip's image on the exit edge, and kept
      on a zero-trip path (75). 05, 09, 150 (the counter), 149 (s), 27 (acc).
    - *A memory cell.* `y = load p; y' = f(y, …); store y', p` (`g++`, `*p += x`, `s->n ^= k`) is
@@ -775,7 +779,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       only from the value ranges of the integers the exit test reads: an object's extent,
       `inbounds`, `dereferenceable` and the undefined behaviour of an access never bound a
       trip count (rule 21), so a scan over an array has no B (203). `a_K` is
-      kept only when B > K or no bound is known. The K-th trip's own body predicate is not
+      kept only when B > K or no bound is known. The kept rail is the chain's last predicate
+      itself (09, 68, 150) or a `copy_i1` of it made after the loop, the last predicate then
+      uncomputed by the reverse loop with the others; §6 does not tell the two apart. The K-th trip's own body predicate is not
       `a_K` and is uncomputed by the reverse loop like every earlier one; a predicate that
       controls a kept store, and every other trip rail rule 5 keeps, is not pushed but for its handle (first bullet). A test-at-bottom
       loop (`do … while`) runs trip 0 under the `|1⟩` seed and computes `a_{j+1}` after the
@@ -1146,7 +1152,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     its callees, has anything but templates on SSA values: a rotation, a phase, a bus access,
     a tape or abort event, an indirect or bodiless call, a call cycle through itself, a
     quantum-exit loop whose `a_K` is kept (rule 14: the predicate seeds its chain, so `a_K` reads 0
-    where the C program does not make the call; example owed, §8). Otherwise it is called unguarded and
+    where the C program does not make the call; 169's `__cq_q_ilogb_1_ctl`). Otherwise it is called unguarded and
     its results merged like any classical arm value (rule 9), a call with no quantum argument
     included (musl's `__math_oflow(0)` in `exp`; a `volatile` access to a dead local inside it
     is nothing, rule 24; example owed, §8). A callee with no body follows rules 16 and 27.
@@ -1565,11 +1571,6 @@ Every example not listed below conforms.
 
 101 conforms to rule 24 as it stands.
 
-Regeneration owed: 95 `varargs` and 109 `intrinsic_variants` (rule 6 in a rolled loop: the final
-`overflow_arg_area` rail that nothing reads after the loop is undone by the reverse loop, not
-kept; one rail in 95, two in 109).
-
-
 ## 8. Examples written 2026-10-26 (144–180)
 
 144–194 each state their outcome per §5; the rules cite them as witnesses.
@@ -1600,8 +1601,7 @@ Owed, no source yet. Each fixes the construction its rule names:
   number; `fseek`, `fclose` and `remove` whose result is read behind a quantum field; `abort` under a quantum
   predicate followed by a classical `exit`; a classical `exit` behind a deferred entry with code
   after it (the shot ends at the seed's `abort_i1`). §1.4, rule 27: a table clone calling a
-  by-name callee that holds a K-loop (`@__cq_k`). Rule 19: a callee of templates and a K-loop
-  with a kept `a_K`, called under a quantum predicate (the `_ctl` clone). Rule 22: a by-name `memcpy` from a freestanding body.
+  by-name callee that holds a K-loop (`@__cq_k`). Rule 22: a by-name `memcpy` from a freestanding body.
 - rule 24: `pthread_join(t, &r)` whose result is read (106 joins with a null result only).
 - rule 24: an observable `volatile` access at an address rail. Rule 26: a `byval`
   copy (with 164). Rule 27: a callback through a declared clone and the table; an `asm` with a quantum operand.
