@@ -182,10 +182,14 @@ add_test(NAME loops-cutoff-measure-outcome
 # cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in every trip copy (the arm
 # C does not take emits nothing; the taken arm's effects sit under the trip predicate alone), in a clone, a _ctl clone
 # and a twin; a sub-loop, a noreturn arm and a measurement behind one. Each entry §6-checked against its C program.
+# pa_loop's cqrt_alloc_i1: the chain a_1 to a_4 (no rail for the arm's predicate: the store runs under a_j alone), 4 at
+# 8fe330b3; 7 since aac601b9 (owner ruling Q2 of 2026-11-14: pa_loop, reached by name from pa_store's table clone, is cut
+# at the received K, and each copied trip's cut keeps a_j's copy, alloc_i1 + copy_i1, in a block entered only when
+# @__cq_k < 4; ktrips.runs does not evaluate the copied cut's `icmp ult i32 j, K`, so counts those 3 sites once each).
 add_test(NAME loops-cutoff-trip-cbr
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
-          --br-in __cq_q_pa_loop_100=4 --calls-in __cq_q_pa_loop_100=cqrt_alloc_i1=4
+          --br-in __cq_q_pa_loop_100=4 --calls-in __cq_q_pa_loop_100=cqrt_alloc_i1=7
           --br-in __cq_q_pa_loop2_100=4 --br-in pb_call=8 --calls-in pb_call=__cq_q_pb_note_11_b2147483647_ctl=4
           --br-in __cq_q_pc_inner_1000_ctl=4 --br-in pd_trip=4 --br-in __cq_q_pe_f_100=8 --br-in __cq_q_pe_f_100_unc=8
           --br-in pf_nested=8 --br-in pg_abort=8 --br-in ph_measure=8
@@ -211,10 +215,12 @@ add_test(NAME loops-cutoff-trip-factor
 # cq-kbygn exit-test part (owner ruling Q10; CR rule 14): the classical conjunct of a K-loop's exit test is a `br` at each
 # of the K tests (the chain ends where it is false, no later trip), for `while (c && q)`, `do ... while (c && q)` and a c
 # that changes in the loop. Each entry §6-checked against its C program; the mutant without test 0's br is rejected.
+# --test-br-in: the conjunct's br runs once per test, exactly, in the copied and the rolled form: K + 1 = 5 tests for the
+# loops tested at the top (a_0 to a_K: before trip 0 and after each trip), K = 4 for the do-while (a_0 is the seed).
 add_test(NAME loops-cutoff-exit-conjunct
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
-          --br-in ec_while=8 --br-in ec_do=8 --br-in ec_vary=8
+          --test-br-in ec_while=5 --test-br-in ec_do=4 --test-br-in ec_vary=5
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_conjunct.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq with owner rulings Q2 and Q3 of 2026-11-14 (CR 1.4 "Received K", rule 27 "Cutoff", rule 6): @__cq_k carries the
