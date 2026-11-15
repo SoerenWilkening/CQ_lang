@@ -151,7 +151,9 @@ public:
   // outW) is read in place when its exit rail is a record of the loop, else copied out (in the copy scope when
   // scopedOf(v): undone by the reverse first); put rebinds it. finishExits: the reverse at T when nothing is read in
   // place, else an Uncompute deferred item after the readers; returns whether it was deferred (the builder is left
-  // where the loop continues).
+  // where the loop continues). X (default T) is the loop's exit block, whose predecessors are the region's exit edges,
+  // when the code after the loop continues in a later block T (cq-9kcq S6: a_K's copy under a classical branch on the
+  // run-time K, made between X and the reverse).
   struct ExitWiring {
     std::vector<unsigned> scs;
     llvm::DenseSet<const llvm::Value *> ownedH;
@@ -163,7 +165,7 @@ public:
                        llvm::function_ref<bool(const llvm::Value *)> scopedOf,
                        llvm::function_ref<void(const llvm::Value *, Operand)> put);
   bool finishExits(llvm::BasicBlock *T, unsigned seedScope, const ExitWiring &w, bool keptInPlace,
-                   const llvm::Instruction *latchTerm, std::shared_ptr<Region> self);
+                   const llvm::Instruction *latchTerm, std::shared_ptr<Region> self, llvm::BasicBlock *X = nullptr);
 
 protected:
   LoweringContext &ctx;   // only while lowerClassical runs: a deferred reverse (cq-fx3s) uses Mod, Out, U

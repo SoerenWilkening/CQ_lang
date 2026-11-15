@@ -99,6 +99,11 @@ MUTANTS = {
     "table_k": [
         ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@tk_f", "own_k", lambda b: own_k(b, 4), None),
     ],
+    # cq-9kcq S6 (CR §1.4 "Received K", owner 2026-11-15: the received K in place of the own one, smaller or larger): the
+    # table clone run at its own K 4 where tk6_f passes 6 is rejected against the one C module.
+    "table_k6": [
+        ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@tk6_f", "own_k", lambda b: own_k(b, 4), None),
+    ],
     # cq-9kcq with owner ruling Q2 (2026-11-14): a by-name helper of a table clone ignores @__cq_k (its own K 4 where kh_1
     # passed 2); a table clone does not restore @__cq_k at its returns, so kh_after's by-name call of h1 after the table
     # call runs at 2 instead of its own 4. helper_own_k (cq-rin8c): kh_1's rail pointer dispatches to t1's _t_ctl clone

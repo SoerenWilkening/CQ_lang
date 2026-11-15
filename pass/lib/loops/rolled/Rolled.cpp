@@ -1011,21 +1011,23 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
 }
 
 bool Region::finishExits(BasicBlock *T, unsigned seedScope, const ExitWiring &w, bool keptInPlace,
-                         const Instruction *latchTerm, std::shared_ptr<Region> self) {
+                         const Instruction *latchTerm, std::shared_ptr<Region> self, BasicBlock *X) {
+  if (!X)
+    X = T;
   const std::vector<unsigned> &scs = w.scs;
   const DenseSet<const Value *> &ownedH = w.ownedH;
   const std::vector<RailId> &exits = w.exits;
   if (exits.empty()) {
     flushTrips();
     IRBuilder<> B(T);
-    reverse(B, T, seedScope, false);
+    reverse(B, X, seedScope, false);
     ctx.B().SetInsertPoint(B.GetInsertBlock());
     return false;
   }
   // The exit rails are read after the loop: no trip's flush may resolve them in their own trip.
   {
     Instruction *xt = nullptr;
-    for (BasicBlock *p : predecessors(T))
+    for (BasicBlock *p : predecessors(X))
       xt = p->getTerminator();
     if (!xt)
       internalError("loops-classical: the loop's exit block has no predecessor", latchTerm);
@@ -1057,7 +1059,7 @@ bool Region::finishExits(BasicBlock *T, unsigned seedScope, const ExitWiring &w,
   } else
     BranchInst::Create(Cont, T);
   U.recordDeferred(scs, exits,
-                   [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, !self->U.mirroring()); }, reads, {});
+                   [self, X, seedScope](IRBuilder<> &B) { self->reverse(B, X, seedScope, !self->U.mirroring()); }, reads, {});
   ctx.B().SetInsertPoint(Cont);
   return true;
 }
