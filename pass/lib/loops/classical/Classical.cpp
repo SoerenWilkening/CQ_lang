@@ -3825,7 +3825,11 @@ bool Unit::readersKeep(const Value *v) {
         continue;
       if (auto *st = dyn_cast<StoreInst>(ui); st && st->getValueOperand() == x)
         continue;
-      if (auto *CB = dyn_cast<CallBase>(ui); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Measure)
+      // A measurement keeps the rail it reads only where it measures it in place: on every path (lowerMeasure, CR rule 2);
+      // one on some classical paths only reads a kept basis copy, and the rail is uncomputed as usual (cq-2xl5).
+      if (auto *CB = dyn_cast<CallBase>(ui); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Measure &&
+                                             !ctx.S.table && !ctx.S.ctl &&
+                                             spine::measuredOnEveryPath(ctx, CB->getArgOperand(0)))
         continue;
       return false;
     }
