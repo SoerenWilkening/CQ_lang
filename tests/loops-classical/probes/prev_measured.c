@@ -18,3 +18,12 @@ int pm_both(int x0, double t, int n) {
   do { old = x; x = x * x + 1; } while (++i < n);
   return cq_measure(x) + cq_measure(old);
 }
+/* cq-gty1h: the in-place exit value measured, the previous trip's value copied out into the loop's copy scope (read by a
+ * template): the kept copy of the measured exit rail is taken before the measurement. */
+int pm_cur(int x0, double t, int n) {
+  int x = x0, old;
+  cq_theta(&x, t);
+  int i = 0;
+  do { old = x; x = x * 3 + 1; } while (++i < n);
+  return cq_measure(x) + old;
+}
