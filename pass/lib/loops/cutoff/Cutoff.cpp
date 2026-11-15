@@ -2754,6 +2754,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // S10 rolls the nested K-loops and the K-loops of the exit arm; a classically bounded loop in the trip
       // (classicalSub) is S11's
       why = "a classically bounded sub-loop in the trip or its exit arm (S11)";
+    else if (multi && any_of(U.arm, [&](BasicBlock *b) {
+               Loop *l = A.LI.getLoopFor(b);
+               return l && !l->contains(H);
+             }))
+      // me_one fails §6 rolled (its measurement after the arm's loop, on a path where the C program left through the
+      // other exit; cause not found in S10)
+      why = "a loop of the exit arm of a K-loop with several live exits";
     else if (any_of(innerLoops, [&](Loop *S) { return exits::hasNoreturnArm(*S); }))
       // the trip's stop rail (stopAcc, the XOR of the nested loops' noreturn arm flags) would be minted per trip
       why = "a noreturn arm of a nested K-loop (the stop rail as a carried accumulator)";
