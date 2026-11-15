@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 
 #include "cq/Predicate.h"
@@ -134,6 +135,13 @@ llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Va
 // Returns the XOR of the flags of the noreturn arms of L's nest (hasNoreturnArm; nullptr when none), an exit rail: an edge
 // into such an arm is an exit edge of the K-loop too (CR rules 14, 16).
 llvm::Value *lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+
+// cq-9kcq S11 (CQ_K_ROLLED): as lowerClassicalInTrip, for a trip-local L in a rolled K-trip: L is a sub-unit of the
+// K-loop's region (the caller adds it with Region::addSub), its reverse placed in the trip by that region's flushTrips.
+// resetAt: the K-loop's output header. stop: as lowerClassicalInTrip's result.
+std::shared_ptr<cq::loops::rolled::Region> lowerClassicalSubInTrip(cq::LoweringContext &ctx, llvm::Loop &L,
+                                                                  llvm::Value *trip, llvm::BasicBlock *resetAt,
+                                                                  llvm::Value *&stop);
 
 // Has L, a loop inside L, or a loop of L's exit arm a noreturn arm?
 bool hasNoreturnArm(const llvm::Loop &L);

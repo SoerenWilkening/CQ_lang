@@ -146,6 +146,25 @@ public:
   }
   bool hasCopyScope() const { return copyScope != ~0u; }
 
+  // cq-9kcq S11 (ROLLED_DESIGN.md §3 step 7): a trip-local classically bounded loop of a rolled K-trip is a sub-unit of the
+  // K-loop's region, as loops-classical's trip-local sub-loops are (176): `entry` is the block of the open segment the
+  // sub-unit is entered from (it ends that segment), `cont` the sub-unit's forward exit into this region, `blocks` the
+  // output blocks the sub-unit made. The parent's flushTrips places its reverse in the trip (Sub::unit->finish).
+  void addSub(std::shared_ptr<Region> sub, llvm::BasicBlock *entry, llvm::BasicBlock *cont,
+              llvm::ArrayRef<llvm::BasicBlock *> blocks) {
+    if (cur && entry != cur) {
+      segIdx[entry] = segs.size() - 1;
+      segs.back().bb = entry;
+    }
+    closeSeg();
+    cur = nullptr;
+    for (llvm::BasicBlock *b : blocks)
+      subBlocks.insert(b);
+    subBlocks.insert(sub->subBlocks.begin(), sub->subBlocks.end());
+    throughSub[cont] = entry;
+    subs.push_back({std::move(sub), unsigned(segs.size() - 1), cont});
+  }
+
   // The exit of the outermost loop at its exit block T (the builder there), after the trips (cq-fx3s, cq-h5uj; moved from
   // loops-classical's Unit::lowerLoop). wireExits: every quantum value read after the loop (out, with its rail type
   // outW) is read in place when its exit rail is a record of the loop, else copied out (in the copy scope when
