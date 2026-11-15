@@ -63,6 +63,8 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            # job's result; a global pthread_t; a join whose result pointer is null at run time.
            "conc_threads_rt.O1.ll": ["p_thr_plain", "p_thr_qresult", "p_thr_table", "p_thr_qsel", "p_thr_ext",
                                      "p_thr_global", "p_thr_nullres"],
+           # cq-j2r0j (rules 19, 27): a declared clone's returned result is a kept copy and its twin runs.
+           "decl_ret.O1.ll": ["p_ret"],
            "conc_threads_noask.O1.ll": ["p_thr_noask"],
            "conc_threads_indirect.O1.ll": ["p_runtime_qjob"],
            # cq-il07 (rule 24): a volatile read of an internal constant under a quantum predicate (musl exp10l).
@@ -72,7 +74,7 @@ _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 _NOVOLFX = r"volatile"   # no plain volatile access and no `volatile_store`/`volatile_load` effect entry
 _THR = r'call [^\n]*@(pthread_|"\\01_pthread_)'   # rule 24: no thread call is left
 # Rule 27 root lists (-cq-roots, and CQ_ROOTS_EXTRA for the checker's stand-in) per module.
-ROOTS = {"conc_threads_rt.O1.ll": ["ext_job"]}
+ROOTS = {"conc_threads_rt.O1.ll": ["ext_job"], "decl_ret.O1.ll": ["ext_job"]}
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_vol_observable": (r"cqrt_qram_load_i32_hl\([^\n]*@obs_counter[\s\S]*cqrt_qram_store_i32_hl\([^\n]*@obs_counter",
@@ -118,7 +120,8 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_thr_table": (r"@__cq_clone_resolve\(", _THR), "p_thr_qsel": (r"@__cq_clone_at\(", _THR),
           "p_thr_ext": (r"call i32 @__cq_q_ext_job_1_t\([\s\S]*call void @__cq_q_ext_job_1_t_unc\(", _THR), "p_thr_global": (None, _THR),
           "p_thr_nullres": (r"call i32 @qret\(", _THR), "p_thr_noask": (r"call ptr @njob\(", _THR),
-          "p_runtime_qjob": (r"@__cq_clone_resolve\(", _THR)}
+          "p_runtime_qjob": (r"@__cq_clone_resolve\(", _THR),
+          "p_ret": (r"call i32 @__cq_q_ext_job_1_t\([\s\S]*cqrt_copy_i64\([\s\S]*call void @__cq_q_ext_job_1_t_unc\(", None)}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",
                                             "p20", "p21"]:
     SHAPES[_e] = _NOSJ

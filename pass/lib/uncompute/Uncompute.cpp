@@ -302,6 +302,8 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> outs, members;
     SmallVector<Value *, 4> extra;
     bool table = false;   // rules 19, 27: a table clone's twin frees the results itself
+    // Rules 19, 27 (cq-j2r0j): a table call's result widths, parallel to outs, from the C result type.
+    SmallVector<RailType, 4> widths;
   };
   std::vector<CallGroup> groups;
   DenseMap<const CallInst *, std::string> twinNames;
@@ -2449,13 +2451,13 @@ struct Uncompute::Impl {
   // definition into a fresh rail c, and c continues as the value: every IR use of m's handle other than the
   // copy, every record operand, read, in-place write, noted use and gate on m move to c, which takes m's
   // role; m is garbage again (its twin zeroes it, then it is freed).
-  void copyOutResult(RailId m, CallInst *fwd) {
+  void copyOutResult(RailId m, CallInst *fwd, std::optional<RailType> known = std::nullopt) {
     Value *h = rails[m].handle;
     auto *hI = dyn_cast<Instruction>(h);
     if (!hI || !hI->getNextNode())
       internalError("uncompute: a kept clone result that is not an instruction in a block", fwd);
     Module &M = *fwd->getModule();
-    std::optional<RailType> wo = handleWidth(h);
+    std::optional<RailType> wo = known ? known : handleWidth(h);
     if (!wo)
       internalError("uncompute: a kept clone result whose width no gate, template or copy reading it names", fwd);
     RailType w = *wo;
@@ -3754,9 +3756,13 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   return ids;
 }
 
-void Uncompute::recordTableCall(CallInst *fwd, ArrayRef<Value *> outs) {
+void Uncompute::recordTableCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<RailType> widths) {
+  if (widths.size() != outs.size())
+    internalError("uncompute: recordTableCall: one width per result handle", fwd);
   SmallVector<RailId, 4> ids = recordCall(fwd, outs, {});
-  impl->groups[impl->rails[ids.front()].group].table = true;
+  Impl::CallGroup &cg = impl->groups[impl->rails[ids.front()].group];
+  cg.table = true;
+  cg.widths.assign(widths.begin(), widths.end());
 }
 
 void Uncompute::noteTwinName(CallInst *fwd, StringRef name) { impl->twinNames[fwd] = name.str(); }
@@ -4405,7 +4411,10 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     bool anyKept = false, anyDead = false;
     for (RailId m : members)
       (I.rails[m].explicitKept ? anyKept : anyDead) = true;
-    if (!anyKept || !anyDead)
+    // Rules 19, 27 (cq-j2r0j): a table clone's twin is called exactly once, so a table group whose every
+    // result is kept is copied out as in the mixed case ("after the result is copied into a fresh rail that
+    // is KEPT in its place"); the call's own results are garbage its twin zeroes and frees.
+    if (!anyKept || (!anyDead && !I.groups[gi].table))
       continue;
     CallInst *fwd = I.groups[gi].fwd;
     for (RailId m : members) {
@@ -4415,7 +4424,12 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
         // CR rule 18 twin point (cq-4lqy): a result still live where the twin runs is first copied out
         // (cqrt_copy_<W> into a fresh rail) and the copy continues as the value: it takes every later use,
         // record, gate and the kept role; the call's own result rail is garbage the twin zeroes.
-        I.copyOutResult(m, fwd);
+        std::optional<RailType> known;
+        const Impl::CallGroup &cg = I.groups[gi];
+        for (size_t k = 0; k < cg.outs.size() && k < cg.widths.size(); ++k)
+          if (cg.outs[k] == m)
+            known = cg.widths[k];
+        I.copyOutResult(m, fwd, known);
         continue;
       }
       Value *h = I.rails[m].handle;
