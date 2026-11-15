@@ -346,7 +346,6 @@ def main() -> int:
         # Owner ruling 2026-11-05: no stop for an unbuilt shape; these probes run on, and §6 judges every entry.
         for probe, _ in FATAL:
             entries = re.findall(r"^define (?!internal|private)[^\n]*@(\w+)\(", probe.read_text(), re.M)
-            NO_REVERSE.extend(entries)
             failures += check_probe(a, probe, entries, out)
     print("FAILED" if failures else "ok")
     return 1 if failures else 0
