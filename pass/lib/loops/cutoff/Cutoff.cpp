@@ -2702,10 +2702,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a multi-exit loop (S8)";
     else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
       why = "a noreturn arm or no live exit (S9)";
-    else if ((c == 0 || t0) && (!six.empty() || (!cont.isBottom() && !cont.classicalFactor(ctx.T, ctx.S).isTop())))
-      // the top test (rolledBody) reads a rule-6 register's header phi after the loop, which the trip's clean-up frees,
-      // and with a classical exit conjunct merges the entry's seeds at X
-      why = "K = 0, B = 0 or a trip-0 conjunct with rule 6 or a classical exit conjunct (S6 follow-up: the top test)";
     else if (!L.getSubLoops().empty())
       why = "a sub-loop in the trip (S10, S11)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
@@ -2778,24 +2774,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       keepAny = true;
     }
-    // cq-9kcq S6b (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal, no trip runs, every carried value keeps its
-    // entry value, a_K is the predicate of reaching trip 0): where the bound is not a constant of at least 1, or the trip-0
-    // test has a classical conjunct t0 (owner ruling Q10), the counter test sits at the top of the trip loop: H tests
-    // `j < n` (and t0) and branches to the trip or to X, so X is entered from H with the header phis as the final state and
-    // a_K the chain's predicate phi (q0 where no trip ran: the seed, or the predicate of reaching the first test). Where t0
-    // is false the chain ends before trip 0 with a_0 a |0> seed (minted here, in the seed scope, freed at 0 at the end).
+    // cq-9kcq S6b, S6c (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal, no trip runs, every carried value keeps its
+    // entry value, a_K is the predicate of reaching trip 0): where the bound is not a constant of at least 1 (a received K,
+    // a table clone's K), or the trip-0 test has a classical conjunct t0 (owner ruling Q10), the counter test is made
+    // before trip 0 too: the entry E branches on `0 < n` (and t0) to H or straight to X (the zero-trip guard), and the latch
+    // keeps its bottom test `j + 1 < n`. X's phis merge the entry values (the guard edge: no trip ran) with the last trip's
+    // (rule 6, 75: a cleaned register is its incoming rail on a zero-trip path, kept); a_K is the chain's predicate there
+    // (q0 where no trip ran: the seed, or the predicate of reaching the first test). Where t0 is false the chain ends before
+    // trip 0 with a_0 a |0> seed (minted here, in the seed scope, freed at 0 at the end). The guard edge is an exit edge of
+    // the region whose reverse is Z alone (Region::reverse).
     auto *nK = dyn_cast<ConstantInt>(nRt);
     Value *g0 = nullptr;
     if (t0)
       if (auto *k = dyn_cast<ConstantInt>(t0); !(k && k->isOne()))
         g0 = t0;
-    bool topTest = (nK && nK->isZero()) || g0;
-    if (!nK)
-      // S6 follow-up: with a received K the top test fails where rule 6's clean-up frees the header phi in the trip, or a
-      // deferred reverse owns the entry seeds the header phis read after the loop (exit_conjunct's ec_while_t); the
-      // bottom test is kept, so a received K of 0 runs one trip
-      noteUnbuilt("loops-cutoff: CQ_K_ROLLED: a received K keeps the counter test at the bottom: a received K of 0 runs "
-                  "one trip (S6 follow-up)", H->getTerminator());
+    bool zeroGuard = !nK || nK->isZero() || g0;
     if (g0) {
       RailType i1{Kind::Int, 1};
       CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
@@ -2815,7 +2808,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     BasicBlock *E = B.GetInsertBlock();
     BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
-    B.CreateBr(Hd);
+    BasicBlock *Xb = nullptr;
+    if (zeroGuard) {
+      Xb = BasicBlock::Create(Cx, "", &ctx.out());
+      Value *go = B.CreateICmpULT(ConstantInt::get(i32, 0), nRt);
+      if (g0)
+        go = B.CreateAnd(go, g0);
+      B.CreateCondBr(go, Hd, Xb);
+    } else {
+      B.CreateBr(Hd);
+    }
     ctx.unc().closeScope(rSeedScope);
     ctx.unc().leaveScope(rSeedScope, seedHead);
     rreg->startSeg(Hd);
@@ -2824,8 +2826,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // (value, its phi in H, how the latch value is read)
     struct Carry {
       PHINode *phi;
+      Value *init;   // the entry value (its value at X on the zero-trip guard's edge)
       std::function<Value *()> now;
-      std::function<void(Value *)> put;   // binds the value after the loop (top test: its value at X)
+      std::function<void(Value *)> put;   // binds the value after the loop (with the zero-trip guard: its value at X)
       bool handle;
     };
     std::vector<Carry> carry;
@@ -2859,7 +2862,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         p = phiFor(o.v, o.handle);
       }
       set(h, Operand{p, o.handle});
-      carry.push_back({p, [&, h, hd = o.handle]() -> Value * {
+      carry.push_back({p, o.v, [&, h, hd = o.handle]() -> Value * {
                          Operand n = ctx.operand(h);
                          if (n.handle != hd)
                            internalError("loops-cutoff: a carried value changes between rail and classical in the rolled trip", h);
@@ -2877,37 +2880,30 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     for (PHINode *h : hphis) {
       if (auto it = exitRail.find(h); it != exitRail.end()) {
-        PHINode *p = phiFor(it->second.v, true);
+        Value *in = it->second.v;
+        PHINode *p = phiFor(in, true);
         it->second = Operand{p, true};
-        carry.push_back({p, [&, h]() -> Value * { return exitRail.find(h)->second.v; },
+        carry.push_back({p, in, [&, h]() -> Value * { return exitRail.find(h)->second.v; },
                          [&, h](Value *v) { exitRail.find(h)->second = Operand{v, true}; }, true});
       }
       if (auto it = qind.find(h); it != qind.end()) {
         QInduction &qi = it->second;
-        PHINode *p = phiFor(qi.off, false);
+        Value *in = qi.off;
+        PHINode *p = phiFor(in, false);
         qi.off = p;
-        carry.push_back({p, [&, h]() -> Value * { return qind.find(h)->second.off; },
+        carry.push_back({p, in, [&, h]() -> Value * { return qind.find(h)->second.off; },
                          [&, h](Value *v) { qind.find(h)->second.off = v; }, false});
         if (qi.exitRail) {
-          PHINode *x = phiFor(qi.exitRail->v, true);
+          Value *in = qi.exitRail->v;
+          PHINode *x = phiFor(in, true);
           qi.exitRail = Operand{x, true};
-          carry.push_back({x, [&, h]() -> Value * { return qind.find(h)->second.exitRail->v; },
+          carry.push_back({x, in, [&, h]() -> Value * { return qind.find(h)->second.exitRail->v; },
                            [&, h](Value *v) { qind.find(h)->second.exitRail = Operand{v, true}; }, true});
         }
       }
     }
     Value *qc = qp;
     auto all = [](const BasicBlock *) { return true; };
-    BasicBlock *Xb = nullptr;
-    if (topTest) {
-      Xb = BasicBlock::Create(Cx, "", &ctx.out());
-      Value *go = B.CreateICmpULT(j, nRt);
-      if (g0)
-        go = B.CreateAnd(go, g0);
-      BasicBlock *Bd = BasicBlock::Create(Cx, "", &ctx.out());
-      B.CreateCondBr(go, Bd, Xb);
-      rreg->branchSeg(Bd);
-    }
     rTrip = rreg.get();
     // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
     // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
@@ -2947,10 +2943,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     rTrip = nullptr;
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
-    if (topTest)
-      B.CreateBr(Hd);
-    else
-      B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
+    B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
     rreg->endSeg();
     rX = Xb;
     j->addIncoming(j1, Lt);
@@ -2961,35 +2954,42 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       k.phi->addIncoming(latchNow.back(), Lt);
     }
     B.SetInsertPoint(Xb);
-    if (topTest) {
-      // X is entered from H (the counter test, or t0) with the header phis as the state, and from Skip (a classical exit
-      // conjunct) with the state the trip advanced to: phis of X over both, the exit index naming the edge (Region's
-      // exitIndex). The chain's end is the predicate phi, or the |0> seed where the conjunct ended the chain.
-      if (!skipB) {
-        for (Carry &k : carry)
-          k.put(k.phi);
-        qn = qp;
-      } else {
-        PHINode *ix = B.CreatePHI(i32, 2);
-        ix->addIncoming(ConstantInt::get(i32, 0), Hd);
-        ix->addIncoming(ConstantInt::get(i32, 1), skipB);
-        rreg->addExitEdge(ix, Hd);
-        rreg->addExitEdge(ix, skipB);
-        for (size_t i = 0; i < carry.size(); ++i) {
-          Carry &k = carry[i];
-          PHINode *x = B.CreatePHI(k.phi->getType(), 2);
-          x->addIncoming(k.phi, Hd);
-          x->addIncoming(latchNow[i], skipB);
-          if (k.handle)
-            ctx.unc().recordMerge(x);
-          k.put(x);
-        }
-        PHINode *qx = B.CreatePHI(handleTy(Cx), 2);
-        qx->addIncoming(qp, Hd);
-        qx->addIncoming(qSkip, skipB);
-        ctx.unc().recordMerge(qx);
-        qn = qx;
+    if (zeroGuard) {
+      // X is entered from E (the zero-trip guard) with the entry values as the state, from the latch with the last trip's,
+      // and from Skip (a classical exit conjunct) with the state that trip advanced to: phis of X over the edges, the exit
+      // index naming the edge (Region's exitIndex; the guard's edge reverses nothing but the entry's seeds). The chain's
+      // end is q0 on the guard's edge, a_K on the latch's, the |0> seed where the conjunct ended the chain.
+      std::vector<std::pair<BasicBlock *, unsigned>> edges{{E, 0}, {Lt, 1}};
+      if (skipB)
+        edges.push_back({skipB, 2});
+      PHINode *ix = B.CreatePHI(i32, edges.size());
+      for (auto &[b, k] : edges) {
+        ix->addIncoming(ConstantInt::get(i32, k), b);
+        rreg->addExitEdge(ix, b);
       }
+      for (size_t i = 0; i < carry.size(); ++i) {
+        Carry &k = carry[i];
+        if (latchNow[i] == k.init) {
+          // no trip changes it (a register rotated in place, rule 10): its entry rail on every edge
+          k.put(k.init);
+          continue;
+        }
+        PHINode *x = B.CreatePHI(k.phi->getType(), edges.size());
+        x->addIncoming(k.init, E);
+        x->addIncoming(latchNow[i], Lt);
+        if (skipB)
+          x->addIncoming(latchNow[i], skipB);
+        if (k.handle)
+          ctx.unc().recordMerge(x);
+        k.put(x);
+      }
+      PHINode *qx = B.CreatePHI(handleTy(Cx), edges.size());
+      qx->addIncoming(q0, E);
+      qx->addIncoming(qn, Lt);
+      if (skipB)
+        qx->addIncoming(qSkip, skipB);
+      ctx.unc().recordMerge(qx);
+      qn = qx;
     } else if (skipB) {
       // The carried state is the same SSA value on both edges (it advanced before the test's branch); the chain's end is
       // a_K on the latch edge and the |0> seed where the conjunct ended the chain.
@@ -3033,7 +3033,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     return qn;
   };
 
-  // The rolled driver (CQ_K_ROLLED) takes the trip-0 test's conjunct into its top test (rolledBody).
+  // The rolled driver (CQ_K_ROLLED) takes the trip-0 test's conjunct into its zero-trip guard (rolledBody).
   bool rolled = !regionForm && rolledHere();
   if (t0 && !rolled) {
     // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
@@ -3190,9 +3190,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     std::vector<std::pair<const Value *, Operand>> out;
     std::vector<RailType> outW;
     DenseMap<const Value *, Operand *> slot;
+    // cq-9kcq S6c: a rail read after the loop under several names (an exit rebind and an exit phi of one carried value) is
+    // wired once: with the zero-trip guard it is X's merge, which is copied out, and a second copy would be left live.
+    DenseMap<const Value *, const Value *> firstOf;
+    std::vector<std::pair<Operand *, const Value *>> dups;
     auto add = [&](const Value *v, Operand &o) {
       if (!o.handle)
         return;
+      if (auto it = firstOf.find(o.v); it != firstOf.end()) {
+        dups.push_back({&o, it->second});
+        return;
+      }
       // A carried value no trip changes (a register rotated in place, rule 10: its header phi names its entry rail on every
       // edge) is that rail after the loop, read in place: the reverse never touches a rail from before the loop. One the
       // seed scope minted is the region's (wireExits keeps it as the register).
@@ -3207,6 +3215,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           return;
         }
       }
+      firstOf[o.v] = v;
       out.push_back({v, o});
       outW.push_back(railOf(v->getType()));
       slot[v] = &o;
@@ -3216,8 +3225,28 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (size_t k = 0; k < exitPhis.size(); ++k)
       add(exitPhis[k].first, exitPhiVals[k]);
     rolled::Region::ExitWiring wiring = rreg->wireExits(
-        rSeedScope, out, outW, nullptr, rKeptFinal, [&](const Value *v) { return !rolled::readersKeep(ctx, L, v); },
+        rSeedScope, out, outW, nullptr, rKeptFinal,
+        [&](const Value *v) {
+          // cq-9kcq S6c (as loops-classical's `undone`, rule 5, rule 18): a clone's result is copied out once more at the
+          // return, and its twin needs that copy: the loop's copy is no output, undone by the reverse after its readers.
+          if (!ctx.S.isEntry()) {
+            SmallVector<const Value *, 4> work{v};
+            SmallPtrSet<const Value *, 8> seen{v};
+            while (!work.empty()) {
+              const Value *x = work.pop_back_val();
+              for (const User *u : x->users()) {
+                if (isa<ReturnInst>(u))
+                  return true;
+                if (isa<PHINode>(u) && !L.contains(cast<Instruction>(u)) && seen.insert(u).second)
+                  work.push_back(u);
+              }
+            }
+          }
+          return !rolled::readersKeep(ctx, L, v);
+        },
         [&](const Value *v, Operand op) { *slot.lookup(v) = op; });
+    for (auto &[o, first] : dups)
+      *o = *slot.lookup(first);
     bool keptInPlace = rreg->hasCopyScope() && any_of(out, [&](const std::pair<const Value *, Operand> &o) {
       return o.second.handle && !rKeptFinal.count(o.second.v) && wiring.ownedH.count(o.second.v) &&
              rolled::readersKeep(ctx, L, o.first);
