@@ -3726,6 +3726,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (Value *h : self->externalInits)
           if (RailId x = self->U.idOf(h); !ownedH.count(h) && !is_contained(reads, x))
             reads.push_back(x);
+        // cq-9kcq S11f: a sub-unit of a rolled K-trip reversed in that K-loop's reverse (Region::addExtraRead).
+        for (RailId x : self->extraReadsOf())
+          if (!is_contained(reads, x))
+            reads.push_back(x);
         self->U.recordDeferred(scs, exits,
                                [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, !self->U.mirroring()); },
                                reads, self->hostScopes);

@@ -186,6 +186,9 @@ public:
   // cq-9kcq S11: while rolledBody lowers a trip, the output header of the innermost rolled loop (a trip-local classically
   // bounded loop of the trip is a sub-unit of rolledTrip reset there); nullptr outside a rolled trip.
   BasicBlock *tripHead = nullptr;
+  // cq-9kcq S11f: the classically bounded loops of a rolled K-trip whose quantum values outlive the trip (not tripLocalSub):
+  // sub-units of the region whose reverse runs in the region's reverse (Region::addSub inReverse).
+  DenseSet<const Loop *> reverseSubs;
 
 private:
   LoweringContext &ctx;
@@ -1289,8 +1292,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       BasicBlock *cont = B.GetInsertBlock();
       BasicBlock *nx = BasicBlock::Create(ctx.M.getContext(), "", &Of);
       B.CreateBr(nx);
-      rolledTrip->addSub(sub, entry, cont, made);
+      const bool inReverse = reverseSubs.count(&S) != 0;
+      rolledTrip->addSub(sub, entry, cont, made, inReverse);
       rolledTrip->startSeg(nx);
+      if (inReverse) {
+        // cq-9kcq S11f: S's values outlive the trip (a carried value, a value read after the K-loop): its reverse runs in the
+        // K-loop's reverse, in the mirror of the segment nx starts, after the records of the trip that read its exit rails.
+        // A |0> seed of nx's scope that S's deferred reverse reads anchors it there (Region::addExtraRead).
+        CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
+                                   {ConstantInt::getFalse(ctx.M.getContext())});
+        sub->addExtraRead(ctx.unc().recordSeed(z));
+      }
       return st;
     };
     if (gc) {
@@ -2838,10 +2850,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a K-loop nested in a K-loop that keeps its static copies";
     else if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
       why = "an aggregate value of the loop read after it";
-    else if (any_of(innerLoops, [&](Loop *S) { return classify(*S, ctx.T, ctx.S) != Case::QuantumExit && !tripLocalSub(*S); }))
-      // S10 rolls the nested K-loops and the K-loops of the exit arm; S11 a trip-local classically bounded loop of a trip
-      // (a sub-unit of the region, its reverse in the trip). One whose values outlive the trip, or of the exit arm, is not.
-      why = "a classically bounded sub-loop in the trip or its exit arm whose values outlive the trip";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
     else if (any_of(hphis, [&](PHINode *h) {
@@ -2876,6 +2884,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                   H->getTerminator());
       return false;
     }
+    // S10 rolls the nested K-loops and the K-loops of the exit arm; S11 a trip-local classically bounded loop of a trip (a
+    // sub-unit of the region, its reverse in the trip); S11f one whose values outlive the trip, or of the exit arm (a
+    // sub-unit whose reverse runs in the region's reverse).
+    for (Loop *S : innerLoops)
+      if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit && !tripLocalSub(*S))
+        reverseSubs.insert(S);
     return true;
   };
   // cq-9kcq S3b (step 6): the trip is the one segment of a rolled::Region (its records are the segment's Uncompute scope; the
