@@ -897,7 +897,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     SmallVector<Operand, 2> accs;
   };
   std::vector<CPhi> cphis;
-  bool cphiEarlier = false;   // cq-9kcq S8: some phi of C was bound by an earlier unit (rolledHere)
   // A value of the unit read after it other than by a phi of C: its exit value, a rail that takes this
   // trip's value where the trip leaves the loop (acc' = select(q_j & X_j, v_j, acc), X_j the trip's
   // exit edges). SSA dominance makes v defined on every path to the reader, so where the reader runs
@@ -943,7 +942,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Pred cH = pH.classicalFactor(ctx.T, ctx.S);
       std::vector<std::pair<Pred, Operand>> outside;
       bool earlier = ctx.bound(&P);
-      cphiEarlier |= earlier;
       // A loop of an earlier unit's tail runs under the assumption of its header's paths, and an incoming that skips the loop
       // (stpcpy: a pre-header guard where the first word already holds the zero) lies outside it. That edge is read under the
       // assumption's classical part only: the classical facts of the tail's paths, not the quantum branches into the header.
@@ -2823,10 +2821,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a K-loop in a classically bounded loop's trip (S11)";
     else if (!top && !rolledTrip)
       why = "a K-loop nested in a K-loop that keeps its static copies";
-    else if (cphiEarlier)
-      // join_units (cq-9kcq S8): the walker's join of the earlier unit's arms reads them at the rolled header, a join whose
-      // entry path never ran their blocks (pred's JoinRepair, Flags.cpp joinAbove)
-      why = "a continuation phi an earlier loop unit bound (two units into one join)";
     else if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
       why = "an aggregate value of the loop read after it";
     else if (any_of(innerLoops, [&](Loop *S) { return classify(*S, ctx.T, ctx.S) != Case::QuantumExit && !tripLocalSub(*S); }))
@@ -3358,6 +3352,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
   // The rolled driver (CQ_K_ROLLED) takes the trip-0 test's conjunct into its zero-trip guard (rolledBody).
   bool rolled = rolledHere();
+  // cq-9kcq S11c (CR rules 9, 14; join_units, musl wcsrtombs): a unit lowered before this one left this unit's incomings of a
+  // continuation phi to the walker's join (addJoinArm: "lowered after the loop"). The incomings from this unit's own blocks
+  // other than its tail are this unit's binding (the cphis accumulator selects each trip's value in where the trip leaves on
+  // that edge). Rolled, that value is a rail of the trip, read at the join where it does not reach (and its edge predicate
+  // reads the trip's atoms): those arms are this unit's and dropped. The tail's arms stay the walker's (its outside paths).
+  if (rolled && multi)
+    for (CPhi &cp : cphis) {
+      PHINode &P = *cp.P;
+      std::vector<std::pair<Pred, const Value *>> ja = ctx.takeJoinArms(&P);
+      for (auto &[e, v] : ja) {
+        bool mine = false;
+        for (unsigned i = 0; i < P.getNumIncomingValues() && !mine; ++i) {
+          BasicBlock *u = P.getIncomingBlock(i);
+          mine = P.getIncomingValue(i) == v && U.contains(L, u) && !is_contained(U.tail, u) &&
+                 (e & !ctx.preds().edge(u, U.cont)).isBottom();
+        }
+        if (!mine)
+          ctx.addJoinArm(&P, e, v);
+      }
+    }
   if (t0 && !rolled) {
     // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
     // seed through closeTests' phi, the state its initial value) and no trip is emitted.
