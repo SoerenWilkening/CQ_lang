@@ -196,10 +196,15 @@ void Region::flushTrips() {
   auto finishSubs = [&](unsigned upTo) {
     for (Sub &sb : subs)
       if (sb.entrySeg < upTo && sb.unit->finish) {
-        sb.unit->hostScopes = hostScopes;
-        sb.unit->hostScopes.push_back(ownSeedScope);
-        for (const Seg &sg : segs)
-          sb.unit->hostScopes.push_back(sg.scope);
+        // cq-9kcq S11f: an inReverse sub-unit's item is never placed in the trip (this region's pending records hold it
+        // back): this region's reverse resolves it (addExtraRead).
+        sb.unit->hostScopes.clear();
+        if (!sb.inReverse) {
+          sb.unit->hostScopes = hostScopes;
+          sb.unit->hostScopes.push_back(ownSeedScope);
+          for (const Seg &sg : segs)
+            sb.unit->hostScopes.push_back(sg.scope);
+        }
         auto f = std::move(sb.unit->finish);
         sb.unit->finish = nullptr;
         f();
@@ -241,7 +246,7 @@ void Region::flushTrips() {
   // Every trip-local sub-loop's reverse must have been placed in this region's trip (its exit values'
   // readers are the trip's): otherwise it would run once, after the loop, for the last trip only.
   for (Sub &sb : subs)
-    if (!sb.unit->reversed)
+    if (!sb.inReverse && !sb.unit->reversed)
       unimplemented("loops-classical: a trip-local sub-loop's reverse could not be placed inside its parent's "
                     "trip (rule 14 in a rule-14 trip)",
                     sb.unit->diagAt);
@@ -296,7 +301,7 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
   for (const Sub &sb : subs) {
     BasicBlock *at = sb.unit->revAt;
     if (!at)
-      continue;
+      continue;   // cq-9kcq S11f: an inReverse sub-unit's reverse is still to come (below)
     auto it = segOf.find(at);
     unsigned i = it == segOf.end() ? n : it->second;
     if (i == n || at == segs[i].bb || !is_contained(predecessors(headOf[i]), sb.cont))
@@ -583,8 +588,24 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     }
   };
 
+  // cq-9kcq S11f: the forward blocks of each inReverse sub-unit (from the segment entering it to the segment its continuation
+  // enters) -> the entering segment.
+  DenseMap<const BasicBlock *, unsigned> inRevSub;
+  for (const Sub &sb : subs) {
+    if (!sb.inReverse || sb.entrySeg >= n)
+      continue;
+    SmallVector<BasicBlock *, 8> work(successors(segs[sb.entrySeg].bb));
+    while (!work.empty()) {
+      BasicBlock *b = work.pop_back_val();
+      if (segOf.count(b) || !inRevSub.insert({b, sb.entrySeg}).second)
+        continue;
+      for (BasicBlock *x : successors(b))
+        work.push_back(x);
+    }
+  }
   BasicBlock *Z = newBlock();
   std::vector<BasicBlock *> R(n);
+  DenseMap<const BasicBlock *, unsigned> mirrorOf;   // a block of R[i]'s mirror -> i (cq-9kcq S11f)
   for (unsigned i = 0; i < n; ++i)
     R[i] = newBlock();
   // After a segment's mirror: each guarded item of the segment, `<template>_unc(f, …)` through `cqrt_free(f)`, moves
@@ -692,6 +713,7 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
       SmallPtrSet<BasicBlock *, 8> seen{R[i]};
       while (!work.empty()) {
         BasicBlock *mb = work.pop_back_val();
+        mirrorOf[mb] = i;
         for (Instruction &I : *mb)
           mirror.push_back(&I);
         if (mb->getTerminator())
@@ -704,9 +726,13 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     std::vector<Value *> needs;
     for (Instruction *I : mirror)
       for (Use &u : I->operands())
-        if (auto *d = dyn_cast<Instruction>(u.get()); d && region.count(d->getParent()) && segOf.count(d->getParent()) &&
-                                                      !is_contained(needs, d)) {
-          if (!dom[i].test(segOf.lookup(d->getParent())))
+        if (auto *d = dyn_cast<Instruction>(u.get());
+            d && ((region.count(d->getParent()) && segOf.count(d->getParent())) || inRevSub.count(d->getParent())) &&
+            !is_contained(needs, d)) {
+          // cq-9kcq S11f: a value of an inReverse sub-unit's trips (its exit value, read by a record of this trip) stands
+          // for the segment entering the sub-unit.
+          unsigned ds = segOf.count(d->getParent()) ? segOf.lookup(d->getParent()) : inRevSub.lookup(d->getParent());
+          if (!dom[i].test(ds))
             internalError("loops-classical: a mirror item reads a value defined in a segment that does not dominate "
                           "its own",
                           d);
@@ -755,6 +781,25 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     SwitchInst *sw = B.CreateSwitch(k, back(uniq[0]), uniq.size() - 1);
     for (unsigned j = 1; j < uniq.size(); ++j)
       sw->addCase(ConstantInt::get(i32, j), back(uniq[j]));
+  }
+
+  // cq-9kcq S11f: each inReverse sub-unit's reverse lies in the mirror of the segment its continuation enters (the frames of
+  // its trips are on top of the stack there, below that segment's own).
+  for (const Sub &sb : subs) {
+    if (!sb.inReverse)
+      continue;
+    unsigned want = n;
+    for (unsigned i = 0; i < n && want == n; ++i)
+      if (is_contained(predecessors(headOf[i]), sb.cont))
+        want = i;
+    if (sb.unit->reversed && sb.unit->revAt && !mirrorOf.count(sb.unit->revAt) && segOf.count(sb.unit->revAt))
+      continue;   // reversed in its trip after all (no exit rail read later: checked above as a trip-local one)
+    auto it = sb.unit->revAt ? mirrorOf.find(sb.unit->revAt) : mirrorOf.end();
+    if (!sb.unit->reversed || want == n || it == mirrorOf.end() || it->second != want)
+      unimplemented("loops-cutoff: the reverse of a classically bounded loop of a rolled K-trip whose values outlive the "
+                    "trip is not placed in the reverse of the segment its exit enters (CR rule 14: its trips' frames are "
+                    "popped there)",
+                    sb.unit->diagAt);
   }
 
   // The reverse starts at the reverse of the segment that exits; guarded (cq-fx3s), only where the

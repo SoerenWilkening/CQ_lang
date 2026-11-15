@@ -152,8 +152,11 @@ public:
   // K-loop's region, as loops-classical's trip-local sub-loops are (176): `entry` is the block of the open segment the
   // sub-unit is entered from (it ends that segment), `cont` the sub-unit's forward exit into this region, `blocks` the
   // output blocks the sub-unit made. The parent's flushTrips places its reverse in the trip (Sub::unit->finish).
+  // cq-9kcq S11f: inReverse, a sub-unit whose values outlive the trip (carried into a later trip, read after the K-loop, or
+  // by a record of the trip the reverse undoes): its reverse runs inside this region's reverse, in the reverse of the
+  // segment that its continuation enters (addSubAnchor), once per trip that ran it, in reverse trip order.
   void addSub(std::shared_ptr<Region> sub, llvm::BasicBlock *entry, llvm::BasicBlock *cont,
-              llvm::ArrayRef<llvm::BasicBlock *> blocks) {
+              llvm::ArrayRef<llvm::BasicBlock *> blocks, bool inReverse = false) {
     if (cur && entry != cur) {
       segIdx[entry] = segs.size() - 1;
       segs.back().bb = entry;
@@ -164,8 +167,15 @@ public:
       subBlocks.insert(b);
     subBlocks.insert(sub->subBlocks.begin(), sub->subBlocks.end());
     throughSub[cont] = entry;
-    subs.push_back({std::move(sub), unsigned(segs.size() - 1), cont});
+    subs.push_back({std::move(sub), unsigned(segs.size() - 1), cont, inReverse});
   }
+  // cq-9kcq S11f: the rail an inReverse sub-unit's deferred reverse reads besides its own (a |0> seed minted at the start of
+  // the segment its continuation enters, a record of that segment's scope): the segment's mirror in this region's reverse
+  // resolves the sub-unit's item before that seed's release, after the segment's records that read its exit rails. The
+  // sub-unit's frames lie on the push stack between the entering segment's and this segment's: there, and only there, the
+  // reverse finds them on top.
+  void addExtraRead(RailId r) { extraReads.push_back(r); }
+  const std::vector<RailId> &extraReadsOf() const { return extraReads; }
 
   // The exit of the outermost loop at its exit block T (the builder there), after the trips (cq-fx3s, cq-h5uj; moved from
   // loops-classical's Unit::lowerLoop). wireExits: every quantum value read after the loop (out, with its rail type
@@ -226,7 +236,9 @@ protected:
     std::shared_ptr<Region> unit;
     unsigned entrySeg;
     llvm::BasicBlock *cont;   // the sub-unit's continuation (its forward exit into the parent)
+    bool inReverse = false;   // cq-9kcq S11f: its reverse runs in the parent's reverse (addSub)
   };
+  std::vector<RailId> extraReads;   // cq-9kcq S11f (addExtraRead)
   std::vector<Sub> subs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> throughSub;   // a sub-unit's continuation -> the parent segment entering it
   llvm::DenseSet<const llvm::BasicBlock *> subBlocks;                  // the blocks of the sub-units' regions
