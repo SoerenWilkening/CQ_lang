@@ -2,6 +2,7 @@
 // (Classical.cpp) without change.
 #include "Rolled.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -765,6 +766,10 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
                           : static_cast<Value *>(exitIndex);
       // Each exit edge's copies are undone first (they read the rails of the segment the edge leaves).
       auto startOf = [&](unsigned k) -> BasicBlock * {
+        // cq-9kcq S6c: an exit edge from outside the region (the zero-trip guard of loops-cutoff's rolled K-loop: no trip
+        // ran) starts the reverse at Z, the release of the entry's seeds.
+        if (!region.count(exitSegs[k]))
+          return Z;
         BasicBlock *r = R[segOf.lookup(exitSegs[k])];
         BasicBlock *cb = k < edgeCopyOf.size() ? edgeCopyOf[k] : nullptr;
         if (!cb)
@@ -967,6 +972,10 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
   for (RailId x : exitEdgeRails)
     if (!is_contained(exits, x))
       exits.push_back(x);
+  // cq-9kcq S6c: the copies the loop keeps as its output (not scopedOf) are made before the copy scope opens: one made in
+  // the open scope would be a record of the deferred item, owned and un-copied by it, while its rail is kept (an exit
+  // value read in place by a measurement next to one merely computed from: exit_conjunct's ec_while_t).
+  std::stable_partition(copied.begin(), copied.end(), [&](unsigned oi) { return !scopedOf(out[oi].first); });
   for (unsigned oi : copied) {
     const Value *v = out[oi].first;
     Operand op = out[oi].second;

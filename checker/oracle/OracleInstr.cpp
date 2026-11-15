@@ -264,15 +264,15 @@ public:
   }
 
   // CR §0, owner ruling 2026-11-15 (cq-z9vt), as the pass's loops::resolveK reads it: cqcc binds a line per unit onto
-  // the function it names as "cq-k"="k" ("0": none); a line naming a function no unit defines stays the constant
+  // the function it names as "cq-k"="k" ("none": no line); a line naming a function no unit defines stays the constant
   // __cq_k_<f>, read with llvm-link's copies __cq_k_<f>.N, the largest k. nullopt: no line. A constant 0 is a line
   // (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal).
   static std::optional<unsigned> lineK(const Function &F) {
     if (F.hasFnAttribute("cq-k")) {
       unsigned v = 0;
-      if (F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v) || v == 0)
-        return std::nullopt;
-      return v;
+      if (F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v))
+        return std::nullopt;   // "none"
+      return v;   // K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0)
     }
     std::string name = ("__cq_k_" + F.getName()).str();
     std::optional<uint64_t> best;

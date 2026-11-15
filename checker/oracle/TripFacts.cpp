@@ -147,12 +147,12 @@ Region headerRegion(Loop *L) {
 }
 
 // CR §0 K for the loops of F as the oracle resolves it without flags: CQ_K(f, k), else 4. The line as cqcc bound it per
-// unit (owner ruling 2026-11-15, cq-z9vt): the attribute "cq-k" ("0": none), else the constant __cq_k_<f> with
-// llvm-link's copies __cq_k_<f>.N, the largest k. A constant 0 is a line (owner ruling Q2 of 2026-11-15, CR §0).
+// unit (owner ruling 2026-11-15, cq-z9vt): the attribute "cq-k" ("none": no line), else the constant __cq_k_<f> with
+// llvm-link's copies __cq_k_<f>.N, the largest k. A 0 is a line (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal).
 unsigned kOf(const Function &F) {
   if (F.hasFnAttribute("cq-k")) {
     unsigned v = 0;
-    if (!F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v) && v > 0)
+    if (!F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v))
       return v;
     return 4;
   }

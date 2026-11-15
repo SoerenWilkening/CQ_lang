@@ -280,11 +280,11 @@ def libm_decls(linked: Path, bundle, work: Path) -> dict:
 # external f the line of the unit defining it wins; where that unit has none, the largest k among the other units'
 # lines. llvm-link renames the internal constants (and the statics) independently, so the binding is made per unit,
 # before the link: every line bound to a definition becomes the string attribute "cq-k"="k" ("cq-k2") on that
-# definition, which the pass's resolveK reads before any constant, and the constant is dropped. "0" marks a definition
-# that no line names while some line of its name stays a constant, so resolveK does not read a constant meant for
-# another function. A line naming a function no unit defines (a library function, rule 27) stays a constant;
-# resolveK reads it with its llvm-link copies __cq_k_<f>.N, the largest k. Only a link of several units is touched:
-# a single unit goes to the pass as clang wrote it.
+# definition, which the pass's resolveK reads before any constant, and the constant is dropped. "none" marks a
+# definition that no line names while some line of its name stays a constant, so resolveK does not read a constant meant
+# for another function (K = 0 is a K, owner ruling Q2 of 2026-11-15: the marker is no number). A line naming a function
+# no unit defines (a library function, rule 27) stays a constant; resolveK reads it with its llvm-link copies
+# __cq_k_<f>.N, the largest k. Only a link of several units is touched: a single unit goes to the pass as clang wrote it.
 K_KINDS = (("__cq_k_", "cq-k", "i32", "CQ_K"), ("__cq_k2_", "cq-k2", "i64", "CQ_K2"))
 _DEF_RE = re.compile(r'^define\s+([^@\n]*)@(?:"([^"]+)"|([-\w$.]+))\(', re.M)
 
@@ -316,7 +316,7 @@ def _drop_global(text: str, name: str) -> str:
                   used, text, flags=re.M)
 
 
-def _add_fn_attr(text: str, fn: str, attr: str, value: int) -> str:
+def _add_fn_attr(text: str, fn: str, attr: str, value) -> str:
     """`define ... @fn(...) [local_]unnamed_addr` followed by `"attr"="value"` among its function attributes."""
     for m in _DEF_RE.finditer(text):
         if (m.group(2) or m.group(3)) != fn:
@@ -372,7 +372,7 @@ def bind_k_per_unit(units, work: Path, names=None):
                         if v is not None:
                             new[u] = _add_fn_attr(new[u], f, attr, v)
                         elif kept_const:
-                            new[u] = _add_fn_attr(new[u], f, attr, 0)
+                            new[u] = _add_fn_attr(new[u], f, attr, "none")
                     elif k is not None:
                         new[u] = _add_fn_attr(new[u], f, attr, k)
                 if f in lines[u] and (f in defs[u] or ext_def):

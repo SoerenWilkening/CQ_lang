@@ -12,12 +12,14 @@ Fails on any of:
               nothing of the bundle (identity) is relinked
   identity    a TU with no taint is not byte-identical to opt with no passes on the module cqcc gave the
               pass, or (one TU) to opt -S of clang -O1 -S -emit-llvm -include CQ.h output
-  K           -cq-k / -cq-k-default do not reach the pass (its own usage errors must come back), or a
+  K           -cq-k / -cq-k-default do not reach the pass, or K = 0 (owner ruling Q2 of 2026-11-15, CR §0) is
+              rejected or its K-loop runs a trip, or a
               CQ_K line's constant is missing from the pass input or output (same TU), or, in a program of several
               TUs, a line is not bound by C scope before the link (CR §0, cq-z9vt): another TU's line does not reach
               the function it names; the defining TU's line does not win, or without one the largest other line;
-              two statics of one name do not keep their own K, or -cq-k=f=k misses a renamed one; differing lines
-              give no warning; the lowering depends on the link order
+              two statics of one name do not keep their own K, or -cq-k=f=k misses a renamed one; a CQ_K(f, 0)
+              line is lost (the defining unit's 0, a static's own 0); differing lines give no warning; the lowering
+              depends on the link order
   cq-check    --cq-check does not run `python3 -m cqcheck user` on the linked and lowered modules with
               the entry and sample count, or cqcc's status differs from cqcheck user's own
   link        -c does not give an object, or an executable built with a --backend object prints a
@@ -58,8 +60,24 @@ def run(cmd, **kw):
     return subprocess.run([str(c) for c in cmd], capture_output=True, **kw)
 
 
-def cqcc(*args, cwd=None):
-    return run([sys.executable, CQCC, *args], cwd=cwd, text=True, env=ENV)
+def cqcc(*args, cwd=None, env=None):
+    return run([sys.executable, CQCC, *args], cwd=cwd, text=True, env=dict(ENV, **(env or {})))
+
+
+# K = 0 lowers in the rolled K-loop form only, behind the switch CQ_K_ROLLED until cq-9kcq S14 makes it the default
+# (owner 2026-11-15); the K = 0 checks set it.
+ROLLED = {"CQ_K_ROLLED": "1"}
+sys.path.insert(0, str(ROOT / "tests" / "loops-cutoff"))
+import ktrips  # noqa: E402
+
+
+def k_trips(text, fn):
+    """The trip counts of fn's rolled K-loops with no received K (ktrips.counter_loops: N, at least 1 unless the
+    counter is also tested before trip 0), or None where one is unknown."""
+    loops = ktrips.counter_loops(ktrips.body(text, fn))
+    if any(N is None for _, _, _, _, N, _, _ in loops):
+        return None
+    return [N if top else max(N, 1) for _, _, _, _, N, top, _ in loops]
 
 
 def strip_ids(text):
@@ -219,16 +237,28 @@ def test_k(tmp):
         fail("K flags on the opt line", r.stderr)
     else:
         ok("K flags on the opt line")
-    # the pass parses them: its own usage errors come back, on a tainted and on an untainted module
+    # the pass parses them: its own usage error comes back on a malformed one, on a tainted and on an untainted module
     for src in ("kfun.c", "classical.c"):
-        for flag, msg in (("-cq-k=add_q=0", "cq: -cq-k: expected <fn>=<k> with k >= 1, got 'add_q=0'"),
-                          ("-cq-k-default=0", "cq: -cq-k-default: expected k >= 1")):
-            out = tmp / f"bad.{src}.{flag[1:5]}.ll"
-            r = cqcc("-S", SRC / src, flag, "-o", out)
-            if r.returncode == 0 or msg not in r.stderr or out.exists():
-                fail(f"K {flag} reaches the pass ({src})", r.stderr)
-            else:
-                ok(f"K {flag} reaches the pass ({src}): its usage error, nothing emitted")
+        flag, msg = "-cq-k=add_q=x", "cq: -cq-k: expected <fn>=<k> with k >= 0, got 'add_q=x'"
+        out = tmp / f"bad.{src}.ll"
+        r = cqcc("-S", SRC / src, flag, "-o", out)
+        if r.returncode == 0 or msg not in r.stderr or out.exists():
+            fail(f"K {flag} reaches the pass ({src})", r.stderr)
+        else:
+            ok(f"K {flag} reaches the pass ({src}): its usage error, nothing emitted")
+    # K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0): accepted on a tainted and an untainted module, and the
+    # K-loop of f runs no trip (at K 3 it runs 3)
+    for src, flag, want in (("kunit_def_noline.c", "-cq-k=f=0", [0]), ("kunit_def_noline.c", "-cq-k-default=0", [0]),
+                            ("kunit_def_noline.c", "-cq-k=f=3", [3]), ("classical.c", "-cq-k-default=0", None)):
+        out = tmp / f"k0.{Path(src).stem}.{flag[1:].replace('=', '_')}.ll"
+        r = cqcc("-S", SRC / src, flag, "-o", out, env=ROLLED)
+        tag = f"K {flag} ({src})"
+        if r.returncode or not out.exists():
+            fail(tag, r.stderr)
+        elif want is not None and k_trips(out.read_text(), "f") != want:
+            fail(tag, f"f's K-loop runs {k_trips(out.read_text(), 'f')} trips, want {want}")
+        else:
+            ok(f"{tag}: accepted" + (f", f's K-loop runs {want[0]} trips" if want else ""))
     # CQ_K lines: the used constant reaches the pass input and survives in the output
     for name, srcs, k in (("same TU", ["kfun.c"], ("add_q", 9)),):
         d = tmp / f"kline.{k[0]}"
@@ -267,9 +297,9 @@ def fn_body(text, name):
 def test_k_units(tmp):
     """CR §0 (owner ruling 2026-11-15, cq-z9vt): CQ_K binds per unit by C scope, before the link. Each function's
     lowered body is compared with the one-unit lowering at the K the ruling gives it, in both link orders."""
-    def low(name, *args):
+    def low(name, *args, env=None):
         out = tmp / f"ku.{name}.ll"
-        r = cqcc("-S", *args, "-o", out)
+        r = cqcc("-S", *args, "-o", out, env=env)
         if r.returncode:
             fail(f"CQ_K units {name}", r.stderr)
             return None, r.stderr
@@ -337,8 +367,41 @@ def test_k_units(tmp):
         else:
             ok(f"{tag}: K2 100 and 200")
 
+    # CQ_K(f, 0) (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is a K): the defining unit's 0 wins over another unit's 3,
+    # and a static's own 0 is its K next to a static of the same name at 3; each lowered as the one-unit lowering at its
+    # K, the K-loop at 0 running no trip, in both link orders (under CQ_K_ROLLED, which K = 0 needs until S14)
+    r0 = {"f0": fn_body(low("ref.f0", SRC / "kunit_def_noline.c", "-cq-k=f=0", env=ROLLED)[0] or "", "f"),
+          "h0": fn_body(low("ref.h0", SRC / "kunit_st0.c", "-cq-k=helper=0", env=ROLLED)[0] or "", "__cq_q_helper_1"),
+          "h3": fn_body(low("ref.h3r", SRC / "kunit_st3.c", "-cq-k=helper=3", env=ROLLED)[0] or "", "__cq_q_helper_1")}
+    if not all(r0.values()) or len(set(r0.values())) != len(r0):
+        fail("CQ_K units, K 0", "the one-unit references are missing or do not tell the K apart")
+    else:
+        for order in (["kunit_def0.c", "kunit_use3.c"], ["kunit_use3.c", "kunit_def0.c"]):
+            text, err = low("f0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order], env=ROLLED)
+            if text is None:
+                continue
+            tag = f"CQ_K units, the defining unit's 0 wins over another's 3 ({' '.join(order)})"
+            if fn_body(text, "f") != r0["f0"] or k_trips(text, "f") != [0]:
+                fail(tag, f"f is not lowered at K 0 (trips {k_trips(text, 'f')})")
+            elif not warn.search(err):
+                fail(tag, "no warning on the differing lines")
+            else:
+                ok(f"{tag}: K 0, no trip, warned")
+        for order in (["kunit_st0.c", "kunit_st3.c"], ["kunit_st3.c", "kunit_st0.c"]):
+            text, err = low("st0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order], env=ROLLED)
+            if text is None:
+                continue
+            tag = f"CQ_K units, a static's own 0 next to a static of its name at 3 ({' '.join(order)})"
+            h0, h3 = helper_of(text, "entry0"), helper_of(text, "entry3")
+            if h0 != r0["h0"] or h3 != r0["h3"] or k_trips(h0 or "", "__cq_q_helper_1") != [0]:
+                fail(tag, "the helper of entry0 is not lowered at K 0, or that of entry3 not at 3")
+            elif "warning" in err:
+                fail(tag, "a warning for statics, which never conflict")
+            else:
+                ok(f"{tag}: 0 (no trip) and 3")
+
     # a function no unit defines externally keeps its constants (K and K2); a static's own lines become its
-    # attributes; a static with no line is marked "0" so the constant of its name does not reach it
+    # attributes; a static with no line is marked "none" so the constant of its name does not reach it
     d = tmp / "ku.lib"
     r = cqcc("-S", *[SRC / f"kunit_lib_{x}.c" for x in "abc"], "--save-temps", d, "-o", tmp / "ku.lib.ll")
     if r.returncode:
@@ -349,14 +412,14 @@ def test_k_units(tmp):
     fattr = {n: attrs.get(g, "") for n, g in re.findall(r"^define [^\n]*@(libf[.\d]*)\([^\n]*\) unnamed_addr (#\d+)",
                                                           linked, re.M)}
     own = [n for n, a in fattr.items() if '"cq-k"="7"' in a and '"cq-k2"="50"' in a]
-    marked = [n for n, a in fattr.items() if '"cq-k"="0"' in a and '"cq-k2"="0"' in a]
+    marked = [n for n, a in fattr.items() if '"cq-k"="none"' in a and '"cq-k2"="none"' in a]
     consts = (re.search(r"^@__cq_k_libf = internal constant i32 3\b", linked, re.M),
               re.search(r"^@__cq_k2_libf = internal constant i64 100\b", linked, re.M),
               re.search(r"^@__cq_k_libf2 = internal constant i32 2\b", linked, re.M))
     if len(fattr) != 2 or len(own) != 1 or len(marked) != 1 or not all(consts) or "@__cq_k_libf." in linked:
         fail("CQ_K units, library function", f"attributes {fattr}, constants {[bool(c) for c in consts]}")
     else:
-        ok("CQ_K units, library function: constants kept, the static's own lines on it, the other static marked 0")
+        ok("CQ_K units, library function: constants kept, the static's own lines on it, the other static marked none")
 
 
 def test_check(tmp):
