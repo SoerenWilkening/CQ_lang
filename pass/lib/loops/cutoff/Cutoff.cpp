@@ -3068,6 +3068,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       bool handle;
     };
     std::vector<Carry> carry;
+    DenseMap<const PHINode *, size_t> carryOfH;   // a header phi's carry entry
     auto phiFor = [&](Value *init, bool handle) {
       PHINode *p = B.CreatePHI(handle ? handleTy(Cx) : init->getType(), 2);
       p->addIncoming(init, E);
@@ -3104,6 +3105,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         p = phiFor(o.v, o.handle);
       }
       set(h, Operand{p, o.handle});
+      carryOfH[h] = carry.size();
       carry.push_back({p, o.v, [&, h, hd = o.handle]() -> Value * {
                          Operand n = ctx.operand(h);
                          if (n.handle != hd)
@@ -3152,6 +3154,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!ctx.bound(I))
         continue;   // not lowered (a value of a block the region evaluation did not reach)
       Operand o = ctx.operand(I);
+      // cq-9kcq (p38_cutx; CR rules 10, 14): a region value that is a header phi's latch value and enters on that phi's
+      // rail (a carried register rotated in place, `x = theta(x)` in the header) is that phi's rail in every trip: it shares
+      // the phi (the advance's select of a rail with itself folds), where a second phi made a fresh select rail per trip
+      // that the rotation then made a register, left as garbage.
+      if (o.handle) {
+        PHINode *h = nullptr;
+        for (PHINode *x : hphis)
+          if (!h && L.getLoopLatch() && x->getIncomingValueForBlock(L.getLoopLatch()) == I)
+            h = x;
+        if (auto it = h ? carryOfH.find(h) : carryOfH.end(); it != carryOfH.end() && carry[it->second].handle &&
+                                                            carry[it->second].init == o.v && !six.count(h)) {
+          Carry &k = carry[it->second];
+          set(I, Operand{k.phi, true});
+          k.put = [&, I, prev = k.put](Value *v) {
+            prev(v);
+            set(I, Operand{v, true});
+          };
+          continue;
+        }
+      }
       PHINode *p = phiFor(o.v, o.handle);
       set(I, Operand{p, o.handle});
       carry.push_back({p, o.v, [&, I, hd = o.handle]() -> Value * {
