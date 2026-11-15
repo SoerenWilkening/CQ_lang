@@ -63,6 +63,9 @@ CASES = [
     # cq-8qs3j (CR rules 6, 14): b's clean-up through s + b reads the exit s of a loop whose deferred reverse reads b: the
     # clean-up gives way (was: 'cyclic uncompute dependency through rule 6').
     ("rule6_deferred_loop", "nob2", [], "pass", []),
+    # cq-j9bvd (CR rules 9, 14): a case-3 loop with two classical exit tests cleans its pre-loop templates; the run flag's
+    # walk enters the trip cycle through a single-predecessor block (was: x < i's pre-loop template leaked).
+    ("loop_two_exits", "two_exits", [], "pass", []),
 ]
 
 

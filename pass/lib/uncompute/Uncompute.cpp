@@ -1576,8 +1576,17 @@ struct Uncompute::Impl {
         return v;
       }
       if (ps.size() == 1) {
-        if (!busy.insert(b).second)
-          return F;   // a cycle of single-predecessor blocks is unreachable
+        if (!busy.insert(b).second) {
+          // Re-entered while its own start is in progress. Only a cycle of single-predecessor blocks is unreachable
+          // (F). Otherwise the walk entered the cycle here and went round it through a block with several
+          // predecessors, whose start phi is made already (cq-j9bvd: a loop's back edge entered through its latch
+          // segment read F, so the header's run flag dropped the trip path): the value is b's predecessor's end,
+          // recomputed without caching up the chain of blocks in progress, which stops at that phi.
+          BasicBlock *q = ps[0];
+          while (q != b && !startOf.count(q) && busy.count(q) && q->getSinglePredecessor())
+            q = q->getSinglePredecessor();
+          return q != b && startOf.count(q) ? endV(ps[0]) : static_cast<Value *>(F);
+        }
         Value *v = endV(ps[0]);
         busy.erase(b);
         return startOf[b] = v;
