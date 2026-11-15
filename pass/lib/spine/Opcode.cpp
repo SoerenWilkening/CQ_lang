@@ -648,6 +648,18 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   if (every)
     if (auto *hp = dyn_cast<PHINode>(call.getArgOperand(0)); hp && classicalExitTest(ctx, hp, call))
       every = false;
+  // cq-9kcq (CR rules 2, 14): in a rolled K-loop trip the carried rail is the rail the trip before made (its advancing
+  // select), measured where this trip runs: by the trip counter and the exit edges, on some classical paths only (the
+  // last trip's select is measured by no trip). Collapse is static: the rail stays unmeasured, the reverse loop undoes
+  // it with its trip, and the measurement reads a kept basis copy (one per executed trip).
+  // A value of the header's test region (the region form) is carried the same way.
+  if (every)
+    if (auto *hv = dyn_cast<Instruction>(call.getArgOperand(0)); hv && spine::shared(ctx).rolledHeaders.count(hv->getParent())) {
+      LoopInfo LI(spine::shared(ctx).dt(*hv->getFunction()));
+      const Loop *RL = LI.getLoopFor(hv->getParent());
+      if (RL && RL->getHeader() == hv->getParent() && RL->contains(&call))
+        every = false;
+    }
   if (!every) {
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
     ctx.unc().recordExternal(c, Role::Measured);

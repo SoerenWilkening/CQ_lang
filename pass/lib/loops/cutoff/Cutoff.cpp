@@ -2844,16 +2844,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a classically bounded sub-loop in the trip or its exit arm whose values outlive the trip";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
-    else if (any_of(hphis, [&](PHINode *h) {
-               return any_of(h->users(), [&](const User *u) {
-                 auto *cb = dyn_cast<CallBase>(u);
-                 const Function *f = cb ? cb->getCalledFunction() : nullptr;
-                 return f && f->getName().starts_with("cq_measure") && L.contains(cb);
-               });
-             }))
-      // me_body, me_arm, me_reread: the trip measures the carried rail (rule 2), and the reverse undoes the select that
-      // made it, freeing a measured rail.
-      why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
     else if (rolled::changesFenvMode(L))
       // S12c carries FLAGS; a MODE the trip changes and code after the loop reads (fegetround's result names the mode rail
       // itself) is unbuilt: rule 6 cleans that rail while the deferred reverse owns it (ks_round), and the final mode left
@@ -2863,14 +2853,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                return I->getType()->isAggregateType() || I->getType()->isVectorTy();
              }))
       why = "an aggregate value of the header test region read by the body or after the loop";
-    else if (regionForm && any_of(regionOut, [&](const Instruction *I) {
-               return any_of(I->users(), [&](const User *u) {
-                 auto *cb = dyn_cast<CallBase>(u);
-                 const Function *f = cb ? cb->getCalledFunction() : nullptr;
-                 return f && f->getName().starts_with("cq_measure") && L.contains(cb);
-               });
-             }))
-      why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
     if (why) {
       noteUnbuilt(std::string("loops-cutoff: CQ_K_ROLLED: the K-loop keeps its static copies: ") + why,
                   H->getTerminator());
@@ -3436,6 +3418,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
   // The rolled driver (CQ_K_ROLLED) takes the trip-0 test's conjunct into its zero-trip guard (rolledBody).
   bool rolled = rolledHere();
+  // cq-9kcq (CR rules 2, 14): a cq_measure of a carried value in the rolled trip measures a kept basis copy (lowerMeasure)
+  if (rolled)
+    spine::shared(ctx).rolledHeaders.insert(L.getHeader());
   // cq-9kcq S11c (CR rules 9, 14; join_units, musl wcsrtombs): a unit lowered before this one left this unit's incomings of a
   // continuation phi to the walker's join (addJoinArm: "lowered after the loop"). The incomings from this unit's own blocks
   // other than its tail are this unit's binding (the cphis accumulator selects each trip's value in where the trip leaves on
