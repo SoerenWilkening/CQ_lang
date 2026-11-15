@@ -72,9 +72,9 @@ def k_trips(text, fn):
     """The trip counts of fn's rolled K-loops with no received K (ktrips.counter_loops: N, at least 1 unless the
     counter is also tested before trip 0), or None where one is unknown."""
     loops = ktrips.counter_loops(ktrips.body(text, fn))
-    if any(N is None for _, _, _, _, N, _, _ in loops):
+    if any(N is None for _, _, _, _, N, *_ in loops):
         return None
-    return [N if top else max(N, 1) for _, _, _, _, N, top, _ in loops]
+    return [N if top else max(N, 1) for _, _, _, _, N, top, *_ in loops]
 
 
 def strip_ids(text):
