@@ -2735,8 +2735,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a continuation phi an earlier loop unit bound (two units into one join)";
     else if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
       why = "an aggregate value of the loop read after it";
-    else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
-      why = "a noreturn arm or no live exit (S9)";
     else if (!L.getSubLoops().empty())
       why = "a sub-loop in the trip (S10, S11)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
@@ -2902,7 +2900,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     };
     PHINode *j = B.CreatePHI(i32, 2);
     j->addIncoming(ConstantInt::get(i32, 0), E);
-    PHINode *qp = phiFor(q0, true);
+    // cq-9kcq S9 (CR rule 14 "No live exit"): a loop with no exit edge at all keeps its chain at q0 in every trip (every
+    // trip runs where the loop runs); it is no carried value, and after the K trips the caller aborts on it.
+    bool frozen = U.live.empty() && U.abort.empty() && !exits::hasNoreturnArm(L);
+    PHINode *qp = frozen ? nullptr : phiFor(q0, true);
     for (PHINode *h : hphis) {
       Operand o = ctx.operand(h);
       PHINode *p;
@@ -2998,7 +2999,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     // The classical reachability the evaluation before the loop computed reads its values; the trip reads the phis.
     creach.clear();
-    Value *qc = qp;
+    Value *qc = qp ? static_cast<Value *>(qp) : q0;
     auto all = [](const BasicBlock *) { return true; };
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
@@ -3010,6 +3011,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerBlocks(qc, inBody);
     else
       lowerBlocks(qc, all);
+    // cq-9kcq S9: the noreturn arms the trip's blocks exit into run under their edge flags, each an abort_i1 (rule 16).
+    abortArms(qc, regionForm ? std::function<bool(const BasicBlock *)>(inBody) : std::function<bool(const BasicBlock *)>(all));
     // cq-9kcq S8: the exit arm runs in the trip under the trip's exit flags; the accumulators take its values.
     if (multi)
       capture(qc, regionForm ? std::function<bool(const BasicBlock *)>(inBody) : std::function<bool(const BasicBlock *)>(all));
@@ -3079,6 +3082,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       advance(qc);
       Value *qr = qc;
       lowerBlocks(qr, inRegion);
+      abortArms(qr, inRegion);
       if (multi)
         capture(qr, inRegion);
       if (qr != qc)
@@ -3097,6 +3101,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       rreg->branchSeg(R);
       Value *qr = qn;
       lowerBlocks(qr, inRegion);
+      abortArms(qr, inRegion);
       if (multi)
         capture(qr, inRegion);
       if (qr != qn)
@@ -3110,7 +3115,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     rreg->endSeg();
     rX = Xb;
     j->addIncoming(j1, back);
-    qp->addIncoming(qn, back);
+    if (qp)
+      qp->addIncoming(qn, back);
+    else if (qn != q0)
+      internalError("loops-cutoff: a loop with no exit edge changed its chain in the rolled trip", at);
     for (Carry &k : carry)
       k.phi->addIncoming(k.now(), back);
     B.SetInsertPoint(Xb);
@@ -3139,13 +3147,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           ctx.unc().recordMerge(x);
         k.put(x);
       }
-      PHINode *qx = B.CreatePHI(handleTy(Cx), xe.size());
-      for (XEdge &x0 : xe)
-        qx->addIncoming(x0.q, x0.from);
-      ctx.unc().recordMerge(qx);
-      qn = qx;
+      if (all_of(xe, [&](const XEdge &x) { return x.q == xe[0].q; })) {
+        qn = xe[0].q;
+      } else {
+        PHINode *qx = B.CreatePHI(handleTy(Cx), xe.size());
+        for (XEdge &x0 : xe)
+          qx->addIncoming(x0.q, x0.from);
+        ctx.unc().recordMerge(qx);
+        qn = qx;
+      }
     }
-    if (!keepAny)
+    if (!keepAny || frozen)
       return qn;
     BasicBlock *Jn = nullptr;
     if (keepRt) {
