@@ -60,6 +60,9 @@ CASES = [
     # measuring the merge does not collapse t, so t * 7 is a measurement on every path on both sides.
     ("kept_merge", "kp", [], "pass", []),
     ("kept_merge", "kq", [], "pass", []),
+    # cq-8qs3j (CR rules 6, 14): b's clean-up through s + b reads the exit s of a loop whose deferred reverse reads b: the
+    # clean-up gives way (was: 'cyclic uncompute dependency through rule 6').
+    ("rule6_deferred_loop", "nob2", [], "pass", []),
 ]
 
 

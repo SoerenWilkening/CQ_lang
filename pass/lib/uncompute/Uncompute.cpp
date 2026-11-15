@@ -972,6 +972,16 @@ struct Uncompute::Impl {
     // not all preserving (a trip flag, a flag's and_i1) is undone through those records like garbage, and they read
     // what they read: g = x, y' = c ? x + 1 : x with c's _unc reading a classical loop's trip flags that tested x.
     bool undoes = rails[x].role == Role::Garbage || (rails[x].role == Role::Seed && !directRelease(x));
+    // cq-8qs3j (CR rules 6, 14): a rail of a deferred item's scopes (a loop's exit rail) is undone by that item's reverse
+    // loop, which reads what the item reads: a classical loop's trips that tested g (nob2: b's clean-up through s + b
+    // reads the loop's exit s, the loop's reverse reads b).
+    if (unsigned di = rails[x].ownedBy; depth <= 64 && di != kNone && !rails[x].released && !rails[defs[di].pseudo].released) {
+      if (auto f = failed.find(x); f != failed.end() && f->second <= depth)
+        return false;
+      for (RailId y : defs[di].reads)
+        if (y == g || garbageReadsAt(y, g, depth + 1, failed))
+          return true;
+    }
     if (depth > 64 || (cleaned && !viaCleanups) || !undoes || rails[x].released)
       return false;
     if (auto f = failed.find(x); f != failed.end() && f->second <= depth)
