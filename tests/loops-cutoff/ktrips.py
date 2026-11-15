@@ -69,12 +69,18 @@ def table_k_param(fn_body: str):
     return params[-1] if "_t" in head.split("(")[0] and params else None
 
 
+# The value read for a table clone's K parameter (table_k_param): -1, none, by default (its own K is not in the IR, so a
+# trip loop bounded by it has no N); run_probes.py --table-k sets the K its dispatch passes where no K is received (the
+# caller's own K), for a count in a rolled table clone (cq-9kcq).
+TABLE_K = -1
+
+
 def value(d, v: str, depth=0, tableK=None):
-    """The integer v holds with no received K (@__cq_k = -1, a table clone's K parameter -1), or None."""
+    """The integer v holds with no received K (@__cq_k = -1, a table clone's K parameter TABLE_K), or None."""
     if re.fullmatch(r"-?\d+", v):
         return int(v)
     if tableK is not None and v == tableK:
-        return -1
+        return TABLE_K
     rhs = d.get(v)
     if rhs is None or depth > 32:
         return None
