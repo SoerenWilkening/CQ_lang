@@ -2702,10 +2702,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a multi-exit loop (S8)";
     else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
       why = "a noreturn arm or no live exit (S9)";
-    else if (t0)
-      why = "a classical conjunct of the trip-0 test, owner ruling Q10 (S5: the entry edge into the exit block)";
-    else if (c == 0)
-      why = "K = 0 or B = 0 (S6)";
+    else if ((c == 0 || t0) && (!six.empty() || (!cont.isBottom() && !cont.classicalFactor(ctx.T, ctx.S).isTop())))
+      // the top test (rolledBody) reads a rule-6 register's header phi after the loop, which the trip's clean-up frees,
+      // and with a classical exit conjunct merges the entry's seeds at X
+      why = "K = 0, B = 0 or a trip-0 conjunct with rule 6 or a classical exit conjunct (S6 follow-up: the top test)";
     else if (!L.getSubLoops().empty())
       why = "a sub-loop in the trip (S10, S11)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
@@ -2778,6 +2778,41 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       keepAny = true;
     }
+    // cq-9kcq S6b (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal, no trip runs, every carried value keeps its
+    // entry value, a_K is the predicate of reaching trip 0): where the bound is not a constant of at least 1, or the trip-0
+    // test has a classical conjunct t0 (owner ruling Q10), the counter test sits at the top of the trip loop: H tests
+    // `j < n` (and t0) and branches to the trip or to X, so X is entered from H with the header phis as the final state and
+    // a_K the chain's predicate phi (q0 where no trip ran: the seed, or the predicate of reaching the first test). Where t0
+    // is false the chain ends before trip 0 with a_0 a |0> seed (minted here, in the seed scope, freed at 0 at the end).
+    auto *nK = dyn_cast<ConstantInt>(nRt);
+    Value *g0 = nullptr;
+    if (t0)
+      if (auto *k = dyn_cast<ConstantInt>(t0); !(k && k->isOne()))
+        g0 = t0;
+    bool topTest = (nK && nK->isZero()) || g0;
+    if (!nK)
+      // S6 follow-up: with a received K the top test fails where rule 6's clean-up frees the header phi in the trip, or a
+      // deferred reverse owns the entry seeds the header phis read after the loop (exit_conjunct's ec_while_t); the
+      // bottom test is kept, so a received K of 0 runs one trip
+      noteUnbuilt("loops-cutoff: CQ_K_ROLLED: a received K keeps the counter test at the bottom: a received K of 0 runs "
+                  "one trip (S6 follow-up)", H->getTerminator());
+    if (g0) {
+      RailType i1{Kind::Int, 1};
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
+      ctx.unc().recordSeed(z);
+      BasicBlock *At = B.GetInsertBlock();
+      BasicBlock *Zb = BasicBlock::Create(Cx, "", &ctx.out());
+      BasicBlock *Jb = BasicBlock::Create(Cx, "", &ctx.out());
+      B.CreateCondBr(g0, Jb, Zb);
+      BranchInst::Create(Jb, Zb);
+      ctx.unc().noteClassicalArm(Jb, Zb);
+      B.SetInsertPoint(Jb);
+      PHINode *q0p = B.CreatePHI(handleTy(Cx), 2);
+      q0p->addIncoming(q0, At);
+      q0p->addIncoming(z, Zb);
+      ctx.unc().recordMerge(q0p);
+      q0 = q0p;
+    }
     BasicBlock *E = B.GetInsertBlock();
     BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
     B.CreateBr(Hd);
@@ -2790,6 +2825,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     struct Carry {
       PHINode *phi;
       std::function<Value *()> now;
+      std::function<void(Value *)> put;   // binds the value after the loop (top test: its value at X)
+      bool handle;
     };
     std::vector<Carry> carry;
     auto phiFor = [&](Value *init, bool handle) {
@@ -2827,34 +2864,57 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                          if (n.handle != hd)
                            internalError("loops-cutoff: a carried value changes between rail and classical in the rolled trip", h);
                          return n.v;
-                       }});
+                       },
+                       [&, h, hd = o.handle, r6 = six.count(h) != 0](Value *v) {
+                         set(h, Operand{v, hd});
+                         if (r6) {
+                           // the register after the loop: no trip after it cleans it (as the chain's last select)
+                           rKeptFinal.insert(v);
+                           spine::shared(ctx).carriedFinal.insert(v);
+                         }
+                       },
+                       o.handle});
     }
     for (PHINode *h : hphis) {
       if (auto it = exitRail.find(h); it != exitRail.end()) {
         PHINode *p = phiFor(it->second.v, true);
         it->second = Operand{p, true};
-        carry.push_back({p, [&, h]() -> Value * { return exitRail.find(h)->second.v; }});
+        carry.push_back({p, [&, h]() -> Value * { return exitRail.find(h)->second.v; },
+                         [&, h](Value *v) { exitRail.find(h)->second = Operand{v, true}; }, true});
       }
       if (auto it = qind.find(h); it != qind.end()) {
         QInduction &qi = it->second;
         PHINode *p = phiFor(qi.off, false);
         qi.off = p;
-        carry.push_back({p, [&, h]() -> Value * { return qind.find(h)->second.off; }});
+        carry.push_back({p, [&, h]() -> Value * { return qind.find(h)->second.off; },
+                         [&, h](Value *v) { qind.find(h)->second.off = v; }, false});
         if (qi.exitRail) {
           PHINode *x = phiFor(qi.exitRail->v, true);
           qi.exitRail = Operand{x, true};
-          carry.push_back({x, [&, h]() -> Value * { return qind.find(h)->second.exitRail->v; }});
+          carry.push_back({x, [&, h]() -> Value * { return qind.find(h)->second.exitRail->v; },
+                           [&, h](Value *v) { qind.find(h)->second.exitRail = Operand{v, true}; }, true});
         }
       }
     }
     Value *qc = qp;
     auto all = [](const BasicBlock *) { return true; };
+    BasicBlock *Xb = nullptr;
+    if (topTest) {
+      Xb = BasicBlock::Create(Cx, "", &ctx.out());
+      Value *go = B.CreateICmpULT(j, nRt);
+      if (g0)
+        go = B.CreateAnd(go, g0);
+      BasicBlock *Bd = BasicBlock::Create(Cx, "", &ctx.out());
+      B.CreateCondBr(go, Bd, Xb);
+      rreg->branchSeg(Bd);
+    }
     rTrip = rreg.get();
     // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
     // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
     segHook = rreg->segHook();
     lowerBlocks(qc, all);
-    BasicBlock *Xb = BasicBlock::Create(Cx, "", &ctx.out());
+    if (!Xb)
+      Xb = BasicBlock::Create(Cx, "", &ctx.out());
     // cq-9kcq S5 (owner ruling Q10, CR rule 14): the exit test's classical conjunct C is a classical exit edge of the
     // rolled loop: after the trip's state advances, `br C, Run, Skip`; Skip mints a_{j+1} as a |0> seed and goes to the exit
     // block X (a segment of its own, mirrored by the reverse); Run makes a_{j+1} = a_j & Q and goes on to the latch. X's phi
@@ -2887,15 +2947,50 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     rTrip = nullptr;
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
-    B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
+    if (topTest)
+      B.CreateBr(Hd);
+    else
+      B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
     rreg->endSeg();
     rX = Xb;
     j->addIncoming(j1, Lt);
     qp->addIncoming(qn, Lt);
-    for (Carry &k : carry)
-      k.phi->addIncoming(k.now(), Lt);
+    std::vector<Value *> latchNow;
+    for (Carry &k : carry) {
+      latchNow.push_back(k.now());
+      k.phi->addIncoming(latchNow.back(), Lt);
+    }
     B.SetInsertPoint(Xb);
-    if (skipB) {
+    if (topTest) {
+      // X is entered from H (the counter test, or t0) with the header phis as the state, and from Skip (a classical exit
+      // conjunct) with the state the trip advanced to: phis of X over both, the exit index naming the edge (Region's
+      // exitIndex). The chain's end is the predicate phi, or the |0> seed where the conjunct ended the chain.
+      if (!skipB) {
+        for (Carry &k : carry)
+          k.put(k.phi);
+        qn = qp;
+      } else {
+        PHINode *ix = B.CreatePHI(i32, 2);
+        ix->addIncoming(ConstantInt::get(i32, 0), Hd);
+        ix->addIncoming(ConstantInt::get(i32, 1), skipB);
+        rreg->addExitEdge(ix, Hd);
+        rreg->addExitEdge(ix, skipB);
+        for (size_t i = 0; i < carry.size(); ++i) {
+          Carry &k = carry[i];
+          PHINode *x = B.CreatePHI(k.phi->getType(), 2);
+          x->addIncoming(k.phi, Hd);
+          x->addIncoming(latchNow[i], skipB);
+          if (k.handle)
+            ctx.unc().recordMerge(x);
+          k.put(x);
+        }
+        PHINode *qx = B.CreatePHI(handleTy(Cx), 2);
+        qx->addIncoming(qp, Hd);
+        qx->addIncoming(qSkip, skipB);
+        ctx.unc().recordMerge(qx);
+        qn = qx;
+      }
+    } else if (skipB) {
       // The carried state is the same SSA value on both edges (it advanced before the test's branch); the chain's end is
       // a_K on the latch edge and the |0> seed where the conjunct ended the chain.
       PHINode *ix = B.CreatePHI(i32, 2);
@@ -2938,7 +3033,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     return qn;
   };
 
-  if (t0) {
+  // The rolled driver (CQ_K_ROLLED) takes the trip-0 test's conjunct into its top test (rolledBody).
+  bool rolled = !regionForm && rolledHere();
+  if (t0 && !rolled) {
     // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
     // seed through closeTests' phi, the state its initial value) and no trip is emitted.
     if (auto *k = dyn_cast<ConstantInt>(t0); !(k && k->isOne())) {
@@ -2995,7 +3092,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!bodyExits)
         kCut(q, j + 1);
     }
-  } else if (rolledHere()) {
+  } else if (rolled) {
     q = rolledBody(q);
   } else {
     auto all = [](const BasicBlock *) { return true; };
@@ -3800,15 +3897,16 @@ static std::optional<unsigned> perFunctionK(const Function &F, const std::map<st
     if (!sfx.empty() && !base.empty() && !sfx.getAsInteger(10, n))
       it = flags.find(base.str());
   }
-  if (it != flags.end() && it->second > 0)
-    return it->second;
+  if (it != flags.end())
+    return it->second;   // owner ruling Q2 of 2026-11-15: K = 0 is legal
   return std::nullopt;
 }
 
 // CR §0, owner ruling 2026-11-15 (cq-z9vt): the CQ_K line of f. In a module of several units cqcc bound each line per
 // unit, before the link, onto the function it names as the string attribute "cq-k"="k" ("0": no line names it); a line
 // naming a function no unit defines stays the `used` constant __cq_k_<f>, llvm-link's copies __cq_k_<f>.N with it, and
-// the largest k counts. A single unit has only the constant.
+// the largest k counts. A single unit has only the constant. K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0): a
+// constant 0 is a line. (cqcc's attribute "0" still marks "no line"; a CQ_K(f, 0) bound per unit needs another marker.)
 static std::optional<unsigned> lineK(const Function &F, StringRef attr, StringRef prefix) {
   if (F.hasFnAttribute(attr)) {
     unsigned v = 0;
@@ -3817,11 +3915,11 @@ static std::optional<unsigned> lineK(const Function &F, StringRef attr, StringRe
     return std::nullopt;
   }
   std::string name = (prefix + F.getName()).str();
-  uint64_t best = 0;
+  std::optional<uint64_t> best;
   auto take = [&](const GlobalVariable &GV) {
     if (GV.hasInitializer())
       if (auto *CI = dyn_cast<ConstantInt>(GV.getInitializer()))
-        best = std::max(best, CI->getZExtValue());
+        best = std::max(best.value_or(0), CI->getZExtValue());
   };
   if (const GlobalVariable *GV = F.getParent()->getGlobalVariable(name, true))
     take(*GV);
@@ -3832,8 +3930,8 @@ static std::optional<unsigned> lineK(const Function &F, StringRef attr, StringRe
         !n.drop_front(name.size() + 1).getAsInteger(10, d))
       take(GV);
   }
-  if (best > 0)
-    return unsigned(best);
+  if (best)
+    return unsigned(*best);
   return std::nullopt;
 }
 
@@ -3843,7 +3941,7 @@ unsigned resolveK(const Function &F, const KOptions &KO) {
     return *k;
   if (auto k = lineK(F, "cq-k", "__cq_k_"))
     return *k;
-  if (KO.global && *KO.global > 0)
+  if (KO.global)
     return *KO.global;
   return 4;
 }
@@ -3854,7 +3952,7 @@ unsigned resolveK2(const Function &F, const KOptions &KO) {
     return *k;
   if (auto k = lineK(F, "cq-k2", "__cq_k2_"))
     return *k;
-  if (KO.k2Global && *KO.k2Global > 0)
+  if (KO.k2Global)
     return *KO.k2Global;
   return 4096;
 }

@@ -104,27 +104,21 @@ cq::loops::KOptions readKOptions() {
   for (const std::string &item : KPerFunction) {
     auto [fn, k] = StringRef(item).split('=');
     unsigned v = 0;
-    if (fn.empty() || k.empty() || k.getAsInteger(10, v) || v == 0)
-      usageError("-cq-k: expected <fn>=<k> with k >= 1, got '" + item + "'");
+    if (fn.empty() || k.empty() || k.getAsInteger(10, v))
+      usageError("-cq-k: expected <fn>=<k> with k >= 0, got '" + item + "'");   // K = 0 is legal (owner 2026-11-15)
     K.perFunction[fn.str()] = v;
   }
-  if (KDefault.getNumOccurrences()) {
-    if (KDefault == 0)
-      usageError("-cq-k-default: expected k >= 1");
-    K.global = KDefault;
-  }
+  if (KDefault.getNumOccurrences())
+    K.global = KDefault;   // K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0)
   for (const std::string &item : K2PerFunction) {
     auto [fn, k] = StringRef(item).split('=');
     unsigned v = 0;
-    if (fn.empty() || k.empty() || k.getAsInteger(10, v) || v == 0)
-      usageError("-cq-k2: expected <fn>=<k> with k >= 1, got '" + item + "'");
+    if (fn.empty() || k.empty() || k.getAsInteger(10, v))
+      usageError("-cq-k2: expected <fn>=<k> with k >= 0, got '" + item + "'");
     K.k2PerFunction[fn.str()] = v;
   }
-  if (K2Default.getNumOccurrences()) {
-    if (K2Default == 0)
-      usageError("-cq-k2-default: expected k >= 1");
+  if (K2Default.getNumOccurrences())
     K.k2Global = K2Default;
-  }
   return K;
 }
 

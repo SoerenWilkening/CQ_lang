@@ -6,7 +6,13 @@ cycle); the rolled form runs one trip K times in a generated classical loop
                                                          %c = icmp ult i32 %j1, N
                                                          br i1 %c, label %H, label %exit
 
-and undoes the trips in a reverse loop (exited by a switch on a popped value). N is evaluated with no received K
+and undoes the trips in a reverse loop (exited by a switch on a popped value). Where the bound is a run-time value or 0
+(cq-9kcq S6: a received K, K = 0) the counter test sits at the top, and a trip runs N times, none for N = 0:
+
+    H: %j = phi i32 [ 0, %pre ], [ %j1, %L ] ...      L: %j1 = add i32 %j, 1
+       %c = icmp ult i32 %j, N                           br label %H
+       br i1 %c, label %trip, label %exit             (%c may be `and i1` with a classical trip-0 conjunct)
+ N is evaluated with no received K
 (@__cq_k all ones, owner ruling Q2: -1 is "none"; a table clone's K parameter, its last one, likewise), which is the
 function's own K. A cycle with neither shape is a loop of the C program (a classically bounded loop): a site in it is
 counted once per iteration of that loop, i.e. once.
@@ -94,9 +100,10 @@ def value(d, v: str, depth=0, tableK=None):
 
 
 def counter_loops(fn_body: str):
-    """The rolled trip loops: [(blocks of the loop, header, counter phi, latch block, N or None)]. A loop is the natural
-    loop of the counter's back edge: its header (the block of the phi starting at 0) and every block reaching the latch
-    without passing the header."""
+    """The rolled trip loops: [(blocks of the loop, header, counter phi, block of the counter's br, N or None, top)]. A
+    loop is the natural loop of the counter's back edge: its header (the block of the phi starting at 0) and every block
+    reaching the latch without passing the header. top: the counter test at the top (a trip may not run: N, not at
+    least 1)."""
     bl, order = blocks(fn_body)
     d = defs(fn_body)
     tk = table_k_param(fn_body)
@@ -114,14 +121,34 @@ def counter_loops(fn_body: str):
         m = re.match(r"^\s*br i1 (%[-\w.$]+), label %([-\w.$]+), label %([-\w.$]+)", bl[lab][0][-1])
         if not m:
             continue
-        c = re.fullmatch(r"icmp ult i32 (%[-\w.$]+), (\S+)", d.get(m.group(1), ""))
-        j = c and re.fullmatch(r"add (?:nuw )?(?:nsw )?i32 (%[-\w.$]+), 1", d.get(c.group(1), ""))
-        if not j or not re.fullmatch(r"phi i32 .*\[ 0, %[-\w.$]+ \].*", d.get(j.group(1), "")):
+        cond = d.get(m.group(1), "")
+        a = re.fullmatch(r"and i1 (%[-\w.$]+), (\S+)", cond)   # the top test's trip-0 conjunct
+        if a:
+            cond = d.get(a.group(1), "")
+        c = re.fullmatch(r"icmp ult i32 (%[-\w.$]+), (\S+)", cond)
+        if not c:
             continue
-        head = where.get(j.group(1))
-        if head != m.group(2):
-            continue
-        loop, todo = {head, lab}, [lab]
+        jv, top = c.group(1), False
+        j = re.fullmatch(r"add (?:nuw )?(?:nsw )?i32 (%[-\w.$]+), 1", d.get(jv, ""))
+        if j and re.fullmatch(r"phi i32 .*\[ 0, %[-\w.$]+ \].*", d.get(j.group(1), "")):
+            jphi = j.group(1)
+            head = where.get(jphi)
+            if head != m.group(2):
+                continue
+            latch = lab
+        else:
+            # the top test: %j itself, a phi in this block starting at 0, its back edge `add %j, 1` from the latch
+            ph = re.fullmatch(r"phi i32 (.*)", d.get(jv, ""))
+            if not ph or where.get(jv) != lab or not re.search(r"\[ 0, %[-\w.$]+ \]", ph.group(1)):
+                continue
+            back = [(v, b) for v, b in re.findall(r"\[ (%[-\w.$]+), %([-\w.$]+) \]", ph.group(1))
+                    if re.fullmatch(r"add (?:nuw )?(?:nsw )?i32 " + re.escape(jv) + r", 1", d.get(v, ""))]
+            if len(back) != 1:
+                continue
+            jphi, head, latch, top = jv, lab, back[0][1], True
+            if latch not in bl or m.group(2) == m.group(3):
+                continue
+        loop, todo = {head, latch}, [latch]
         while todo:
             x = todo.pop()
             if x == head:
@@ -130,7 +157,10 @@ def counter_loops(fn_body: str):
                 if p not in loop:
                     loop.add(p)
                     todo.append(p)
-        out.append((loop, head, j.group(1), lab, value(d, c.group(2), tableK=tk)))
+        N = value(d, c.group(2), tableK=tk)
+        if N is not None and (N < 0 or N >= 1 << 31):
+            N = None   # a table clone's K parameter read as none: its own K is not in the IR
+        out.append((loop, head, jphi, lab, N, top))
     return out
 
 
@@ -157,7 +187,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
     bl, order = blocks(fn_body)
     loops = counter_loops(fn_body)
     rev = reverse_loops(fn_body)
-    latches = {lt for _, _, _, lt, _ in loops}
+    latches = {lt for _, _, _, lt, _, _ in loops}
     defined_in = lambda v, loop: any(re.match(r"^\s*" + re.escape(v) + r" = ", l) for x in loop for l in bl[x][0])
     n = 0
     for lab in order:
@@ -169,7 +199,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
             if lab in rev:
                 return None
             k = 1
-            for loop, _, _, _, N in loops:
+            for loop, _, _, _, N, top in loops:
                 if lab not in loop:
                     continue
                 if invariant_once:
@@ -178,7 +208,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
                         continue
                 if N is None:
                     return None
-                k *= max(N, 1)
+                k *= N if top else max(N, 1)
             n += k
     return n
 
@@ -244,6 +274,27 @@ def _selftest() -> int:
     tbl = _ROLLED.replace("@f(i32 %0)", "@__cq_q_f_1_t(i32 %0, i32 %kp)").replace("load i32, ptr @__cq_k, align 4", "add i32 %kp, 0")
     if runs(tbl.replace("MUTANT", ""), r"@cq_template_mul_i32_hl\(") != 4:
         print("FAIL ktrips: a table clone's K parameter not read as none")
+        bad += 1
+    # the top test (cq-9kcq S6): N trips, none for N = 0; its own br is the counter's; a run-time N read with no
+    # received K; a trip-0 conjunct `and i1` on the test
+    top = (_ROLLED.replace("  br label %h\n\nh:", "  br label %h\n\nh:")
+           .replace("  %j1 = add i32 %j, 1\n  %c = icmp ult i32 %j1, %K\n  br i1 %c, label %h, label %x",
+                    "  %j1 = add i32 %j, 1\n  br label %h")
+           .replace("  call void @cqrt_push(i32 %v)\n", "  %c = icmp ult i32 %j, %K\n  br i1 %c, label %b, label %x\nb:\n"
+                    "  call void @cqrt_push(i32 %v)\n")
+           .replace("[ %j1, %h ]", "[ %j1, %b ]").replace("[ %w, %h ]", "[ %w, %b ]").replace("preds = %h", "preds = %h"))
+    for mut, site, opt, want in [("", r"@cq_template_mul_i32_hl\(", {}, 4), ("", r"^  br i1 ", dict(skip_latches=True), 0)]:
+        got = runs(top.replace("MUTANT", mut), site, **opt)
+        if got != want:
+            print(f"FAIL ktrips top test {site!r}: {got}, not {want}")
+            bad += 1
+    if runs(top.replace("MUTANT", "").replace("select i1 %kn, i32 4, i32 %k", "select i1 %kn, i32 0, i32 %k"),
+            r"@cq_template_mul_i32_hl\(") != 0:
+        print("FAIL ktrips: a top-tested trip loop with N = 0 counted as running")
+        bad += 1
+    if runs(top.replace("MUTANT", "").replace("%c = icmp ult i32 %j, %K", "%c0 = icmp ult i32 %j, %K\n  %c = and i1 %c0, %kn"),
+            r"@cq_template_mul_i32_hl\(") != 4:
+        print("FAIL ktrips: a top test with a trip-0 conjunct not read")
         bad += 1
     print("ok   ktrips" if not bad else f"FAIL ktrips: {bad}")
     return 1 if bad else 0
