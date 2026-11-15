@@ -84,6 +84,13 @@ MUTANTS = {
          # v_4's register, no longer measured, is uncomputed once its last reader (the after-loop select) is undone
          r"  call void @cq_template_select_i32_unc(i32 %36, i32 %22, i32 %6, i32 %26)\n  call void @cqrt_free(i32 %36)\n\4"),
     ],
+    # owner ruling 2026-11-15 on cq-zk0aj (CR rule 14, §6): ex_pre's quantum header test (v & 4) == 0 made a constant, its mask
+    # 4 replaced by 0 in every trip and its uncomputation alike, so every trip runs on: trips C leaves by v & 4 still
+    # measure v and add to n, a classical test on a value no earlier outcome fixes (the copied and the rolled form alike)
+    "me_exit": [
+        ("ex_pre", "const_test", lambda b: re.sub(r"(@cq_template_and_i32_hl(?:_unc)?\((?:i32 %[\w.]+, )+i32 )4\)", r"\g<1>0)", b),
+         None),
+    ],
     # cq-nmzv3 (review R1 t3): the classical br on c dropped, the measurement on every input
     "q3_conjunct": [
         ("mix", "unguarded", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
