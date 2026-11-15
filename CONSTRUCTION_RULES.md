@@ -47,6 +47,12 @@ example §7 lists as regeneration owed is not normative for the construction it 
   A loop whose exit reads a value loaded from the bus is a K-loop like any other (rule 14).
   The function of a loop is the one that holds it in the `-O1` IR: a loop clang inlined into
   `g` resolves its K as a loop of `g` (K2 likewise).
+  In a program of several translation units a `CQ_K(f, k)` line names the `f` of its own unit
+  by C scope: the function that unit defines (a `static` one is that unit's alone), else the
+  external function of that name. For an external `f` the line of the unit that defines it
+  wins; where that unit has none, the largest k among the other units' lines. The per-function
+  flag names every function of that C name. The binding is made per unit, before the units are
+  linked into the module the pass lowers (K2 likewise).
 - **Allocation bound K2.** An allocation whose size is a rail (`malloc`, `calloc`, `aligned_alloc`,
   `realloc`, a VLA) is made at **K2** bytes (rule 16), and a memory intrinsic whose length is a
   rail copies at most K2 bytes (rule 22). K2 resolves as K does, with `CQ_K2(f, k)`
@@ -96,7 +102,7 @@ name gets what the link gives: the compiler has no diagnostic path (§0).
 
 | prefix | meaning |
 |---|---|
-| `cq_*`, `__cq_*` | the user surface in `CQ.h` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`), the injection-bundle host symbols `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` (§1.3), the clones `__cq_q_*` (§1.4) and the module-internal `__cq_register`, `__cq_act_*` (§1.3, §1.4) |
+| `cq_*`, `__cq_*` | the user surface in `CQ.h` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`), the injection-bundle host symbols `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` (§1.3), the clones `__cq_q_*` (§1.4) and the module-internal `__cq_register`, `__cq_act_*`, `__cq_k` (§1.3, §1.4) |
 | `cqrt_*` | core gates and backend primitives (§1.3) |
 | `cq_template_*` | generated out-of-place reversible operations, each with an `_unc` twin (§1.2) |
 
@@ -190,7 +196,8 @@ tape_effect[_<W>]_controlled(c, t, name, n) [-> r]
                                   form returns a fresh rail r of the callee's result type (below). A null `name`:
                                   the callee is the host address in the entry's first field (rule 19)
 tape_write_<W>[_controlled]([c,] t, h) -> h', tape_write_<W>_lit(t, lit)
-abort_i1(f)                       kept flag, measured at the end of the shot
+abort_i1(f)                       kept flag, measured at the end of the shot; a classical-valued 1 flag ends
+                                  the shot at the call, which then does not return (rule 16)
 invert_begin(), invert_end()      the adjoint region of rule 17; nested pairs nest; no gate of their own
 push(w), pop() -> w               compiler-internal classical i32 word stack, not a circuit primitive (a wider value
                                   is i32 words, low word first); popped by rule 14's reverse loops and by a
@@ -233,7 +240,8 @@ i32 @__cq_clone_count(ptr sig), ptr @__cq_clone_at(ptr sig, i32 i)
 
 The constructor is `internal void @__cq_register()` in `@llvm.global_ctors` at priority 65535. A
 `sig` string is the private constant `@.cq.sig` (further function types `@.cq.sig.1`, `@.cq.sig.2`,
-…): the LLVM 19 print of the function type with no attributes (`i32 (i32)`, `void (ptr, i64)`). A
+…): the LLVM 19 print of the function type with no attributes (`i32 (i32)`, `void (ptr, i64)`),
+matched by its content, never by its address (each module has its own constants). A
 module-internal `__cq_*` name that collides with a program symbol is renamed by the compiler.
 
 Tape rails and abort flags are never freed, and all tape entries and abort flags form ONE event
@@ -263,7 +271,8 @@ mask  := one digit per SCALAR formal of the function, LEFT TO RIGHT, after aggre
 _t     := the table clone (below).
 _ctl   := the clone takes the block predicate as its FIRST parameter and applies it to everything
           that is not a template on SSA values: rotations, phases, bus accesses, tape and abort
-          events, measurements (rule 19) and the calls of its `_ctl` callees. Templates and the
+          events, measurements (rule 19), the seed of a quantum-exit loop's chain (rule 14) and
+          the calls of its `_ctl` callees. Templates and the
           copy-out run unguarded (rule 9): a result is not |0> where the predicate is 0, and the
           caller merges it by `select`.
 _pure  := the clone without its phase effects (what the twins recompute through).
@@ -309,6 +318,15 @@ activation's depth `d`, rule 14), adds 1, and subtracts 1 at every return. The c
 test is `icmp ult i32 d, K`. It is compiler state, not program memory: its accesses are no bus
 accesses and no memory version changes (rule 5), and make no function one that writes memory.
 
+**Received K.** No clone signature carries K except the table clone's. A module that defines a
+table clone has one module-internal classical word `@__cq_k = internal global i32 -1` (all ones:
+no cut). Each table clone, its `_ctl` form and their twins store their K actual in it on entry and
+store the value they found there back at every return. A clone or own symbol that a table clone of
+its module can reach by name and that holds a K cut (a quantum-exit loop, a quantum-depth
+recursion) loads it once on entry as its received K and cuts at the smaller of that and its own K
+(unsigned). It is compiler state like `@__cq_act_<fn>`: plain `load` and `store`, no bus access,
+no memory version change.
+
 **Table clones.** A clone reached without its body in view (a row of the clone table, §1.3, or a
 declared clone, rule 27) has ONE ABI, so that the call follows from the function's C signature
 alone. Its name is `__cq_q_<fn>_<mask>_t` with every mask digit 1 (a variadic function's block
@@ -326,7 +344,7 @@ uncomputes and frees it as always; the outcome is classical and is returned as a
 result (211).
 `_t_ctl` and `_t_ctl_unc` take the predicate first; a table twin is `_unc([pred,] outs…, args…,
 K)`. A `_ctl` table clone whose body is only templates on SSA values computes unguarded and reads
-its predicate only for the cut. A call by name of a function whose body is in
+its predicate only for the cut and for the seed of a loop chain. A call by name of a function whose body is in
 the module is never the table clone: it is the rule-18 clone of its mask, all-ones included.
 
 ## 2. Totalization table
@@ -411,7 +429,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    Inside a `_ctl` clone the measurement is rule 19's controlled copy instead; inside a table clone without a
    predicate a measurement of a formal is of a kept copy (§1.4), so the caller's rail is never a measured rail. The arm flag is never measured. The outcome merges with the other incoming values by
    `select` under the flag, so the value the C program reads is tainted. Measurements of one
-   rail in several arms are one measurement.
+   rail in several quantum arms are one measurement. The arms of a classical branch (rule 8, a
+   branch on a collapsed outcome included) are separate blocks: each `cq_measure` there is its
+   own `measure_<W>` at its program point, and one path executes one of them.
    **Classical collapse.** A value computed only from measured rails and classical values is
    classical: its rail (a flag too) is uncomputed while its sources still hold the outcome
    (convention: right after the measurement), the value is recomputed classically from the
@@ -594,7 +614,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    - *In a rolled loop (rule 14):* a carried value whose trip update is such a bijection and whose
      trip predicate does not read it (a counter, an accumulator), and whose final value is live
      after the loop as something that is never uncomputed (measured, returned, stored, rotated,
-     an operand of a kept rail), is cleaned in the body of the
+     an operand of a kept rail, a measured one included; not a read by a phase's angle, whose
+     rail is uncomputed after the phase), is cleaned in the body of the
      same trip, with the composite update's inverse (e.g. `a ? y' - 1 : y'`), after the arm's
      garbage whose `_unc` reads the old value. The cleaned rail is not pushed and the reverse
      loop never sees it; the final carried rail is the loop's result and is measured directly
@@ -719,7 +740,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       operands, a load equal to a load of the same type at a SCEV-equal address when no
       memory version change lies between the guard and the loop header, 203); it runs exactly K trips (fewer only where a classical conjunct ends the chain, below) under the predicate
       chain `a_j = a_{j−1} & cond_j`, seeded `|1⟩` (or the arm flag when the loop sits in an
-      arm); every carried value advances by a `select` on `a_j`; the reverse loop pops K trips.
+      arm, the predicate in a `_ctl` clone); every carried value advances by a `select` on `a_j`; the reverse loop pops K trips.
       A `cq_measure` in the body is one call in the rolled body and runs in every one of the K
       trips, unconditionally (rule 2), on that trip's carried rail; in a trip the C program does
       not reach, that rail holds the value its `select` kept. A `cq_measure` in an exit arm runs
@@ -902,8 +923,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       modified in place are snapshotted under the predicate first. With a rail argument, or
       where a tape or abort event can precede it (the ordinary-host-call test above), and no
       quantum predicate it is the effect entry of its name under an `alloc_i1(true)` seed,
-      then `abort_i1` of that seed. The `unreachable` after an unconditional `noreturn` call
-      is a return of zero-valued results (`|0⟩` rails).
+      then `abort_i1` of that seed, which ends the shot: the flag is classical-valued 1, so
+      the call does not return (ABI §1.11) and the `unreachable` after it stays. Nothing of
+      the continuation is built: on this run it is no part of the C program. Under a quantum
+      predicate the `unreachable` after the `noreturn` call is a return of zero-valued results
+      (`|0⟩` rails).
     - *Allocation* (`malloc`, `calloc`, `aligned_alloc`, `realloc`, any callee whose
       declaration carries `allockind`, a bus-resident `alloca` (rule 20), fixed or variable-length) is
       `__cq_alloc(size, align)` (§1.3; alignment 16 where the call names none): zeroed host
@@ -1119,7 +1143,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 
     **Under a quantum predicate** a callee becomes a `_ctl` clone iff its body, itself or through
     its callees, has anything but templates on SSA values: a rotation, a phase, a bus access,
-    a tape or abort event, an indirect or bodiless call, a call cycle through itself. Otherwise it is called unguarded and
+    a tape or abort event, an indirect or bodiless call, a call cycle through itself, a
+    quantum-exit loop whose `a_K` is kept (rule 14: the predicate seeds its chain, so `a_K` reads 0
+    where the C program does not make the call; example owed, §8). Otherwise it is called unguarded and
     its results merged like any classical arm value (rule 9), a call with no quantum argument
     included (musl's `__math_oflow(0)` in `exp`; a `volatile` access to a dead local inside it
     is nothing, rule 24; example owed, §8). A callee with no body follows rules 16 and 27.
@@ -1378,7 +1404,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       clone. Under a quantum predicate the call is `_t_ctl(pred, …)` and the results merge by
       `select`. Default C calling convention, not `fastcc`.
     - *Cutoff.* Inside the clone and its callees every quantum-exit loop runs min(K, B) trips
-      and quantum-depth recursion is cut at K (rule 14); no K variant of a library exists.
+      and quantum-depth recursion is cut at K (rule 14); no K variant of a library exists. A
+      callee reached by name receives K through `@__cq_k` (§1.4), one reached through the table
+      as its K actual. Rule 6's per-trip clean holds in a loop the received K can cut as in
+      any other: the cut is a classical exit of the chain (rule 14).
     - *The table.* The same symbol is the row a function pointer reaches (rule 19); a declared
       clone handed a function pointer calls back through the table.
     - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body, named
@@ -1568,7 +1597,10 @@ Owed, no source yet. Each fixes the construction its rule names:
   `cq_measure` in a K-loop body and in its exit arm. Rule 6: a bijective accumulator read only by a flag.
 - rule 16: `calloc` with two rail operands whose product overflows; `signal` and `raise` with an invalid
   number; `fseek`, `fclose` and `remove` whose result is read behind a quantum field; `abort` under a quantum
-  predicate followed by a classical `exit`. Rule 22: a by-name `memcpy` from a freestanding body.
+  predicate followed by a classical `exit`; a classical `exit` behind a deferred entry with code
+  after it (the shot ends at the seed's `abort_i1`). §1.4, rule 27: a table clone calling a
+  by-name callee that holds a K-loop (`@__cq_k`). Rule 19: a callee of templates and a K-loop
+  with a kept `a_K`, called under a quantum predicate (the `_ctl` clone). Rule 22: a by-name `memcpy` from a freestanding body.
 - rule 24: `pthread_join(t, &r)` whose result is read (106 joins with a null result only).
 - rule 24: an observable `volatile` access at an address rail. Rule 26: a `byval`
   copy (with 164). Rule 27: a callback through a declared clone and the table; an `asm` with a quantum operand.

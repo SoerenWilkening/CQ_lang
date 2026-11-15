@@ -90,7 +90,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_template_*` | backend: out-of-place reversible ops and their `_unc` twins (§2) | **yes** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
 | `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
-| `__cq_register`, `__cq_act_<fn>`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
+| `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
 **Link order.** A referencing archive comes before the archive it references:
 `main.o  [lowered libraries (rule 27)]  libcq_templates.a  libcq_runtime.a` (template circuits
@@ -398,7 +398,7 @@ its fields; a format entry when the fields its format string consumes are writte
 | `void @cqrt_tape_effect_controlled(i32 c, i32 t, ptr name, i32 n)` and `i32 @cqrt_tape_effect_<W>_controlled(i32 c, i32 t, ptr name, i32 n)` → r | The effect entry of the host call `name` (`raise`, `remove`, `read`, …; a host string) under predicate c. Its arguments are the last n fields written to t before the call; fields of a preceding format entry beyond those its format string uses are ignored. `<W>` is the width token of the callee's result type (a pointer: `i64`); the bare form is emitted when the callee has no result or the program does not read it (CR rule 16). r is a fresh rail: the call's result when the entry is performed at this call, `\|0⟩` when it is skipped or deferred. No uncontrolled form exists: the compiler passes a `cqrt_alloc_i1(true)` seed (CR rule 16). |
 | `i32 @cqrt_tape_write_<W>(i32 t, i32 h)` → h′ and `i32 @cqrt_tape_write_<W>_controlled(i32 c, i32 t, i32 h)` → h′ | Appends a field. h′ is a fresh write-only tape rail with h′ ^= h (`_controlled`: h′ ^= c ? h : 0). h is unchanged. h′ stays entangled with h and is never freed or uncomputed *(corpus, 47; sample_check)*. |
 | `void @cqrt_tape_write_<W>_lit(i32 t, <T> lit)` | Appends a classical field. |
-| `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and an event of the sequence. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). |
+| `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and an event of the sequence. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). When f is classical-valued 1 (§0; always so for a fresh `alloc_i1(true)` seed) every branch aborted here and the call does not return: the shot ends at this point as at process exit (Deferred, above), the backend measuring the deferred events and performing the tape in order, the `noreturn` entry before the flag among it; the backend then ends the process if no performed entry did (CR rule 16, `noreturn`). |
 
 - **§2.** None. **Ref.** No reference implementation.
 - **Ex.** 47, 138 (fmt, write widths i32, f64, `_controlled`, `_lit`); abort 45. Regeneration
@@ -455,7 +455,8 @@ it.
   - `resolve`: the row's clone for the function at `fn` (`kind` 0 forward, 1 `_ctl`, 2 `_unc`,
     3 `_ctl_unc`), or null when `fn` has no row (host code).
   - `count`, `at`: the n registered addresses of function type `sig`, `i` < n in registration
-    order.
+    order. A `sig` is matched by the content of its string, never by its address: every module
+    has its own private `@.cq.sig` constants.
 - **Use.** A call through a classical function pointer resolves `(fp, kind)`; a null result is a
   call of host code (an ordinary call, or an effect entry with a null `name`, §1.11). A call
   through a function-pointer rail calls every registered function of the call's function type:
