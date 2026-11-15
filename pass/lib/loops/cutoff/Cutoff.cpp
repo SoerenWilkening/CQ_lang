@@ -2359,6 +2359,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // The values whose binding a later trip may change and that something after the loop may read: the header phis, the
   // continuation's phis, and every value of the unit with a user outside it. In the loop's block order (deterministic).
   std::vector<const Value *> tracked;
+  size_t atomsFrom = 0;   // tracked[atomsFrom..]: exit conditions read only as predicate atoms, merged at a received-K cut
   {
     SmallPtrSet<const BasicBlock *, 32> unitSet(L.block_begin(), L.block_end());
     unitSet.insert(U.arm.begin(), U.arm.end());
@@ -2386,6 +2387,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       for (PHINode &P : U.cont->phis())
         if (seen.insert(&P).second)
           tracked.push_back(&P);
+    // cq-6rp1v: the condition of a terminator that leaves the loop is an atom of the predicates of the blocks after it
+    // (its exit arm and what follows), though no instruction outside the unit uses it. A received-K cut is no edge of
+    // the program, so pred reads the atom on the paths where the cut ended the chain: closeTests merges it there. A
+    // classical exit test (Q10) is the program's own exit edge, whose predicate does not read the later trips' atoms.
+    atomsFrom = tracked.size();
+    for (BasicBlock *b : L.blocks()) {
+      Instruction *t = b->getTerminator();
+      Value *cnd = nullptr;
+      if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+        cnd = br->getCondition();
+      else if (auto *sw = dyn_cast<SwitchInst>(t))
+        cnd = sw->getCondition();
+      auto *ci = dyn_cast_or_null<Instruction>(cnd);
+      if (!ci || !unitSet.count(ci->getParent()))
+        continue;
+      if (none_of(successors(b), [&](const BasicBlock *s) { return !L.contains(s); }))
+        continue;
+      if (seen.insert(ci).second)
+        tracked.push_back(ci);
+    }
   }
   auto takeSnap = [&]() {
     Snap s;
@@ -2463,6 +2484,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // rail of its value (rule 7), minted on its own path.
       std::vector<std::pair<size_t, SmallVector<F, 4>>> vals;   // tracked index -> fields
       for (size_t k = 0; k < tracked.size(); ++k) {
+        if (k >= atomsFrom && !o.cut)
+          continue;
         const auto &b = o.snap.vals[k], &n = now.vals[k];
         if (!n)
           continue;
