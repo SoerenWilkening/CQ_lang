@@ -2,7 +2,7 @@
  * range bounded it. g's loop runs at most n trips, ending early where y runs out of low one bits; the first call
  * bounds n (x & 3, clone _b3, cutoff 3), the second bounds y and not n (its loop keeps K = 4 trips and its a_K):
  * both clones are named _b3 and are distinct clones. Each entry is checked §6 against its
- * own C program (cqcheck user). Regenerate b_bound_pos.O1.ll:
+ * own C program (cqcheck user). bp_second also checks that taint's second run keeps the bound on y (cq-ntqdl). Regenerate b_bound_pos.O1.ll:
  * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec b_bound_pos.c -o b_bound_pos.O1.ll */
 #include "CQ.h"
 __attribute__((noinline)) static int g(unsigned n, unsigned y) {
