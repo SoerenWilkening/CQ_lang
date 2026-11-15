@@ -18,8 +18,8 @@
 // spelling of the same gate sequence.
 // In a table clone (cq-9kcq, CR rule 27 "Cutoff", §1.4) the trips are cut at the K the clone receives, a classical
 // branch before each trip after the first (kCut); in a function a table clone of the module reaches by name, at the
-// smaller of @__cq_k and its own K (owner ruling Q2 of 2026-11-14); a received K above the clone's own c still runs c
-// trips (the rolled form, not built).
+// received @__cq_k unless it is all ones, else its own K (owner ruling Q2 as corrected 2026-11-15); a received K above
+// the loop's own c still runs c trips (the rolled form, not built: the recorded deviation).
 //
 // Two trip shapes, by the header's test region (the C oracle's definition, cq-arch T1.2 and CR rule
 // 14 for header-tested loops 09, 37, 54, 189): the header plus the blocks it reaches through single-
@@ -2928,8 +2928,10 @@ static bool reachedFromTable(LoweringContext &ctx) {
   return reached.count(ctx.S.F) != 0;
 }
 
-// Owner ruling Q2: in a function a table clone can reach by name, the K its K-loops are cut at: @__cq_k loaded once on
-// entry (the first block of the function lowered), the smaller of it and the loop's own K (unsigned).
+// Owner ruling Q2 as corrected 2026-11-15 (CR §1.4 "Received K": a value other than all ones is the K of that
+// activation, in place of its own, whether smaller or larger): in a function a table clone can reach by name, the K its
+// K-loops are cut at: @__cq_k loaded once on entry (the first block of the function lowered), then
+// select(ld == -1, K, ld) with K the loop's own.
 static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
   GlobalVariable *g = exits::receivedKGlobal(ctx.M);
   Type *i32 = Type::getInt32Ty(ctx.M.getContext());
@@ -2948,11 +2950,25 @@ static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
     ld = EB.CreateLoad(i32, g);
   }
   Constant *k = ConstantInt::get(i32, K);
+  Constant *none = ConstantInt::getAllOnesValue(i32);
+  ICmpInst *is = nullptr;
   for (User *u : ld->users())
-    if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->getIntrinsicID() == Intrinsic::umin && II->getArgOperand(1) == k)
-      return II;
-  IRBuilder<> EB(ld->getParent(), std::next(ld->getIterator()));   // cq-bh7xh: the entry block may still be open
-  return EB.CreateBinaryIntrinsic(Intrinsic::umin, ld, k);
+    if (auto *c = dyn_cast<ICmpInst>(u);
+        c && c->getPredicate() == ICmpInst::ICMP_EQ && c->getOperand(0) == ld && c->getOperand(1) == none) {
+      is = c;
+      break;
+    }
+  if (is)
+    for (User *u : is->users())
+      if (auto *S = dyn_cast<SelectInst>(u);
+          S && S->getCondition() == is && S->getTrueValue() == k && S->getFalseValue() == ld)
+        return S;
+  if (!is) {
+    IRBuilder<> EB(ld->getParent(), std::next(ld->getIterator()));   // cq-bh7xh: the entry block may still be open
+    is = cast<ICmpInst>(EB.CreateICmpEQ(ld, none));
+  }
+  IRBuilder<> EB(is->getParent(), std::next(is->getIterator()));
+  return EB.CreateSelect(is, k, ld);
 }
 
 // cq-9kcq: the K a K-loop of the function being lowered is cut at, or nullptr: a table clone's received K (its trailing

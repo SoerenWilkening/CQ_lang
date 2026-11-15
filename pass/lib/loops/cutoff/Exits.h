@@ -108,7 +108,8 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 // form and their twins store their K actual on entry and the value found back at every return.
 llvm::GlobalVariable *receivedKGlobal(llvm::Module &M);
 // Owner ruling Q2: in a clone or own symbol (not a table clone) that a table clone of its module reaches by name, the K a
-// cut of it uses in place of K: umin(@__cq_k, K), @__cq_k loaded once in the entry block of the function lowered;
+// cut of it uses in place of K: select(@__cq_k == -1, K, @__cq_k) (owner 2026-11-15: the received K replaces the own
+// one, smaller or larger), @__cq_k loaded once in the entry block of the function lowered;
 // nullptr in any other function (it cuts at K). For its K-loops, its quantum-depth recursion, and the K it passes on
 // (an indirect call's, a declared clone's).
 llvm::Value *receivedKBelow(cq::LoweringContext &ctx, unsigned K);
