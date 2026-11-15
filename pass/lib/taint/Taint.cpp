@@ -284,6 +284,8 @@ private:
   // path inside the lowered code, never because the function is externally visible or address-taken.
   bool eventPrecedes(const CallBase &CB, bool inLowered = false);
   void propagateEvents();
+  // Rules 14, 19 (cq-m8biu): S's body holds a quantum-exit loop whose a_K is kept (B > K or no bound).
+  bool ownKeptAK(SpecState &S);
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
                      std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {}, bool plain = false, bool table = false,
                      uint8_t rm = 0);
@@ -1998,17 +2000,6 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   }
   // _ctl iff under a quantum predicate and the callee's body has a non-pure gate (rule 19). The
   // test reads the callee's specialization without the flag.
-  bool ctl = false;
-  if (underQ) {
-    SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain, false, rm);
-    // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter). §1.4 _ctl, rule 5:
-    // a bus access under a quantum predicate is the _controlled form, a load included ("no bus access is hoisted or
-    // speculated"), so a callee that loads takes the predicate. A measurement is no template either: rule 19's controlled
-    // copy, so the register is not collapsed where the predicate is 0 (§1.4, rule 2).
-    if (plain || probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter ||
-        probe->measuresRail || probe->busLoadT || callsReach(G, G))
-      ctl = true;
-  }
   std::vector<uint64_t> bounds;
   std::vector<unsigned> boundFormals;
   for (unsigned i = 0; i < actuals.size(); ++i)
@@ -2024,6 +2015,22 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   if (viaIntrinsic || callsReach(G, cur->F)) {
     bounds.clear();
     boundFormals.clear();
+  }
+  bool ctl = false;
+  if (underQ) {
+    SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain, false, rm);
+    // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter). §1.4 _ctl, rule 5:
+    // a bus access under a quantum predicate is the _controlled form, a load included ("no bus access is hoisted or
+    // speculated"), so a callee that loads takes the predicate. A measurement is no template either: rule 19's controlled
+    // copy, so the register is not collapsed where the predicate is 0 (§1.4, rule 2).
+    if (plain || probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter ||
+        probe->measuresRail || probe->busLoadT || callsReach(G, G))
+      ctl = true;
+    // Rule 19 (owner ruling 2026-11-15, cq-m8biu): ... or a quantum-exit loop whose a_K is kept, itself or through its callees: the
+    // predicate seeds its chain (rule 14), so a_K reads 0 where the C program does not make the call. B is the clone's own, with
+    // the call's `_b` bounds: a loop with B <= K leaves the callee unguarded.
+    if (!ctl && probe->keptAK)
+      ctl = bounds.empty() ? true : getSpec(G, formal, tys, false, false, bounds, boundFormals, plain, false, rm)->keptAK;
   }
   SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals, plain, false, rm);
   recordCallee(CB, C);
@@ -2901,6 +2908,104 @@ void Analyzer::analyze(SpecState &S) {
 // ---------------------------------------------------------------------------------------------
 // Driver.
 
+// Rules 14, 19 (owner ruling 2026-11-15, cq-m8biu): a loop of S's body is a quantum-exit loop (spine's loops::classify Case::QuantumExit:
+// its continuation depends on a quantum branch inside it and no classical exit bounds it) whose a_K is kept: its cutoff bound B (loops-cutoff's
+// cutoffBound, with S's `_b` bounds) is unknown or above F's K.
+bool Analyzer::ownKeptAK(SpecState &S) {
+  if (S.F->isDeclaration() || !st.opts.kOf || !st.opts.boundOf)
+    return false;
+  FnInfo &fi = fn(S.F);
+  if (fi.LI->empty())
+    return false;
+  auto q = [&](const Value *V) {
+    if (auto *A = dyn_cast<Argument>(V))
+      return A->getParent() == S.F && S.formal[A->getArgNo()].any();
+    auto it = S.lanes.find(V);
+    return it != S.lanes.end() && it->second.any();
+  };
+  auto deadEnd = [](const BasicBlock *b) {
+    if (!isa<UnreachableInst>(b->getTerminator()))
+      return false;
+    for (const Instruction &I : *b)
+      if (isa<CallBase>(I))
+        return false;
+    return true;
+  };
+  for (Loop *Lp : fi.LI->getLoopsInPreorder()) {
+    const BasicBlock *H = Lp->getHeader();
+    auto inLoopCD = [&](const BasicBlock *B) {
+      auto it = S.cdt.find(B);
+      if (it != S.cdt.end())
+        for (const BasicBlock *T : it->second)
+          if (Lp->contains(T))
+            return true;
+      return false;
+    };
+    if (!inLoopCD(H))
+      continue;   // no quantum branch in the loop decides whether it runs on
+    // A classical exit LLVM counts bounds the loop (cq-z6q1, cq-s7c4): loops-classical, no a_K.
+    bool bound = false;
+    SmallVector<BasicBlock *, 4> exiting;
+    Lp->getExitingBlocks(exiting);
+    std::function<void(const Value *, bool)> disj = [&](const Value *c, bool exitOn) {
+      if (bound)
+        return;
+      if (!q(c)) {
+        if (exitCondCountKnown(*H, *c, exitOn))
+          bound = true;
+        return;
+      }
+      const Value *a = nullptr, *b = nullptr;
+      if (match(c, PatternMatch::m_LogicalOr(PatternMatch::m_Value(a), PatternMatch::m_Value(b))) && exitOn) {
+        disj(a, true);
+        disj(b, true);
+      } else if (match(c, PatternMatch::m_LogicalAnd(PatternMatch::m_Value(a), PatternMatch::m_Value(b))) && !exitOn) {
+        disj(a, false);
+        disj(b, false);
+      }
+    };
+    for (BasicBlock *X : exiting) {
+      if (all_of(successors(X), [&](const BasicBlock *s) { return Lp->contains(s) || deadEnd(s); }))
+        continue;
+      if (inLoopCD(X))
+        continue;
+      const Instruction *t = X->getTerminator();
+      if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional()) {
+        bool exitOnTrue = !Lp->contains(br->getSuccessor(0));
+        if (!q(br->getCondition())) {
+          if (exitCountKnown(*H, *X))
+            bound = true;
+        } else {
+          disj(br->getCondition(), exitOnTrue);
+        }
+      } else if (auto *sw = dyn_cast<SwitchInst>(t)) {
+        bound = bound || !q(sw->getCondition());
+      } else if (!isa<IndirectBrInst>(t)) {
+        bound = true;
+      }
+      if (bound)
+        break;
+    }
+    if (bound)
+      continue;
+    if (!fi.SE) {
+      Function &MF = const_cast<Function &>(*S.F);
+      fi.AC = std::make_unique<AssumptionCache>(MF);
+      fi.TLI = std::make_unique<TargetLibraryInfo>(*st.TLII, &MF);
+      fi.SE = std::make_unique<ScalarEvolution>(MF, *fi.TLI, *fi.AC, *fi.DT, *fi.LI);
+    }
+    Specialization P;
+    P.F = S.F;
+    P.bounds = S.bounds;
+    P.boundFormals = S.boundFormals;
+    std::optional<uint64_t> B = st.opts.boundOf(*Lp, *fi.SE, P);
+    unsigned K = st.opts.kOf(*S.F);
+    if (!B || *B > K)
+      return true;
+  }
+  return false;
+}
+
 void Analyzer::run() {
   Module &M = *st.M;
   st.DL = &M.getDataLayout();
@@ -3070,6 +3175,15 @@ void Analyzer::solve() {
       }
       // Rule 19: "a tape or abort event". A noreturn call on a classical path of the callee counts: under the caller's predicate
       // it is abort_i1 of that predicate, the host call would end programs C lets continue.
+      // Rules 14, 19 (owner ruling 2026-11-15, cq-m8biu): a kept a_K, in the body or through a callee.
+      bool ak = ownKeptAK(*S);
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          ak = ak || C->keptAK;
+      if (ak != S->keptAK) {
+        S->keptAK = ak;
+        st.changed = true;
+      }
       bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter || S->measuresRail || S->hasNoreturn;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
@@ -3834,7 +3948,7 @@ const Specialization *TaintInfo::calleeSpecialization(const llvm::CallBase &CB,
   if (it->second.size() > 1)
     internalError("taint: calleeSpecialization of an indirect call with several candidates", &CB);
   SpecState *C = it->second.front();
-  bool wantPure = caller.pure && C->effectful;
+  bool wantPure = caller.pure && C->effectful && !C->declared;   // a declared clone has no _pure (pureNeeded)
   for (size_t k = 0; k < I.published.size(); ++k)
     if (I.publishedState[k] == C && I.published[k].pure == wantPure)
       return &I.published[k];
@@ -3852,7 +3966,7 @@ TaintInfo::calleeCandidates(const llvm::CallBase &CB, const Specialization &call
   if (it == SS->callees.end())
     return out;
   for (SpecState *C : it->second) {
-    bool wantPure = caller.pure && C->effectful;
+    bool wantPure = caller.pure && C->effectful && !C->declared;   // a declared clone has no _pure (pureNeeded)
     const Specialization *found = nullptr;
     for (size_t k = 0; k < I.published.size() && !found; ++k)
       if (I.publishedState[k] == C && I.published[k].pure == wantPure)

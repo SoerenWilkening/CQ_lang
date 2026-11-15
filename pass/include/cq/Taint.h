@@ -2,7 +2,9 @@
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "cq/Abi.h"
@@ -19,6 +21,11 @@
 #include "llvm/Support/raw_ostream.h"
 
 // Taint.h  (rule 3; rule 20 Host-resident)
+namespace llvm {
+class Loop;
+class ScalarEvolution;
+} // namespace llvm
+
 namespace cq {
 
 // CR rule 2: every path of the source function from the definition of v to a return passes a cq_measure of v (or `also`, a
@@ -55,7 +62,14 @@ struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = f
                         // own symbol when set, the all-zero mask included.
                         uint8_t rm = 0; };
 struct TaintOptions { std::vector<abi::CloneSpec> roots;   // library-build and stress roots
-                      std::vector<std::string> listed; };   // rule 27: the bodiless functions the root lists name
+                      std::vector<std::string> listed;    // rule 27: the bodiless functions the root lists name
+                      // Rules 14, 19 (cq-m8biu): a function's K (loops::resolveK with the pass's K flags) and a quantum-exit
+                      // loop's cutoff bound B (loops::exits::cutoffBound) in a specialization, for the kept-a_K test of the
+                      // _ctl choice. Set by the pass; unset (the checker's oracle links taint without loops-cutoff) no loop
+                      // counts as keeping its a_K.
+                      std::function<unsigned(const llvm::Function &)> kOf;
+                      std::function<std::optional<uint64_t>(const llvm::Loop &, llvm::ScalarEvolution &,
+                                                            const Specialization &)> boundOf; };
 // Rule 23, a fenv call's object: the confined alloca (host-resident, its quantum part SSA), a constant (an empty part),
 // or memory (the whole environment in its own bytes).
 enum class FenvObject { Confined, Constant, Memory };
