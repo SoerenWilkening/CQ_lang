@@ -60,6 +60,9 @@ CASES = [
     # measuring the merge does not collapse t, so t * 7 is a measurement on every path on both sides.
     ("kept_merge", "kp", [], "pass", []),
     ("kept_merge", "kq", [], "pass", []),
+    # cq-j9bvd (CR rules 9, 14): a case-3 loop with two classical exit tests cleans its pre-loop templates; the run flag's
+    # walk enters the trip cycle through a single-predecessor block (was: x < i's pre-loop template leaked).
+    ("loop_two_exits", "two_exits", [], "pass", []),
 ]
 
 
