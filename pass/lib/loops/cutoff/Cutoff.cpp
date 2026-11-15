@@ -2684,6 +2684,31 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // last predicate into a fresh rail (alloc_i1(0) + copy_i1), the one kept (CR rule 14, owner 2026-11-15: both forms).
   // The region and the reverse loop: S3b, below. Not yet: every shape outside this subset, which keeps the static copies
   // with a note naming the site.
+  // cq-9kcq S7: the region form's values of the header test region (other than the header phis) that the body or the code
+  // after the loop reads: the rolled trip carries them across the back edge (the body of trip j reads the region evaluation
+  // made at the end of trip j-1, or before the loop).
+  std::vector<Instruction *> regionOut;
+  if (regionForm)
+    for (BasicBlock *b : L.blocks())
+      if (region.count(b))
+        for (Instruction &I : *b) {
+          if ((b == H && isa<PHINode>(I)) || I.getType()->isVoidTy())
+            continue;
+          // An i1 of the region (a test, a factored condition's atom) or a switch's condition is an atom of the predicates
+          // of the body's blocks: the body's flags read it.
+          if (I.getType()->isIntegerTy(1) || any_of(I.users(), [](const User *u) { return isa<SwitchInst>(u); })) {
+            regionOut.push_back(&I);
+            continue;
+          }
+          if (any_of(I.uses(), [&](const Use &U) {
+                auto *ui = cast<Instruction>(U.getUser());
+                const BasicBlock *ub = ui->getParent();
+                if (auto *phi = dyn_cast<PHINode>(ui))
+                  ub = phi->getIncomingBlock(U);
+                return !region.count(ub);
+              }))
+            regionOut.push_back(&I);
+        }
   auto rolledHere = [&]() -> bool {
     static const bool on = [] {
       const char *e = std::getenv("CQ_K_ROLLED");
@@ -2718,6 +2743,18 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
     else if (rolled::changesFenvState(L))
       why = "a quantum floating-point environment change in the trip (S12: its loop-carried rule 23 state)";
+    else if (regionForm && any_of(regionOut, [&](const Instruction *I) {
+               return I->getType()->isAggregateType() || I->getType()->isVectorTy();
+             }))
+      why = "an aggregate value of the header test region read by the body or after the loop";
+    else if (regionForm && any_of(regionOut, [&](const Instruction *I) {
+               return any_of(I->users(), [&](const User *u) {
+                 auto *cb = dyn_cast<CallBase>(u);
+                 const Function *f = cb ? cb->getCalledFunction() : nullptr;
+                 return f && f->getName().starts_with("cq_measure") && L.contains(cb);
+               });
+             }))
+      why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
     if (why) {
       noteUnbuilt(std::string("loops-cutoff: CQ_K_ROLLED: the K-loop keeps its static copies: ") + why,
                   H->getTerminator());
@@ -2734,7 +2771,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   unsigned rSeedScope = ~0u;
   BasicBlock *rX = nullptr, *rHead = nullptr, *rCont = nullptr;
   bool rKeptRt = false;   // the rolled driver made a_K's copy under a run-time branch on K < B (and set its role)
-  auto rolledBody = [&](Value *q0) -> Value * {
+  // cq-9kcq S7: rolledBody's state at X for the region values read after the loop (regionOut, rebound after wireExits).
+  auto rolledBody = [&](Value *q0, Value *gR) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
     IRBuilder<> &B = ctx.B();
     Type *i32 = Type::getInt32Ty(Cx);
@@ -2753,6 +2791,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (auto &[h, qi] : qind)
       if (qi.exitRail && !qi.exitRail->handle)
         qi.exitRail = Operand{seedRail(qi.exitRail->v, h->getType()), true};
+    // cq-9kcq S7: a quantum value of the header test region the evaluation before the loop folded to a literal enters the
+    // rolled trip as a seed too (a carried handle, below).
+    for (Instruction *I : regionOut)
+      if (ctx.bound(I) && isQ(I) && !ctx.operand(I).handle)
+        set(I, Operand{seedRail(ctx.operand(I).v, I->getType()), true});
     // cq-9kcq S6 (ROLLED_DESIGN.md §3 step 1; CR §1.4 "Received K", rule 27 "Cutoff"; owner 2026-11-15): the trips run
     // to the run-time bound n = umin(Krt, B) (Krt when no bound is known), Krt the received K (a table clone's K
     // parameter; in a function a table clone reaches, select(@__cq_k == -1, own K, @__cq_k)) in place of the own K,
@@ -2788,6 +2831,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (t0)
       if (auto *k = dyn_cast<ConstantInt>(t0); !(k && k->isOne()))
         g0 = t0;
+    // cq-9kcq S7: the region form's trip-0 test (lowered before the loop) with a classical conjunct gR ends the chain before
+    // trip 0 where gR is false, as a trip-0 test's conjunct t0 does.
+    if (gR)
+      if (auto *k = dyn_cast<ConstantInt>(gR); !(k && k->isOne()))
+        g0 = g0 ? B.CreateAnd(g0, gR) : gR;
     bool zeroGuard = !nK || nK->isZero() || g0;
     if (g0) {
       RailType i1{Kind::Int, 1};
@@ -2902,15 +2950,55 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
       }
     }
+    // cq-9kcq S7 (ROLLED_DESIGN.md §3 step 2, CR rule 14 "a header test with no guard is trip 0, made before the loop, and
+    // each trip is body then test"): in the region form a trip is the body, the state's advance, then the header test region
+    // lowered again on the advanced state and its test. A region value the body or the code after the loop reads is carried
+    // in a phi of H: its entry value is the evaluation before the loop, its latch value the trip's.
+    for (Instruction *I : regionOut) {
+      if (!ctx.bound(I))
+        continue;   // not lowered (a value of a block the region evaluation did not reach)
+      Operand o = ctx.operand(I);
+      PHINode *p = phiFor(o.v, o.handle);
+      set(I, Operand{p, o.handle});
+      carry.push_back({p, o.v, [&, I, hd = o.handle]() -> Value * {
+                         Operand n = ctx.operand(I);
+                         if (n.handle == hd)
+                           return n.v;
+                         if (!hd)
+                           internalError("loops-cutoff: a classical value of the header test region becomes a rail in the rolled trip", I);
+                         return seedRail(n.v, I->getType());   // the trip's evaluation folded it
+                       },
+                       [&, I, hd = o.handle](Value *v) { set(I, Operand{v, hd}); }, o.handle});
+    }
+    // The classical reachability the evaluation before the loop computed reads its values; the trip reads the phis.
+    creach.clear();
     Value *qc = qp;
     auto all = [](const BasicBlock *) { return true; };
+    auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
+    auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
     rTrip = rreg.get();
     // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
     // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
     segHook = rreg->segHook();
-    lowerBlocks(qc, all);
+    if (regionForm)
+      lowerBlocks(qc, inBody);
+    else
+      lowerBlocks(qc, all);
     if (!Xb)
       Xb = BasicBlock::Create(Cx, "", &ctx.out());
+    // The test that ends the trip: the latch's (body form; the state advances after its operands are read) or the header
+    // test region's, lowered after the advance (region form).
+    const Pred &go = regionForm ? regionCont : cont;
+    const Instruction *tat = regionForm ? at : latch->getTerminator();
+    std::function<void()> between = [&] { advance(qc); };
+    if (regionForm) {
+      advance(qc);
+      Value *qr = qc;
+      lowerBlocks(qr, inRegion);
+      if (qr != qc)
+        internalError("loops-cutoff: the header test region changed the trip predicate in the rolled trip", at);
+      between = [] {};
+    }
     // cq-9kcq S5 (owner ruling Q10, CR rule 14): the exit test's classical conjunct C is a classical exit edge of the
     // rolled loop: after the trip's state advances, `br C, Run, Skip`; Skip mints a_{j+1} as a |0> seed and goes to the exit
     // block X (a segment of its own, mirrored by the reverse); Run makes a_{j+1} = a_j & Q and goes on to the latch. X's phi
@@ -2918,13 +3006,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     BasicBlock *skipB = nullptr;
     Value *qSkip = nullptr;
     Value *qn;
-    if (Pred Cc = cont.isBottom() ? Pred::top() : cont.classicalFactor(ctx.T, ctx.S); Cc.isTop()) {
-      qn = chainTest(qc, cont, latch->getTerminator(), [&] { advance(qc); });
+    if (Pred Cc = go.isBottom() ? Pred::top() : go.classicalFactor(ctx.T, ctx.S); Cc.isTop()) {
+      qn = chainTest(qc, go, tat, between);
     } else {
-      Pred Q = cont.quantumPart(ctx.T, ctx.S);
+      Pred Q = go.quantumPart(ctx.T, ctx.S);
       Value *g = classicalValue(ctx, Cc);
       Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q);
-      advance(qc);
+      between();
       if (auto *k = dyn_cast<ConstantInt>(g); !(k && k->isOne())) {
         BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
         skipB = BasicBlock::Create(Cx, "", &ctx.out());
@@ -3034,7 +3122,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   };
 
   // The rolled driver (CQ_K_ROLLED) takes the trip-0 test's conjunct into its zero-trip guard (rolledBody).
-  bool rolled = !regionForm && rolledHere();
+  bool rolled = rolledHere();
   if (t0 && !rolled) {
     // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
     // seed through closeTests' phi, the state its initial value) and no trip is emitted.
@@ -3054,7 +3142,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       ctx.B().SetInsertPoint(Run);
     }
   }
-  if (regionForm) {
+  if (regionForm && !rolled) {
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
     // Multi-exit form: an exit from the body ends the trip there, so the next test runs under the
@@ -3093,7 +3181,23 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         kCut(q, j + 1);
     }
   } else if (rolled) {
-    q = rolledBody(q);
+    // cq-9kcq S7: the region form's trip 0 is its header test region, lowered and tested before the loop (a_0); a classical
+    // conjunct of that test (owner ruling Q10) goes to rolledBody's zero-trip guard.
+    Value *gR = nullptr;
+    if (regionForm) {
+      auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
+      lowerBlocks(q, inRegion);
+      abortArms(q, inRegion);
+      if (Pred C = regionCont.isBottom() ? Pred::top() : regionCont.classicalFactor(ctx.T, ctx.S); C.isTop()) {
+        q = conj(q, regionCont, at);
+      } else {
+        Pred Q = regionCont.quantumPart(ctx.T, ctx.S);
+        gR = classicalValue(ctx, C);
+        Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q);
+        q = fQ ? andRail(q, fQ) : q;
+      }
+    }
+    q = rolledBody(q, gR);
   } else {
     auto all = [](const BasicBlock *) { return true; };
     for (unsigned j = 0; j < c; ++j) {
@@ -3185,6 +3289,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   exitPhiVals.reserve(exitPhis.size());
   for (auto &[P, h] : exitPhis)
     exitPhiVals.push_back(exitOf(h));
+  // cq-9kcq S7: the region form's quantum values read after the loop (the last region evaluation, frozen once the loop
+  // exited) are X's state in the rolled form: rails of the region, wired out with the exit values.
+  std::vector<std::pair<Instruction *, Operand>> regionVals;
+  if (rreg && regionForm)
+    for (Instruction *I : regionQReads)
+      if (ctx.bound(I) && none_of(exitRebinds, [&](const std::pair<const Value *, PHINode *> &e) { return e.first == I; }))
+        regionVals.push_back({I, ctx.operand(I)});
   if (rreg) {
     // cq-9kcq S3b: the rolled loop's exit (the builder at its exit block X).
     std::vector<std::pair<const Value *, Operand>> out;
@@ -3224,6 +3335,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       add(exitRebinds[k].first, exitVals[k]);
     for (size_t k = 0; k < exitPhis.size(); ++k)
       add(exitPhis[k].first, exitPhiVals[k]);
+    for (auto &[I, o] : regionVals)
+      add(I, o);
     rolled::Region::ExitWiring wiring = rreg->wireExits(
         rSeedScope, out, outW, nullptr, rKeptFinal,
         [&](const Value *v) {
@@ -3253,6 +3366,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     });
     rreg->finishExits(rCont ? rCont : rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg, rX);
   }
+  for (auto &[I, o] : regionVals)
+    ctx.rebind(I, {o});
   for (size_t k = 0; k < exitRebinds.size(); ++k) {
     const Value *v = exitRebinds[k].first;
     // A trip-0 test (test0) that skips every trip leaves v unbound where it ended the chain (closeTests).
