@@ -93,7 +93,7 @@ MXREAD = ["p_find", "p_find2"]
 # rail the header phi names on trip 0 is never uncomputed through and freed dirty.
 CARRIED_PROBE = PROBES / "carried_rot.O1.ll"
 CARRIED = ["p38", "p38_cut", "p38_cutx"]
-NO_REVERSE = ["p38_cut", "p38_cutx"]   # a quantum bound: unrolled to the cutoff K, no reverse loop
+NO_REVERSE = ["p38_cut", "p38_cutx"]   # a quantum bound, a K-loop: push/pop not required (copies have none, rolled has)
 MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
             "m_r8b": [("measured", "i32"), ("measured", "i32")],
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
@@ -160,7 +160,9 @@ ROT_READ = ["r_after", "r_before"]
 EXIT_ARM_PROBE = PROBES / "exit_arm.O1.ll"
 EXIT_ARM = ["pc5b", "pa2b", "pa1b", "pc4", "pa5", "pc3"]
 # cq-2xl5 (nr-Y40): each exit_arm entry only calls the noinline function holding the loop, lowered in place under its own
-# name; the reverse loop is there. A loop with no classical bound (scan's, wordscan's: rule 14 case 2) has none.
+# name; the reverse loop (push/pop) is there. A loop with no classical bound (scan's, wordscan's) is a K-loop (rule 14
+# case 2), not a classically bounded loop: its function keeps rule 14's a_K (the checker's structural reading,
+# run.kept_ak_module). Not "no push/pop": the rolled K-loop has a reverse loop too (cq-9kcq).
 LOOP_IN = {"pc5b": ("cf", True), "pa2b": ("g", True), "pa1b": ("h", True), "pa5": ("chrn", True),
            "pc4": ("scan", False), "pc3": ("wordscan", False)}
 # cq-os2bx (owner Q1): musl __fwritex's shape, an exit arm with a call and stores runs once after the loop.
@@ -216,10 +218,15 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
         if probe == EXIT_ARM_PROBE and e in LOOP_IN:
             fn, rev = LOOP_IN[e]
             lb = body(text, fn)
-            has = "@cqrt_push(" in lb and "@cqrt_pop()" in lb
-            if not lb or has != rev:
+            if rev:
+                ok = "@cqrt_push(" in lb and "@cqrt_pop()" in lb
+            else:
+                sys.path.insert(0, str(ROOT / "checker"))
+                from cqcheck import run as cqrun
+                ok = "@cqe__set_kept_ak(" in body(cqrun.kept_ak_module(text), fn)
+            if not lb or not ok:
                 why.append(f"{fn}: " + ("no push/pop: the reverse loop is missing" if rev else
-                                        "push/pop in a loop with no classical bound (rule 14 case 2)"))
+                                        "no kept a_K: the loop with no classical bound is no K-loop (rule 14 case 2)"))
         elif e not in MEASURED_SEC6 + NO_REVERSE and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
             why.append("no push/pop: the reverse loop is missing")
         t0 = time.time()
