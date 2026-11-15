@@ -546,11 +546,11 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
 }
 
 namespace {
-// cq-9kcq: the temporary switch of the rolled K-loop (loops-cutoff's rolledHere), until S14.
+// cq-9kcq: the temporary switch of the rolled K-loop (loops-cutoff's rolledHere), until S14: on unless CQ_K_ROLLED=0.
 bool rolledSwitch() {
   static const bool on = [] {
     const char *e = std::getenv("CQ_K_ROLLED");
-    return e && StringRef(e) == "1";
+    return !(e && StringRef(e) == "0");
   }();
   return on;
 }

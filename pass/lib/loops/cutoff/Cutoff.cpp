@@ -2836,8 +2836,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   };
   auto rolledHere = [&]() -> bool {
     static const bool on = [] {
-      const char *e = std::getenv("CQ_K_ROLLED");
-      return e && StringRef(e) == "1";
+      const char *e = std::getenv("CQ_K_ROLLED");   // the rolled form is the default; CQ_K_ROLLED=0 until S14 removes it
+      return !(e && StringRef(e) == "0");
     }();
     if (!on)
       return false;
