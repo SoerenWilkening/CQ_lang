@@ -87,11 +87,11 @@ CASES = [
     # caller (mode 0, an empty flags rail, the flags dead): the measured result is copied out before the twin.
     ("partial_flags", "sc_measure", [], "pass",
      [r"call fastcc \{ i32, i32 \} @__cq_q_scaled_10\(i32 %\d+, double %\d+, i32 0, i32 %\d+\)",
-      r"call void @cqrt_copy_f64\(i32 %(\d+), i32 %(\d+)\)(.|\n)*call void @__cq_q_scaled_10_unc\((.|\n)*"
+      r"call void @cqrt_copy_f64\(i32 %(\d+), i32 %(\d+)\)(.|\n)*call fastcc void @__cq_q_scaled_10_unc\((.|\n)*"
       r"call double @cqrt_measure_f64\(i32 %\2\)"]),
     ("partial_flags", "sc_twice", [], "pass", [r"call void @cqrt_copy_f64"]),
-    ("partial_fields", "pr_first", [], "pass", [r"call void @cqrt_copy_i64(.|\n)*call void @__cq_q_mk_1_unc"]),
-    ("partial_fields", "pr_second", [], "pass", [r"call void @cqrt_copy_i64(.|\n)*call void @__cq_q_mk_1_unc"]),
+    ("partial_fields", "pr_first", [], "pass", [r"call void @cqrt_copy_i64(.|\n)*call fastcc void @__cq_q_mk_1_unc"]),
+    ("partial_fields", "pr_second", [], "pass", [r"call void @cqrt_copy_i64(.|\n)*call fastcc void @__cq_q_mk_1_unc"]),
     # cq-57ju (rule 19, cq-fl4n): a host call with classical arguments and no gate under a quantum predicate.
     ("host_unguarded", "hc_arm", [], "pass", [r"tail call fastcc i32 @helper\(i32 noundef 3\)\n  %\d+ = call i32 "
                                               r"@cq_template_select_i32_lh"]),
@@ -355,7 +355,7 @@ CASES = [
     ("err_setvbuf", "sv_rail", [], "pass", []),
     ("err_noerrno", "ne_rail", [], "pass", []),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
-    ("mint2", "mint2", [], "pass", [r"call void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, double %\d+, i32 %\d+\)"]),
+    ("mint2", "mint2", [], "pass", [r"call fastcc void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, i32 %\d+, double %\d+\)"]),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).
     ("twin_kept_overflow", "tk", [], "pass", []),
     # cq-c09h (owner 2026-11-02, revisits cq-kkgh): a by-value formal is a copy: the clone's cq_theta on it
@@ -427,7 +427,7 @@ CASES = [
     ("table_twin_measure", "e_rail", [], "pass", []),
     # Rule 19, cq-ylng: a twin's recompute through a by-name callee that rotates goes through the callee's twin on the registers
     # handed up (no Ry in any twin), a call of an own symbol's rail is one register, a void one is not repeated.
-    ("twin_rotating_callee", "y2a", [], "pass", [r"define internal fastcc void @__cq_q_f_11_unc\((?:(?!\n}\n)[\s\S])*call void @__cq_q_rot_1_unc\(i32 (%\d+)(?:(?!\n}\n)[\s\S])*call void @__cq_q_rot_1_unc\(i32 \1"]),
+    ("twin_rotating_callee", "y2a", [], "pass", [r"define internal fastcc void @__cq_q_f_11_unc\((?:(?!\n}\n)[\s\S])*call fastcc void @__cq_q_rot_1_unc\(i32 (%\d+)(?:(?!\n}\n)[\s\S])*call fastcc void @__cq_q_rot_1_unc\(i32 \1"]),
     ("twin_rotating_callee", "y2b", [], "pass", []),
     ("twin_rotating_callee", "y2c", [], "pass", []),
     ("twin_rotating_callee_phase", "y3a", [], "pass", []),
