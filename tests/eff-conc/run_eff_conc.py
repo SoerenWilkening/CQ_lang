@@ -116,7 +116,7 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_join_qresult": (r"call ptr @qjob\(", _THR),
           "p_thr_plain": (r"call ptr @boxjob\(", _THR), "p_thr_qresult": (r"call i32 @qret\(", _THR),
           "p_thr_table": (r"@__cq_clone_resolve\(", _THR), "p_thr_qsel": (r"@__cq_clone_at\(", _THR),
-          "p_thr_ext": (r"call i32 @__cq_q_ext_job_1_t\(", _THR), "p_thr_global": (None, _THR),
+          "p_thr_ext": (r"call i32 @__cq_q_ext_job_1_t\([\s\S]*call void @__cq_q_ext_job_1_t_unc\(", _THR), "p_thr_global": (None, _THR),
           "p_thr_nullres": (r"call i32 @qret\(", _THR), "p_thr_noask": (r"call ptr @njob\(", _THR),
           "p_runtime_qjob": (r"@__cq_clone_resolve\(", _THR)}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",

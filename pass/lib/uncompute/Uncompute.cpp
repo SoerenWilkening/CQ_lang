@@ -3846,6 +3846,13 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
       I.keepCopyForStore(r, store, h);
       continue;
     }
+    // cq-j2r0j (CR rule 19 "Function pointers", rule 27): a declared clone's twin is called exactly once, at its rule-18
+    // position; where rule 18 would keep a result (a store of it) the result is first copied into a fresh rail KEPT in its
+    // place. The store reads that copy; the call's result stays garbage, which its twin zeroes.
+    if (x.group != kNone && I.groups[x.group].table && !Impl::keptRole(x.role) && !I.isMerge(r)) {
+      I.keepCopyForStore(r, store, h);
+      continue;
+    }
     // cq-guzg3, cq-ii0vf: rule 5 keeps the rail with the store that ran (§6 item 1: a store's value and control rail). Where
     // a classical branch can bypass this store the rail is a rail like any other on those paths.
     bool plain = !Impl::keptRole(x.role) && x.creator != kNone && x.group == kNone && !x.loadCall && !I.isMerge(r) &&
