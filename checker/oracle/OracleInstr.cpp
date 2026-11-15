@@ -263,6 +263,28 @@ public:
     return false;
   }
 
+  // CR §0, owner ruling 2026-11-15 (cq-z9vt), as the pass's loops::resolveK reads it: cqcc binds a line per unit onto
+  // the function it names as "cq-k"="k" ("0": none); a line naming a function no unit defines stays the constant
+  // __cq_k_<f>, read with llvm-link's copies __cq_k_<f>.N, the largest k. 0: no line.
+  static unsigned lineK(const Function &F) {
+    if (F.hasFnAttribute("cq-k")) {
+      unsigned v = 0;
+      return F.getFnAttribute("cq-k").getValueAsString().getAsInteger(10, v) ? 0 : v;
+    }
+    std::string name = ("__cq_k_" + F.getName()).str();
+    uint64_t best = 0;
+    for (const GlobalVariable &GV : F.getParent()->globals()) {
+      StringRef n = GV.getName();
+      unsigned d;
+      if (n == name || (n.size() > name.size() + 1 && n.starts_with(name) && n[name.size()] == '.' &&
+                        !n.drop_front(name.size() + 1).getAsInteger(10, d)))
+        if (GV.hasInitializer())
+          if (auto *CI = dyn_cast<ConstantInt>(GV.getInitializer()))
+            best = std::max(best, CI->getZExtValue());
+    }
+    return unsigned(best);
+  }
+
   unsigned resolveK(const Function &F) {
     // CR §0: per-function flag, CQ_K(f, k) (the `used` constant __cq_k_<f>), global flag, 4.
     for (const std::string &item : KPerFunction) {
@@ -273,11 +295,20 @@ public:
       if (fn == F.getName())
         return v;
     }
-    if (const GlobalVariable *GV = M.getGlobalVariable(("__cq_k_" + F.getName()).str(), true))
-      if (GV->hasInitializer())
-        if (auto *CI = dyn_cast<ConstantInt>(GV->getInitializer()))
-          if (CI->getZExtValue() > 0)
-            return unsigned(CI->getZExtValue());
+    // CR §0 "The per-function flag names every function of that C name": a static llvm-link renamed (`f.3`) too
+    if (F.hasLocalLinkage()) {
+      auto [base, sfx] = F.getName().rsplit('.');
+      unsigned n;
+      if (!sfx.empty() && !base.empty() && !sfx.getAsInteger(10, n))
+        for (const std::string &item : KPerFunction) {
+          auto [fn, k] = StringRef(item).split('=');
+          unsigned v = 0;
+          if (fn == base && !k.getAsInteger(10, v) && v > 0)
+            return v;
+        }
+    }
+    if (unsigned v = lineK(F))
+      return v;
     if (KGlobal.getNumOccurrences() && KGlobal > 0)
       return KGlobal;
     return 4;
