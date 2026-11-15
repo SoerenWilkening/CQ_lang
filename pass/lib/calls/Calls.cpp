@@ -749,17 +749,20 @@ void emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function *Fp, Value *f
   }
   SmallVector<Value *, 4> outs;
   SmallVector<Operand, 4> fops;
+  SmallVector<RailType, 4> widths;
   if (leaves.empty()) {
     outs.push_back(call);
     fops.push_back(Operand{call, true});
+    widths.push_back(railTypeOf(CB.getType()));
   } else {
     for (unsigned k = 0; k < leaves.size(); ++k) {
       Value *e = ctx.B().CreateExtractValue(call, {k});
       outs.push_back(e);
       fops.push_back(Operand{e, true});
+      widths.push_back(railTypeOf(leaves[k]));
     }
   }
-  ctx.unc().recordTableCall(call, outs);
+  ctx.unc().recordTableCall(call, outs, widths);
   if (leaves.empty())
     ctx.bind(&CB, call);
   else

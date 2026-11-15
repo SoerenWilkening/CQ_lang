@@ -44,8 +44,9 @@ public:
   // Rule 18, §1.4: fwd calls an own symbol; its twin is spelled `name` (the all-zero mask's _unc), not after the callee.
   void noteTwinName(llvm::CallInst *fwd, llvm::StringRef name);
   // Rules 19, 27: the results of a table clone call: its twin zeroes and frees them (the caller frees none), called once
-  // after their last use.
-  void recordTableCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs);
+  // after their last use. widths: each out's rail type (from the C result type), used where a kept result is copied
+  // out before the twin (cq-j2r0j).
+  void recordTableCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs, llvm::ArrayRef<RailType> widths);
   // Rule 18: the rail r is a result of a call of a clone that loads from the bus: its twin runs after the last consumer
   // and before the next version change on every path; where that change comes first r is KEPT and no twin is called.
   void noteLoadsBus(RailId r);
