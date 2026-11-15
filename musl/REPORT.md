@@ -3,6 +3,18 @@
 Branch `flat-memory` at 8c3b8d5, CQ_spec 4d08ffa, LLVM 19.1.7, K = 4. Per-row results: [`libc_results.tsv`](libc_results.tsv).
 A row is one libc function, or one function@mask when the mask names which inputs are quantum. The check is `cqcheck user --light` (16 samples): a smoke test, not a proof, and once it hid a miscompile.
 
+## Update 2026-11-15: a sample only; the table is NOT re-checked at 3526c7e4
+
+`libc_results.tsv` still holds the state at `flat-memory` 112075bc. Since then the pass changed for the rulings of 2026-11-14 and 2026-11-15 (end of shot at a certain `noreturn`, the received K in table clones and by-name helpers, `_ctl` clones for callees with a kept a_K, `CQ_K` per unit) and for about 40 fixes. Every sweep row is entered through a table clone, so every row's lowering changed.
+
+**What was run** at `flat-memory` 3526c7e4 (CQ_spec 0b8eae4), in a fixed shuffled order, 12 minutes of lowering and 14 minutes of checks:
+- 95 of the 797 targeted rows were lowered with the plugin of 112075bc and the new one: 88 lower and differ; 5 lowered within 60 s before and exceed 60 s now (`ccosf`, `ccosl`, `cpowl@1`, `csinhf`, `csinhl`); `fprintf` and `vfprintf` exceed 60 s with both.
+- The 88 changed rows were checked with `cqcheck user --light` (16 samples, 150 s per row): 87 PASS as recorded; `sscanf` was killed at the 150 s limit (its recorded PASS was made with a 600 s limit).
+
+**Not re-checked:** the other 702 rows, and the five rows that now exceed the lowering limit. Their verdicts in `libc_results.tsv` are those of 112075bc.
+
+**Lowering time and size.** The received-K cuts made lowered modules larger (`mbsrtowcs@01`: 4.9 MB and 3 s before, 14.6 MB and 14 s now, after the fix 3cfa9110 brought it down from 76.7 MB). The rolled K-loop form (cq-9kcq, in work) removes the copies this comes from.
+
 ## Update 2026-11-13: unchanged at 807 PASS, 6 PASS (STRUCTURE ONLY), 0 FAIL of 813
 
 `libc_results.tsv` now holds the state at `flat-memory` 112075bc (CQ_spec 5d23dd0). No verdict changed since a56e6b09; 134 rows have a new `source`.
