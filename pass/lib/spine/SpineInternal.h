@@ -153,6 +153,12 @@ struct Shared {
   // and the conjunction flag minted for it (nullptr until currentFlag() asks under a non-top predicate).
   llvm::Value *tripFlag = nullptr;
   llvm::Value *tripZeroRail = nullptr;   // rule 14: a re-rolled K-loop's a_0, whose pre-header guard is the latch test at trip 0 by SCEV
+  // cq-wuzt3 (rules 5, 8, 14; 55): in a rolled K-trip, the chain predicate phi whose trip-0 value is the seed, an arm's
+  // false-edge flag (a negated atom; not tripZeroRail), and the trip counter. A kept store under that phi keeps a copy of the trip's
+  // predicate; trip 0's copy is closed by rule 8's X bracket (xorc with j == 0), so it holds the guard's atom as the static
+  // trip 0 keeps it (bus::keptControl), not its negation.
+  llvm::Value *rolledZeroQ = nullptr;
+  llvm::Value *rolledZeroJ = nullptr;
   llvm::Value *tripConj = nullptr;
   // The predicate the trip rail implies by its seed (nullptr = none known): lowerInstruction's seedPred.
   const Pred *tripSeedPred = nullptr;
