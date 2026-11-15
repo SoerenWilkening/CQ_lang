@@ -4,7 +4,8 @@
 For probes/b_bound_i32.O1.ll it checks, and fails on:
   - cq-lower (with its built-in structural verifier) exits 0, and plain cq-verify accepts the output;
   - the _b3 clone of f runs min(K, 3) = 3 trips (three forward mul templates) and frees every rail it defines
-    but the one it returns (its a_3 included: B = 3 < K keeps no a_K);
+    but the one it returns (its a_3 included: B = 3 < K keeps no a_K), a freed phi freeing what it merges; only a_K's
+    copy on a received-K cut path is kept (cq-9kcq, cq-dav);
   - the _b7 clone runs K = 4 trips;
   - bb_i32 is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 Outputs go to build/tests/loops-cutoff/out/.
@@ -59,7 +60,23 @@ def main() -> int:
         ret = re.search(r"^\s*ret i32 (%\d+)", c3, re.M)
         defined = re.findall(r"^\s*(%\d+) = call i32 @(?:cqrt_alloc|cq_template)\w*\(", c3, re.M)
         freed = set(re.findall(r"@cqrt_free\(i32 (%\d+)\)", c3))
-        kept = [d for d in defined if d not in freed and (not ret or d != ret.group(1))]
+        # A freed (or returned) phi frees each rail it merges (the received-K cut's joins, cq-9kcq).
+        phis = {m.group(1): re.findall(r"\[ (%\d+), %[\w.]+ \]", m.group(2))
+                for m in re.finditer(r"^\s*(%\d+) = phi i32 (.*)$", c3, re.M)}
+        grew = True
+        while grew:
+            grew = False
+            for p, ins in phis.items():
+                if p in freed or (ret and p == ret.group(1)):
+                    for i in ins:
+                        if i not in freed:
+                            freed.add(i)
+                            grew = True
+        # cq-9kcq, cq-dav (CR rule 27 "Cutoff"): a_K's copy made on a received-K cut path (fresh |0>, copy_i1, the cut's
+        # branch to its join) is kept there, where the received K is below 3; nothing else is (B = 3 <= K).
+        cut = set(re.findall(r"^\s*(%\d+) = call i32 @cqrt_alloc_i1\(i1 false\)\n\s*call void @cqrt_copy_i1\(i32 %\d+, "
+                             r"i32 \1\)\n\s*br label", c3, re.M))
+        kept = [d for d in defined if d not in freed and d not in cut and (not ret or d != ret.group(1))]
         if kept:
             why.append("the _b3 clone keeps " + ", ".join(kept))
     c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(PROBE), "--lowered", str(lowered),
