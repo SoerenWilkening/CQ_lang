@@ -64,9 +64,6 @@ def cqcc(*args, cwd=None, env=None):
     return run([sys.executable, CQCC, *args], cwd=cwd, text=True, env=dict(ENV, **(env or {})))
 
 
-# K = 0 lowers in the rolled K-loop form only, behind the switch CQ_K_ROLLED until cq-9kcq S14 makes it the default
-# (owner 2026-11-15); the K = 0 checks set it.
-ROLLED = {"CQ_K_ROLLED": "1"}
 sys.path.insert(0, str(ROOT / "tests" / "loops-cutoff"))
 import ktrips  # noqa: E402
 
@@ -251,7 +248,7 @@ def test_k(tmp):
     for src, flag, want in (("kunit_def_noline.c", "-cq-k=f=0", [0]), ("kunit_def_noline.c", "-cq-k-default=0", [0]),
                             ("kunit_def_noline.c", "-cq-k=f=3", [3]), ("classical.c", "-cq-k-default=0", None)):
         out = tmp / f"k0.{Path(src).stem}.{flag[1:].replace('=', '_')}.ll"
-        r = cqcc("-S", SRC / src, flag, "-o", out, env=ROLLED)
+        r = cqcc("-S", SRC / src, flag, "-o", out)
         tag = f"K {flag} ({src})"
         if r.returncode or not out.exists():
             fail(tag, r.stderr)
@@ -369,15 +366,15 @@ def test_k_units(tmp):
 
     # CQ_K(f, 0) (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is a K): the defining unit's 0 wins over another unit's 3,
     # and a static's own 0 is its K next to a static of the same name at 3; each lowered as the one-unit lowering at its
-    # K, the K-loop at 0 running no trip, in both link orders (under CQ_K_ROLLED, which K = 0 needs until S14)
-    r0 = {"f0": fn_body(low("ref.f0", SRC / "kunit_def_noline.c", "-cq-k=f=0", env=ROLLED)[0] or "", "f"),
-          "h0": fn_body(low("ref.h0", SRC / "kunit_st0.c", "-cq-k=helper=0", env=ROLLED)[0] or "", "__cq_q_helper_1"),
-          "h3": fn_body(low("ref.h3r", SRC / "kunit_st3.c", "-cq-k=helper=3", env=ROLLED)[0] or "", "__cq_q_helper_1")}
+    # K, the K-loop at 0 running no trip, in both link orders
+    r0 = {"f0": fn_body(low("ref.f0", SRC / "kunit_def_noline.c", "-cq-k=f=0")[0] or "", "f"),
+          "h0": fn_body(low("ref.h0", SRC / "kunit_st0.c", "-cq-k=helper=0")[0] or "", "__cq_q_helper_1"),
+          "h3": fn_body(low("ref.h3r", SRC / "kunit_st3.c", "-cq-k=helper=3")[0] or "", "__cq_q_helper_1")}
     if not all(r0.values()) or len(set(r0.values())) != len(r0):
         fail("CQ_K units, K 0", "the one-unit references are missing or do not tell the K apart")
     else:
         for order in (["kunit_def0.c", "kunit_use3.c"], ["kunit_use3.c", "kunit_def0.c"]):
-            text, err = low("f0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order], env=ROLLED)
+            text, err = low("f0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order])
             if text is None:
                 continue
             tag = f"CQ_K units, the defining unit's 0 wins over another's 3 ({' '.join(order)})"
@@ -388,7 +385,7 @@ def test_k_units(tmp):
             else:
                 ok(f"{tag}: K 0, no trip, warned")
         for order in (["kunit_st0.c", "kunit_st3.c"], ["kunit_st3.c", "kunit_st0.c"]):
-            text, err = low("st0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order], env=ROLLED)
+            text, err = low("st0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order])
             if text is None:
                 continue
             tag = f"CQ_K units, a static's own 0 next to a static of its name at 3 ({' '.join(order)})"

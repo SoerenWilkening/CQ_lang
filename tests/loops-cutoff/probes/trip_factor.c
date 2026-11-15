@@ -1,6 +1,6 @@
 /* tests/loops-cutoff mixed conditions and classical choices inside a K-trip (CR rules 8, 9 with rule 14).
  * (a) cq-kbygn: a branch condition `C && Q` inside a trip is factored on its Boolean function; C stays a classical
- *     branch in every trip copy around the quantum part (rule 8), so where C is false the arm emits nothing.
+ *     branch in every trip around the quantum part (rule 8), so where C is false the arm emits nothing.
  * Each entry is checked §6 against its own C program (cqcheck user); run_probes.py --br-in counts the `br`.
  * Regenerate trip_factor.O1.ll:
  * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec trip_factor.c -o trip_factor.O1.ll */
@@ -40,7 +40,7 @@ unsigned pb_nested(unsigned x0, double th, unsigned k, int c, unsigned z0) {
 
 /* (c) cq-o5tjh (CR rule 9: "A `select` or `phi` whose condition (or choice of incoming edge) is purely classical is a
  *     classical `select`/`phi` over the handles, no gate"): the merge of the two classical arms is a classical select
- *     in every trip copy, not a select template on a seed of the classical condition. */
+ *     in every trip, not a select template on a seed of the classical condition. */
 unsigned pc_choice(unsigned x0, double th, unsigned k, int c, unsigned y0) {
   unsigned x = x0, y = y0; cq_theta(&x, th); cq_theta(&y, th);
   unsigned acc = 1, cell = 0;

@@ -1,5 +1,5 @@
 /* tests/loops-cutoff classically bounded loop inside a K-loop trip (cq-h5uj, cq-odo1; CR rule 14 case 1 or 3 inside
- * case 2): the inner loop stays a classical loop over its classical bound, lowered once per unrolled trip under the
+ * case 2): the inner loop stays a classical loop over its classical bound, lowered once in the rolled trip under the
  * trip predicate, behind a real classical branch on the trip's classical path to its header (a zero-trip guard false
  * skips it; its values read after it are |0> there). musl __rem_pio2_large's `for (fw = 0, j = 0; j <= jx; j++)`
  * inside its quantum `for (i = jz + 1; i <= jz + k; i++)`. Each entry is checked §6 against its own C program

@@ -156,22 +156,22 @@ add_test(NAME loops-cutoff-measure-seq
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in e=2 --measures-in e0=2
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_seq.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-# cq-47f8h (owner 2026-11-07): measurements are identified by call site: the K copies on trips no sample of the C program
-# reaches execute the site C does reach; run_probes.py MUTANTS: an extra site, another shape, a wrong value are rejected.
+# cq-47f8h (owner 2026-11-07): measurements are identified by call site: the trips no sample of the C program reaches
+# execute the site C does reach; run_probes.py MUTANTS: an extra site, another shape, a wrong value are rejected.
 add_test(NAME loops-cutoff-measure-site
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4 --measures-in g=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_site.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-v8cn7, cq-1ye9c (CR rules 2, 8, 14): a measurement behind a classical branch, in a K-loop's trips and without a loop;
-# run_probes.py MUTANTS: a trip copy measuring another register, measurements hoisted above the classical br, rejected.
+# run_probes.py MUTANTS: a trip measuring another register, measurements hoisted above the classical br, rejected.
 add_test(NAME loops-cutoff-measure-cbr
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in h=4 --measures-in g=1
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_cbr.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # rulings Q8, Q9: a body cq_measure of a carried value whose next value is unrelated (trip j measures the carried rail of
-# trip j); run_probes.py MUTANTS: a copy measuring another register through a select of its own making is rejected.
+# trip j); run_probes.py MUTANTS: a trip measuring another register through a select of its own making is rejected.
 add_test(NAME loops-cutoff-measure-carried
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in measure_carried=4
@@ -195,17 +195,18 @@ add_test(NAME loops-cutoff-measure-outcome
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in meas_behind_outcome=3
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_outcome.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-# cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in every trip copy (the arm
+# cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in the trip (the arm
 # C does not take emits nothing; the taken arm's effects sit under the trip predicate alone), in a clone, a _ctl clone
 # and a twin; a sub-loop, a noreturn arm and a measurement behind one. Each entry §6-checked against its C program.
-# pa_loop's cqrt_alloc_i1: the chain a_1 to a_4 (no rail for the arm's predicate: the store runs under a_j alone), 4 at
-# 8fe330b3; 7 since aac601b9 (owner ruling Q2 of 2026-11-14: pa_loop, reached by name from pa_store's table clone, is cut
-# at the received K, and each copied trip's cut keeps a_j's copy, alloc_i1 + copy_i1, in a block entered only when
-# @__cq_k < 4; ktrips.runs does not evaluate the copied cut's `icmp ult i32 j, K`, so counts those 3 sites once each).
+# pa_loop's cqrt_alloc_i1 runs (no rail for the arm's predicate: the store runs under a_j alone), the rolled trip counted
+# K = 4 times (cq-9kcq S14): per trip the chain's a_j (and_i1 into a fresh rail) and the kept store's control, a copy of
+# the trip's predicate (alloc_i1 + copy_i1 in the store's arm, counted though behind the classical br on p != NULL), 8;
+# and a_K's copy after the loop (alloc_i1 + copy_i1 at the exit block), 9. pa_loop is reached by name from pa_store's
+# table clone, so its trip count is the received K at run time (@__cq_k, all ones: its own 4).
 add_test(NAME loops-cutoff-trip-cbr
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
-          --br-in __cq_q_pa_loop_100=4 --calls-in __cq_q_pa_loop_100=cqrt_alloc_i1=7
+          --br-in __cq_q_pa_loop_100=4 --calls-in __cq_q_pa_loop_100=cqrt_alloc_i1=9
           --br-in __cq_q_pa_loop2_100=4 --br-in pb_call=8 --calls-in pb_call=__cq_q_pb_note_11_b2147483647_ctl=4
           --br-in __cq_q_pc_inner_1000_ctl=4 --br-in pd_trip=4 --br-in __cq_q_pe_f_100=8 --br-in __cq_q_pe_f_100_unc=8
           --br-in pf_nested=8 --br-in pg_abort=8 --br-in ph_measure=8
@@ -220,7 +221,7 @@ add_test(NAME loops-cutoff-b-zero
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/b_bound_zero.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-kbygn (CR rule 8 with rule 14): a mixed branch condition `C && Q` inside a K-trip is factored on its Boolean function,
-# its classical factor a `br` in every trip copy (no seed), also where -O1 joined it with a sub-loop's guard. Each entry
+# its classical factor a `br` in the trip (no seed), also where -O1 joined it with a sub-loop's guard. Each entry
 # §6-checked against its C program.
 add_test(NAME loops-cutoff-trip-factor
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
@@ -231,7 +232,7 @@ add_test(NAME loops-cutoff-trip-factor
 # cq-kbygn exit-test part (owner ruling Q10; CR rule 14): the classical conjunct of a K-loop's exit test is a `br` at each
 # of the K tests (the chain ends where it is false, no later trip), for `while (c && q)`, `do ... while (c && q)` and a c
 # that changes in the loop. Each entry §6-checked against its C program; the mutant without test 0's br is rejected.
-# --test-br-in: the conjunct's br runs once per test, exactly, in the copied and the rolled form: K + 1 = 5 tests for the
+# --test-br-in: the conjunct's br runs once per test, exactly: K + 1 = 5 tests for the
 # loops tested at the top (a_0 to a_K: before trip 0 and after each trip), K = 4 for the do-while (a_0 is the seed).
 add_test(NAME loops-cutoff-exit-conjunct
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
@@ -242,11 +243,12 @@ add_test(NAME loops-cutoff-exit-conjunct
 # cq-9kcq with owner rulings Q2 and Q3 of 2026-11-14 (CR 1.4 "Received K", rule 27 "Cutoff", rule 6): @__cq_k carries the
 # received K to the helpers a table clone calls by name (one level, nested, a helper also called from an ordinary entry,
 # the _ctl, forward and twin forms, restored at every return of a table clone); rule 6's per-trip clean in a loop the
-# received K cuts (a helper's carried sum, a carried value adding a measured outcome). Each entry §6-checked against
-# table_kh_c.O1.ll; the mutants that ignore @__cq_k in a helper or drop its restore are rejected.
+# received K cuts (a helper's carried sum, a carried value adding a measured outcome). Each entry §6-checked against its
+# C program (the C oracle runs each loop at the K the circuit uses, the received K included, cqo_rt.c k_recv); the
+# mutants that ignore @__cq_k in a helper or drop its restore are rejected.
 add_test(NAME loops-cutoff-table-kh
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_kh=table_kh_c.O1.ll
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_kh.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-wkzu9 (CR rule 19 "Address rail", rule 14, rule 27 "Cutoff"): table functions of one type calling by-name helpers that
@@ -258,7 +260,7 @@ add_test(NAME loops-cutoff-ctl-helper
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/ctl_helper.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-bxikv (CR rules 8, 14): a register rotated in place behind a classical branch of every trip is carried in place (one
-# rail on both paths of the branch), no per-trip copy.
+# rail on both paths of the branch), no fresh rail per trip.
 add_test(NAME loops-cutoff-trip-register
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
@@ -288,25 +290,18 @@ add_test(NAME loops-cutoff-trip-switch
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq (CR rule 27 "Cutoff", §1.4, rule 19): a K-loop in a table clone runs on the K the clone receives: each callee
 # (body form, two exits, nested, do-while, continue, return, a bus-load exit) is called through a pointer from an entry at
-# K 2 while its own K is 4. Each entry §6-checked against table_k_c.O1.ll (the callees at the received K, the C oracle's
-# per-function resolution); the mutant that compares with the own K is rejected.
+# K 2 while its own K is 4. cq-fy1k5 (CR §6 "the same cutoff as the circuit"; owner 2026-11-15): the C oracle runs a
+# K-loop of a function reached through a pointer, and of what that calls by name, at the K the caller passes (cqo_rt.c
+# k_recv), so each entry is §6-checked against table_k.O1.ll itself; the own_k mutant is rejected.
 add_test(NAME loops-cutoff-table-k
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_k=table_k_c.O1.ll
-          ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-# cq-fy1k5 (CR §1.4 "Received K", §6 "the same cutoff as the circuit"; owner 2026-11-15): the C oracle runs a K-loop of a
-# function reached through a pointer, and of what that calls by name, at the K the caller passes (cqo_rt.c k_recv), so the
-# same entries are §6-checked against table_k.O1.ll itself (each received K 2 at most the callees' own 4); the own_k
-# mutant is rejected against the one C module.
-add_test(NAME loops-cutoff-table-k-self
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq S6 (CR §1.4 "Received K": the K of that activation in place of its own, smaller or larger; owner 2026-11-15):
 # the reproducer tk_f with a received K 6 above the callee's own 4 (tk6_f, tk6_d) and 2 below it (tk2_f), each §6-checked
-# against the one C module (the C oracle runs the callee at the K its caller passes); the own_k mutant is rejected.
+# against the one C module (the C oracle runs the callee at the K its caller passes); the own_k mutant (a cut too late) and
+# recv_k_cut1 (a cut too early: 1 trip at a received K 2) are rejected.
 add_test(NAME loops-cutoff-table-k6
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
@@ -320,8 +315,6 @@ add_test(NAME loops-cutoff-k-chain
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/k_chain.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-# both write build/tests/loops-cutoff/out/table_k.*.ll
-set_tests_properties(loops-cutoff-table-k loops-cutoff-table-k-self PROPERTIES RESOURCE_LOCK loops-cutoff-table-k-out)
 # cq-lv2ba (CR rules 14, 16): a classically bounded sub-loop with an abort arm behind a classical condition of a K-trip,
 # its counter read after it: a rail on the run path (the sub-loop's only way on is its quantum exit), a |0> seed on the
 # skip path. §6-checked against its C program.
@@ -332,8 +325,7 @@ add_test(NAME loops-cutoff-sub-abort-skip
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq S11, S11e (CR rules 14, 16): a trip-local classically bounded loop in a rolled K-trip (ksub: ks_phase) and nested
 # abort/exit arms (nstop: a nested K-loop's noreturn arm, its stop rail carried across the inner trips; an exit arm of a
-# do-while nested in a K-trip). §6-checked against their C programs under the rolled driver: CQ_K_ROLLED=1 is set here
-# until S14 makes the rolled form the default and deletes the switch (remove the ENVIRONMENT entries then).
+# do-while nested in a K-trip). §6-checked against their C programs.
 add_test(NAME loops-cutoff-ksub
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
@@ -344,4 +336,3 @@ add_test(NAME loops-cutoff-nstop
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/nstop.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(loops-cutoff-ksub loops-cutoff-nstop PROPERTIES ENVIRONMENT "CQ_K_ROLLED=1")

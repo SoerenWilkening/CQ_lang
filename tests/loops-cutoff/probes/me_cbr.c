@@ -1,10 +1,10 @@
 /* tests/loops-cutoff probe (CR rules 2, 8, 14; owner cq-47f8h; beads cq-v8cn7, cq-1ye9c): a cq_measure behind a
    classical branch. A purely classical condition is always a classical branch (rule 8), so the measurement runs only
    where the classical arguments take it, on both sides; only a quantum arm's measurement runs unconditionally (rule 2).
-   h: loop-invariant w measured behind (c & 1) in a K-loop with a quantum exit: one copy per trip, each behind its own
-   `br`; bit 3 of v is b3, so trip 3 is never reached and its copy executes the site C reaches on trips 0 to 2.
+   h: loop-invariant w measured behind (c & 1) in a K-loop with a quantum exit: the site runs once per trip, behind its
+   `br`; bit 3 of v is b3, so trip 3 is never reached and its execution is the site C reaches on trips 0 to 2.
    g: the same branch without a loop.
-   run_probes.py MUTANTS: a trip copy that measures another register (v), every trip's measurement hoisted above its
+   run_probes.py MUTANTS: a trip that measures another register (v), every trip's measurement hoisted above its
    classical `br`, and g's measurement hoisted above its classical `br`, are rejected.
    Regenerate me_cbr.O1.ll:
    clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec me_cbr.c -o me_cbr.O1.ll */

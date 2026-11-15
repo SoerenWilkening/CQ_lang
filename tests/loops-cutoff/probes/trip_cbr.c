@@ -1,5 +1,5 @@
 /* tests/loops-cutoff classical branches inside a K-trip (cq-jws5r, CR rule 8: "A purely classical condition is always
- * a classical branch, also inside a clone", with rule 14's K trips): each trip copy keeps the branch as a `br`, so the
+ * a classical branch, also inside a clone", with rule 14's K trips): each trip keeps the branch as a `br`, so the
  * arm C does not take emits nothing (no store, no call, no kept rail), and the arm it takes runs under the trip
  * predicate alone. Each entry is checked §6 against its own C program (cqcheck user); run_probes.py --br-in counts the
  * `br` on the classical condition in the lowered bodies. A pointer argument is never varied by the sampler, so NULL
@@ -72,7 +72,7 @@ unsigned pd_trip(unsigned x0, double th, unsigned k, unsigned c) {
   return cq_measure(f[0]) * 64 + cq_measure(f[1]);
 }
 
-/* (e) A twin: the clone's result is uncomputed by its caller, so the trip copies are replayed in reverse. */
+/* (e) A twin: the clone's result is uncomputed by its caller, so the trips are replayed in reverse. */
 __attribute__((noinline)) static unsigned pe_f(unsigned x, unsigned k, unsigned c, const unsigned *tab) {
   unsigned acc = 0, i = 0;
   while (x > k) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""cq-jp8qu: the hand-made mutant of a lowered printf("...%n...") module. In every lowered printf_core (each clone, each
-of rule 14's K copies) musl's `case 'n'` BARE store `*(int *)arg.p = cnt` is the first i32 bus store after the
+"""cq-jp8qu: the hand-made mutant of a lowered printf("...%n...") module. In every lowered printf_core (each clone, its
+rolled K-loop trip included) musl's `case 'n'` BARE store `*(int *)arg.p = cnt` is the first i32 bus store after the
 conversion test against 'n' (110); the mutant stores cnt + 1 there (a template, its uncomputation and the free, so the
 mutant is clean and only the stored count changes). Usage: percent_n_mutant.py <lowered.ll> <mutant.ll>; prints the
 number of stores changed (exit 1 when none)."""

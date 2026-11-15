@@ -5,11 +5,12 @@ For probes/b_bound_i32.O1.ll it checks, and fails on:
   - cq-lower (with its built-in structural verifier) exits 0, and plain cq-verify accepts the output;
   - the _b3 clone of f runs min(K, 3) = 3 trips with no received K (@__cq_k all ones) and frees every rail it defines
     but the one it returns (its a_3 included: B = 3 < K keeps no a_K), a freed phi freeing what it merges and a freed
-    pop the value its push saved; only a_K's copy on a received-K cut path is kept (cq-9kcq, cq-dav);
+    pop the value its push saved; only a_K's copy where a received K is below B is kept (cq-9kcq, cq-dav: made in the
+    block a classical branch on `K_received < 3` enters);
   - the _b7 clone runs K = 4 trips.
-  A trip count is read from the lowered CFG, the same in both forms of a K-loop (cq-9kcq; ktrips.py, shared with
-  run_probes.py): a forward mul template outside any trip loop is one trip; one inside a rolled trip loop runs once per
-  trip of its classical counter (`j' = j + 1; br (j' < N)`), N evaluated with @__cq_k all ones.
+  A trip count is read from the lowered CFG (cq-9kcq; ktrips.py, shared with run_probes.py): a forward mul template in
+  the rolled trip loop runs once per trip of its classical counter (`j' = j + 1; br (j' < N)`), N evaluated with
+  @__cq_k all ones.
   - bb_i32 is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 Outputs go to build/tests/loops-cutoff/out/.
 """
@@ -28,14 +29,14 @@ PROBE = Path(__file__).parent / "probes" / "b_bound_i32.O1.ll"
 
 
 def trips(fn_body: str, site: str):
-    """How many times the forward calls matching site run with no received K, from the CFG (ktrips.runs): a call outside
-    every rolled trip loop once, one inside N times per trip loop. None where N is unknown."""
+    """How many times the forward calls matching site run with no received K, from the CFG (ktrips.runs): one inside the
+    rolled trip loop N times. None where N is unknown."""
     return ktrips.runs(fn_body, site)
 
 
 def received_k_cut(fn_body: str, lab: str) -> bool:
     """Whether block lab is entered only from a conditional br whose condition reads the received K (a load of @__cq_k,
-    or a table clone's K parameter, the last one): the received-K cut's path."""
+    or a table clone's K parameter, the last one): the path where the received K is below the bound."""
     bl, order = blocks(fn_body)
     d = defs(fn_body)
     params = re.findall(r"i32 (%[-\w.$]+)", fn_body.splitlines()[0])
@@ -59,15 +60,14 @@ def received_k_cut(fn_body: str, lab: str) -> bool:
 
 
 def kept_rails(c3: str):
-    """The rails a clone defines and keeps: not freed, not returned, not a_K's copy on a received-K cut path."""
+    """The rails a clone defines and keeps: not freed, not returned, not a_K's copy where the received K is below B."""
     ret = re.search(r"^\s*ret i32 (%\d+)", c3, re.M)
     defined = re.findall(r"^\s*(%\d+) = call i32 @(?:cqrt_alloc|cq_template)\w*\(", c3, re.M)
     freed = set(re.findall(r"@cqrt_free\(i32 (%\d+)\)", c3))
-    # A freed (or returned) phi frees each rail it merges (the received-K cut's joins, cq-9kcq).
+    # A freed (or returned) phi frees each rail it merges (the exit block's merges, cq-9kcq).
     phis = {m.group(1): re.findall(r"\[ (%\d+), %[\w.]+ \]", m.group(2))
             for m in re.finditer(r"^\s*(%\d+) = phi i32 (.*)$", c3, re.M)}
-    # A freed pop frees what its push saved: a cycle's pushes are popped in reverse order by the reverse loop
-    # (cq-9kcq, the rolled form; the copy form has no push in a K-loop).
+    # A freed pop frees what its push saved: a cycle's pushes are popped in reverse order by the reverse loop (cq-9kcq).
     pushes = re.findall(r"@cqrt_push\(i32 (%[-\w.$]+)\)", c3)
     pops = re.findall(r"^\s*(%[-\w.$]+) = call i32 @cqrt_pop\(\)", c3, re.M)
     if len(pushes) == len(pops):
@@ -82,9 +82,9 @@ def kept_rails(c3: str):
                     if i not in freed:
                         freed.add(i)
                         grew = True
-    # cq-9kcq, cq-dav (CR rule 27 "Cutoff"): a_K's copy made on a received-K cut path (fresh |0>, copy_i1, the cut's
-    # branch to its join, in a block entered only by a branch on the received K) is kept there, where the received K
-    # is below 3; nothing else is (B = 3 <= K).
+    # cq-9kcq, cq-dav (CR rule 14, rule 27 "Cutoff"): a_K's copy (fresh |0>, copy_i1, a branch to the join, in a block
+    # entered only by a branch on the received K) is kept there, where the received K is below 3; nothing else is
+    # (B = 3 <= K).
     cut = {m.group(2) for m in re.finditer(r"^([-\w.$]+):[^\n]*\n\s*(%\d+) = call i32 @cqrt_alloc_i1\(i1 false\)\n"
                                            r"\s*call void @cqrt_copy_i1\(i32 %\d+, i32 \2\)\n\s*br label", c3, re.M)
            if received_k_cut(c3, m.group(1))}

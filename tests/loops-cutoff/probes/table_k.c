@@ -3,12 +3,10 @@
  * rule 19: a call through a pointer passes "the K of the caller's enclosing function"). Each callee's address escapes,
  * so it has a table clone; each entry calls it through a pointer with CQ_K(entry, 2), while the callee's own K is 4.
  * The table clone must run min(2, B) trips and keep a_K after the second trip.
- * The C oracle resolves K per function from the module (it does not follow a received K), so the §6 check reads its C
- * program from table_k_c.O1.ll: the same source with CQ_K(<callee>, 2) added (TABLE_K_C below), which caps each callee's
- * loop at the K its table clone receives here. The lowering reads table_k.O1.ll (callees at K 4).
- * Regenerate both:
- * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec table_k.c -o table_k.O1.ll
- * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec -DTABLE_K_C table_k.c -o table_k_c.O1.ll */
+ * The C oracle runs each loop at the K the circuit uses, the received K included (cqo_rt.c k_recv, cq-fy1k5), so
+ * the §6 check reads this program's own C module.
+ * Regenerate:
+ * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec table_k.c -o table_k.O1.ll */
 #include "CQ.h"
 __attribute__((noinline)) static unsigned kf(unsigned x, unsigned a) {   /* body form (05) */
   unsigned n = 0;
@@ -72,15 +70,6 @@ CQ_K(tk_c, 2)
 CQ_K(tk_r, 2)
 CQ_K(tk_s, 2)
 CQ_K(tk_cls, 2)
-#ifdef TABLE_K_C
-CQ_K(kf, 2)
-CQ_K(km, 2)
-CQ_K(kn, 2)
-CQ_K(kd, 2)
-CQ_K(kc, 2)
-CQ_K(kr, 2)
-CQ_K(ks, 2)
-#endif
 unsigned tk_f(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(pf(x, a)); }
 unsigned tk_m(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(pm(x, a)); }
 unsigned tk_n(unsigned x0, double th, unsigned a) { unsigned x = x0; cq_theta(&x, th); return cq_measure(pn(x, a)); }

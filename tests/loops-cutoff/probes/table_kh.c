@@ -1,17 +1,15 @@
 /* tests/loops-cutoff probe, cq-9kcq with owner ruling Q2 of 2026-11-14 (CR 1.4 "Received K", rule 27 "Cutoff": "calls
  * inside the library are rule 18's and pass the received K down"; "the loops of a library usually sit in helpers"):
  * @__cq_k holds the K the running table clone received (-1 elsewhere); a function a table clone reaches by name loads it
- * on entry and cuts its K-loops at the smaller of it and its own K. Owner ruling Q3: rule 6's per-trip clean is made in a
+ * on entry and runs its K-loops at it in place of its own K (owner 2026-11-15: smaller or larger). Owner ruling Q3: rule 6's per-trip clean is made in a
  * loop the received K cuts.
  * Each table function's address escapes (a volatile pointer): its entry calls it through the pointer at K 2 (CQ_K) while
  * every helper's own K is 4 (the default), so a helper's loop runs min(2, B) trips there and its own 4 when called by
  * name from an ordinary entry.
- * The C oracle resolves K per function (it follows no received K), so the §6 check reads its C program from
- * table_kh_c.O1.ll (-DTABLE_K_C): the helpers at the received K, and a by-name call from an ordinary entry going to an
- * identical copy at the helper's own K.
- * Regenerate both:
- * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec table_kh.c -o table_kh.O1.ll
- * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec -DTABLE_K_C table_kh.c -o table_kh_c.O1.ll */
+ * The C oracle runs each loop at the K the circuit uses, the received K included (cqo_rt.c k_recv, cq-fy1k5), so
+ * the §6 check reads this program's own C module.
+ * Regenerate:
+ * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec table_kh.c -o table_kh.O1.ll */
 #include "CQ.h"
 
 #define BODY_H1 { unsigned n = 0; while (x & 1) { x = (x >> 1) | (a << 31); n++; } return n; }
@@ -41,36 +39,10 @@ __attribute__((noinline)) static unsigned tq(unsigned x, unsigned a) {
 }
 unsigned (*volatile pq)(unsigned, unsigned) = tq;
 __attribute__((noinline)) static unsigned hp(unsigned x, unsigned a) { return pq(x, a) * 2; }
-#ifdef TABLE_K_C
-/* the C side: the by-name calls from ordinary entries go to copies at the helpers' own K */
-__attribute__((noinline)) static unsigned h1o(unsigned x, unsigned a) BODY_H1
-__attribute__((noinline)) static unsigned h2o(unsigned x, unsigned a) BODY_H2
-#define H1D h1o
-#define H2D h2o
-CQ_K(h1, 2)
-CQ_K(h2, 2)
-CQ_K(h3, 2)
-CQ_K(h6, 2)
-CQ_K(h1o, 4)
-CQ_K(h2o, 4)
-CQ_K(hr, 2)
-CQ_K(tq, 2)
-#define HR_SELF hro
-__attribute__((noinline)) static unsigned hro(unsigned x) BODY_HR
-#undef HR_SELF
-CQ_K(hro, 4)
-#define HRD hro
-CQ_K(t2, 2)
-CQ_K(r6, 2)
-CQ_K(t5, 3)
-CQ_K(h5, 3)
-CQ_K(g3k, 3)
-#else
 #define H1D h1
 #define H2D h2
 #define HRD hr
 CQ_K(g3k, 3)
-#endif
 
 /* The table functions, all of one C type: rule 19's dispatch over a rail pointer runs every one of them under its
  * predicate, each calling its helpers by name unguarded (CR rule 19: a callee of templates on SSA values only), so the
