@@ -3834,7 +3834,7 @@ const Specialization *TaintInfo::calleeSpecialization(const llvm::CallBase &CB,
   if (it->second.size() > 1)
     internalError("taint: calleeSpecialization of an indirect call with several candidates", &CB);
   SpecState *C = it->second.front();
-  bool wantPure = caller.pure && C->effectful;
+  bool wantPure = caller.pure && C->effectful && !C->declared;   // a declared clone has no _pure (pureNeeded)
   for (size_t k = 0; k < I.published.size(); ++k)
     if (I.publishedState[k] == C && I.published[k].pure == wantPure)
       return &I.published[k];
@@ -3852,7 +3852,7 @@ TaintInfo::calleeCandidates(const llvm::CallBase &CB, const Specialization &call
   if (it == SS->callees.end())
     return out;
   for (SpecState *C : it->second) {
-    bool wantPure = caller.pure && C->effectful;
+    bool wantPure = caller.pure && C->effectful && !C->declared;   // a declared clone has no _pure (pureNeeded)
     const Specialization *found = nullptr;
     for (size_t k = 0; k < I.published.size() && !found; ++k)
       if (I.publishedState[k] == C && I.published[k].pure == wantPure)

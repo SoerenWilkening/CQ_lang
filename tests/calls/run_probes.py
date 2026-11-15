@@ -374,6 +374,14 @@ CASES = [
     # libm_k is "lower" (no §6 run): cqcheck user does not read llvm.used, which CQ_K emits (cq-tntm).
     ("libm_k", "k1", [], "lower", [r"call i32 @__cq_q_sin_1\(i32 %\w+, i32 53\)",
                                    r"call i32 @__cq_q_atan2_10\(i32 %\w+, double %\w+, i32 77\)"]),
+    # cq-m2ra9 (CR rules 18, 27): llvm.sin.f64 and atan2 both on the root list: each a declared clone with its twin, as a call
+    # by name; the _pure of k1's table clone calls the declared clones themselves (a declared clone has no _pure). "lower":
+    # the checker's declared-clone stand-in for sin/atan2 differs from the C oracle's libm by a few ulp (reported, cq-m2ra9).
+    ("libm_k", "k1", [f"-cq-roots={PROBES / 'libm_k.roots'}"], "lower",
+     [r"call i32 @__cq_q_sin_1_t\(i32 (%\w+), i32 53\)\n  (%\w+) = call i32 @cqrt_alloc_f64\(double %1\)\n"
+      r"  (%\w+) = call i32 @__cq_q_atan2_11_t\(i32 \1, i32 \2, i32 77\)",
+      r"call void @__cq_q_atan2_11_t_unc\(", r"call void @__cq_q_sin_1_t_unc\(",
+      r"define internal i32 @__cq_q_k1_11_t_pure\([^\n]*\{\n(?:[^\n]*\n)*?  %\w+ = call i32 @__cq_q_sin_1_t\("]),
     ("libm_flag", "k4", ["-cq-k=expf=9"], "pass", [r"call i32 @cqrt_tape_effect_f32_controlled\("]),
     # cq-dxii: a classical loop writing into a QRAM or slot object is not pure classical (it reaches loops-classical;
     # the QRAM probes stop there until loops-classical builds rule 14 over QRAM stores, then they become "pass").
