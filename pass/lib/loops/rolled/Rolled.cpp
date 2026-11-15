@@ -7,10 +7,13 @@
 #include <tuple>
 
 #include "cq/Abi.h"
+#include "cq/Calls.h"
 #include "cq/Order.h"
+#include "../../spine/SpineInternal.h"
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 
@@ -855,6 +858,208 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
   } else {
     BX.SetInsertPoint(Z);
   }
+}
+
+bool readersKeep(LoweringContext &ctx, const Loop &top, const Value *v) {
+  SmallVector<const Value *, 4> work{v};
+  SmallPtrSet<const Value *, 8> seen{v};
+  while (!work.empty()) {
+    const Value *x = work.pop_back_val();
+    for (const User *u : x->users()) {
+      auto *ui = dyn_cast<Instruction>(u);
+      if (!ui || top.contains(ui))
+        continue;
+      if (auto *P = dyn_cast<PHINode>(ui)) {
+        if (seen.insert(P).second)
+          work.push_back(P);
+        continue;
+      }
+      if (isa<ReturnInst>(ui))
+        continue;
+      if (auto *st = dyn_cast<StoreInst>(ui); st && st->getValueOperand() == x)
+        continue;
+      // A measurement keeps the rail it reads only where it measures it in place: on every path (lowerMeasure, CR rule 2);
+      // one on some classical paths only reads a kept basis copy, and the rail is uncomputed as usual (cq-2xl5).
+      if (auto *CB = dyn_cast<CallBase>(ui); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Measure &&
+                                             !ctx.S.table && !ctx.S.ctl &&
+                                             spine::measuredOnEveryPath(ctx, CB->getArgOperand(0)))
+        continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<const Value *, Operand>> out,
+                                     ArrayRef<RailType> outW, Value *stopCur, const DenseSet<const Value *> &keptFinal,
+                                     function_ref<bool(const Value *)> scopedOf,
+                                     function_ref<void(const Value *, Operand)> put) {
+  std::vector<unsigned> scs{seedScope};
+  for (const Seg &sg : segs)
+    scs.push_back(sg.scope);
+  for (unsigned sc : exitEdgeScope)
+    if (sc != ~0u)
+      scs.push_back(sc);
+  DenseSet<const Value *> ownedH;
+  for (unsigned sc : scs)
+    for (const Record &r : U.scopeRecords(sc))
+      if (!r.forward->getType()->isVoidTy() && !U.leftScope(sc, r.forward)) {
+        ownedH.insert(r.forward);
+        // A clone with rule-19 extras returns a struct: its rails are the call's extractvalues (cq-f96c8).
+        for (const User *u : r.forward->users())
+          if (isa<ExtractValueInst>(u))
+            ownedH.insert(u);
+      }
+  std::vector<RailId> exits;
+  if (stopCur) {
+    exits.push_back(U.idOf(stopCur));   // read in place by the enclosing K-loop's predicate
+  }
+  std::vector<unsigned> copied;   // the values whose exit rail is no record of the loop: copied out, below
+  for (unsigned oi = 0; oi < out.size(); ++oi) {
+    const Value *v = out[oi].first;
+    Operand op = out[oi].second;
+    if (!op.handle)
+      internalError("loops-classical: a quantum value read after the loop whose exit value is classical", v);
+    if (keptFinal.count(op.v)) {
+      // A cleaned chain's final rail is the register itself: the reverse never touches it.
+      put(v, op);
+      continue;
+    }
+    // A carried register every trip leaves on its rail (rotated in place, rule 10; 126): the header phi
+    // names the entry's seed on every edge, so the seed is the register, kept, read in place.
+    if (auto *ph = dyn_cast<PHINode>(op.v)) {
+      Value *one = nullptr;
+      bool single = true;
+      for (Value *in : ph->incoming_values())
+        if (in != ph && in != one)
+          single = single && !one, one = in;
+      auto *seed = dyn_cast_or_null<CallInst>(one);
+      if (single && seed && ownedH.count(seed) && seed->getCalledFunction() &&
+          seed->getCalledFunction()->getName().starts_with("cqrt_alloc_")) {
+        U.setRole(U.idOf(seed), Role::UserRegister);
+        put(v, Operand{seed, true});
+        continue;
+      }
+    }
+    if (ownedH.count(op.v)) {
+      put(v, op);
+      RailId x = U.idOf(op.v);
+      if (!is_contained(exits, x))
+        exits.push_back(x);
+      continue;
+    }
+    copied.push_back(oi);
+  }
+  for (unsigned sc : scs)
+    for (const Record &r : U.scopeRecords(sc)) {
+      if (r.forward->getType()->isVoidTy() || !std::holds_alternative<abi::TemplateSpec>(r.spec))
+        continue;   // a seed stored into a cell is that cell's register (58, 59), never an exit
+      bool stored = any_of(r.forward->users(), [&](const User *u) {
+        auto *si = dyn_cast<StoreInst>(u);
+        return si && si->getValueOperand() == r.forward;
+      });
+      if (!stored)
+        continue;
+      RailId x = U.idOf(r.forward);
+      if (!is_contained(exits, x))
+        exits.push_back(x);
+    }
+  for (RailId x : exitEdgeRails)
+    if (!is_contained(exits, x))
+      exits.push_back(x);
+  for (unsigned oi : copied) {
+    const Value *v = out[oi].first;
+    Operand op = out[oi].second;
+    RailType w = outW[oi];
+    CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    // cq-h5uj, cq-k7zkw (CR rule 14 case 1: "after the result is copied out (alloc + copy) a reverse loop pops"; rule 5:
+    // every rail is uncomputed after its last consumer, §6 item 1): a loop whose reverse runs after its readers anyway (one
+    // that runs per trip of an enclosing loop, or that has an exit rail read in place) keeps no output of its own: the copy
+    // is a record of the loop's own copy scope, an exit rail read in place after the loop, and the deferred reverse
+    // un-copies it first (reverse(): the copy scope's mirror before the last trip's). A reader that keeps it (a measurement,
+    // an escape) is recordDeferred's kept exit rail.
+    // The same for a copy some reader only computes from (cq-ii0vf: a trip's join of handles, read by a template): rule 5
+    // uncomputes it after that reader, and nothing can once the reverse has run.
+    // cq-jos4q: a copy a reader keeps (measured on every path, returned, stored) is the loop's output even where the reverse is
+    // deferred for an exit rail read in place: the deferred reverse must not un-copy and free a measured rail (§1.3).
+    // cq-2xl5: with classical exit tests besides the bound (extraExits), T joins each exit edge's res and the exit value
+    // after the loop is a select over the copies (CR rule 14 case 3): its readers keep the select, not the copies, which
+    // are the copy scope's; readersKeep follows the exit phi as if it were the copy (a kept copy left garbage, and recorded
+    // in an open copy scope it was owned by the item it was read by: recordDeferred's internal error).
+    bool scoped = scopedOf(v);
+    if (scoped && copyScope == ~0u)
+      copyScope = U.openScope();   // closed after the last copy (below)
+    RailId fid = ctx.unc().recordSeed(f);
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *cc = ctx.emitCore(cp, {op.v, f});
+    ctx.unc().recordCore(cc, cp, {op, Operand{f, true}}, fid);
+    if (!scoped)
+      ctx.unc().setRole(fid, Role::Output);
+    else {
+      ownedH.insert(f);
+      if (!is_contained(exits, fid))
+        exits.push_back(fid);
+    }
+    put(v, Operand{f, true});
+  }
+  if (copyScope != ~0u) {
+    U.closeScope(copyScope);
+    scs.push_back(copyScope);
+  }
+  return {std::move(scs), std::move(ownedH), std::move(exits)};
+}
+
+bool Region::finishExits(BasicBlock *T, unsigned seedScope, const ExitWiring &w, bool keptInPlace,
+                         const Instruction *latchTerm, std::shared_ptr<Region> self) {
+  const std::vector<unsigned> &scs = w.scs;
+  const DenseSet<const Value *> &ownedH = w.ownedH;
+  const std::vector<RailId> &exits = w.exits;
+  if (exits.empty()) {
+    flushTrips();
+    IRBuilder<> B(T);
+    reverse(B, T, seedScope, false);
+    ctx.B().SetInsertPoint(B.GetInsertBlock());
+    return false;
+  }
+  // The exit rails are read after the loop: no trip's flush may resolve them in their own trip.
+  {
+    Instruction *xt = nullptr;
+    for (BasicBlock *p : predecessors(T))
+      xt = p->getTerminator();
+    if (!xt)
+      internalError("loops-classical: the loop's exit block has no predecessor", latchTerm);
+    for (RailId x : exits)
+      U.noteUse(x, xt);
+  }
+  flushTrips();
+  std::vector<RailId> reads;
+  for (unsigned sc : scs)
+    for (const Record &r : U.scopeRecords(sc))
+      for (const Operand &o : r.ops)
+        if (o.handle && !ownedH.count(o.v))
+          if (RailId x = U.idOf(o.v); !is_contained(reads, x))
+            reads.push_back(x);
+  // cq-odo1: the initial rails from before the loop the header phis name are read by the reverse (its anchor
+  // notes them); one the loop's own seed scope minted is the item's.
+  for (Value *h : externalInits)
+    if (RailId x = U.idOf(h); !ownedH.count(h) && !is_contained(reads, x))
+      reads.push_back(x);
+  BasicBlock *Cont = newBlock();
+  // cq-gty1h (CR rules 2, 5, 14 case 1): the copy scope's records sit in T, so T belongs to the deferred item's region, and
+  // the loop's exit block (the one block outside the region the region branches to, where an exit rail that became kept is
+  // copied before its first use after the loop) would be Cont, the block of those uses: the kept copy landed after them.
+  // An exit rail read in place by a reader that keeps it gets an empty block J between T and Cont: J is that exit block.
+  if (keptInPlace) {
+    BasicBlock *J = newBlock();
+    BranchInst::Create(J, T);
+    BranchInst::Create(Cont, J);
+  } else
+    BranchInst::Create(Cont, T);
+  U.recordDeferred(scs, exits,
+                   [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, !self->U.mirroring()); }, reads, {});
+  ctx.B().SetInsertPoint(Cont);
+  return true;
 }
 
 } // namespace cq::loops::rolled

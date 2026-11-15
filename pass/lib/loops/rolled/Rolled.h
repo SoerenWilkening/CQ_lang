@@ -70,6 +70,9 @@ unsigned scalarBits(llvm::Type *t, const llvm::DataLayout &DL);
 void pushValue(llvm::IRBuilder<> &B, llvm::FunctionCallee push, llvm::Value *v, const llvm::DataLayout &DL);
 llvm::Value *popValue(llvm::IRBuilder<> &B, llvm::FunctionCallee pop, llvm::Type *t, const llvm::DataLayout &DL);
 
+// Is v read after the loop `top` only by what keeps its rail (rule 5, §6 item 1): a measurement, a return, the value of a store?
+bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value *v);
+
 class Region {
 public:
   Region(LoweringContext &ctx, llvm::Function &Out) : ctx(ctx), Mod(ctx.M), Out(Out), U(ctx.unc()) {}
@@ -112,6 +115,39 @@ public:
   // The reverse from B's block (unterminated); leaves B at the end of an unterminated block. guarded:
   // B's block may be reached on a path where the loop did not run (cq-fx3s): branch around on that.
   void reverse(llvm::IRBuilder<> &B, llvm::BasicBlock *X, unsigned seedScope, bool guarded);
+
+  // cq-9kcq S3b: the setup a caller other than loops-classical's Unit gives the region (loops-cutoff's rolled K-loop).
+  // The block the builder is in becomes the last block of the open segment, which is closed (the latch's segment).
+  void endSeg() {
+    if (llvm::BasicBlock *now = ctx.B().GetInsertBlock(); cur && now != cur) {
+      segIdx[now] = segs.size() - 1;
+      segs.back().bb = now;
+    }
+    closeSeg();
+  }
+  void setOwnSeedScope(unsigned sc) { ownSeedScope = sc; }
+  void addExternalInit(llvm::Value *h) { externalInits.push_back(h); }
+  void setDiagAt(const llvm::Instruction *at) { diagAt = at; }
+  bool hasCopyScope() const { return copyScope != ~0u; }
+
+  // The exit of the outermost loop at its exit block T (the builder there), after the trips (cq-fx3s, cq-h5uj; moved from
+  // loops-classical's Unit::lowerLoop). wireExits: every quantum value read after the loop (out, with its rail type
+  // outW) is read in place when its exit rail is a record of the loop, else copied out (in the copy scope when
+  // scopedOf(v): undone by the reverse first); put rebinds it. finishExits: the reverse at T when nothing is read in
+  // place, else an Uncompute deferred item after the readers; returns whether it was deferred (the builder is left
+  // where the loop continues).
+  struct ExitWiring {
+    std::vector<unsigned> scs;
+    llvm::DenseSet<const llvm::Value *> ownedH;
+    std::vector<RailId> exits;
+  };
+  ExitWiring wireExits(unsigned seedScope, llvm::ArrayRef<std::pair<const llvm::Value *, Operand>> out,
+                       llvm::ArrayRef<RailType> outW, llvm::Value *stopCur,
+                       const llvm::DenseSet<const llvm::Value *> &keptFinal,
+                       llvm::function_ref<bool(const llvm::Value *)> scopedOf,
+                       llvm::function_ref<void(const llvm::Value *, Operand)> put);
+  bool finishExits(llvm::BasicBlock *T, unsigned seedScope, const ExitWiring &w, bool keptInPlace,
+                   const llvm::Instruction *latchTerm, std::shared_ptr<Region> self);
 
 protected:
   LoweringContext &ctx;   // only while lowerClassical runs: a deferred reverse (cq-fx3s) uses Mod, Out, U
