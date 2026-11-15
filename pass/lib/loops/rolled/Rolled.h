@@ -77,6 +77,8 @@ llvm::Value *popValue(llvm::IRBuilder<> &B, llvm::FunctionCallee pop, llvm::Type
 // straight-line change under the trip predicate (eff-fenv requirePlaced). Defined in eff/fenv/Fenv.cpp, beside the
 // classification it reads.
 bool changesFenvState(const llvm::Loop &L);
+// Does an instruction of L write the rounding mode (fesetround, a fesetenv / fesetmode restore)? Fenv.cpp.
+bool changesFenvMode(const llvm::Loop &L);
 
 // Is v read after the loop `top` only by what keeps its rail (rule 5, §6 item 1): a measurement, a return, the value of a store?
 bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value *v);

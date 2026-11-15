@@ -2694,4 +2694,13 @@ bool changesFenvState(const llvm::Loop &L) {
   return false;
 }
 
+
+bool changesFenvMode(const llvm::Loop &L) {
+  for (const llvm::BasicBlock *bb : L.blocks())
+    for (const llvm::Instruction &I : *bb)
+      if (fenv::writesMode(I))
+        return true;
+  return false;
+}
+
 } // namespace cq::loops::rolled

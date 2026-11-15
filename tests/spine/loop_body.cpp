@@ -86,9 +86,18 @@ std::string curCase;
 } // namespace
 
 // ---- test double of pass/lib/loops/classical/Classical.cpp ----------------------------------------
+namespace cq::loops::rolled {
+class Region;
+} // namespace cq::loops::rolled
 namespace cq::loops::exits {
-void lowerClassicalInTrip(cq::LoweringContext &, llvm::Loop &, llvm::Value *) {
+llvm::Value *lowerClassicalInTrip(cq::LoweringContext &, llvm::Loop &, llvm::Value *) {
   cq::internalError("test double: lowerClassicalInTrip");
+  return nullptr;
+}
+std::shared_ptr<cq::loops::rolled::Region> lowerClassicalSubInTrip(cq::LoweringContext &, llvm::Loop &, llvm::Value *,
+                                                                  llvm::BasicBlock *, llvm::Value *&) {
+  cq::internalError("test double: lowerClassicalSubInTrip");
+  return nullptr;
 }
 } // namespace cq::loops::exits
 

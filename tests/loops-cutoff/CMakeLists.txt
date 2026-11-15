@@ -329,3 +329,18 @@ add_test(NAME loops-cutoff-sub-abort-skip
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/sub_abort_skip.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-9kcq S11, S11e (CR rules 14, 16): a trip-local classically bounded loop in a rolled K-trip (ksub: ks_phase) and nested
+# abort/exit arms (nstop: a nested K-loop's noreturn arm, its stop rail carried across the inner trips; an exit arm of a
+# do-while nested in a K-trip). §6-checked against their C programs under the rolled driver: CQ_K_ROLLED=1 is set here
+# until S14 makes the rolled form the default and deletes the switch (remove the ENVIRONMENT entries then).
+add_test(NAME loops-cutoff-ksub
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/ksub.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-nstop
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/nstop.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(loops-cutoff-ksub loops-cutoff-nstop PROPERTIES ENVIRONMENT "CQ_K_ROLLED=1")
