@@ -31,6 +31,9 @@ void lowerStore(LoweringContext &, llvm::StoreInst &);
 // true when I itself emits nothing (a load or step of a form). After: the copy taken right after a form's preceding store.
 bool inPlaceBefore(LoweringContext &, llvm::Instruction &);
 void inPlaceAfter(LoweringContext &, llvm::Instruction &);
+// Is original instruction I a step a rule-5 in-place form runs on its cell (h = swap-in of the cell, the steps on h)? Such a
+// cq_theta rotates the cell's content, never the rail of its SSA operand (rule 16's snapshot asks which rail it modifies).
+bool inPlaceOnCell(LoweringContext &, const llvm::Instruction &);
 // Rule 4 cmpxchg/atomicrmw: a bus load, the templates, a bus store, by lowerStore's rules (add/sub/xor in place).
 void lowerAtomic(LoweringContext &, llvm::Instruction &);
 // Rule 22: memcpy/memmove/memset[.inline], realloc's copy, byval copy, struct assignment. Classical length: host loops

@@ -1297,6 +1297,12 @@ void inPlaceAfter(LoweringContext &ctx, Instruction &I) {
       takeCopy(ctx, *F, P, I, /*before=*/false);
 }
 
+bool inPlaceOnCell(LoweringContext &ctx, const Instruction &I) {
+  if (I.getFunction() != ctx.S.F)
+    return false;
+  return plan(ctx).claimed.count(&I) != 0;
+}
+
 bool isInPlaceForm(LoweringContext &ctx, const StoreInst &S) {
   if (S.getFunction() != ctx.S.F)
     return false;
