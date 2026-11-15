@@ -6,6 +6,9 @@ Usage: run_probes.py --plugin P --opt O probes/NAME.O1.ll [...]. For each probe 
   - no CQ.h surface call is left in an entry;
   - every entry (each external `define` in NAME.c) is §6-equal to its own C program (`python3 -m cqcheck user`,
     the C oracle) within a time limit.
+The count options (--measures, --measures-in, --br-in, --calls-in) count executions with no received K, read from the
+lowered CFG (ktrips.py, cq-9kcq), so they hold the same for a K-loop's K static copies and for its rolled form (one
+trip run K times by a classical trip counter).
 Outputs go to build/tests/loops-cutoff/out/.
 """
 import argparse
@@ -13,6 +16,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ktrips  # noqa: E402
+from ktrips import body  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
@@ -84,11 +91,13 @@ MUTANTS = {
     "exit_conjunct": [
         ("ec_do", "no_test_branch", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
     ],
-    # cq-9kcq (CR rule 27 "Cutoff", §1.4): the table clone's cut compares against the clone's own K 4 instead of the K it
-    # received, so it runs 4 trips where tk_f passed 2 (checked through tk_f, whose pointer is a rail: the dispatch calls
-    # the _ctl table clone; a mutant entry "fn@entry").
+    # cq-9kcq (CR rule 27 "Cutoff", §1.4): the table clone ignores the K it received and runs its own K 4 where tk_f passed
+    # 2: its K parameter is replaced by the own K 4 at every use (the copied form's per-trip cut compares, the rolled
+    # form's trip count, the K it passes on in @__cq_k alike), in the clone and its twin alike, so the twin undoes the
+    # 4 trips the clone ran and only the cutoff differs. Checked through tk_f, whose pointer is a rail: the dispatch
+    # calls the _ctl table clone; a mutant entry "fn+twin@entry".
     "table_k": [
-        ("__cq_q_kf_11_t_ctl@tk_f", "own_k", r"icmp ult i32 (\d+), %\d+", r"icmp ult i32 \1, 4"),
+        ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@tk_f", "own_k", lambda b: own_k(b, 4), None),
     ],
     # cq-9kcq with owner ruling Q2 (2026-11-14): a by-name helper of a table clone ignores @__cq_k (its own K 4 where kh_1
     # passed 2); a table clone does not restore @__cq_k at its returns, so kh_after's by-name call of h1 after the table
@@ -108,8 +117,17 @@ MUTANTS = {
          r"\1  br label \2\n"),
     ],
 }
-_ALL = ("wrong_value", "hoist_trips", "own_k", "no_restore")   # mutants applied at every match, not the first only
+_ALL = ("wrong_value", "hoist_trips", "no_restore")   # mutants applied at every match, not the first only
 NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer
+
+
+def own_k(fn_body: str, k: int):
+    """A table clone that ignores the K it receives: every use of its K parameter (ktrips.table_k_param) reads k."""
+    p = ktrips.table_k_param(fn_body)
+    if not p:
+        return fn_body
+    head, rest = fn_body.split("\n", 1)
+    return head + "\n" + re.sub(re.escape(p) + r"(?![-\w.$])", str(k), rest)
 
 
 def mutants(a, probe: Path, mod: str, out: Path) -> int:
@@ -121,14 +139,21 @@ def mutants(a, probe: Path, mod: str, out: Path) -> int:
                              check=True).stdout
     for e, name, old, new in MUTANTS.get(stem, []):
         e, _, entry = e.partition("@")   # "fn@entry": the mutated function is not the entry checked
-        entry = entry or e
-        b = body(mod, e)
-        if not re.search(old, b):
-            print(f"FAIL {probe.name} mutant {name}: {old!r} is not in @{e}")
+        entry = entry or e.split("+")[0]
+        m, missing = mod, []
+        for fn in e.split("+"):          # "fn+fn2@entry": each function mutated alike (a clone and its twin)
+            b = body(m, fn)
+            nb = old(b) if callable(old) else re.sub(old, new, b, count=(0 if name in _ALL else 1))
+            if nb == b:
+                missing.append(fn)
+            m = m.replace(b, nb, 1)
+        if missing:
+            print(f"FAIL {probe.name} mutant {name}: " + ("not applicable" if callable(old) else f"{old!r} is not")
+                  + " in " + ", ".join("@" + x for x in missing))
             failures += 1
             continue
         low = out / probe.name.replace(".O1.ll", f".{name}.ll")
-        low.write_text(mod.replace(b, re.sub(old, new, b, count=(0 if name in _ALL else 1)), 1))
+        low.write_text(m)
         v = subprocess.run([a.opt, "-passes=verify", "-disable-output", str(low)], capture_output=True, text=True)
         if v.returncode != 0:            # a rejection must come from §6, not from a module that does not parse
             print(f"FAIL {probe.name} mutant {name}: not valid IR: " + (v.stderr.strip().splitlines() or ["?"])[0])
@@ -154,9 +179,11 @@ def c_side(a, probe: Path) -> Path:
     return probe
 
 
-def body(module: str, fn: str) -> str:
-    m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\(.*?^}", module, re.S | re.M)
-    return m.group(0) if m else ""
+def measures(fn_body: str):
+    """The cqrt_measure executions of one function with no received K (ktrips.runs): a site in a rolled trip loop runs
+    once per trip, except one measuring a rail made before the loop: its later trips re-measure the same rail, a
+    classical re-read (CR rule 2), as the copied form's later copies read the first one's outcome."""
+    return ktrips.runs(fn_body, r"call [^@]*@cqrt_measure_", invariant_once=True)
 
 
 def entries(o1: str):
@@ -187,23 +214,25 @@ def one(a, probe: Path) -> int:
             why.append("no lowered body")
         if SURFACE.search(b):
             why.append("a CQ.h surface call is left")
+        # The counts are of executions with no received K, read from the CFG (ktrips.runs, cq-9kcq): the same in the
+        # copied K-loop (a site per trip copy) and the rolled one (one site, run once per trip of the trip counter).
         for spec in a.measures_in or []:
             fn, n = spec.split("=")
-            got = len(re.findall(r"call [^@]*@cqrt_measure_", body(mod, fn)))
+            got = measures(body(mod, fn))
             if got != int(n):
-                why.append(f"{got} cqrt_measure calls in @{fn}, not {n}")
+                why.append(f"{got} cqrt_measure runs in @{fn}, not {n}")
         for spec in a.br_in or []:
             fn, n = spec.split("=")
-            got = len(re.findall(r"^  br i1 ", body(mod, fn), re.M))
-            if got < int(n):
-                why.append(f"{got} conditional br in @{fn}, fewer than {n}")
+            got = ktrips.runs(body(mod, fn), r"^  br i1 ", skip_latches=True)
+            if got is None or got < int(n):
+                why.append(f"{got} conditional br runs in @{fn}, fewer than {n}")
         for spec in a.calls_in or []:
             fn, callee, n = spec.split("=")
-            got = len(re.findall(r"call [^@\n]*@" + re.escape(callee) + r"\(", body(mod, fn)))
+            got = ktrips.runs(body(mod, fn), r"call [^@\n]*@" + re.escape(callee) + r"\(")
             if got != int(n):
-                why.append(f"{got} calls of @{callee} in @{fn}, not {n}")
-        if a.measures is not None and len(re.findall(r"call [^@]*@cqrt_measure_", b)) != a.measures:
-            why.append(f"{len(re.findall(r'call [^@]*@cqrt_measure_', b))} cqrt_measure calls, not {a.measures}")
+                why.append(f"{got} runs of a call of @{callee} in @{fn}, not {n}")
+        if a.measures is not None and measures(b) != a.measures:
+            why.append(f"{measures(b)} cqrt_measure runs, not {a.measures}")
         if a.measures is not None and re.search(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M) and any(
                 "cqrt_measure" in t for t in re.findall(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M)):
             why.append("a twin measures")
@@ -225,11 +254,14 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append")
-    ap.add_argument("--measures", type=int, help="the cqrt_measure calls each entry must hold; no twin may hold one")
-    ap.add_argument("--measures-in", action="append", help="NAME=N: the cqrt_measure calls function NAME must hold")
+    ap.add_argument("--measures", type=int, help="the cqrt_measure runs of each entry (a K-loop's trips counted, a "
+                    "rail made before the loop re-read); no twin may hold one")
+    ap.add_argument("--measures-in", action="append", help="NAME=N: the cqrt_measure runs of function NAME")
     ap.add_argument("--timeout", type=int, default=240, help="seconds for one entry's §6 check")
-    ap.add_argument("--br-in", action="append", help="NAME=N: function NAME must hold at least N conditional br (cq-jws5r)")
-    ap.add_argument("--calls-in", action="append", help="NAME=CALLEE=N: the calls of CALLEE function NAME must hold")
+    ap.add_argument("--br-in", action="append", help="NAME=N: function NAME must run at least N conditional br, a K-loop's trips "
+                    "counted, its trip counter's own br not (cq-jws5r)")
+    ap.add_argument("--calls-in", action="append", help="NAME=CALLEE=N: the runs of a call of CALLEE in function NAME, a K-loop's "
+                    "trips counted")
     ap.add_argument("--c-side", action="append",
                     help="PROBE=FILE: the §6 check reads its C program from FILE (next to the probe), not the probe")
     ap.add_argument("probes", nargs="+")
