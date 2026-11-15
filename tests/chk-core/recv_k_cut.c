@@ -2,7 +2,7 @@
  * e calls it through a pointer with CQ_K(e, 2), so its table clone runs at the received K 2 and a_K never fires. A clone
  * that cuts at trip 1 there (K 1 in place of the received 2) differs from C wherever C runs the second trip.
  * Regenerate: clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I <CQ_spec> recv_k_cut.c -o recv_k_cut.O1.ll;
- * CQ_K_ROLLED=1 opt -load-pass-plugin=<build>/pass/libCQLower.so -passes=cq-lower -S recv_k_cut.O1.ll -o recv_k_cut.ll */
+ * opt -load-pass-plugin=<build>/pass/libCQLower.so -passes=cq-lower -S recv_k_cut.O1.ll -o recv_k_cut.ll */
 #include "CQ.h"
 __attribute__((noinline)) static unsigned g(unsigned x) {
   unsigned s = 1, i;
