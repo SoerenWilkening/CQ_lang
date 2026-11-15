@@ -62,6 +62,8 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/ValueHandle.h"
 
 using namespace llvm;
 
@@ -1243,6 +1245,126 @@ std::vector<const cq::Specialization *> constructionOrder(const cq::TaintInfo &T
   return order;
 }
 
+// cq-mjw9 (NORTHSTAR principle 1: classical code is never rewritten; CLAUDE.md pipeline: fix-irreducible on the tainted
+// functions only). Step 2's CFG rewrites (fix-irreducible and the ones after it) serve the constructions, which read a
+// tainted function's body to build its clones. A tainted function whose own symbol stays the classical original (it has
+// no entry specialization: construct rewrites only an entry in place) keeps its body as the input had it: the body is
+// copied before step 2 into a module of its own, where every global it names is a declaration of the same name and
+// type (so nothing in the lowered module gains a user), and copied back after the constructions.
+struct PristineBodies {
+  std::unique_ptr<Module> Mod;
+  ValueToValueMapTy toCopy;                                    // the lowered module's globals -> the declarations
+  std::vector<std::pair<WeakTrackingVH, GlobalValue *>> back;  // and back (tracking a replacement of the global)
+  struct Saved {
+    WeakVH F;                                                  // the function in the lowered module
+    Function *copy;
+    std::vector<std::pair<WeakVH, BasicBlock *>> addressed;    // its blocks whose address is taken -> their copies
+  };
+  std::vector<Saved> saved;
+
+  GlobalValue *declOf(GlobalValue *G) {
+    if (auto it = toCopy.find(G); it != toCopy.end())
+      return cast<GlobalValue>(static_cast<Value *>(it->second));
+    GlobalValue *D;
+    if (auto *F = dyn_cast<Function>(G))
+      D = Function::Create(F->getFunctionType(), GlobalValue::ExternalLinkage, F->getName(), Mod.get());
+    else
+      D = new GlobalVariable(*Mod, G->getValueType(), false, GlobalValue::ExternalLinkage, nullptr, G->getName());
+    toCopy[G] = D;
+    back.push_back({WeakTrackingVH(G), D});
+    return D;
+  }
+  void globalsOf(Value *V, SmallPtrSetImpl<Constant *> &seen) {
+    auto *C = dyn_cast<Constant>(V);
+    if (!C || !seen.insert(C).second)
+      return;
+    if (auto *G = dyn_cast<GlobalValue>(C)) {
+      declOf(G);
+      return;
+    }
+    for (Value *op : C->operands())
+      globalsOf(op, seen);
+  }
+
+  void save(Module &M, ArrayRef<Function *> Fs) {
+    Mod = std::make_unique<Module>("cq.pristine", M.getContext());
+    SmallPtrSet<Constant *, 32> seen;
+    for (Function *F : Fs) {
+      declOf(F);
+      for (Instruction &I : instructions(*F))
+        for (Value *op : I.operands())
+          globalsOf(op, seen);
+      if (F->hasPersonalityFn())
+        globalsOf(F->getPersonalityFn(), seen);
+    }
+    for (Function *F : Fs) {
+      auto *C = cast<Function>(static_cast<Value *>(toCopy[F]));
+      ValueToValueMapTy VM;
+      for (auto kv : toCopy)
+        VM[kv.first] = kv.second;
+      for (unsigned i = 0; i < F->arg_size(); ++i)
+        VM[F->getArg(i)] = C->getArg(i);
+      SmallVector<ReturnInst *, 4> rets;
+      CloneFunctionInto(C, F, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
+      Saved s{WeakVH(F), C, {}};
+      for (BasicBlock &BB : *F)
+        if (BB.hasAddressTaken())
+          s.addressed.push_back({WeakVH(&BB), cast<BasicBlock>(static_cast<Value *>(VM[&BB]))});
+      saved.push_back(std::move(s));
+    }
+  }
+
+  // Copies the saved bodies back into the functions that still exist and have no entry specialization.
+  void restore(const cq::TaintInfo &T, FunctionAnalysisManager &FAM) {
+    std::set<const Function *> entries;
+    for (const cq::Specialization &S : T.specializations())
+      if (S.isEntry())
+        entries.insert(S.F);
+    ValueToValueMapTy base;
+    for (auto &[G, D] : back)
+      if (G)
+        base[D] = G;
+    for (Saved &s : saved) {
+      auto *F = cast_or_null<Function>(static_cast<Value *>(s.F));
+      if (!F || F->isDeclaration() || entries.count(F))
+        continue;
+      ValueToValueMapTy VM;
+      for (auto kv : base)
+        VM[kv.first] = kv.second;
+      for (unsigned i = 0; i < F->arg_size(); ++i)
+        VM[s.copy->getArg(i)] = F->getArg(i);
+      SmallVector<std::pair<BasicBlock *, BasicBlock *>, 2> addressed;   // the block now in F -> its copy
+      for (auto &[bb, c] : s.addressed)
+        if (auto *b = cast_or_null<BasicBlock>(static_cast<Value *>(bb)); b && b->getParent() == F)
+          addressed.push_back({b, c});
+      // The old body gives its names up first, so the restored values take them unchanged.
+      SmallVector<BasicBlock *, 16> old;
+      for (BasicBlock &BB : *F) {
+        old.push_back(&BB);
+        BB.setName("");
+        for (Instruction &I : BB)
+          I.setName("");
+      }
+      F->clearMetadata();
+      SmallVector<ReturnInst *, 4> rets;
+      CloneFunctionInto(F, s.copy, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
+      // The restored blocks follow the old ones; a blockaddress of an old block denotes its restored copy.
+      for (auto &[b, c] : addressed)
+        if (BlockAddress *BA = BlockAddress::lookup(b))
+          BA->replaceAllUsesWith(BlockAddress::get(F, cast<BasicBlock>(static_cast<Value *>(VM[c]))));
+      for (BasicBlock *BB : old)
+        BB->dropAllReferences();
+      for (BasicBlock *BB : old)
+        BB->eraseFromParent();
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+    saved.clear();
+    back.clear();
+    toCopy.clear();
+    Mod.reset();
+  }
+};
+
 struct CQLowerPass : PassInfoMixin<CQLowerPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
     // cq-g3h1i: the order labels (cq/Order.h) live for one run.
@@ -1318,6 +1440,10 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
+
+    // 2a. cq-mjw9: the bodies step 2 on may rewrite, kept for the classical originals (PristineBodies).
+    PristineBodies pristine;
+    pristine.save(M, Tainted);
 
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
     // returns PreservedAnalyses::all() exactly when it left the function unchanged.
@@ -1461,6 +1587,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     trace("construct");
     for (const cq::Specialization *S : constructionOrder(Final))
       cq::construct(M, Final, *S, KO);
+    // 4b. cq-mjw9: a tainted function whose own symbol is no entry is the classical original again (principle 1).
+    pristine.restore(Final, FAM);
 
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);

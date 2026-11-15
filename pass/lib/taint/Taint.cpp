@@ -12,6 +12,7 @@
 //   4. reachability from the roots, twins and _pure variants, masks, names, the published list.
 // No state outlives the call: computeTaint is safe to call twice on one module (cq-5k5, option a).
 #include "TaintImpl.h"
+#include "FenvName.h"
 #include "../bus/BusInternal.h"
 #include "cq/Order.h"
 
@@ -189,16 +190,7 @@ bool hostGlobal(const GlobalVariable &GV) {
 }
 
 // <fenv.h> (C17 7.6): the floating-point environment calls rule 23 splits into host and rail parts.
-bool isFenvCall(StringRef n) {
-  static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept",
-                                "fesetexceptflag", "fetestexcept",  "fegetround",
-                                "fesetround",      "fegetenv",      "feholdexcept",
-                                "fesetenv",        "feupdateenv"};   // not the trap-enable extensions: rule 27 (CR rule 23)
-  for (const char *x : names)
-    if (n == x)
-      return true;
-  return false;
-}
+bool isFenvCall(StringRef n) { return taint_detail::isFenvName(n); }   // an asm label "\01_n" too (FenvName.h, cq-ten4)
 
 // Rule 23 (eff-fenv's envOp, read the same way): does I hold or change the environment itself? A raising
 // (fpexcept.strict) constrained op, a <fenv.h> call, a rounding intrinsic, or an indirect call.
@@ -699,6 +691,36 @@ std::string lanesStr(const Lanes &l) {
 
 
 static SmallVector<unsigned, 4> intFields(const Argument *A);
+std::vector<std::pair<unsigned, unsigned>> resultRanges(llvm::Function *F, unsigned retLanes);   // TaintInfo::resultQuantum's
+
+// Rules 3, 18, 26 (cq-ejne, cq-le2c): the lanes of a clone call's result. The clone returns one rail per field of its
+// result layout (resultRanges; the own symbol's integer result and its _pure clone one rail, Specialization::
+// wholeIntResult), so a field one lane of which is quantum is a rail as a whole: every lane of it is computed from that
+// rail. Finer lanes would let a reader of the field's classical bytes be classical while the caller holds only the rail.
+static Lanes cloneResultLanes(const SpecState &C, unsigned n) {
+  if (C.declared)
+    return allLanes(n);
+  Lanes r = C.ret;
+  r.resize(n);
+  if (r.none())
+    return r;
+  bool whole = C.F->getReturnType()->isIntegerTy() && !C.ctl && !C.plain && !C.table && C.bounds.empty() && !C.rm &&
+               llvm::none_of(C.formal, [](const Lanes &l) { return l.any(); });
+  std::vector<std::pair<unsigned, unsigned>> ranges;
+  if (whole)
+    ranges.push_back({0, n});
+  else
+    ranges = resultRanges(C.F, n);
+  for (auto [lo, hi] : ranges) {
+    bool q = false;
+    for (unsigned k = lo; k < hi && k < n; ++k)
+      q = q || r.test(k);
+    if (q)
+      for (unsigned k = lo; k < hi && k < n; ++k)
+        r.set(k);
+  }
+  return r;
+}
 
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
                              std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain, bool table,
@@ -1945,7 +1967,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
         SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds, {}, plain, false, m.rm);
         recordCallee(CB, C);
         if (!CB.getType()->isVoidTy())
-          setL(&CB, C->declared ? allLanes(lanesOf(CB.getType())) : C->ret);
+          setL(&CB, cloneResultLanes(*C, lanesOf(CB.getType())));
         cur->anyQuantum = true;
         return;
       }
@@ -1998,10 +2020,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals, plain, false, rm);
   recordCallee(CB, C);
   if (!CB.getType()->isVoidTy()) {
-    Lanes r = C->ret;
-    if (C->declared)
-      r = allLanes(lanesOf(CB.getType()));
-    setL(&CB, r);
+    setL(&CB, cloneResultLanes(*C, lanesOf(CB.getType())));
   }
   cur->anyQuantum = true;
 }
@@ -2339,6 +2358,18 @@ void Analyzer::transferCall(CallBase &CB) {
     }
     if ((blockCT(CB.getParent()) || cur->ctl) && cur->aborts.insert(&CB).second)
       st.changed = true;   // rule 16: an abort event
+    // cq-gk1ki (rule 18): a defined noreturn callee handed a quantum argument or called under a quantum predicate is
+    // lifted like any callee with a body (its clone carries rule 16's abort form), unless, with classical arguments, it
+    // aborts on every path with nothing before (the noreturn call it ends in: spine Classify's Class::Noreturn).
+    if (!G->isDeclaration() && !hostCallee(*G)) {
+      bool q = false;
+      for (Value *A : actuals)
+        q = q || L(A).any();
+      if ((q || blockCT(CB.getParent()) || cur->ctl) && (q || !taint_detail::abortsOnEveryPath(*G))) {
+        lift(CB, G, actuals, false);
+        return;
+      }
+    }
     if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
       bool q = false;
       for (Value *A : actuals)
@@ -3808,12 +3839,11 @@ TaintInfo::calleeCandidates(const llvm::CallBase &CB, const Specialization &call
   return out;
 }
 
-bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
-  const ImplState &I = needImpl(impl);
-  SpecState *SS = stateOf(I, S);
-  if (SS->table)
-    return true;   // §1.4: every scalar result a handle (a classical result as a seed rail)
-  llvm::Type *RT = SS->F->getReturnType();
+// The lane ranges of F's result, one per field its clone returns (CR §1.4, rules 18, 26): an aggregate's scalar
+// leaves, an integer (or integer leaf) the returns pack from narrower fields (159) by the zext/shl/or-disjoint
+// pattern split at the union of the returns' cuts; otherwise the whole value. retLanes: the result's lane count.
+std::vector<std::pair<unsigned, unsigned>> taintimpl::resultRanges(llvm::Function *F, unsigned retLanes) {
+  llvm::Type *RT = F->getReturnType();
   // Fields: an aggregate's scalar leaves; an integer packed from narrower fields (159) by its
   // zext/shl/or-disjoint pattern; otherwise the whole value.
   std::vector<std::pair<unsigned, unsigned>> ranges; // lane ranges
@@ -3855,7 +3885,7 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
         return first;
       };
       if (RT->isStructTy() || RT->isArrayTy())
-        for (llvm::BasicBlock &BB : *SS->F)
+        for (llvm::BasicBlock &BB : *F)
           if (auto *RI = dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
             if (llvm::Value *V = RI->getReturnValue()) {
               std::vector<bool> seen(leaves.size(), false);
@@ -3914,7 +3944,7 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
   } else if (RT->isIntegerTy()) {
     unsigned W = RT->getIntegerBitWidth();
     std::vector<unsigned> cuts;
-    for (llvm::BasicBlock &BB : *SS->F)
+    for (llvm::BasicBlock &BB : *F)
       if (auto *RI = dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
         if (llvm::Value *V = RI->getReturnValue()) {
           using namespace llvm::PatternMatch;
@@ -3935,8 +3965,17 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
     }
     ranges.push_back({lo / 8, std::max(1u, (W + 7) / 8)});
   } else if (!RT->isVoidTy()) {
-    ranges.push_back({0, std::max(1u, unsigned(SS->ret.size()))});
+    ranges.push_back({0, std::max(1u, retLanes)});
   }
+  return ranges;
+}
+
+bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
+  const ImplState &I = needImpl(impl);
+  SpecState *SS = stateOf(I, S);
+  if (SS->table)
+    return true;   // §1.4: every scalar result a handle (a classical result as a seed rail)
+  std::vector<std::pair<unsigned, unsigned>> ranges = taintimpl::resultRanges(SS->F, unsigned(SS->ret.size()));
   if (field >= ranges.size())
     internalError("taint: resultQuantum field out of range");
   for (unsigned k = ranges[field].first; k < ranges[field].second; ++k)

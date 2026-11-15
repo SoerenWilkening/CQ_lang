@@ -122,6 +122,7 @@
 #include <string>
 
 #include "../../bus/BusInternal.h"
+#include "../../taint/FenvName.h"
 #include "cq/Abi.h"
 #include "cq/Bus.h"
 #include "cq/Calls.h"
@@ -199,8 +200,9 @@ FenvFn fenvFn(const CallBase &CB) {
       {"feupdateenv", FenvFn::UpdateEnv}};
   // feenableexcept / fedisableexcept / fegetexcept are not C17 and have no musl body: rule 27, like any
   // bodiless callee (CR rule 23, cq-hzji 2026-11-02); not this module's.
+  StringRef cn = taint_detail::cFunctionName(F->getName());   // an asm label "\01_n" names n (cq-ten4)
   for (auto &[n, k] : names)
-    if (F->getName() == n)
+    if (cn == n)
       return k;
   return FenvFn::None;
 }
