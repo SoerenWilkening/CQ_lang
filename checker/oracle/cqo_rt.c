@@ -1088,6 +1088,34 @@ void __cqo_rec_up(const char *fn, int32_t on) {
     if (on && nrecs) --*rec_count(fn);
 }
 
+/* The pass's depth counter (Calls.cpp insertActivationCounter; CR §1.4, rule 14; owner 2026-11-15): a `_ctl` activation of a
+ * function on a call cycle by name or with a table clone reads d, the live `_ctl` activations of its function (all of them,
+ * whichever activation entered them), and is cut unless d < K, K the received K in force, else its own. At K = 0 the first
+ * one is cut, recursive or not. OracleInstr.cpp calls it at the entry of such a specialization (on) and puts it back at
+ * every return. */
+#define MAXACTFN 256
+static struct { const char *fn; long long d; } actc[MAXACTFN];
+static int nactc;
+static long long *act_count(const char *fn) {
+    for (int i = 0; i < nactc; ++i)
+        if (actc[i].fn == fn || !strcmp(actc[i].fn, fn)) return &actc[i].d;
+    if (nactc == MAXACTFN) { note("internal more than %d functions with a depth counter", MAXACTFN); _exit(95); }
+    actc[nactc].fn = fn, actc[nactc].d = 0;
+    return &actc[nactc++].d;
+}
+
+void __cqo_act_enter(const char *fn, int32_t on, int64_t K) {
+    if (!on) return;
+    if (k_recv >= 0) K = k_recv;
+    long long *d = act_count(fn);
+    if (*d >= K) kcap(fn, K, act_path);
+    ++*d;
+}
+
+void __cqo_act_leave(const char *fn, int32_t on) {
+    if (on) --*act_count(fn);
+}
+
 /* An indirect call (rule 19). K is the K of the caller's enclosing function, read by the table clone and what it calls by
  * name; a caller running under a received K passes that one on (the pass: a table clone's calls pass its K parameter, a
  * by-name callee's pass @__cq_k). The K in force is put back at the return, as the table clone restores @__cq_k; an

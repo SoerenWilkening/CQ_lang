@@ -124,6 +124,18 @@ MUTANTS = {
         ("phantom2", "second_unguarded2", r"(  %[\w.]+ = icmp eq i32 %0, 0\n)  br i1 %[\w.]+, label %[\w.]+, label (%[\w.]+)\n",
          r"\1  br label \2\n"),
     ],
+    # owner ruling of 2026-11-15 (the activation-counter cut; CR §1.4, rule 14): the depth counter's cut test is d < K, K the
+    # K the table clone receives. A cut at a constant other than K (the clone and the copy that recomputes it alike) cuts
+    # another activation than the C oracle (cqo_rt.c __cqo_act_enter): at K = 0 (k_zero, under CQ_K_ROLLED) d < 1 runs the
+    # first activation; at a received K 2 (k_chain) d < 3 runs the third.
+    "k_zero": [
+        ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@kz_tab", "cut_d1",
+         r"(store i32 %[\w.]+, ptr @__cq_act_kf, align 4\n  %[\w.]+ = icmp ult i32 %[\w.]+), %[\w.]+\n", r"\1, 1\n"),
+    ],
+    "k_chain": [
+        ("__cq_q_kt_1_t_ctl+__cq_q_kt_1_t_ctl_pure@kc_chain", "cut_d3",
+         r"(store i32 %[\w.]+, ptr @__cq_act_kt, align 4\n  %[\w.]+ = icmp ult i32 %[\w.]+), %[\w.]+\n", r"\1, 3\n"),
+    ],
 }
 _ALL = ("wrong_value", "hoist_trips", "no_restore")   # mutants applied at every match, not the first only
 NAMED = ("me_cbr", "me_outcome")                        # probes whose lowered module is mutated after opt -passes=instnamer
