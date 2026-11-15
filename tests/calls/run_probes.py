@@ -195,12 +195,14 @@ CASES = [
     # twin cannot re-read the copy, so there is no rule-18 twin: _t_unc is empty and the results stay allocated (211's peek). A
     # measurement of a rail that is not a formal (n) keeps the twin, which re-reads the copy it pushed and zeroes the rail result.
     ("meas_table_t", "f", [], "pass", [
-        r"define internal i32 @__cq_q_in_1_t\(i32 %0, i32 %1\) \{\n  %3 = call i32 @cqrt_alloc_i32\(i32 0\)\n"
-        r"  call void @cqrt_copy_i32\(i32 %0, i32 %3\)\n  %4 = call i32 @cqrt_measure_i32\(i32 %3\)[^\n]*\n"
-        r"  %5 = add nsw i32 %4, 1\n  %6 = call i32 @cqrt_alloc_i32\(i32 %5\)\n  ret i32 %6\n}\n",
-        r"define internal void @__cq_q_in_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  ret void\n}\n"]),
+        r"define internal i32 @__cq_q_in_1_t\(i32 %0, i32 %1\) \{\n  %3 = load i32, ptr @__cq_k, align 4\n"
+        r"  store i32 %1, ptr @__cq_k, align 4\n  %4 = call i32 @cqrt_alloc_i32\(i32 0\)\n"
+        r"  call void @cqrt_copy_i32\(i32 %0, i32 %4\)\n  %5 = call i32 @cqrt_measure_i32\(i32 %4\)[^\n]*\n"
+        r"  %6 = add nsw i32 %5, 1\n  %7 = call i32 @cqrt_alloc_i32\(i32 %6\)\n  store i32 %3, ptr @__cq_k, align 4\n"
+        r"  ret i32 %7\n}\n",
+        r"define internal void @__cq_q_in_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  %4 = load i32, ptr @__cq_k, align 4\n  store i32 %2, ptr @__cq_k, align 4\n  store i32 %4, ptr @__cq_k, align 4\n  ret void\n}\n"]),
     ("meas_table_t", "g", [], "pass", []),
-    ("meas_table_t", "h", [], "pass", [r"define internal void @__cq_q_outer_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  ret void\n}\n"]),
+    ("meas_table_t", "h", [], "pass", [r"define internal void @__cq_q_outer_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  %4 = load i32, ptr @__cq_k, align 4\n  store i32 %2, ptr @__cq_k, align 4\n  store i32 %4, ptr @__cq_k, align 4\n  ret void\n}\n"]),
     ("meas_table_t", "n", [], "pass", [
         r"define internal void @__cq_q_inner_1_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call i32 @cqrt_pop\(\)"
         r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)"]),
@@ -209,16 +211,20 @@ CASES = [
     # register cq_theta minted, listed and pushed with its count at the return, which _t_unc pops as count then handles (g).
     ("meas_table_both", "f", [], "pass", [
         r"define internal i32 @__cq_q_both_1_t\((?:(?!\n}\n)(?!cqrt_push|__cq_mints_push)[\s\S])*\n}\n",
-        r"define internal void @__cq_q_both_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  ret void\n}\n"]),
+        r"define internal void @__cq_q_both_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  %4 = load i32, ptr @__cq_k, align 4\n  store i32 %2, ptr @__cq_k, align 4\n  store i32 %4, ptr @__cq_k, align 4\n  ret void\n}\n"]),
     ("meas_table_both", "g", [], "pass", [
-        r"define internal i32 @__cq_q_bothrot_1_t\((?:(?!\n}\n)(?!cqrt_push\()[\s\S])*call void @__cq_mints_push\(ptr %\d+\)\n"
-        r"  %\d+ = call i32 @cqrt_alloc_i32\(i32 %\d+\)\n  ret i32 %\d+\n}\n",
-        r"define internal void @__cq_q_bothrot_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  %4 = call i32 @cqrt_pop\(\)\n"
-        r"(?:(?!\n}\n)[\s\S])*call i32 @cqrt_pop\(\)\n  %\d+ = sub i32 %\d+, 1\n"]),
+        r"define internal i32 @__cq_q_bothrot_1_t\(i32 %0, i32 %1\) \{\n  %cq.mints = alloca ptr, align 8\n"
+        r"  %3 = load i32, ptr @__cq_k, align 4\n  store i32 %1, ptr @__cq_k, align 4\n"
+        r"(?:(?!\n}\n)(?!cqrt_push\()[\s\S])*call void @__cq_mints_push\(ptr %\d+\)\n"
+        r"  %\d+ = call i32 @cqrt_alloc_i32\(i32 %\d+\)\n  store i32 %3, ptr @__cq_k, align 4\n  ret i32 %\d+\n}\n",
+        r"define internal void @__cq_q_bothrot_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  %4 = load i32, ptr @__cq_k, align 4\n"
+        r"  store i32 %2, ptr @__cq_k, align 4\n  %5 = call i32 @cqrt_pop\(\)\n"
+        r"(?:(?!\n}\n)[\s\S])*call i32 @cqrt_pop\(\)\n  %\d+ = sub i32 %\d+, 1\n"
+        r"(?:(?!\n}\n)[\s\S])*\n  store i32 %4, ptr @__cq_k, align 4\n  ret void\n}\n"]),
     # Every formal of _t is a rail, so a branch on one is quantum: the measurement under it is tainted and _t has no twin (rule 18),
     # in a K-loop (f) and in an arm (g).
-    ("meas_table_t_paths", "f", [], "pass", [r"define internal void @__cq_q_sumin_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
-    ("meas_table_t_paths", "g", [], "pass", [r"define internal void @__cq_q_some_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
+    ("meas_table_t_paths", "f", [], "pass", [r"define internal void @__cq_q_sumin_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  %5 = load i32, ptr @__cq_k, align 4\n  store i32 %3, ptr @__cq_k, align 4\n  store i32 %5, ptr @__cq_k, align 4\n  ret void\n}\n"]),
+    ("meas_table_t_paths", "g", [], "pass", [r"define internal void @__cq_q_some_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  %5 = load i32, ptr @__cq_k, align 4\n  store i32 %3, ptr @__cq_k, align 4\n  store i32 %5, ptr @__cq_k, align 4\n  ret void\n}\n"]),
     # Rules 2, 18: a result read only by a measurement of a copy (f: in _t; g: also on some classical paths) has its twin emitted.
     ("meas_own_twin", "f", [], "pass", [r"define internal void @__cq_q_rd_0_unc\("]),
     ("meas_own_twin", "g", [], "pass", [r"define internal void @__cq_q_rd_0_unc\("]),
@@ -415,7 +421,7 @@ CASES = [
     # Rule 18, §1.4 (CQ_spec 96c7bc5): _t measures a kept copy of its formal v, not pushed, so it has no rule-18 twin and its result
     # is kept; in _t_ctl the measurement is the controlled copy, tainted, so its twin only counts and the result is kept.
     ("table_twin_measure", "e_cl", [], "pass", [
-        r"define internal void @__cq_q_g_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n",
+        r"define internal void @__cq_q_g_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  %5 = load i32, ptr @__cq_k, align 4\n  store i32 %3, ptr @__cq_k, align 4\n  store i32 %5, ptr @__cq_k, align 4\n  ret void\n}\n",
         r"define internal void @__cq_q_g_11_t_ctl_unc\(i32 %0(?:(?!\n}\n|@cqrt_)[\s\S])*\n}\n"]),
     # e_rail: its _t_ctl result is KEPT by the ruling (§1.4; run.kept_results_module).
     ("table_twin_measure", "e_rail", [], "pass", []),
