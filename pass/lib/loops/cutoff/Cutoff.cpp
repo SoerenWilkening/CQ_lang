@@ -2722,6 +2722,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // me_body, me_arm, me_reread: the trip measures the carried rail (rule 2), and the reverse undoes the select that
       // made it, freeing a measured rail.
       why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
+    else if (rolled::changesFenvState(L))
+      why = "a quantum floating-point environment change in the trip (S12: its loop-carried rule 23 state)";
     if (why) {
       noteUnbuilt(std::string("loops-cutoff: CQ_K_ROLLED: the K-loop keeps its static copies: ") + why,
                   H->getTerminator());
