@@ -178,10 +178,12 @@ public:
   // it like the later tests); taken by that call alone, not by the K-loops nested in its trips.
   Value *test0 = nullptr;
 
-private:
   // cq-9kcq S10 (CR rule 14: "nested inner loops keep one a_K per outer trip"): the rolled region whose trip rolledBody is
-  // lowering, or nullptr. A K-loop nested in that trip adds its header and segments to it (no region of its own).
+  // lowering, or nullptr. A K-loop nested in that trip adds its header and segments to it (no region of its own). S11: set
+  // by lowerNestedCutoff to the classically bounded loop's region whose trip holds the loop.
   rolled::Region *rolledTrip = nullptr;
+
+private:
   LoweringContext &ctx;
   Analyses &A;
   DenseSet<const Value *> mine;   // values this module has bound (bind, then rebind per trip)
@@ -3533,6 +3535,67 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
              rolled::readersKeep(ctx, L, o.first);
     });
     rreg->finishExits(rCont ? rCont : rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg, rX);
+  } else if (rolled && !top) {
+    // cq-9kcq S11 (CR rules 2, 5, 14): a nested rolled K-loop's exit value is a rail of one record of its trip, made again in
+    // every trip, which the enclosing reverse mirrors per trip. A reader after the loop that keeps the rail it reads (a
+    // measurement in place, a stored value, a return: rolled::readersKeep's keepers) would keep that record in every trip
+    // (me_outer: the K-1 earlier trips' selects left as garbage). Such a value is copied at X (alloc + copy, a record of the
+    // enclosing trip's segment): the reader keeps the copy and the loop's records are undone as any other.
+    auto keeps = [&](const Value *v) {
+      SmallVector<const Value *, 4> work{v};
+      SmallPtrSet<const Value *, 8> seen{v};
+      while (!work.empty()) {
+        const Value *x = work.pop_back_val();
+        for (const User *u : x->users()) {
+          auto *ui = dyn_cast<Instruction>(u);
+          if (!ui || L.contains(ui))
+            continue;
+          if (auto *P = dyn_cast<PHINode>(ui)) {
+            if (seen.insert(P).second)
+              work.push_back(P);
+            continue;
+          }
+          if (isa<ReturnInst>(ui))
+            return true;
+          if (auto *st = dyn_cast<StoreInst>(ui); st && st->getValueOperand() == x)
+            return true;
+          if (auto *CB = dyn_cast<CallBase>(ui); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Measure &&
+                                                 !ctx.S.table && !ctx.S.ctl &&
+                                                 spine::measuredOnEveryPath(ctx, CB->getArgOperand(0)))
+            return true;
+        }
+      }
+      return false;
+    };
+    DenseMap<Value *, Value *> copyOf;
+    auto copyOut = [&](const Value *v, Operand &o) {
+      if (!o.handle || rKeptFinal.count(o.v) || !keeps(v))
+        return;
+      if (Value *c = copyOf.lookup(o.v)) {
+        o = Operand{c, true};
+        return;
+      }
+      RailType w = railOf(v->getType());
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                 {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+      RailId fid = ctx.unc().recordSeed(f);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cpy = ctx.emitCore(cp, {o.v, f});
+      ctx.unc().recordCore(cpy, cp, {o, Operand{f, true}}, fid);
+      copyOf[o.v] = f;
+      o = Operand{f, true};
+    };
+    for (size_t k = 0; k < exitRebinds.size(); ++k)
+      copyOut(exitRebinds[k].first, exitVals[k]);
+    for (size_t k = 0; k < exitPhis.size(); ++k)
+      copyOut(exitPhis[k].first, exitPhiVals[k]);
+    for (auto &[I, o] : regionVals)
+      copyOut(I, o);
+    for (CPhi &cp : cphis)
+      copyOut(cp.P, cp.acc);
+    for (XAcc &xa : xaccs)
+      if (xa.acc.size() == 1)
+        copyOut(xa.V, xa.acc[0]);
   }
   for (auto &[I, o] : regionVals)
     ctx.rebind(I, {o});
@@ -3801,7 +3864,7 @@ bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p
 
 
 Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook,
-                         Value *test0) {
+                         Value *test0, rolled::Region *region) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
   Loop *mL = A.LI.getLoopFor(L.getHeader());
@@ -3814,6 +3877,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
   C.segHook = segHook;
+  C.rolledTrip = region;   // cq-9kcq S11: read only under CQ_K_ROLLED (rolledHere)
   C.test0 = test0;
   C.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
   C.bound = B;

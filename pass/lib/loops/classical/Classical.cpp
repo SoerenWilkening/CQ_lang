@@ -2385,7 +2385,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (Pred hp = qp(b); !hp.isTop())
             sf = ctx.preds().flag(ctx, hp);
         if (classify(*S, ctx.T, ctx.S) == Case::QuantumExit) {
-          noteStop(exits::lowerNestedCutoff(ctx, *S, sf, segHook()));
+          noteStop(exits::lowerNestedCutoff(ctx, *S, sf, segHook(), nullptr, this));
           followBuilder();
         } else {
           noteStop(exits::lowerClassicalInTrip(ctx, *S, sf));
@@ -3054,7 +3054,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         Value *t0 = nullptr;
         if (Pred cf = cfOf(ctx.preds().block(b)); !(curFact & !cf).isBottom())
           t0 = classicalValue(ctx, cf);
-        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook(), t0));
+        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook(), t0, this));
         clearTail(sl, keepTail);
         followInsert();
         for (PHINode &P : C->phis())
