@@ -2844,11 +2844,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a classically bounded sub-loop in the trip or its exit arm whose values outlive the trip";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
-    else if (rolled::changesFenvMode(L))
-      // S12c carries FLAGS; a MODE the trip changes and code after the loop reads (fegetround's result names the mode rail
-      // itself) is unbuilt: rule 6 cleans that rail while the deferred reverse owns it (ks_round), and the final mode left
-      // in place leaks one trip's rail (cq-v1fu).
-      why = "a quantum rounding-mode change in the trip (S12c: the loop-carried MODE)";
     else if (regionForm && any_of(regionOut, [&](const Instruction *I) {
                return I->getType()->isAggregateType() || I->getType()->isVectorTy();
              }))

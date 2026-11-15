@@ -2655,6 +2655,12 @@ void bindPiece(LoweringContext &ctx, unsigned id, Value *h) {
   define(ctx, st, kState, p);
 }
 
+bool stateRail(LoweringContext &ctx, const Value *h) {
+  auto it = states().find(&ctx.out());   // a lookup: no state is made for a function without one
+  return it != states().end() && it->second && it->second->orig && it->second->orig->getParent() == &ctx.M &&
+         it->second->anchored.count(h);
+}
+
 const Value *pieceKey(LoweringContext &ctx, unsigned id) {
   State &st = state(ctx, &ctx.M);
   Instruction *&k = st.pieceKey[id & 1];

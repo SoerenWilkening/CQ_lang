@@ -43,5 +43,8 @@ std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const llvm::Loop &L)
 llvm::Value *pieceNow(LoweringContext &ctx, unsigned id);
 void bindPiece(LoweringContext &ctx, unsigned id, llvm::Value *h);
 const llvm::Value *pieceKey(LoweringContext &ctx, unsigned id);
+// cq-9kcq S12d (CR rules 6, 23): is h a rail the environment holds or held as its state (MODE, FLAGS, a saved part:
+// every such rail is anchored)? Rule 6 never cleans such a rail (fegetround's result is the MODE rail itself).
+bool stateRail(LoweringContext &ctx, const llvm::Value *h);
 
 } // namespace cq::fenv
