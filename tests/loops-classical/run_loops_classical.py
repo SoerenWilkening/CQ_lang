@@ -165,6 +165,12 @@ ARM_ONCE = ["ao_write"]
 # cq-qb3n (CR rules 2, 5): a do-while measuring a classical join of the carried value and an arm's update every trip.
 RUS_PROBE = PROBES / "rus.O1.ll"
 RUS = ["rus_xor", "rus_mul"]
+# cq-2xl5 (CR rules 2, 5, 14): a loop's exit value measured on some classical paths only (a sub-loop leaving its parent).
+SUB_LEAVE_PROBE = PROBES / "sub_leave.O1.ll"
+SUB_LEAVE = ["sl_goto", "sl_nest"]
+# cq-jos4q (CR rules 2, 14): the previous trip's value measured after the loop, another exit value read in place.
+PREV_MEASURED_PROBE = PROBES / "prev_measured.O1.ll"
+PREV_MEASURED = ["pm_old", "pm_both"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 ENTRY_LIMIT = 180   # cq-1dx6: an entry with no verdict by then is a reported failure, not a silent hang
 JOBS = min(int(os.environ.get("CQCHECK_JOBS", "2")), 4)
@@ -251,13 +257,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus", "sub_leave", "prev_measured"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus", "sub_leave", "prev_measured"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -292,7 +298,8 @@ def main() -> int:
                                  ("c3idx", C3IDX_PROBE, C3IDX), ("seed", SEED_PROBE, SEED),
                                  ("exit_edges", EXIT_EDGES_PROBE, EXIT_EDGES), ("exit_arm", EXIT_ARM_PROBE, EXIT_ARM),
                                  ("rot_read", ROT_READ_PROBE, ROT_READ), ("arm_once", ARM_ONCE_PROBE, ARM_ONCE),
-                                 ("rus", RUS_PROBE, RUS)):
+                                 ("rus", RUS_PROBE, RUS), ("sub_leave", SUB_LEAVE_PROBE, SUB_LEAVE),
+                                 ("prev_measured", PREV_MEASURED_PROBE, PREV_MEASURED)):
         if g in want:
             groups.append((probe, entries))
     for probe, entries in groups:
