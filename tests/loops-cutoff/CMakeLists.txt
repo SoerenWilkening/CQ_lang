@@ -52,6 +52,13 @@ add_test(NAME loops-cutoff-widened
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/guard_cover_ir.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/join_units.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-9kcq S21 (CR rules 14, 26): a vector of a quantum-exit K-loop's header test region read by its body, carried by the
+# rolled trip one field per header phi; with a mutant (field 1 carried as field 0).
+add_test(NAME loops-cutoff-aggregate
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/agg_region.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-z6nkx: musl mbsrtowcs' two scan loops into one tail; strlen's tail edge excluding its unit; stpcpy's skip of a loop in a tail; its head's flag seed.
 add_test(NAME loops-cutoff-tail-phis
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

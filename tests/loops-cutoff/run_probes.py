@@ -73,6 +73,11 @@ MUTANTS = {
     # owner ruling 2026-11-15 on cq-zk0aj (CR rule 14, §6): ex_pre's quantum header test (v & 4) == 0 made a constant, its mask
     # 4 replaced by 0 in every trip and its uncomputation alike, so every trip runs on: trips C leaves by v & 4 still
     # measure v and add to n, a classical test on a value no earlier outcome fixes
+    # cq-9kcq S21 (CR rules 14, 26): the vector w of the header test region is carried one field per header phi; field 1's
+    # phi (read by the body as w[1]) takes field 0's latch value, so every trip after trip 0 reads w[0] for w[1]
+    "agg_region": [
+        ("vec_region", "other_field", lambda b: other_field(b), None),
+    ],
     "me_exit": [
         ("ex_pre", "const_test", lambda b: re.sub(r"(@cq_template_and_i32_hl(?:_unc)?\((?:i32 %[\w.]+, )+i32 )4\)", r"\g<1>0)", b),
          None),
@@ -170,6 +175,21 @@ def other_site(fn_body: str):
     b = fn_body[:m.start()] + split + fn_body[m.end():]
     # the header's terminator now ends cq.j: every phi's incoming edge from the header comes from cq.j
     return re.sub(r"^(  %[\w.]+ = phi [^\n]*)$", lambda p: p.group(1).replace(f", %{hdr} ]", ", %cq.j ]"), b, flags=re.M)
+
+
+def other_field(fn_body: str):
+    """agg_region's vec_region: the header phis of w's two fields (entered as the region's evaluation before the loop:
+    field 0 x*x, field 1 3x*7); field 1's latch incoming replaced by field 0's."""
+    f0 = re.search(r"^  (%[\w.]+) = call i32 @cq_template_mul_i32\(i32 (%[\w.]+), i32 \2\)", fn_body, re.M)
+    f1 = re.search(r"^  (%[\w.]+) = call i32 @cq_template_mul_i32_hl\(i32 %[\w.]+, i32 7\)", fn_body, re.M)
+    if not f0 or not f1:
+        return fn_body
+    phi = r"^(  %[\w.]+ = phi i32 \[ {}, %[\w.]+ \], \[ )(%[\w.]+)(, %[\w.]+ \])$"
+    p0 = re.search(phi.format(re.escape(f0.group(1))), fn_body, re.M)
+    p1 = re.search(phi.format(re.escape(f1.group(1))), fn_body, re.M)
+    if not p0 or not p1:
+        return fn_body
+    return fn_body[:p1.start()] + p1.group(1) + p0.group(2) + p1.group(3) + fn_body[p1.end():]
 
 
 def own_select(fn_body: str):
