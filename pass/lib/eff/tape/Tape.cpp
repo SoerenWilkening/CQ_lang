@@ -375,6 +375,10 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
       using calls::Class;
       Class k = calls::classify(*C, ctx.T, ctx.S);
       if (k == Class::Theta) {
+        // A step of a rule-5 in-place form rotates the cell's content (swapped in), not its operand's rail; a store
+        // into that cell after the abort displaced the content it had there into a kept tape slot (ABI qram_store).
+        if (bus::inPlaceOnCell(ctx, *C))
+          continue;
         target(C->getArgOperand(0));
         continue;
       }
