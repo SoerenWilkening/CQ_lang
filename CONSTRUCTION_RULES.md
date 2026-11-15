@@ -323,8 +323,9 @@ table clone has one module-internal classical word `@__cq_k = internal global i3
 no cut). Each table clone, its `_ctl` form and their twins store their K actual in it on entry and
 store the value they found there back at every return. A clone or own symbol that a table clone of
 its module can reach by name and that holds a K cut (a quantum-exit loop, a quantum-depth
-recursion) loads it once on entry as its received K and cuts at the smaller of that and its own K
-(unsigned). It is compiler state like `@__cq_act_<fn>`: plain `load` and `store`, no bus access,
+recursion) loads it once on entry: a value other than all ones is the K of that activation, in
+place of its own, whether smaller or larger (rule 27: no K variant exists; rule 14: K is a
+run-time value of the one rolled body). It is compiler state like `@__cq_act_<fn>`: plain `load` and `store`, no bus access,
 no memory version change.
 
 **Table clones.** A clone reached without its body in view (a row of the clone table, §1.3, or a
