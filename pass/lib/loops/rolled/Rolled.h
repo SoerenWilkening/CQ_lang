@@ -73,6 +73,14 @@ llvm::Value *popValue(llvm::IRBuilder<> &B, llvm::FunctionCallee pop, llvm::Type
 // Is v read after the loop `top` only by what keeps its rail (rule 5, §6 item 1): a measurement, a return, the value of a store?
 bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value *v);
 
+// cq-n1hy7 (CR rules 5, 6, 14): may the code after the loop `top` clean v's rail by rule 6 (the spine's ruleSixAfter: a
+// bijective update of v, or a merge with v as an arm, after which v is dead)? Rule 6 replaces the undoing of v's producer
+// by an inverse that reads the update's image, a value made after the loop: right for the last trip's instance of a rail
+// a trip makes, wrong for every earlier trip's, which the reverse loop undoes with the same mirror. v is a value of the
+// loop that is no phi (a phi is never cleaned); its readers after the loop are followed through what may alias it.
+// Over-approximates: a yes costs one copy.
+bool cleanedAfter(const llvm::Loop &top, const llvm::Value *v);
+
 class Region {
 public:
   Region(LoweringContext &ctx, llvm::Function &Out) : ctx(ctx), Mod(ctx.M), Out(Out), U(ctx.unc()) {}
@@ -175,6 +183,8 @@ public:
   // where the loop continues). X (default T) is the loop's exit block, whose predecessors are the region's exit edges,
   // when the code after the loop continues in a later block T (cq-9kcq S6: a_K's copy under a classical branch on the
   // run-time K, made between X and the reverse).
+  // cq-n1hy7: perTripCopy(v), when given: v's exit rail, if a trip's record (one instance per trip), is copied out even
+  // though it is a record of the loop (cleanedAfter: a reader after the loop may consume the last instance in place).
   struct ExitWiring {
     std::vector<unsigned> scs;
     llvm::DenseSet<const llvm::Value *> ownedH;
@@ -184,7 +194,8 @@ public:
                        llvm::ArrayRef<RailType> outW, llvm::Value *stopCur,
                        const llvm::DenseSet<const llvm::Value *> &keptFinal,
                        llvm::function_ref<bool(const llvm::Value *)> scopedOf,
-                       llvm::function_ref<void(const llvm::Value *, Operand)> put);
+                       llvm::function_ref<void(const llvm::Value *, Operand)> put,
+                       llvm::function_ref<bool(const llvm::Value *)> perTripCopy = nullptr);
   bool finishExits(llvm::BasicBlock *T, unsigned seedScope, const ExitWiring &w, bool keptInPlace,
                    const llvm::Instruction *latchTerm, std::shared_ptr<Region> self, llvm::BasicBlock *X = nullptr);
 

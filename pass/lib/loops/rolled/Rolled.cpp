@@ -17,6 +17,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/IntrinsicInst.h"
 
 using namespace llvm;
 
@@ -947,10 +948,70 @@ bool readersKeep(LoweringContext &ctx, const Loop &top, const Value *v) {
   return true;
 }
 
+bool cleanedAfter(const Loop &top, const Value *v) {
+  if (!isa<Instruction>(v) || isa<PHINode>(v))
+    return false;
+  SmallVector<const Value *, 4> work{v};
+  SmallPtrSet<const Value *, 8> seen{v};
+  while (!work.empty()) {
+    const Value *w = work.pop_back_val();
+    for (const User *u : w->users()) {
+      auto *ui = dyn_cast<Instruction>(u);
+      if (!ui || top.contains(ui))
+        continue;
+      // What may name w's rail itself (the spine's aliases: a freeze, a cast it skips, a lane or field move, a classical
+      // select or phi over handles) is followed.
+      if (isa<FreezeInst>(ui) || isa<CastInst>(ui) || isa<ExtractElementInst>(ui) || isa<ExtractValueInst>(ui) ||
+          isa<InsertElementInst>(ui) || isa<InsertValueInst>(ui) || isa<ShuffleVectorInst>(ui)) {
+        if (seen.insert(ui).second)
+          work.push_back(ui);
+        continue;
+      }
+      // A phi never names a rail rule 6 cleans (the spine's cleanable), nor is a phi an update of its incoming value.
+      if (isa<PHINode>(ui))
+        continue;
+      // A select with w as an arm: a merge of updates of w (rule 6's merge clean-up, mergeCleanup) or an alias of it.
+      if (auto *sel = dyn_cast<SelectInst>(ui); sel && sel->getCondition() != w)
+        return true;
+      // The spine's bijective updates (Opcode.cpp, deadAtCleanup's laterUpdate, inverseOf).
+      if (auto *bo = dyn_cast<BinaryOperator>(ui)) {
+        if (bo->getOperand(0) == bo->getOperand(1))
+          continue;
+        auto opc = bo->getOpcode();
+        if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor)
+          return true;
+        if (opc == Instruction::Mul)
+          if (auto *k = dyn_cast<ConstantInt>(bo->getOperand(bo->getOperand(0) == w ? 1 : 0)); k && k->getValue()[0])
+            return true;
+        continue;
+      }
+      if (auto *un = dyn_cast<UnaryOperator>(ui); un && un->getOpcode() == Instruction::FNeg)
+        return true;
+      if (auto *II = dyn_cast<IntrinsicInst>(ui)) {
+        switch (II->getIntrinsicID()) {
+        case Intrinsic::bswap:
+        case Intrinsic::bitreverse:
+        case Intrinsic::fshl:
+        case Intrinsic::fshr:
+        case Intrinsic::sadd_with_overflow:
+        case Intrinsic::uadd_with_overflow:
+        case Intrinsic::ssub_with_overflow:
+        case Intrinsic::usub_with_overflow:
+          return true;
+        default:
+          break;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<const Value *, Operand>> out,
                                      ArrayRef<RailType> outW, Value *stopCur, const DenseSet<const Value *> &keptFinal,
                                      function_ref<bool(const Value *)> scopedOf,
-                                     function_ref<void(const Value *, Operand)> put) {
+                                     function_ref<void(const Value *, Operand)> put,
+                                     function_ref<bool(const Value *)> perTripCopy) {
   std::vector<unsigned> scs{seedScope};
   for (const Seg &sg : segs)
     scs.push_back(sg.scope);
@@ -998,7 +1059,13 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
         continue;
       }
     }
-    if (ownedH.count(op.v)) {
+    // cq-n1hy7 (CR rules 6, 14 case 1: "after the result is copied out (alloc + copy) a reverse loop pops"): an exit rail a
+    // trip's record makes has one instance per trip, all undone by the reverse loop's one mirror; a reader after the loop
+    // that may consume it (rule 6) reads a copy, the loop's single instance of the value.
+    bool perTrip = perTripCopy && perTripCopy(v) && any_of(segs, [&](const Seg &sg) {
+                     return any_of(U.scopeRecords(sg.scope), [&](const Record &r) { return r.forward == op.v; });
+                   });
+    if (ownedH.count(op.v) && !perTrip) {
       put(v, op);
       RailId x = U.idOf(op.v);
       if (!is_contained(exits, x))
