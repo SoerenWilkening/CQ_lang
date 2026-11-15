@@ -70,16 +70,6 @@ unsigned scalarBits(llvm::Type *t, const llvm::DataLayout &DL);
 void pushValue(llvm::IRBuilder<> &B, llvm::FunctionCallee push, llvm::Value *v, const llvm::DataLayout &DL);
 llvm::Value *popValue(llvm::IRBuilder<> &B, llvm::FunctionCallee pop, llvm::Type *t, const llvm::DataLayout &DL);
 
-// cq-9kcq S12 (ROLLED_DESIGN.md §4; CR rules 14, 23): does a trip of the quantum-exit loop L change the quantum part of the
-// floating-point environment (eff-fenv's FLAGS or MODE)? In a rolled body that state is loop-carried: a header phi over
-// handles, the latch's incoming, and a copy-out of the exit state before the reverse loop, none of them built yet (cq-v1fu
-// for the classically bounded loops). Until they are, such a K-loop keeps its static copies, where each trip's change is a
-// straight-line change under the trip predicate (eff-fenv requirePlaced). Defined in eff/fenv/Fenv.cpp, beside the
-// classification it reads.
-bool changesFenvState(const llvm::Loop &L);
-// Does an instruction of L write the rounding mode (fesetround, a fesetenv / fesetmode restore)? Fenv.cpp.
-bool changesFenvMode(const llvm::Loop &L);
-
 // Is v read after the loop `top` only by what keeps its rail (rule 5, §6 item 1): a measurement, a return, the value of a store?
 bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value *v);
 

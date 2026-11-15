@@ -69,14 +69,14 @@ CASES = [
     # cq-a24ig (CR rules 6, 14, 27 "Cutoff", owner ruling Q2): a by-name helper's K-loop cut at the received K; the items
     # cleaned at the return under one run flag share the flag and one block (SIZE_BOUNDS).
     ("kcut_items", "kc", [], "pass", []),
-    # cq-9kcq (CR rules 2, 14 case 2): a K-loop's exit value rotated and measured after the loop; also run with CQ_K_ROLLED=1
-    # (ctest uncompute.probes_rolled), where the deferred reverse's copy-out lands in an exit block that holds the rotation.
+    # cq-9kcq (CR rules 2, 14 case 2): a K-loop's exit value rotated and measured after the loop: the deferred reverse's
+    # copy-out lands in an exit block that holds the rotation.
     ("rolled_exit_copy", "rx", [], "pass", []),
 ]
 
 # cq-a24ig: probe -> (regex, most occurrences in the lowered module). kcut_items at ab02e1db: 300 run phis and 152 item
-# blocks (each item of a received-K cut loop minted its own run phis over every trip copy, in a block of its own); 24 and
-# 24 with the flags shared.
+# blocks (each item of a received-K cut loop, then K static trip copies, minted its own run phis over every copy, in a
+# block of its own); 24 and 24 with the flags shared.
 SIZE_BOUNDS = {
     "kcut_items": [(r"(?m)^  %[\w.]+ = phi i1 ", 60), (r"(?m)^[\w.]*\.cq\.arm\d*:", 60)],
 }

@@ -1,7 +1,6 @@
 /* cq-9kcq S12 (CR rules 14, 23; ROLLED_DESIGN.md §4): the quantum floating-point environment changed in the trips of a
- * quantum-exit loop and read after it. Under CQ_K_ROLLED=1 such a K-loop keeps its static copies (rolled::changesFenvState)
- * until the loop-carried state is built; a loop that only reads the state rolls. Each entry is §6-checked against its C
- * program. Regenerate: clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -include CQ.h kloop_state.c */
+ * quantum-exit loop and read after it: the rolled trip carries each piece it changes in a header phi over handles
+ * (cq/FenvCarry.h); a loop that only reads the state carries none. Each entry is §6-checked against its C program. Regenerate: clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -include CQ.h kloop_state.c */
 #include <fenv.h>
 #pragma STDC FENV_ACCESS ON
 /* A raising op in each trip: the flags accumulate across the trips. */

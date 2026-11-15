@@ -1,7 +1,7 @@
 /* tests/loops-cutoff probe, cq-9kcq S6b (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal): no trip runs, every
  * carried value keeps its entry value, a_K is the predicate of reaching trip 0 (the guard's test before the first body
  * of a while loop; the seed itself in a do-while, so a_K = 1); a table call passing K = 0; a quantum-depth recursion
- * cut at its first _ctl activation. Checked under CQ_K_ROLLED=1 against the C program (the C oracle at the same K).
+ * cut at its first _ctl activation. Checked against the C program (the C oracle at the same K).
  * Regenerate:
  * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec k_zero.c -o k_zero.O1.ll */
 #include "CQ.h"

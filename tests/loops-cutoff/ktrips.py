@@ -1,6 +1,5 @@
-"""Reading a lowered function's control flow for the tests of tests/loops-cutoff (cq-9kcq): how often a call site runs,
-the same in both forms of a K-loop. The copied form writes trip j's code as its own copy (a site per trip, outside any
-cycle); the rolled form runs one trip K times in a generated classical loop
+"""Reading a lowered function's control flow for the tests of tests/loops-cutoff (cq-9kcq): how often a call site runs.
+A K-loop runs one trip K times in a generated classical loop
 
     H: %j = phi i32 [ 0, %pre ], [ %j1, %L ] ...      L: %j1 = add i32 %j, 1
                                                          %c = icmp ult i32 %j1, N
@@ -245,7 +244,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
     return n
 
 
-# Self-test (ctest loops-cutoff-ktrips): a rolled trip loop in the shape cq-lower emits (CQ_K_ROLLED, me_rail's f), with
+# Self-test (ctest loops-cutoff-ktrips): a rolled trip loop in the shape cq-lower emits (me_rail's f), with
 # the received K read from @__cq_k, and the counterexamples each count must still reject.
 _ROLLED = """define i32 @f(i32 %0) {
   %k = load i32, ptr @__cq_k, align 4
@@ -299,8 +298,8 @@ def _selftest() -> int:
         if got != want:
             print(f"FAIL ktrips {site!r} {opt} mutant {mut[:40]!r}: {got}, not {want}")
             bad += 1
-    copied = _ROLLED.replace("[ 0, %1 ]", "[ 1, %1 ]")          # no counter starting at 0: a C program's loop, once
-    if runs(copied.replace("MUTANT", ""), r"@cq_template_mul_i32_hl\(") != 1:
+    plain = _ROLLED.replace("[ 0, %1 ]", "[ 1, %1 ]")           # no counter starting at 0: a C program's loop, once
+    if runs(plain.replace("MUTANT", ""), r"@cq_template_mul_i32_hl\(") != 1:
         print("FAIL ktrips: a cycle with no trip counter counted per trip")
         bad += 1
     tbl = _ROLLED.replace("@f(i32 %0)", "@__cq_q_f_1_t(i32 %0, i32 %kp)").replace("load i32, ptr @__cq_k, align 4", "add i32 %kp, 0")

@@ -7,7 +7,7 @@ For probes/rule6.O1.ll it checks, and fails on:
   - on every sample, the kept rails (role, width) are exactly the table below: no old value of the carried update;
   - k_xr: the Ry after the loop follows every uncompute and free (no old rail is live under it): on no control-flow
     path of the lowered function does a cqrt_free or an _unc follow the last Ry (one with no Ry after it on any path),
-    whether the trips are K static copies or one rolled trip with a reverse loop placed later in the text (cq-9kcq).
+    the trips being one rolled trip with a reverse loop placed later in the text (cq-9kcq).
 Outputs go to build/tests/loops-cutoff/out/.
 """
 import argparse

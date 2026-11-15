@@ -1003,7 +1003,7 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
 
 // CR rules 3, 14 (owner, cq-os2bx, 2026-11-09 Q1): code after a loop runs once, after the loop. A loop with a quantum exit whose
 // exit arm (Exits.h: the blocks between its live exits and their common post-dominator) holds a call or a write to memory never
-// runs that arm per trip: each copy would leave its own kept store or tape entry. Its live exit edges meet at ONE hub, the same
+// runs that arm per trip: each trip would leave its own kept store or tape entry. Its live exit edges meet at ONE hub, the same
 // kind of rewrite as unifySubLoopExits: phis of the hub carry what the targets' phis and the later readers take (poison on an
 // edge a value does not reach), and the hub branches on which edge came in. The loop then has one live exit; the hub's phis are
 // values defined by the loop and read after it, rails (rule 3): the select chain over the exit flags, as 121's quantum_strlen

@@ -7,8 +7,7 @@ Usage: run_probes.py --plugin P --opt O probes/NAME.O1.ll [...]. For each probe 
   - every entry (each external `define` in NAME.c) is §6-equal to its own C program (`python3 -m cqcheck user`,
     the C oracle) within a time limit.
 The count options (--measures, --measures-in, --br-in, --test-br-in, --calls-in) count executions with no received K, read from the
-lowered CFG (ktrips.py, cq-9kcq), so they hold the same for a K-loop's K static copies and for its rolled form (one
-trip run K times by a classical trip counter).
+lowered CFG (ktrips.py, cq-9kcq): a K-loop is one rolled trip run K times by a classical trip counter.
 Outputs go to build/tests/loops-cutoff/out/.
 """
 import argparse
@@ -27,29 +26,26 @@ SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_inver
 
 # probe -> [(entry, mutant, regex over the entry's lowered body, its replacement)]: the mutant must be REJECTED by the
 # §6 check against the C program (exit 1). me_site (cq-47f8h, owner 2026-11-07: measurements are identified by call
-# site): an extra measurement at a site the C program has no counterpart of, a copy that measures another rail than
+# site): an extra measurement at a site the C program has no counterpart of, a trip that measures another rail than
 # the site's (on a trip no sample reaches), and a wrong value at the site's first trip, which C reaches.
 MUTANTS = {
     "me_site": [
         ("f", "extra_site", r"(  ret i32 %[\w.]+\n)", r"  %cq.a = call i32 @cqrt_alloc_i32(i32 7)\n  %cq.mx = call i32 @cqrt_measure_i32(i32 %cq.a), !cq.measure !6\n\1"),
-        # a trip-2 copy with other instructions (a clean add of 0, uncomputed) around it: a call site of another shape,
-        # on a trip no sample reaches
-        # (cq-amtcn: since the exit's v & 2 reads the trip's outcome, a classical conjunct, each trip measures a kept copy
-        # of v, %94 on trip 2)
-        # (rolled, cq-9kcq: one site run per trip; the mutant branches on the trip counter j == 2 to a second call site
-        # with that shape, other_site_rolled)
+        # trip 2 (which no sample reaches) measures at a call site of another shape: one site runs per trip (cq-9kcq), so
+        # the mutant branches on the trip counter j == 2 to a second measurement call with other instructions (a clean add
+        # of 0, uncomputed) around it (cq-amtcn: each trip measures a kept copy of v)
         ("f", "other_site", lambda b: other_site(b), None),
         # v's bit 3 (b3) set as 16 instead of 8, forward and uncomputation alike: the first trip, which C reaches, measures another v
         ("f", "wrong_value", r"i32 8, i32 0\)", "i32 16, i32 0)"),
     ],
     # me_cbr (cq-v8cn7, cq-1ye9c; CR rules 2, 8, 14): a measurement behind a classical branch runs only where the
-    # classical arguments take it; a trip copy is the site only if it measures the site's register.
+    # classical arguments take it; a trip's execution is the site only if it measures the site's register.
     "me_cbr": [
-        # the last trip (trip 3, which no sample reaches) measures a copy of v (the rail the trip shifts), not w: in the
-        # copied form the last trip copy, in the rolled one (cq-9kcq) the trip's site chosen by trip index, j == K - 1
-        # (rolled: accepted by §6 at 31bbc2ec, rejected since checker bead cq-2pdir: run.py names the register per execution)
+        # the last trip (trip 3, which no sample reaches) measures a copy of v (the rail the trip shifts), not w: the trip's
+        # one site, its register chosen by trip index, j == K - 1 (accepted by §6 at 31bbc2ec, rejected since checker bead
+        # cq-2pdir: run.py names the register per execution)
         ("h", "other_register", lambda b: other_register(b), None),
-        # every trip copy's measurement moved above its classical br, so it runs also where (c & 1) is 0
+        # the trip's measurement moved above its classical br, so it runs also where (c & 1) is 0
         ("h", "hoist_trips", r"(  br i1 %[\w.]+, label %[\w.]+, label %[\w.]+\n\n[\w.]+:[^\n]*\n)"
          r"(  %[\w.]+ = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32[^\n]*\n"
          r"  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)", r"\2\1"),
@@ -67,16 +63,16 @@ MUTANTS = {
          r"(  %[\w.]+ = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32[^\n]*\n"
          r"  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)", r"\2\1"),
     ],
-    # rulings Q8: the last trip copy measures a select of its own making, select(!a_3, x0, v_4's register): where trip 4 is
-    # reached its condition reads 0 and the value is the site's; where it is not (an extra), it reads 1 and the copy measures
-    # x0, another register. The old static rule (any three-rail select followed to its third operand) accepted it.
+    # rulings Q8: every trip measures a select of its own making, select(!a, x0, v), in place of its kept copy of v (a the
+    # trip's predicate): where the trip is reached its condition reads 0 and the value is the site's; where it is not (an
+    # extra), it reads 1 and the trip measures x0, another register. The old static rule (any three-rail select followed to
+    # its third operand) accepted it.
     "me_carried": [
-        # (rolled, cq-9kcq: every trip measures select(!a, x0, v) in place of its kept copy of v, own_select_rolled)
         ("measure_carried", "own_select", lambda b: own_select(b), None),
     ],
     # owner ruling 2026-11-15 on cq-zk0aj (CR rule 14, §6): ex_pre's quantum header test (v & 4) == 0 made a constant, its mask
     # 4 replaced by 0 in every trip and its uncomputation alike, so every trip runs on: trips C leaves by v & 4 still
-    # measure v and add to n, a classical test on a value no earlier outcome fixes (the copied and the rolled form alike)
+    # measure v and add to n, a classical test on a value no earlier outcome fixes
     "me_exit": [
         ("ex_pre", "const_test", lambda b: re.sub(r"(@cq_template_and_i32_hl(?:_unc)?\((?:i32 %[\w.]+, )+i32 )4\)", r"\g<1>0)", b),
          None),
@@ -92,17 +88,19 @@ MUTANTS = {
         ("ec_do", "no_test_branch", r"  br i1 %[\w.]+, label (%[\w.]+), label %[\w.]+\n", r"  br label \1\n"),
     ],
     # cq-9kcq (CR rule 27 "Cutoff", §1.4): the table clone ignores the K it received and runs its own K 4 where tk_f passed
-    # 2: its K parameter is replaced by the own K 4 at every use (the copied form's per-trip cut compares, the rolled
-    # form's trip count, the K it passes on in @__cq_k alike), in the clone and its twin alike, so the twin undoes the
+    # 2: its K parameter is replaced by the own K 4 at every use (the trip count, the K it passes on in @__cq_k alike), in
+    # the clone and its twin alike, so the twin undoes the
     # 4 trips the clone ran and only the cutoff differs. Checked through tk_f, whose pointer is a rail: the dispatch
     # calls the _ctl table clone; a mutant entry "fn+twin@entry".
     "table_k": [
         ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@tk_f", "own_k", lambda b: own_k(b, 4), None),
     ],
     # cq-9kcq S6 (CR §1.4 "Received K", owner 2026-11-15: the received K in place of the own one, smaller or larger): the
-    # table clone run at its own K 4 where tk6_f passes 6 is rejected against the one C module.
+    # table clone run at its own K 4 where tk6_f passes 6 is rejected against the one C module. recv_k_cut1: a cut that
+    # comes too early, the clone and its twin running 1 trip where tk2_f passes 2.
     "table_k6": [
         ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@tk6_f", "own_k", lambda b: own_k(b, 4), None),
+        ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@tk2_f", "recv_k_cut1", lambda b: own_k(b, 1), None),
     ],
     # cq-9kcq with owner ruling Q2 (2026-11-14): a by-name helper of a table clone ignores @__cq_k (its own K 4 where kh_1
     # passed 2); a table clone does not restore @__cq_k at its returns, so kh_after's by-name call of h1 after the table
@@ -126,7 +124,7 @@ MUTANTS = {
     ],
     # owner ruling of 2026-11-15 (the activation-counter cut; CR §1.4, rule 14): the depth counter's cut test is d < K, K the
     # K the table clone receives. A cut at a constant other than K (the clone and the copy that recomputes it alike) cuts
-    # another activation than the C oracle (cqo_rt.c __cqo_act_enter): at K = 0 (k_zero, under CQ_K_ROLLED) d < 1 runs the
+    # another activation than the C oracle (cqo_rt.c __cqo_act_enter): at K = 0 (k_zero) d < 1 runs the
     # first activation; at a received K 2 (k_chain) d < 3 runs the third.
     "k_zero": [
         ("__cq_q_kf_11_t_ctl+__cq_q_kf_11_t_ctl_unc@kz_tab", "cut_d1",
@@ -150,31 +148,13 @@ def own_k(fn_body: str, k: int):
     return head + "\n" + re.sub(re.escape(p) + r"(?![-\w.$])", str(k), rest)
 
 
-# The copied form's spellings of two mutants (SSA numbers of the K static copies).
-_OTHER_SITE = (r"  (%95 = call i32 @cqrt_measure_i32\(i32 %94\), !cq.measure !6\n)",
-               r"  %d0 = call i32 @cq_template_add_i32_hl(i32 %94, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d0, i32 %94, i32 0)\n"
-               r"  call void @cqrt_free(i32 %d0)\n  \1"
-               r"  %d1 = call i32 @cq_template_add_i32_hl(i32 %94, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d1, i32 %94, i32 0)\n"
-               r"  call void @cqrt_free(i32 %d1)\n")
-_OWN_SELECT = (r"(?s)  (%38) = call i32 @cqrt_measure_i32\(i32 (%36)\), !cq.measure !6\n(.*?)"
-         r"(  call void @cq_template_select_i32_unc\(i32 %37, )",
-         r"  %q.one = call i32 @cqrt_alloc_i1(i1 true)\n  %q.n = call i32 @cqrt_alloc_i1(i1 false)\n"
-         r"  call void @cqrt_and_i1(i32 %32, i32 %q.one, i32 %q.n)\n  call void @cqrt_and_i1(i32 %q.one, i32 %q.one, i32 %q.n)\n"
-         r"  %q.s = call i32 @cq_template_select_i32(i32 %q.n, i32 %5, i32 \2)\n"
-         r"  call void @cqrt_and_i1(i32 %q.one, i32 %q.one, i32 %q.n)\n  call void @cqrt_and_i1(i32 %32, i32 %q.one, i32 %q.n)\n"
-         r"  call void @cqrt_free(i32 %q.n)\n  call void @cqrt_free(i32 %q.one)\n"
-         r"  \1 = call i32 @cqrt_measure_i32(i32 %q.s), !cq.measure !6\n\3"
-         # v_4's register, no longer measured, is uncomputed once its last reader (the after-loop select) is undone
-         r"  call void @cq_template_select_i32_unc(i32 %36, i32 %22, i32 %6, i32 %26)\n  call void @cqrt_free(i32 %36)\n\4")
-
-
 def other_site(fn_body: str):
-    """me_site's f with trip 2 (which no sample reaches) measuring at a call site of another shape: in the copied form the
-    trip-2 copy's measurement with a clean add of 0 (uncomputed) before and after it; in the rolled form (cq-9kcq) a
-    classical branch on the trip counter j == 2 to a second measurement call of that shape, the site's own elsewhere."""
+    """me_site's f with trip 2 (which no sample reaches) measuring at a call site of another shape: a classical branch on
+    the trip counter j == 2 to a second measurement call with a clean add of 0 (uncomputed) before and after it, the
+    site's own elsewhere."""
     loops = ktrips.counter_loops(fn_body)
     if not loops:
-        return re.sub(_OTHER_SITE[0], _OTHER_SITE[1], fn_body, count=1)
+        return fn_body
     j = loops[0][2]
     m = re.search(r"^  (%[\w.]+) = call i32 @cqrt_measure_i32\(i32 (%[\w.]+)\), !cq.measure !6\n", fn_body, re.M)
     if not m:
@@ -195,11 +175,10 @@ def other_site(fn_body: str):
 def own_select(fn_body: str):
     """me_carried's measure_carried measuring select(!a, x0, v) of its own making where a reached trip measures v (rulings
     Q8): where the trip is reached !a reads 0 and the value is the site's, where it is not (an extra execution) the
-    measurement reads x0, another register. Copied form: the last trip copy (a = a_3). Rolled form (cq-9kcq): every trip,
-    a the trip's predicate (the condition of the select that advances the measured carried value), in place of the trip's
-    kept basis copy of v."""
+    measurement reads x0, another register. Every trip, a the trip's predicate (the condition of the select that advances
+    the measured carried value), in place of the trip's kept basis copy of v."""
     if not ktrips.counter_loops(fn_body):
-        return re.sub(_OWN_SELECT[0], _OWN_SELECT[1], fn_body, count=1)
+        return fn_body
     m = re.search(r"^  (%[\w.]+) = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32\(i32 (%[\w.]+), i32 \1\)\n"
                   r"(  %[\w.]+ = call i32 @cqrt_measure_i32\(i32 \1\), !cq.measure !6\n)", fn_body, re.M)
     if not m:
@@ -221,10 +200,9 @@ def own_select(fn_body: str):
 def other_register(fn_body: str):
     """me_cbr's h with its last trip's measurement on a copy of v (the operand of the trip's lshr), not of w."""
     loops = ktrips.counter_loops(fn_body)
-    if not loops:                    # the copied form: the last copy_i32 feeding a cqrt_measure after trip 0's shift
-        return re.sub(r"(?s)(lshr_i32_hl\(i32 (%[\w.]+), i32 1\).*)(call void @cqrt_copy_i32\(i32 )%[\w.]+"
-                      r"(, i32 %[\w.]+\)\n  %[\w.]+ = call i32 @cqrt_measure_i32)", r"\1\3\2\4", fn_body, count=1)
-    _, _, j, _, n, *_ = loops[0]     # the rolled form: one site, its register a classical select on the trip counter
+    if not loops:
+        return fn_body
+    _, _, j, _, n, *_ = loops[0]     # one site, its register a classical select on the trip counter
     v = re.search(r"lshr_i32_hl\(i32 (%[\w.]+), i32 1\)", fn_body)
     if n is None or not v:
         return fn_body
@@ -262,7 +240,7 @@ def mutants(a, probe: Path, mod: str, out: Path) -> int:
             print(f"FAIL {probe.name} mutant {name}: not valid IR: " + (v.stderr.strip().splitlines() or ["?"])[0])
             failures += 1
             continue
-        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(c_side(a, probe)), "--lowered",
+        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered",
                             str(low), "--entry", entry], capture_output=True, text=True, cwd=ROOT / "checker",
                             timeout=a.timeout)
         rejected = c.returncode == 1 and "FAIL" in c.stdout
@@ -272,28 +250,18 @@ def mutants(a, probe: Path, mod: str, out: Path) -> int:
     return failures
 
 
-def c_side(a, probe: Path) -> Path:
-    """The C program the §6 check reads: the probe itself, or --c-side's file for it (cq-9kcq: a received K the C
-    oracle cannot resolve per function, given there as CQ_K lines of the callees)."""
-    for spec in a.c_side or []:
-        name, f = spec.split("=", 1)
-        if name == probe.name.replace(".O1.ll", ""):
-            return probe.parent / f
-    return probe
-
-
 def measures(fn_body: str):
     """The cqrt_measure executions of one function with no received K (ktrips.runs): a site in a rolled trip loop runs
     once per trip, except one measuring a rail made before the loop: its later trips re-measure the same rail, a
-    classical re-read (CR rule 2), as the copied form's later copies read the first one's outcome."""
+    classical re-read (CR rule 2)."""
     return ktrips.runs(fn_body, r"call [^@]*@cqrt_measure_", invariant_once=True)
 
 
 def test_brs(fn_body: str):
     """The executions of a conditional br on an `icmp` the function computes (a classical condition, CR rule 8), with no
     received K (ktrips.runs): the trip counter's own br and its test before trip 0 are not counted, nor a br on a phi of
-    flags (the copied form's uncompute dispatch). Owner ruling Q10: a K-loop's classical exit conjunct is such a br at
-    each of its tests, in the copied form (a test per copy) and the rolled one (one test run once per trip) alike."""
+    flags. Owner ruling Q10: a K-loop's classical exit conjunct is such a br at each of its tests (one test run once per
+    trip)."""
     conds = [v for v, rhs in ktrips.defs(fn_body).items() if rhs.startswith("icmp ")]
     if not conds:
         return 0
@@ -328,8 +296,8 @@ def one(a, probe: Path) -> int:
             why.append("no lowered body")
         if SURFACE.search(b):
             why.append("a CQ.h surface call is left")
-        # The counts are of executions with no received K, read from the CFG (ktrips.runs, cq-9kcq): the same in the
-        # copied K-loop (a site per trip copy) and the rolled one (one site, run once per trip of the trip counter).
+        # The counts are of executions with no received K, read from the CFG (ktrips.runs, cq-9kcq): a site of a rolled
+        # trip runs once per trip of the trip counter.
         for spec in a.measures_in or []:
             fn, n = spec.split("=")
             got = measures(body(mod, fn))
@@ -356,7 +324,7 @@ def one(a, probe: Path) -> int:
                 "cqrt_measure" in t for t in re.findall(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M)):
             why.append("a twin measures")
         try:
-            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(c_side(a, probe)), "--lowered",
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered",
                                 str(lowered), "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker",
                                timeout=a.timeout)
             if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
@@ -383,8 +351,6 @@ def main() -> int:
                     "exactly N, a K-loop's trips counted, its trip counter's own br not (owner ruling Q10)")
     ap.add_argument("--calls-in", action="append", help="NAME=CALLEE=N: the runs of a call of CALLEE in function NAME, a K-loop's "
                     "trips counted")
-    ap.add_argument("--c-side", action="append",
-                    help="PROBE=FILE: the §6 check reads its C program from FILE (next to the probe), not the probe")
     ap.add_argument("--table-k", type=int, help="the K a table clone's K parameter holds in the counts (the K its dispatch "
                     "passes where no K is received); without it a trip loop bounded by that parameter is not counted (cq-9kcq)")
     ap.add_argument("probes", nargs="+")

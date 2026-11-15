@@ -93,17 +93,19 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 
 // CR rule 14 (`nested K-loops ... inner chain seeded by the outer trip predicate`): a quantum-exit loop L
 // nested in a classically bounded loop's trip (loops-classical), lowered as loops-cutoff lowers a nested
-// K-loop: its K trips unrolled at the builder under `seed` (an i1 rail: the enclosing trip's predicate & L's
-// header predicate within the trip), its a_K kept per enclosing trip when B > K or no bound is known, every
-// other rail a record of the current Uncompute scope. A classical branch of a trip is a real branch (rule 8,
-// cq-kk46l): `segHook` is called with each block it makes (Run, Skip, Join) before code goes into it, with the
-// builder still at the end of the code before it, so that the caller opens a segment there. Binds every phi of
+// K-loop: one rolled trip at the builder under `seed` (an i1 rail: the enclosing trip's predicate & L's
+// header predicate within the trip) inside `region`, the classically bounded loop's rolled region (loops-classical's
+// Unit) whose trip holds L: L's header and trip blocks are segments of that region, its records are undone by that
+// region's reverse per enclosing trip, and its a_K copy is kept per enclosing trip where K < B or no bound is known.
+// A classical branch of a trip is a real branch (rule 8, cq-kk46l): `segHook` is called with each block it makes
+// (Run, Skip, Join) before code goes into it, with the builder still at the end of the code before it, so that the
+// caller opens a segment there. Binds every phi of
 // its continuation that has an incoming from the unit (cq::LoweringContext::addJoinArm for an incoming not
 // lowered yet) and rebinds its values read after it; the builder is left where the last branch joined.
 // Returns the XOR of the flags of the noreturn arms it took (a rail, nullptr when none or no K-loop encloses L).
 // test0 (owner ruling Q10, CR rule 14 and rule 8): a classical i1, the classical factor of the predicate of entering L
 // that the caller's walk does not establish (a classical conjunct of the pre-header guard, the trip-0 test), or nullptr:
-// a real branch on it before trip 0, closed with the unit's own exit tests; where it is false no trip is emitted.
+// the zero-trip guard branches on it before trip 0; where it is false no trip runs and a_0 is a |0> seed.
 // Owner ruling Q2 of 2026-11-14 (cq-9kcq; CR 1.4 "Received K", rule 27 "Cutoff"): `@__cq_k = internal global i32 -1`, the
 // received K of the table clone running (all ones: no cut). Compiler state like @__cq_act_<fn>: plain loads and stores, no
 // bus access. Made on first need, in a module that defines a table clone; calls::finalize has every table clone, its _ctl
@@ -116,15 +118,13 @@ llvm::GlobalVariable *receivedKGlobal(llvm::Module &M);
 // (an indirect call's, a declared clone's).
 llvm::Value *receivedKBelow(cq::LoweringContext &ctx, unsigned K);
 
-// cq-9kcq S11 (CQ_K_ROLLED): `region` is the classically bounded loop's rolled region (loops-classical's Unit) whose trip
-// holds L; under the switch L rolls inside it (its header and trip blocks segments of that region, its a_K copy kept per
-// enclosing trip), else it keeps its K static copies.
 llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed,
-                               const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0 = nullptr,
-                               cq::loops::rolled::Region *region = nullptr);
+                               const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0,
+                               cq::loops::rolled::Region *region);
 
-// CR rule 14 (case 1 or 3 inside a quantum-exit loop's trip, cq-h5uj): a classically bounded loop L of one
-// unrolled trip of a K-loop (a sub-loop of its body or a loop of its exit arm), lowered by loops-classical
+// CR rule 14 (case 1 or 3 under a trip rail, cq-h5uj): a classically bounded loop L that is no sub-unit of a rolled
+// K-trip (a loop of the exit arm of a K-loop's region-form trip 0, lowered before the K-loop's header; a loop of a
+// classically bounded loop's exit arm; a loop inside a rolled K-trip is lowerClassicalSubInTrip's), lowered by loops-classical
 // as a rolled classical loop at the builder's position, its effects under `trip` (an i1 rail: the K-loop's
 // trip predicate & L's header predicate within the trip; a case-3 chain seeded by it). The caller branches
 // around it on the trip's classical path to L's header. Its reverse is an Uncompute deferred item guarded
@@ -136,8 +136,10 @@ llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Va
 // into such an arm is an exit edge of the K-loop too (CR rules 14, 16).
 llvm::Value *lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
 
-// cq-9kcq S11 (CQ_K_ROLLED): as lowerClassicalInTrip, for a trip-local L in a rolled K-trip: L is a sub-unit of the
-// K-loop's region (the caller adds it with Region::addSub), its reverse placed in the trip by that region's flushTrips.
+// cq-9kcq S11: as lowerClassicalInTrip, for a classically bounded L in a rolled K-trip: L is a sub-unit of the K-loop's
+// region (the caller adds it with Region::addSub). A trip-local L (loops-cutoff's tripLocalSub: its quantum values die in
+// the trip) has its reverse placed in the trip by that region's flushTrips; any other (its values outlive the trip, or it
+// is a loop of the exit arm: reverseSubs) has its reverse run in the region's reverse loop (addSub's inReverse, S11f).
 // resetAt: the K-loop's output header. stop: as lowerClassicalInTrip's result.
 std::shared_ptr<cq::loops::rolled::Region> lowerClassicalSubInTrip(cq::LoweringContext &ctx, llvm::Loop &L,
                                                                   llvm::Value *trip, llvm::BasicBlock *resetAt,
