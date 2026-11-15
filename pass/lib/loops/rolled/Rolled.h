@@ -135,6 +135,8 @@ public:
   }
   void setOwnSeedScope(unsigned sc) { ownSeedScope = sc; }
   void addExternalInit(llvm::Value *h) { externalInits.push_back(h); }
+  // cq-9kcq S4: a rule-6 old rail whose clean-up follows `at` (lateR6).
+  void addLateR6(RailId old, llvm::Instruction *at) { lateR6.push_back({old, at}); }
   void setDiagAt(const llvm::Instruction *at) { diagAt = at; }
   bool hasCopyScope() const { return copyScope != ~0u; }
 

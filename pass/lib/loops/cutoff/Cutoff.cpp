@@ -2237,6 +2237,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Value *cut = nullptr;   // a received-K cut (kCut): the chain's predicate at the test, a_K where the branch skips
   };
   std::vector<OpenTest> openTests;
+  // cq-9kcq S4: the rolled trip's region (set while rolledBody lowers the trip) and the final rails of its cleaned rule-6
+  // chains (read after the loop in place: wireExits' keptFinal).
+  rolled::Region *rTrip = nullptr;
+  DenseSet<const Value *> rKeptFinal;
   auto advance = [&](Value *q) {
     // This trip's state: a rule-6 inverse reads the trip's operands, and the loop below advances them one by one.
     DenseMap<const Value *, Operand> tripState;
@@ -2336,6 +2340,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                               openTests.size() - 1, seedBorn.count(cur.v) != 0});
         } else {
           ctx.unc().cleanupBijective(old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}});
+        }
+        if (rTrip) {
+          // Rolled (as loops-classical's latchNexts): the old rail is the header phi, cleaned in its trip where flushTrips
+          // places the clean-up (after the inverse it reads); the chain's last select is the register after the loop.
+          rTrip->addLateR6(old, cast<Instruction>(inner));
+          rKeptFinal.insert(sel);
+          spine::shared(ctx).carriedFinal.insert(sel);
         }
       }
     }
@@ -2689,8 +2700,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a multi-exit loop (S8)";
     else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
       why = "a noreturn arm or no live exit (S9)";
-    else if (!six.empty())
-      why = "rule 6 in the trip (S4)";
     else if (t0 || !cont.classicalFactor(ctx.T, ctx.S).isTop())
       why = "a classical conjunct of the exit test, owner ruling Q10 (S5)";
     else if (receivedK)
@@ -2703,6 +2712,18 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a classical branch in the trip (S3b: segments)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
+    else if (any_of(hphis, [&](PHINode *h) {
+               return any_of(h->users(), [&](const User *u) {
+                 auto *cb = dyn_cast<CallBase>(u);
+                 const Function *f = cb ? cb->getCalledFunction() : nullptr;
+                 return f && f->getName().starts_with("cq_measure") && L.contains(cb);
+               });
+             }))
+      // me_body, me_arm, me_reread: the trip measures the carried rail (rule 2), and the reverse undoes the select that
+      // made it, freeing a measured rail.
+      why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
+    else if (rolled::changesFenvState(L))
+      why = "a quantum floating-point environment change in the trip (S12: its loop-carried rule 23 state)";
     if (why) {
       noteUnbuilt(std::string("loops-cutoff: CQ_K_ROLLED: the K-loop keeps its static copies: ") + why,
                   H->getTerminator());
@@ -2766,7 +2787,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     PHINode *qp = phiFor(q0, true);
     for (PHINode *h : hphis) {
       Operand o = ctx.operand(h);
-      PHINode *p = phiFor(o.v, o.handle);
+      PHINode *p;
+      if (six.count(h)) {
+        // cq-9kcq S4, rule 6 (as loops-classical's r6Of): the phi is the old rail each trip cleans (trip 0: the initial
+        // rail, a seed or a dead rail, a register the clean-up frees), no carried rail the reverse undoes.
+        if (!o.handle)
+          internalError("loops-cutoff: a rule-6 carried value with a classical initial value in the rolled trip", h);
+        p = B.CreatePHI(handleTy(Cx), 2);
+        p->addIncoming(o.v, E);
+        ctx.unc().recordExternal(p, Role::UserRegister);
+        if (sixSeeds.count(o.v))
+          ctx.unc().setRole(ctx.unc().idOf(o.v), Role::UserRegister);
+      } else {
+        p = phiFor(o.v, o.handle);
+      }
       set(h, Operand{p, o.handle});
       carry.push_back({p, [&, h, hd = o.handle]() -> Value * {
                          Operand n = ctx.operand(h);
@@ -2795,8 +2829,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     Value *qc = qp;
     auto all = [](const BasicBlock *) { return true; };
+    rTrip = rreg.get();
     lowerBlocks(qc, all);
     Value *qn = chainTest(qc, cont, latch->getTerminator(), [&] { advance(qc); });
+    rTrip = nullptr;
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
     BasicBlock *Xb = BasicBlock::Create(Cx, "", &ctx.out());
@@ -2997,12 +3033,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       add(exitRebinds[k].first, exitVals[k]);
     for (size_t k = 0; k < exitPhis.size(); ++k)
       add(exitPhis[k].first, exitPhiVals[k]);
-    DenseSet<const Value *> keptFinal;
     rolled::Region::ExitWiring wiring = rreg->wireExits(
-        rSeedScope, out, outW, nullptr, keptFinal, [&](const Value *v) { return !rolled::readersKeep(ctx, L, v); },
+        rSeedScope, out, outW, nullptr, rKeptFinal, [&](const Value *v) { return !rolled::readersKeep(ctx, L, v); },
         [&](const Value *v, Operand op) { *slot.lookup(v) = op; });
     bool keptInPlace = rreg->hasCopyScope() && any_of(out, [&](const std::pair<const Value *, Operand> &o) {
-      return o.second.handle && wiring.ownedH.count(o.second.v) && rolled::readersKeep(ctx, L, o.first);
+      return o.second.handle && !rKeptFinal.count(o.second.v) && wiring.ownedH.count(o.second.v) &&
+             rolled::readersKeep(ctx, L, o.first);
     });
     rreg->finishExits(rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg);
   }
