@@ -514,6 +514,13 @@ CASES = [
     ("fenv_rmq_strict", "e", [], "pass", [r"call \{ i32, i32 \} @__cq_q_nx_0_rmq\(double %\d+, i32 %\d+, i32 %\d+\)",
                                           r"cq_template_fmul_f64_ll_rmq\("]),
     ("fenv_rmq_strict", "eq", [], "pass", [r"call \{ i32, i32 \} @__cq_q_nx_1_rmq\(i32 %\d+, i32 %\d+, i32 %\d+\)"]),
+    # cq-bh7xh (owner ruling Q2; CR §1.4 "Received K", rule 27): a listed function called from a callee k's table clone
+    # reaches by name: the declared clone gets umin(@__cq_k, 4), and its twin the same K. "lower": the §6 run needs
+    # CQ_ROOTS_EXTRA=ext for the checker's stand-in, which this runner does not set (PASS with it, run by hand).
+    ("declared_in_byname", "k", [f"-cq-roots={PROBES / 'declared_in_byname.roots'}"], "lower",
+     [r"define internal fastcc i32 @__cq_q_g_1\(i32 %0\) unnamed_addr \{\n  %2 = load i32, ptr @__cq_k, align 4\n"
+      r"  %3 = call i32 @llvm\.umin\.i32\(i32 %2, i32 4\)\n  %4 = call i32 @__cq_q_ext_1_t\(i32 %0, i32 %3\)",
+      r"call void @__cq_q_ext_1_t_unc\(i32 %4, i32 %0, i32 %3\)"]),
 ]
 
 
