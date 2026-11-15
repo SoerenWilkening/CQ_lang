@@ -47,8 +47,9 @@ example §7 lists as regeneration owed is not normative for the construction it 
   A loop whose exit reads a value loaded from the bus is a K-loop like any other (rule 14).
   K is an unsigned 32-bit value with no lower bound. K = 0 is legal: no trip runs, `a_K` is the
   predicate of reaching trip 0 (the test before the first body; the seed itself in a
-  test-at-bottom loop), every carried value keeps its entry value, and a quantum-depth
-  recursion is cut at its first `_ctl` activation.
+  test-at-bottom loop), every carried value keeps its entry value, and every `_ctl` activation
+  of a function that has a depth counter (§1.4: one on a call cycle by name, or with a table
+  clone) is cut, the first included, whether or not it would re-enter anything.
   The function of a loop is the one that holds it in the `-O1` IR: a loop clang inlined into
   `g` resolves its K as a loop of `g` (K2 likewise).
   In a program of several translation units a `CQ_K(f, k)` line names the `f` of its own unit
@@ -751,6 +752,14 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       not reach, that rail holds the value its `select` kept. A `cq_measure` in an exit arm runs
       once, after the K trips, on the arm's value merged across the trips. A loop-carried value
       with a rail among its incoming values is a rail in every trip; the loop is never peeled.
+      A use of that rail which the trip's own `cq_measure` of it dominates denotes the outcome
+      (rule 2), in every trip. An exit test that reads only such outcomes and classical values is
+      classical: the exit is rule 8's branch on it, made after that trip's measurement, and no
+      cutoff applies to it. A loop all of whose exits are such is the classical loop of the first
+      case (no K, no `a_K`): it runs the trips the outcomes give, one `measure_<W>` per executed
+      trip, and inside a quantum arm measurement and branch are unconditional (rule 2). Beside
+      a quantum exit it is a classical conjunct (below). A test that reads the carried rail
+      before the trip's measurement, or another unmeasured rail, is quantum.
       The code after the loop runs once, after the K trips: its values are the `select` chain
       over the exit flags, and an exit block that makes a call or a bus store is never emitted
       per trip (an exit block that keeps nothing may be: 121).
@@ -816,8 +825,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       rail, one per cut activation). Only `_ctl` activations count: the one that enters the
       recursion with no quantum predicate in scope does not, so up to K bodies run under a
       quantum predicate and the overflow predicate is the conjunction of K+1 arm predicates.
-      The count is per function, so a call chain that re-enters
-      nothing is never cut; a recursion entered under a quantum predicate is cut at K whatever
+      The count is per function and the test is `d < K` for every function that has a counter,
+      so for K of 1 or more a call chain that re-enters nothing is never cut, and at K = 0 its
+      first `_ctl` activation is cut like any other (a table clone that is not recursive
+      included: no body of a counted function runs under a quantum predicate, §0; the
+      reference of §6 makes the same cut); a recursion entered under a quantum predicate is cut at K whatever
       decides its depth (the user raises K). Every activation has its own rails by the host
       recursion and its own bus-resident locals by `__cq_alloc`. Clone and twin are rule 18's
       like any other; the twin makes the same cut, and its cut activation mints nothing and calls no gate; a table twin still
@@ -1596,7 +1608,8 @@ Owed, no source yet. Each fixes the construction its rule names:
   clone), and one with the `fesetround` under a quantum predicate and classical data arguments (the `_rmq` clone);
   a `fenv_t` reached through a pointer (fixes the field offsets).
 - rule 14: a classical branch with an effect inside a K-loop body; `while (c && q)` with a classical `c`; a
-  `cq_measure` in a K-loop body and in its exit arm. Rule 6: a bijective accumulator read only by a flag.
+  `cq_measure` in a K-loop body and in its exit arm; a loop that measures its carried rail and
+  exits on the outcome, inside a quantum arm. Rule 6: a bijective accumulator read only by a flag.
 - rule 16: `calloc` with two rail operands whose product overflows; `signal` and `raise` with an invalid
   number; `fseek`, `fclose` and `remove` whose result is read behind a quantum field; `abort` under a quantum
   predicate followed by a classical `exit`; a classical `exit` behind a deferred entry with code
