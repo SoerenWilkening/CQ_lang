@@ -1450,6 +1450,38 @@ declare void @__cq_q_e_r_1_t_unc(i32, i32, i32)
         self.assertEqual(ph, [(0, 1, tv), (0, 1, tv ^ (1 << 63)), (p, 0, tv), (0, 1, tr)])
 
 
+class ReceivedKCut(unittest.TestCase):
+    """cq-wqr8p (CR rule 14, §1.4 "Received K"): recv_k_cut.c's g runs at most 2 trips and is called through a pointer
+    whose rail makes the dispatch call the `_t_ctl` table clone and its twin (__cq_clone_resolve variants 1 and 3) at
+    the received K 2. The rolled lowering (CQ_K_ROLLED=1) passes; the same with the trip bound of the clone and its
+    twin forced to 1 (a cut one trip early, a_K set where C runs its second trip) is rejected. The review mutant of
+    cq-wqr8p cut the plain `_t` clone, which no dispatch of that module calls, and so changed nothing that runs."""
+    BOUND = "  %37 = icmp ult i32 %36, %2\n"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="cq-recv-k-cut."))
+
+    def user(self, text, name):
+        ll = self.tmp / f"{name}.ll"
+        ll.write_text(text)
+        p = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(HERE / "recv_k_cut.O1.ll"),
+                            "--lowered", str(ll), "--entry", "e", "--samples", "64"], cwd=REPO / "checker",
+                           capture_output=True, text=True)
+        return p.returncode, p.stdout + p.stderr
+
+    def test_control_passes(self):
+        rc, out = self.user((HERE / "recv_k_cut.ll").read_text(), "control")
+        self.assertEqual(rc, 0, out)
+
+    def test_cut_early_rejected(self):
+        text = (HERE / "recv_k_cut.ll").read_text()
+        self.assertEqual(text.count(self.BOUND), 2)   # __cq_q_g_1_t_ctl and __cq_q_g_1_t_ctl_unc
+        rc, out = self.user(text.replace(self.BOUND, "  %37 = icmp ult i32 %36, 1\n"), "cut1")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("measurement 0 reads", out)
+
+
 class HostOutput(unittest.TestCase):
     """cq-e4jk: outputs["stdout"] is the process's output followed by the tape's end-of-shot text;
     outputs["effects"] the {"ev":"effect"} lines in the C program's order (run._effects_in_order);
