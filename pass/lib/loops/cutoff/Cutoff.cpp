@@ -73,6 +73,7 @@
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "cq/Calls.h"
+#include "cq/FenvCarry.h"
 #include "cq/Order.h"
 #include "../../spine/SpineInternal.h"
 
@@ -2853,8 +2854,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // me_body, me_arm, me_reread: the trip measures the carried rail (rule 2), and the reverse undoes the select that
       // made it, freeing a measured rail.
       why = "a cq_measure of a carried value in the trip (rule 2: the reverse frees the measured rail)";
-    else if (rolled::changesFenvState(L))
-      why = "a quantum floating-point environment change in the trip (S12: its loop-carried rule 23 state)";
+    else if (rolled::changesFenvMode(L))
+      // S12c carries FLAGS; a MODE the trip changes and code after the loop reads (fegetround's result names the mode rail
+      // itself) is unbuilt: rule 6 cleans that rail while the deferred reverse owns it (ks_round), and the final mode left
+      // in place leaks one trip's rail (cq-v1fu).
+      why = "a quantum rounding-mode change in the trip (S12c: the loop-carried MODE)";
     else if (regionForm && any_of(regionOut, [&](const Instruction *I) {
                return I->getType()->isAggregateType() || I->getType()->isVectorTy();
              }))
@@ -2901,6 +2905,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
   };
   BasicBlock *rX = nullptr, *rHead = nullptr, *rCont = nullptr;
+  // cq-9kcq S12c (CR rules 14, 23; cq/FenvCarry.h): the pieces of the quantum floating-point environment the trips change,
+  // carried as header phis over handles; their values at X (rolledBody's put), wired out with the exit values.
+  std::vector<std::pair<unsigned, Operand>> rFenv;
   bool rKeptRt = false;
   bool preRegion = false;   // S11e: the region form's trip 0 opened the region (its first segments)
   DenseSet<const BasicBlock *> preBlocks;   // S11e: the output blocks made before that region   // the rolled driver made a_K's copy under a run-time branch on K < B (and set its role)
@@ -3028,6 +3035,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       q0 = q0p;
     }
     BasicBlock *E = B.GetInsertBlock();
+    // cq-9kcq S12c: every piece of the environment a trip may change, its rail at E (step 1 of cq/FenvCarry.h)
+    std::vector<fenv::CarriedPiece> pieces = fenv::loopCarried(ctx, L);
     BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
     BasicBlock *Xb = nullptr;
     if (zeroGuard) {
@@ -3178,6 +3187,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       stopAcc = p;
       stopCarried = true;
       carry.push_back({p, in, [&]() -> Value * { return stopAcc; }, [&](Value *v) { stopAcc = v; }, true});
+    }
+    // cq-9kcq S12c (cq/FenvCarry.h steps 2-4): each piece of the environment is a carried handle phi the trip reads; its
+    // latch value is the piece at the end of the trip, its value at X is bound and wired out after the loop.
+    for (const fenv::CarriedPiece &pc : pieces) {
+      PHINode *p = phiFor(pc.init, true);
+      fenv::bindPiece(ctx, pc.id, p);
+      size_t slot = rFenv.size();
+      rFenv.push_back({pc.id, Operand{p, true}});
+      carry.push_back({p, pc.init, [&, id = pc.id]() -> Value * { return fenv::pieceNow(ctx, id); },
+                       [&, id = pc.id, slot](Value *v) {
+                         fenv::bindPiece(ctx, id, v);
+                         rFenv[slot].second = Operand{v, true};
+                       },
+                       true});
     }
     // The classical reachability the evaluation before the loop computed reads its values; the trip reads the phis.
     creach.clear();
@@ -3624,7 +3647,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // wired once: with the zero-trip guard it is X's merge, which is copied out, and a second copy would be left live.
     DenseMap<const Value *, const Value *> firstOf;
     std::vector<std::pair<Operand *, const Value *>> dups;
-    auto add = [&](const Value *v, Operand &o) {
+    auto add = [&](const Value *v, Operand &o, std::optional<RailType> w = std::nullopt) {
       if (!o.handle)
         return;
       if (auto it = firstOf.find(o.v); it != firstOf.end()) {
@@ -3647,7 +3670,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       firstOf[o.v] = v;
       out.push_back({v, o});
-      outW.push_back(railOf(v->getType()));
+      outW.push_back(w ? *w : railOf(v->getType()));
       slot[v] = &o;
     };
     for (size_t k = 0; k < exitRebinds.size(); ++k)
@@ -3662,9 +3685,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (XAcc &xa : xaccs)
       if (xa.acc.size() == 1)
         add(xa.V, xa.acc[0]);
+    // cq-9kcq S12c: the environment's pieces at X, named by eff-fenv's keys (i32 rails: FLAGS, MODE)
+    for (auto &[id, o] : rFenv)
+      add(fenv::pieceKey(ctx, id), o, RailType{Kind::Int, 32});
     rolled::Region::ExitWiring wiring = rreg->wireExits(
         rSeedScope, out, outW, nullptr, rKeptFinal,
         [&](const Value *v) {
+          // cq-9kcq S12c: the environment after the loop is read by eff-fenv until it is replaced; rule 5 uncomputes a copy
+          // after that reader, as any value only computed from
+          if (any_of(rFenv, [&](const std::pair<unsigned, Operand> &p) { return fenv::pieceKey(ctx, p.first) == v; }))
+            return true;
           // cq-9kcq S6c (as loops-classical's `undone`, rule 5, rule 18): a clone's result is copied out once more at the
           // return, and its twin needs that copy: the loop's copy is no output, undone by the reverse after its readers.
           if (!ctx.S.isEntry()) {
@@ -3685,8 +3715,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         [&](const Value *v, Operand op) { *slot.lookup(v) = op; });
     for (auto &[o, first] : dups)
       *o = *slot.lookup(first);
+    for (auto &[id, o] : rFenv)
+      fenv::bindPiece(ctx, id, o.v);
+    auto isFenvKey = [&](const Value *v) {
+      return any_of(rFenv, [&](const std::pair<unsigned, Operand> &p) { return fenv::pieceKey(ctx, p.first) == v; });
+    };
     bool keptInPlace = rreg->hasCopyScope() && any_of(out, [&](const std::pair<const Value *, Operand> &o) {
-      return o.second.handle && !rKeptFinal.count(o.second.v) && wiring.ownedH.count(o.second.v) &&
+      return o.second.handle && !rKeptFinal.count(o.second.v) && wiring.ownedH.count(o.second.v) && !isFenvKey(o.first) &&
              rolled::readersKeep(ctx, L, o.first);
     });
     rreg->finishExits(rCont ? rCont : rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg, rX);
