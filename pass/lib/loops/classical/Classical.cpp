@@ -3938,7 +3938,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // uncomputes it after that reader, and nothing can once the reverse has run.
       // cq-jos4q: a copy a reader keeps (measured on every path, returned, stored) is the loop's output even where the reverse is
       // deferred for an exit rail read in place: the deferred reverse must not un-copy and free a measured rail (§1.3).
-      bool scoped = nested || inTrip || !readersKeep(v);
+      // cq-2xl5: with classical exit tests besides the bound (extraExits), T joins each exit edge's res and the exit value
+      // after the loop is a select over the copies (CR rule 14 case 3): its readers keep the select, not the copies, which
+      // are the copy scope's; readersKeep follows the exit phi as if it were the copy (a kept copy left garbage, and recorded
+      // in an open copy scope it was owned by the item it was read by: recordDeferred's internal error).
+      bool scoped = nested || inTrip || !extraExits.empty() || !readersKeep(v);
       if (scoped && copyScope == ~0u)
         copyScope = U.openScope();   // closed after the last copy (below)
       RailId fid = ctx.unc().recordSeed(f);
