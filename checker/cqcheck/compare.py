@@ -2423,7 +2423,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # recursion cut, an abort under a quantum predicate reading 1) nothing is compared, measurements included (`past`).
     c_site: Dict[Hashable, Dict[Any, set]] = {}
     for k, opts in meas_opts.items():
-        ms_, mc_ = o_by[k].measured or [], r_by[k].measured or []
+        ms_, mc_ = _meas_seq(o_by[k]), r_by[k].measured or []
         common = None
         for img, _ in opts:
             pairs = {(ms_[i].get("site"), mc_[j].get("cs")) for j, i in enumerate(sorted(img))
@@ -2438,7 +2438,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         entered_any.setdefault(_call_key(r_by[k].sample), set()).update((r_by[k].outputs or {}).get("entered", []))
 
     def _meas_extra(k: str) -> List[str]:
-        ms = o_by[k].measured or []
+        ms = _meas_seq(o_by[k])
         n = len(ms)
         here = (r_by[k].outputs or {}).get("entered", [])
         anywhere = entered_any[_call_key(r_by[k].sample)]
@@ -2486,12 +2486,12 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             def gaps(i: int) -> Tuple[int, int]:
                 before = sum(1 for m in matched if m < i)     # matched[j] is C measurement j (in-order embedding)
                 return before, before
-            miss = accepted([(i, *gaps(i)) for i in range(n) if i not in img and i not in past])
+            miss = accepted([(i, *gaps(i)) for i in range(n) if i not in img and i not in past and not ms[i].get("re")])
             if not miss:
                 return []
             if x == 0:
                 bad = miss
-        hs = [o_by[k].measured[i].get("h") for i in bad]
+        hs = [_meas_seq(o_by[k])[i].get("h") for i in bad]
         return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and the C run did not leave "
                 f"their site by quantum conditions alone at that point (rulings Q3: only CR rule 2's unconditional execution "
                 f"in a quantum arm, a trip behind a quantum exit or a _ctl predicate may be extra; rulings Q8: a copy measures the site's "
@@ -2567,15 +2567,43 @@ def _measured_positional(k: str, o: RunResult, r: RunResult, open_end: bool, nan
 _MEAS_OPTIONS = 256                  # embeddings of one sample's C measurements kept at most
 
 
+def _meas_seq(o: RunResult) -> List[Dict[str, Any]]:
+    """Our measurements with our re-reads (outputs["rereads"], cq-q4a9e) spliced in at their place, each re-read marked
+    "re" and "of": the index here of the measurement of its rail. CR rule 2 (ABI 1.3): a cqrt_measure of a rail already
+    measured is a classical re-read, no event; it may stand for a C measurement at that point (the C program measures a
+    value the circuit holds in the one rail it measured before, e.g. a loop phi naming that rail on a zero-trip path)
+    only where that measurement of the same rail stands for an earlier C measurement and the re-read reads its value."""
+    ms = list(o.measured or [])
+    rr = (o.outputs or {}).get("rereads", []) if isinstance(o.outputs, dict) else []
+    if not rr:
+        return ms
+    out: List[Dict[str, Any]] = []
+    first: Dict[Any, int] = {}
+    j = 0
+    for i, m in enumerate(ms + [None]):
+        while j < len(rr) and rr[j].get("at", 0) <= i:
+            e = dict(rr[j], re=True)
+            if e.get("h") in first:
+                e["of"] = first[e.get("h")]
+            out.append(e)
+            j += 1
+        if m is not None:
+            first.setdefault(m.get("h"), len(out))
+            out.append(m)
+    return out
+
+
 def _meas_options(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bool
                   ) -> Tuple[List[Tuple[FrozenSet[int], FrozenSet[int]]], List[str]]:
     """CR rule 2 (bead cq-tnrb): the ways one sample's C measurements embed, in order, into ours,
     each one reading the same value (and type): [(our indices matched, our indices past the end)],
     the latter non-empty only on an open-ended sample (capped or ended: ours past the last matched
     one lie past the cut or the end). No way at all: the reasons."""
-    mo, mr = list(o.measured or []), list(r.measured or [])
+    mo, mr = _meas_seq(o), list(r.measured or [])
     n = len(mo)
-    ok = [[not _meas_eq(o, r, a, b, nan_eq) for b in mr] for a in mo]
+    # a re-read stands for a C measurement only after the measurement of its rail, reading what that one read
+    ok = [[not _meas_eq(o, r, a, b, nan_eq) and (not a.get("re") or ("of" in a and not _meas_eq(o, r, a, mo[a["of"]], nan_eq)))
+           for b in mr] for a in mo]
     opts: Dict[FrozenSet[int], FrozenSet[int]] = {}
 
     def emb(j: int, i0: int, img: Tuple[int, ...]) -> None:
@@ -2587,7 +2615,7 @@ def _meas_options(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bo
             opts[frozenset(img)] = frozenset(range(last + 1, n)) if open_end else frozenset()
             return
         for i in range(i0, n - (len(mr) - j) + 1):
-            if ok[i][j]:
+            if ok[i][j] and (not mo[i].get("re") or mo[i]["of"] in img):
                 emb(j + 1, i + 1, img + (i,))
 
     emb(0, 0, ())
@@ -2602,7 +2630,7 @@ def _meas_options(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bo
                 left = list(reads)
                 extra = set()
                 for i in range(n):
-                    if i not in img:
+                    if i not in img and not mo[i].get("re"):
                         if mo[i].get("h") in ctl and _int(mo[i].get("v")) == 0:
                             extra.add(i)
                             continue
@@ -2630,7 +2658,7 @@ def _ret(outputs: Any, side: str) -> Any:
 
 
 _HOST_KEYS = ("stdout", "effects", "tape", "q2", "mem", "objects", "regions", "ctl_measured", "entered", "host_flags",
-              "deferred_r", "hsread")
+              "deferred_r", "hsread", "rereads")
 
 
 def _rest(outputs: Any, side: str) -> Any:

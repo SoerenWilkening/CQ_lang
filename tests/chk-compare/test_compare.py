@@ -1314,6 +1314,60 @@ class Rule2Measure(unittest.TestCase):
         self.check(self.ours(), c, False)
 
 
+class ReRead(unittest.TestCase):
+    """CR rule 2, ABI 1.3 (cq-q4a9e): a cqrt_measure of a rail already measured is a classical re-read, no measurement of
+    ours (the evaluator logs it as "reread", run.py keeps it in outputs["rereads"] with the count of our measurements
+    before it). The C program may measure twice where the circuit holds both values in one rail (p6: x and old one value
+    on the zero-trip path): the re-read stands for the second C measurement. Register x (h=1, x = a), y (h=2, y = b), i8."""
+
+    def c(self, vals):
+        return [RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]},
+                          outputs={"ret": [], "end": "ret", "loops": []},
+                          measured=[{"h": None, "w": "i8", "v": hex(v)} for v in vals(s & 1, s >> 1)],
+                          rotations=[], kept=None, clean=None, violations=[]) for s in range(4)]
+
+    def ours(self, meas, rereads=lambda a, b: []):
+        """meas(a, b) -> [(h, value)]; rereads(a, b) -> [(h, value, measurements before it)]."""
+        out = []
+        for s in range(4):
+            a, b = s & 1, s >> 1
+            ms = meas(a, b)
+            rr = [{"h": h, "w": "i8", "v": hex(v), "at": at} for h, v, at in rereads(a, b)]
+            out.append(run("o", s, [], [keep(h, v, "i8", "measured") for h, v in ms],
+                           outputs={"rereads": rr} if rr else None,
+                           measured=[{"h": h, "w": "i8", "v": hex(v)} for h, v in ms]))
+        return out
+
+    def check(self, ours, c, equal):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+
+    def test_reread_stands_for_c_measurement(self):
+        # fails before cq-q4a9e: "1 measurements != 2"
+        self.check(self.ours(lambda a, b: [(1, a)], lambda a, b: [(1, a, 1)]), self.c(lambda a, b: [a, a]), True)
+        # between two measurements of ours
+        self.check(self.ours(lambda a, b: [(1, a), (2, b + 2)], lambda a, b: [(1, a, 1)]),
+                   self.c(lambda a, b: [a, a, b + 2]), True)
+
+    def test_reread_no_c_counterpart_is_no_event(self):
+        self.check(self.ours(lambda a, b: [(1, a)], lambda a, b: [(1, a, 1)]), self.c(lambda a, b: [a]), True)
+
+    def test_dropped_first_measurement_rejected(self):
+        # mutant: the first measurement dropped, so the second is the rail's first: one measurement, no re-read
+        self.check(self.ours(lambda a, b: [(1, a)]), self.c(lambda a, b: [a, a]), False)
+
+    def test_other_rail_rejected(self):
+        # mutant: the second site measures another rail (y), not a re-read of x
+        self.check(self.ours(lambda a, b: [(1, a), (2, b)]), self.c(lambda a, b: [a, a]), False)
+        # a re-read of a rail ours never measured stands for nothing
+        self.check(self.ours(lambda a, b: [(1, a)], lambda a, b: [(2, a, 1)]), self.c(lambda a, b: [a, a]), False)
+
+    def test_reread_value_differs_rejected(self):
+        # mutant: the rail changed after its measurement, the re-read reads another value (which C also reads)
+        self.check(self.ours(lambda a, b: [(1, a)], lambda a, b: [(1, 1 - a, 1)]), self.c(lambda a, b: [a, 1 - a]), False)
+        self.check(self.ours(lambda a, b: [(1, a)], lambda a, b: [(1, 1 - a, 1)]), self.c(lambda a, b: [a, a]), False)
+
+
 class UnPrep(unittest.TestCase):
     """CR rule 10 un-prep against "c" (bead cq-9gi3), shaped like 133's prep_twice: a register r
     (h=3, i32, seed R0) prepared Ry(T1) under a (C site f:0), then overwritten: undone by Ry(-T1)

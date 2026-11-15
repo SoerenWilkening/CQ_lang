@@ -242,6 +242,7 @@ public:
     DenseMap<const CallBase *, std::vector<int32_t>> viaPtr;    // indirect call -> -2 or -3 per spec id
     DenseMap<const Function *, unsigned> tableT, tableCtl;      // the table specializations' ids
     DenseMap<const Function *, bool> tableRec;                  // reached through a row it is a quantum-depth recursion
+    DenseMap<const Function *, std::vector<int32_t>> depthCtr;  // spec id -> it has the pass's depth counter
   } KI;
   GlobalVariable *SpecNext = nullptr;
   DenseMap<Function *, AllocaInst *> specSlots;
@@ -466,6 +467,40 @@ public:
       for (auto &[F, i] : *tab)
         if (scc.count(F) && isQDepth(i))
           KI.tableRec[F] = true;
+    // The depth counter, as the pass makes it (Calls.cpp insertActivationCounter; CR §1.4, rule 14; owner 2026-11-15, the
+    // activation-counter cut at K = 0): every `_ctl` specialization of a function on a call cycle by name, or with a table
+    // clone (a table specialization; an address-taken or externally visible function, reachable through a pointer), reads
+    // d, the live `_ctl` activations of its function, and is cut where d < K fails (K: the table clone's received K, else
+    // the received K in force, else its own). At K = 0 the first `_ctl` activation is cut, recursive or not.
+    for (unsigned i = 1; i <= KI.N; ++i) {
+      const cq::Specialization &S = *byId[i];
+      const Function &F = *S.F;
+      if (!S.ctl || (!S.table && F.hasLocalLinkage() && !F.hasAddressTaken() && !reachesByName(&F, &F)))
+        continue;
+      auto &v = KI.depthCtr[&F];
+      v.resize(W, 0);
+      v[i] = 1;
+    }
+  }
+
+  // The pass's calls::reaches (Calls.cpp): does G's body reach a call of F by name (G == F included), through the
+  // callees that are not host calls?
+  static bool reachesByName(const Function *G, const Function *F) {
+    SmallPtrSet<const Function *, 16> seen{G};
+    SmallVector<const Function *, 16> work{G};
+    while (!work.empty()) {
+      const Function *X = work.pop_back_val();
+      for (const BasicBlock &BB : *X)
+        for (const Instruction &I : BB)
+          if (auto *C = dyn_cast<CallBase>(&I))
+            if (const Function *Y = C->getCalledFunction()) {
+              if (Y == F)
+                return true;
+              if (!cq::hostCallee(*Y) && seen.insert(Y).second)
+                work.push_back(Y);
+            }
+    }
+    return false;
   }
 
   // vals[spec id] at run time: a constant when they agree, else a load from a constant table.
@@ -509,6 +544,22 @@ public:
                    {str((F.getName() + ":recursion").str()), B.CreateZExt(on, I32), B.CreateZExt(viaC, I32),
                     B.getInt64(resolveK(F))});
     specSlots[&F] = slot;
+    // The pass's depth counter (analyseCutoffs, KI.depthCtr): counted at entry, put back at every return.
+    auto dc = KI.depthCtr.find(&F);
+    if (dc != KI.depthCtr.end()) {
+      std::vector<int32_t> vals = dc->second;
+      vals.resize(KI.N + 1, 0);
+      Constant *fn = str((F.getName() + ":recursion").str());
+      B.CreateCall(hook("__cqo_act_enter", Void, {Ptr, I32, I64}), {fn, perSpec(B, F, vals), B.getInt64(resolveK(F))});
+      SmallVector<ReturnInst *, 4> rets;
+      for (BasicBlock &BB : F)
+        if (auto *R = dyn_cast_or_null<ReturnInst>(BB.getTerminator()))
+          rets.push_back(R);
+      for (ReturnInst *R : rets) {
+        IRBuilder<> RB(R);
+        RB.CreateCall(hook("__cqo_act_leave", Void, {Ptr, I32}), {fn, perSpec(RB, F, vals)});
+      }
+    }
     return slot;
   }
 

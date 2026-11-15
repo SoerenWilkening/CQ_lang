@@ -829,9 +829,13 @@ static void gate_measure(call_t *c, const char *w) {
     return;
   int reread = cqe__measured(h);   /* CR rule 2, ABI 1.3 (cq-ihlt): a classical re-read, no measure event */
   cqe__mark_measured(h);
-  if (!reread) {
+  {
+    /* a re-read is logged as such (cq-q4a9e): compare.py may match it to a C measurement, never count it as one of ours */
     char hb[3 + 16 * 2 + 1], *hx = cqe__val(h)->nw <= 2 ? cqe__hex(cqe__val(h), hb) : cqe__hexa(cqe__val(h));
-    cqe__logf("{\"ev\":\"measure\",\"h\":%lld,\"v\":\"%s\",\"w\":\"%s\"}", cqe__hname(h), hx, w);
+    if (reread) /* cqe__logf filters on the format's literal event name */
+      cqe__logf("{\"ev\":\"reread\",\"h\":%lld,\"v\":\"%s\",\"w\":\"%s\"}", cqe__hname(h), hx, w);
+    else
+      cqe__logf("{\"ev\":\"measure\",\"h\":%lld,\"v\":\"%s\",\"w\":\"%s\"}", cqe__hname(h), hx, w);
     if (hx != hb)
       free(hx);
   }

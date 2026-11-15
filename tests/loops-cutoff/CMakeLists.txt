@@ -290,6 +290,14 @@ add_test(NAME loops-cutoff-table-k6
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k6.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# Owner ruling of 2026-11-15, the activation-counter cut (CR §1.4, rule 14, rule 19): a function reached only through a
+# pointer recursing through it under a quantum predicate; its _t_ctl table clone's depth counter cuts at d < K with the
+# received K 2, and the C oracle makes the same cut (cqo_rt.c __cqo_act_enter). §6-checked; the cut_d3 mutant is rejected.
+add_test(NAME loops-cutoff-k-chain
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/k_chain.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # both write build/tests/loops-cutoff/out/table_k.*.ll
 set_tests_properties(loops-cutoff-table-k loops-cutoff-table-k-self PROPERTIES RESOURCE_LOCK loops-cutoff-table-k-out)
 # cq-lv2ba (CR rules 14, 16): a classically bounded sub-loop with an abort arm behind a classical condition of a K-trip,

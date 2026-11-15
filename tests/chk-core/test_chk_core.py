@@ -191,6 +191,9 @@ class Violations(unittest.TestCase):
         self.assertEqual(r.violations, [])
         self.assertEqual(len(r.measured), 1)
         self.assertEqual(r.outputs["ret"][0]["v"]["v"], hex(2 * int(r.measured[0]["v"], 16)))
+        # cq-q4a9e: the re-read is logged apart (compare._meas_seq), after the one measurement, reading its value
+        rr = r.outputs.get("rereads", [])
+        self.assertEqual([(e["h"], e["v"], e["at"]) for e in rr], [(r.measured[0]["h"], r.measured[0]["v"], 1)])
 
     def test_default_runtime_links_family_constructors(self):
         """Without rt_sources, run.py links every checker/rt/*.c as objects, so a merged family's

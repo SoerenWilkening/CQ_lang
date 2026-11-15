@@ -1138,6 +1138,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     of the sample's frees (_shot_result), the last entry of `clean`."""
     rets: List[dict] = []
     measured: List[dict] = []
+    rereads: List[dict] = []
     rots: List[dict] = []
     clean: List[dict] = []
     viol: List[dict] = []
@@ -1164,12 +1165,18 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             if e.get("shot"):
                 c["shot"] = True
             clean.append(c)
-        elif ev == "measure":
-            measured.append({"h": e["h"], "w": e.get("w"), "v": e["v"]})
+        elif ev in ("measure", "reread"):
+            # CR rule 2, ABI 1.3: a cqrt_measure of a rail already measured is a classical re-read, no measurement of
+            # ours; it is kept apart, with the number of our measurements before it (`at`), for compare._meas_seq
+            if ev == "measure":
+                measured.append({"h": e["h"], "w": e.get("w"), "v": e["v"]})
+            else:
+                rereads.append({"h": e["h"], "w": e.get("w"), "v": e["v"], "at": len(measured)})
+            cur = measured[-1] if ev == "measure" else rereads[-1]
             if meas_fn is not None:
-                measured[-1]["fn"], meas_fn = meas_fn, None
+                cur["fn"], meas_fn = meas_fn, None
                 if meas_site is not None:
-                    measured[-1]["site"], meas_site = meas_site, None
+                    cur["site"], meas_site = meas_site, None
             # rulings Q8: follow the selects the register is read through only while their condition reads 0; at one reading
             # 1 the copy measures that select's own result: the site's carried rail only for a carried advance (`c`)
             for sid, chained in meas_chain:
@@ -1177,7 +1184,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                     break
                 if sel_z[sid]:
                     if not chained:
-                        measured[-1]["sel_other"] = True
+                        cur["sel_other"] = True
                     break
             meas_chain = []
         elif ev == "ret":
@@ -1224,6 +1231,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     outputs = {"ret": rets, "stdout": stdout + tape_out, "exit": code, "effects": _effects_in_order(direct_fx),
                "tape": tape_seq, "mem": mem, "objects": objects, "regions": regions, "q2": q2, "deferred_r": deferred_r,
                "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
+    if rereads:
+        outputs["rereads"] = rereads
     if host_end is not None:
         outputs["host_end"] = host_end
     if abort_end:

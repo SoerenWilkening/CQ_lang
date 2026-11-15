@@ -289,7 +289,7 @@ static int keep_event(const char *s) {
   if (!compact || strncmp(s, pre, sizeof pre - 1) != 0)
     return 1;
   const char *n = s + sizeof pre - 1;
-  static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "ret\"",
+  static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "reread\"", "ret\"",
                                "violation\"", "exit\"", "host_end\"", "abort_end\"", "effect\"", "shot\"", "shot_end\"", "free\"",
                                "out_mem\"", "tape\",\"op\":\"shot\""};
   for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
