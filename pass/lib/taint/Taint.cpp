@@ -2365,10 +2365,23 @@ void Analyzer::transferCall(CallBase &CB) {
       bool q = false;
       for (Value *A : actuals)
         q = q || L(A).any();
-      if ((q || blockCT(CB.getParent()) || cur->ctl) && (q || !taint_detail::abortsOnEveryPath(*G))) {
+      bool qp = blockCT(CB.getParent()) || cur->ctl;
+      if ((q || qp) && (q || !taint_detail::abortsOnEveryPath(*G))) {
         lift(CB, G, actuals, false);
         return;
       }
+      // cq-woqja (rule 16 noreturn, owner rulings 2026-11-11 Q7 and 2026-11-14): an all-classical call that an event can
+      // precede inside the lowered code is lifted too, so that its callee is reached after the event (propagateEvents'
+      // reachedAfterEvent) and the noreturn call it ends in is the effect entry under a true seed, then abort_i1, not the
+      // host call that would end the shot before the earlier abort flag is read (CR §6 Horizon).
+      if (!q && !qp && eventPrecedes(CB, /*inLowered=*/true)) {
+        lift(CB, G, actuals, false);
+        return;
+      }
+      // That lift is the one above whose condition can fall in the fixed point (the block found control tainted later):
+      // a callee it recorded goes, so that no specialization is reached through it.
+      if (cur->callees.erase(&CB))
+        localChanged = true;
     }
     if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
       bool q = false;
