@@ -1125,6 +1125,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // `v == m[k + 1]` at the latch). Its exit edge gives res; it enters C directly.
   BasicBlock *cxb = nullptr;
   BasicBlock *cxArm = nullptr;                      // the arm block cxb's classical exit edge enters (nullptr: C itself)
+  SmallVector<BasicBlock *, 2> cxAll, cxExtra;      // the classical exit tests; those besides cxb that enter C only
   std::unique_ptr<LoopInfo> mxLI;
   DenseMap<const BasicBlock *, Loop *> armUnit;     // a block of a loop of the exit arm's unit -> that loop
   // Classical exit edges into the exit arm (case 3: cxb's; case 1, cq-y7kw: each classical exit edge not into C): each
@@ -1195,10 +1196,23 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         continue;
       if (auto *ib = dyn_cast<IndirectBrInst>(u->getTerminator()); ib && isQ(ib->getAddress()))
         continue;   // rule 13: a quantum computed goto is a quantum exit test
-      if (cxb)
-        unimplemented("loops-classical: a multi-exit case-3 loop with more than one classical exit test",
+      cxAll.push_back(u);
+    }
+    // cq-2xl5 (CR rule 14 case 3 with rule 8): several classical exit tests. The bound is the latch's test (else the
+    // header's, else the last); every other one whose exit edges all enter C is a real branch out of the trip that
+    // leaves under the trip predicate at it (cxExtra): its edge gives its own res, and T joins the res of every exit edge.
+    if (!cxAll.empty()) {
+      cxb = is_contained(cxAll, latch) ? latch : is_contained(cxAll, header) ? header : cxAll.back();
+      for (BasicBlock *u : cxAll) {
+        if (u == cxb)
+          continue;
+        if (all_of(successors(u), [&](BasicBlock *x) { return L.contains(x) || x == UX.cont; }))
+          cxExtra.push_back(u);
+        else
+          noteUnbuilt("loops-classical: a multi-exit case-3 loop with a classical exit test besides its bound into its "
+                      "exit arm",
                       u->getTerminator());
-      cxb = u;
+      }
     }
     // cq-h8y6 (CR rule 14 case 3, "a mixed exit c_classical || q"): with no purely classical exit test, the bound is
     // a classical disjunct of a quantum exit test (strncmp: `n && *r && *l == *r` at the header). That block is the
@@ -2751,11 +2765,50 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   };
 
   Value *aAtCx = nullptr;   // the trip predicate at cxb's classical exit test
+  // cq-2xl5: a classical exit test besides the bound (cxExtra), at its branch: the trip leaves through it under the trip
+  // predicate there, so its res is select(a, v_u, cap'), cap' the captures with this trip's quantum exits so far (those
+  // whose test dominates u) taken in, as latchExits takes them all.
+  struct ExtraExit {
+    BasicBlock *u;
+    std::vector<SmallVector<Value *, 2>> res;   // per cphi
+  };
+  std::vector<ExtraExit> extraExits;
+  auto extraRes = [&](BasicBlock *u) {
+    ArmEval ev;
+    for (auto &[e, f] : exitFlag)
+      if (mxDT->dominates(e.first, u))
+        ev.entry[e] = f;
+    walkArm(ev, UX.arm);
+    ExtraExit xx{u, {}};
+    for (CPhi &cp : cphis) {
+      SmallVector<Value *, 2> c(cp.cap.begin(), cp.cap.end());
+      SmallVector<Operand, 2> vl;
+      for (auto &[w, val] : cp.incomings(inUnit, UX.cont)) {
+        if (w == u) {
+          vl = fieldsOf(cp, val);
+          continue;
+        }
+        Value *g = flagOfEdge(ev, w, UX.cont);
+        if (!g)
+          continue;
+        SmallVector<Operand, 2> fv = contFields(ev, cp, val);
+        for (unsigned f = 0; f < c.size(); ++f)
+          c[f] = select(g, fv[f], Operand{c[f], true}, cp.rails[f]);
+      }
+      SmallVector<Value *, 2> r;
+      for (unsigned f = 0; f < c.size(); ++f)
+        r.push_back(!vl.empty() ? select(aCur, vl[f], Operand{c[f], true}, cp.rails[f]) : c[f]);
+      xx.res.push_back(std::move(r));
+    }
+    extraExits.push_back(std::move(xx));
+  };
   auto emitTerminator = [&](BasicBlock *u) {
     tgtFrom = u;
     Instruction *t = u->getTerminator();
     if (isAbortTest(u))
       abortTest(u);
+    if (mx && is_contained(cxExtra, u))
+      extraRes(u);
     const bool qExit = mx && termQ(t) && any_of(successors(u), [&](const BasicBlock *s) { return !L.contains(s); });
     if (u == latch && !qExit)
       latchNexts();
@@ -3557,6 +3610,58 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   DenseSet<const Value *> unbound;   // multi-exit: C's phis, bound here for the first time
   DenseMap<const Value *, unsigned> nFields;
   DenseSet<const Value *> fat;
+  // cq-2xl5: with classical exit tests besides the bound, T joins each exit edge's res (a phi per field), and the reverse
+  // starts at the segment of the edge taken (exitIndex, as cq-j5mq's).
+  if (!extraExits.empty()) {
+    LLVMContext &Cx = ctx.M.getContext();
+    SmallVector<std::pair<BasicBlock *, const std::vector<SmallVector<Value *, 2>> *>, 4> from;
+    std::vector<SmallVector<Value *, 2>> bound;
+    for (CPhi &cp : cphis)
+      bound.push_back(cp.res);
+    auto leave = [&](BasicBlock *u) {
+      auto ef = edgeFrom.find({u, UX.cont});
+      return ef == edgeFrom.end() ? nullptr : ef->second;
+    };
+    if (BasicBlock *lb = leave(cxb))
+      from.push_back({lb, &bound});
+    for (ExtraExit &xx : extraExits)
+      if (BasicBlock *lb = leave(xx.u))
+        from.push_back({lb, &xx.res});
+    if (!outermost || !T || cxArm || !armExits.empty() ||
+        any_of(predecessors(T), [&](BasicBlock *p) { return none_of(from, [&](const auto &e) { return e.first == p; }); })) {
+      noteUnbuilt("loops-classical: a case-3 loop with several classical exit tests whose exit edges do not all enter "
+                  "its continuation from the trip",
+                  header->getTerminator());
+    } else {
+      for (size_t k = 0; k < cphis.size(); ++k) {
+        CPhi &cp = cphis[k];
+        SmallVector<Value *, 2> merged;
+        for (unsigned f = 0; f < cp.rails.size(); ++f) {
+          PHINode *ph = PHINode::Create(handleTy(Cx), unsigned(from.size()), "xres");
+          ph->insertInto(T, T->end());
+          for (BasicBlock *p : predecessors(T))
+            for (auto &[lb, rs] : from)
+              if (lb == p) {
+                ph->addIncoming((*rs)[k][f], p);
+                break;
+              }
+          ctx.unc().recordMerge(ph);
+          merged.push_back(ph);
+        }
+        cp.res.assign(merged.begin(), merged.end());
+      }
+      exitIndex = PHINode::Create(Type::getInt32Ty(Cx), unsigned(from.size()), "exit");
+      exitIndex->insertInto(T, T->end());
+      for (BasicBlock *p : predecessors(T))
+        for (unsigned j = 0; j < from.size(); ++j)
+          if (from[j].first == p) {
+            exitIndex->addIncoming(ConstantInt::get(Type::getInt32Ty(Cx), j), p);
+            break;
+          }
+      for (auto &[lb, rs] : from)
+        exitSegs.push_back(lb);
+    }
+  }
   for (CPhi &cp : cphis) {
     if (cp.res.empty())
       internalError("loops-classical: a continuation phi of a case-3 loop with no exit value", cp.orig());
