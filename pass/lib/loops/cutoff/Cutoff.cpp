@@ -1429,10 +1429,24 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   for (Loop *P = L.getParentLoop(); P && !inKLoop; P = P->getParentLoop())
     inKLoop = classify(*P, ctx.T, ctx.S) == Case::QuantumExit;
   Value *stopAcc = nullptr;
+  bool stopCarried = false;   // cq-9kcq S11e: the rolled trip carries stopAcc in a header phi (rolledBody)
   auto noteStop = [&](Value *f) {
     if (!inKLoop)
       return;
     RailType i1{Kind::Int, 1};
+    if (stopCarried) {
+      // as loops-classical's noteStop: a fresh rail n = stop ^ f, the trip's new stop rail (an in-place XOR would put a
+      // record of the rail minted before the header into the trip)
+      CallInst *n = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+      RailId nid = ctx.unc().recordSeed(n);
+      abi::CoreSpec x{abi::Core::XorI1, i1};
+      CallInst *g1 = ctx.emitCore(x, {stopAcc, n});
+      ctx.unc().recordCore(g1, x, {Operand{stopAcc, true}, Operand{n, true}}, nid);
+      CallInst *g2 = ctx.emitCore(x, {f, n});
+      ctx.unc().recordCore(g2, x, {Operand{f, true}, Operand{n, true}}, nid);
+      stopAcc = n;
+      return;
+    }
     if (!stopAcc) {
       CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
       ctx.unc().recordSeed(z);
@@ -2827,9 +2841,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // S10 rolls the nested K-loops and the K-loops of the exit arm; S11 a trip-local classically bounded loop of a trip
       // (a sub-unit of the region, its reverse in the trip). One whose values outlive the trip, or of the exit arm, is not.
       why = "a classically bounded sub-loop in the trip or its exit arm whose values outlive the trip";
-    else if (any_of(innerLoops, [&](Loop *S) { return exits::hasNoreturnArm(*S); }))
-      // the trip's stop rail (stopAcc, the XOR of the nested loops' noreturn arm flags) would be minted per trip
-      why = "a noreturn arm of a nested K-loop (the stop rail as a carried accumulator)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
     else if (any_of(hphis, [&](PHINode *h) {
@@ -2870,8 +2881,29 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // the come-from index replays (the header's entry edge ends it).
   std::shared_ptr<rolled::Region> rreg;
   unsigned rSeedScope = ~0u;
+  // S10: a K-loop of the exit arm runs in every trip under that trip's arm flag; its a_K is the XOR of the trips' chain
+  // ends (armKept, capture). Rolled, that XOR is an accumulator over the trips: minted before the loop (outside the
+  // region's seed scope: the reverse never undoes it) and changed in place in each trip, kept.
+  auto mintArmKept = [&]() {
+    if (!armKept)
+      for (BasicBlock *b : U.arm) {
+        Loop *S = subLoopOf(b);
+        if (!S || S->getHeader() != b || classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
+          continue;
+        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
+        if (Bs && *Bs <= ctx.K(S))
+          continue;
+        RailType i1{Kind::Int, 1};
+        CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+        ctx.unc().recordSeed(z);
+        armKept = z;
+        break;
+      }
+  };
   BasicBlock *rX = nullptr, *rHead = nullptr, *rCont = nullptr;
-  bool rKeptRt = false;   // the rolled driver made a_K's copy under a run-time branch on K < B (and set its role)
+  bool rKeptRt = false;
+  bool preRegion = false;   // S11e: the region form's trip 0 opened the region (its first segments)
+  DenseSet<const BasicBlock *> preBlocks;   // S11e: the output blocks made before that region   // the rolled driver made a_K's copy under a run-time branch on K < B (and set its role)
   // cq-9kcq S7: rolledBody's state at X for the region values read after the loop (regionOut, rebound after wireExits).
   auto rolledBody = [&](Value *q0, Value *gR) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
@@ -2883,25 +2915,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // outer trip), its exit block X is the segment the enclosing trip goes on in, and the come-from index of X and of its
     // header replays its trips in the enclosing reverse. Its a_K copy is made at X in every outer trip, kept.
     rolled::Region *RG = rolledTrip;
-    // S10: a K-loop of the exit arm runs in every trip under that trip's arm flag; its a_K is the XOR of the trips' chain
-    // ends (armKept, capture). Rolled, that XOR is an accumulator over the trips: minted before the loop (outside the
-    // region's seed scope: the reverse never undoes it) and changed in place in each trip, kept.
-    if (!armKept)
-      for (BasicBlock *b : U.arm) {
-        Loop *S = subLoopOf(b);
-        if (!S || S->getHeader() != b || classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
-          continue;
-        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
-        if (Bs && *Bs <= ctx.K(S))
-          continue;
-        RailType i1{Kind::Int, 1};
-        CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
-        ctx.unc().recordSeed(z);
-        armKept = z;
-        break;
-      }
+    mintArmKept();
+    // cq-9kcq S11e (CR rules 14, 16): the stop rail (stopAcc, the XOR of the noreturn arm flags this loop's trips take, read
+    // by the enclosing K-trip as `stopped`) is an accumulator over the trips: minted before the header (a record of the
+    // enclosing trip's segment, undone by the enclosing reverse after its readers) and changed in place in each trip.
+    if (inKLoop && !stopAcc && exits::hasNoreturnArm(L)) {
+      RailType i1{Kind::Int, 1};
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
+      ctx.unc().recordSeed(z);
+      stopAcc = z;
+    }
     BasicBlock *seedHead = B.GetInsertBlock();
-    if (top) {
+    if (top && rreg) {
+      RG = rreg.get();   // S11e: the region form's trip 0 opened the region (preRegion)
+    } else if (top) {
       rreg = std::make_shared<rolled::Region>(ctx, ctx.out());
       RG = rreg.get();
       rreg->setDiagAt(H->getTerminator());
@@ -2966,7 +2993,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (auto *k = dyn_cast<ConstantInt>(gR); !(k && k->isOne()))
         g0 = g0 ? B.CreateAnd(g0, gR) : gR;
     bool zeroGuard = !nK || nK->isZero() || g0;
-    if (g0 && !top) {
+    if (g0 && (!top || preRegion)) {
       // S10: the branch's blocks are segments of the enclosing region (as test's Skip below); the |0> seed is minted in Zb
       RailType i1{Kind::Int, 1};
       BasicBlock *At = B.GetInsertBlock();
@@ -3012,7 +3039,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     } else {
       B.CreateBr(Hd);
     }
-    if (top) {
+    if (top && preRegion) {
+      rreg->branchSeg(Hd);   // S11e: the trip-0 segments end at E
+    } else if (top) {
       ctx.unc().closeScope(rSeedScope);
       ctx.unc().leaveScope(rSeedScope, seedHead);
       rreg->startSeg(Hd);
@@ -3034,8 +3063,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       PHINode *p = B.CreatePHI(handle ? handleTy(Cx) : init->getType(), 2);
       p->addIncoming(init, E);
       if (handle) {
-        if (top)
-          rreg->addExternalInit(init);   // a nested loop's entry value is a rail of the enclosing trip
+        // a nested loop's entry value is a rail of the enclosing trip; S11e: so is one trip 0's segments made
+        auto *ii = dyn_cast<Instruction>(init);
+        if (top && !(preRegion && ii && !preBlocks.count(ii->getParent())))
+          rreg->addExternalInit(init);
         ctx.unc().recordExternal(p, Role::UserRegister);
         ctx.unc().noteCarried(p);
       }
@@ -3139,6 +3170,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       xaccs[i].acc[0] = Operand{p, true};
       carry.push_back({p, in, [&, i]() -> Value * { return xaccs[i].acc[0].v; },
                        [&, i](Value *v) { xaccs[i].acc[0] = Operand{v, true}; }, true});
+    }
+    // cq-9kcq S11e: the stop rail, minted before the header, is carried like the accumulators above.
+    if (stopAcc && inKLoop) {
+      Value *in = stopAcc;
+      PHINode *p = phiFor(in, true);
+      stopAcc = p;
+      stopCarried = true;
+      carry.push_back({p, in, [&]() -> Value * { return stopAcc; }, [&](Value *v) { stopAcc = v; }, true});
     }
     // The classical reachability the evaluation before the loop computed reads its values; the trip reads the phis.
     creach.clear();
@@ -3435,10 +3474,39 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Value *gR = nullptr;
     if (regionForm) {
       auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
+      // cq-9kcq S11e (CR rule 14, ROLLED_DESIGN.md §3 step 7): trip 0's test region is lowered before the header, and its
+      // exit arm may hold a K-loop (capture). That loop rolls inside this loop's region: the region opens here, its seed
+      // scope empty, and trip 0's blocks are its first segments (each run once, mirrored by the reverse after the trips,
+      // before Z). The arm's a_K accumulator is minted before the region (never undone).
+      rolled::Region *outerTrip0 = rolledTrip;
+      std::function<void(BasicBlock *)> outerHook0 = segHook;
+      if (top && multi && any_of(U.arm, [&](BasicBlock *b) {
+            Loop *S = subLoopOf(b);
+            return S && S->getHeader() == b && classify(*S, ctx.T, ctx.S) == Case::QuantumExit;
+          })) {
+        mintArmKept();
+        IRBuilder<> &B = ctx.B();
+        rreg = std::make_shared<rolled::Region>(ctx, ctx.out());
+        rreg->setDiagAt(H->getTerminator());
+        rSeedScope = ctx.unc().openScope();
+        rreg->setOwnSeedScope(rSeedScope);
+        ctx.unc().closeScope(rSeedScope);
+        ctx.unc().leaveScope(rSeedScope, B.GetInsertBlock());
+        for (const BasicBlock &ob : ctx.out())
+          preBlocks.insert(&ob);
+        BasicBlock *P0 = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
+        B.CreateBr(P0);
+        rreg->startSeg(P0);
+        preRegion = true;
+        rolledTrip = rreg.get();
+        segHook = rreg->segHook();
+      }
       lowerBlocks(q, inRegion);
       abortArms(q, inRegion);
       if (multi)
         capture(q, inRegion);
+      rolledTrip = outerTrip0;
+      segHook = outerHook0;
       if (Pred C = regionCont.isBottom() ? Pred::top() : regionCont.classicalFactor(ctx.T, ctx.S); C.isTop()) {
         q = conj(q, regionCont, at);
       } else {
