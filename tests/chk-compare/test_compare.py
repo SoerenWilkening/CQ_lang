@@ -1314,6 +1314,52 @@ class Rule2Measure(unittest.TestCase):
         self.check(self.ours(), c, False)
 
 
+class RolledSiteRegister(unittest.TestCase):
+    """cq-2pdir (rulings Q3, Q8, Q9; cq-47f8h: the rolled body gives one site, K executions): me_cbr's h shape. Register w
+    (h=1, w = b, i8). C: while (a) { measure w; a = 0 } -- trip 0 reached iff a, its exit quantum (skip of site h:1). Ours
+    (rolled): the one site 7 runs on trip 0 whatever a; run.py names the register each execution read through a classical
+    choice ("reg"). Where a = 0 the execution is an extra (Q3: accepted when the C run left the site by a quantum exit) and
+    must measure the site's register, the one it measures where C reaches it."""
+
+    def c(self):
+        out = []
+        for s in range(4):
+            a, b = s & 1, s >> 1
+            meas = [{"h": None, "w": "i8", "v": hex(b), "cs": "h:1"}] if a else []
+            skips = [] if a else [{"n": 0, "q": True, "s": ["h:1"], "e": None}]
+            out.append(RunResult(side="c", sample={"call": 0, "args": [a, b]},
+                                 outputs={"ret": [], "end": "ret", "loops": [], "skips": skips, "entered": ["h"]},
+                                 measured=meas, rotations=[], kept=None, clean=None, violations=[]))
+        return out
+
+    def ours(self, extra_reg, extra_v=lambda b: b, reg_on_reached="L 0"):
+        out = []
+        for s in range(4):
+            a, b = s & 1, s >> 1
+            m = {"h": 2, "w": "i8", "v": hex(b if a else extra_v(b)), "fn": "h", "site": 7}
+            r = reg_on_reached if a else extra_reg
+            if r is not None:
+                m["reg"] = r
+            out.append(run("o", s, [], [keep(2, int(m["v"], 16), "i8", "measured")], outputs={"entered": ["h"]},
+                           measured=[m]))
+        return out
+
+    def check(self, ours, equal):
+        r = compare(ours, self.c(), QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if not equal:
+            self.assertTrue(any("match no C measurement here" in x for x in r.reasons), r.reasons)
+
+    def test_extra_reads_the_sites_register(self):
+        self.check(self.ours("L 0"), True)
+        self.check(self.ours(None, reg_on_reached=None), True)    # no classical choice: Q3 as before
+
+    def test_extra_reads_another_register_rejected(self):
+        # the mutant: on the trip C does not reach the site measures v's carried register (reading 3), not w; before
+        # cq-2pdir accepted, its value being no event (Q9)
+        self.check(self.ours("L 1", lambda b: 3), False)
+
+
 class ReRead(unittest.TestCase):
     """CR rule 2, ABI 1.3 (cq-q4a9e): a cqrt_measure of a rail already measured is a classical re-read, no measurement of
     ours (the evaluator logs it as "reread", run.py keeps it in outputs["rereads"] with the count of our measurements

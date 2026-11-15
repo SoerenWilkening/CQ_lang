@@ -272,7 +272,9 @@ measured rails of ours are the same handles (the hoisted arm measurement of a re
 the C program measures on another path; its value where C did not reach it is unconstrained), or of
 the same call site (run.measure_site_classes: one shape and one register over rule 14's trips, cq-47f8h,
 cq-v8cn7) reached by the C program in every embedding of such a sample, or
-lie past the cut or the end of an open-ended sample. A measurement whose value never tells it from
+lie past the cut or the end of an open-ended sample. One of the same call site read through a classical choice of register
+(the rolled trip's one site, cq-2pdir: run.py's "reg") is identified only if it measures a register that site measures
+where the C program reaches it on a sample of the same classical arguments, when there is one (rulings Q8). A measurement whose value never tells it from
 another of ours is not identified (conservative). The identification holds only on a sample that
 enters the function the measurement lies in: rule 2's hoist is for an arm of that function, and a callee
 under a predicate measures rule 19's controlled copy, so a plain measurement in a function the input never
@@ -2422,6 +2424,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # (its rail is a kept rail, compared as any). Past the horizon (a capped or ended sample, Q3 part 1: a_K, n > K2, a
     # recursion cut, an abort under a quantum predicate reading 1) nothing is compared, measurements included (`past`).
     c_site: Dict[Hashable, Dict[Any, set]] = {}
+    c_reg: Dict[Hashable, Dict[Any, set]] = {}
     for k, opts in meas_opts.items():
         ms_, mc_ = _meas_seq(o_by[k]), r_by[k].measured or []
         common = None
@@ -2431,6 +2434,15 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             common = pairs if common is None else common & pairs
         for o_site, cs in common or ():
             c_site.setdefault(_call_key(r_by[k].sample), {}).setdefault(o_site, set()).add(cs)
+        # cq-2pdir (rulings Q8; cq-47f8h: the rolled body gives the same, one site, K executions): the registers our site
+        # measures where the C program reaches it, read through classical choices (run.measure_site_classes `trees`), per
+        # classical arguments (a classical choice may follow them, CR rule 8); where none reaches it, no register is claimed
+        regs = None
+        for img, _ in opts:
+            got = {(ms_[i].get("site"), ms_[i]["reg"]) for i in img if i < len(ms_) and ms_[i].get("reg") is not None}
+            regs = got if regs is None else regs & got
+        for o_site, rg in regs or ():
+            c_reg.setdefault(classical_key(r_by[k].sample), {}).setdefault(o_site, set()).add(rg)
 
     # CR rules 2, 19: the functions some input of the call enters, which the C oracle reports entries of
     entered_any: Dict[Hashable, set] = {}
@@ -2443,6 +2455,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         here = (r_by[k].outputs or {}).get("entered", [])
         anywhere = entered_any[_call_key(r_by[k].sample)]
         sites = c_site.get(_call_key(r_by[k].sample), {})
+        regs = c_reg.get(classical_key(r_by[k].sample), {})
         skips = (r_by[k].outputs or {}).get("skips", []) if isinstance(r_by[k].outputs, dict) else []
 
         nc = len(r_by[k].measured or [])
@@ -2460,7 +2473,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             for i, lo, hi in extra:
                 # rulings Q8: a copy read through a select whose condition reads 1 and which is no carried advance
                 # measures another register (run.py: the select is followed only where its condition reads 0)
+                # cq-2pdir (rulings Q8 in the rolled form): an execution read through a classical choice measures the
+                # site's register only if that register is one the site measures where the C program reaches it (on a
+                # sample of the same classical arguments; none reaching it: unjudged)
                 if ms[i].get("site") is None or ms[i].get("sel_other") or \
+                        (ms[i].get("reg") is not None and ms[i]["site"] in regs and ms[i]["reg"] not in regs[ms[i]["site"]]) or \
                         (ms[i].get("fn") in anywhere and ms[i].get("fn") not in here):
                     miss.append(i)
                 else:
@@ -2495,7 +2512,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and the C run did not leave "
                 f"their site by quantum conditions alone at that point (rulings Q3: only CR rule 2's unconditional execution "
                 f"in a quantum arm, a trip behind a quantum exit or a _ctl predicate may be extra; rulings Q8: a copy measures the site's "
-                f"register only through carried selects followed where their condition reads 0)"]
+                f"register only through carried selects followed where their condition reads 0, and a classical choice of register "
+                f"only to one the site measures where the C program reaches it, cq-2pdir)"]
 
     for gk, ks in groups.items():
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"

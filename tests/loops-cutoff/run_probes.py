@@ -47,7 +47,7 @@ MUTANTS = {
     "me_cbr": [
         # the last trip (trip 3, which no sample reaches) measures a copy of v (the rail the trip shifts), not w: in the
         # copied form the last trip copy, in the rolled one (cq-9kcq) the trip's site chosen by trip index, j == K - 1
-        # (rolled: accepted by §6 at 31bbc2ec, checker bead cq-2pdir)
+        # (rolled: accepted by §6 at 31bbc2ec, rejected since checker bead cq-2pdir: run.py names the register per execution)
         ("h", "other_register", lambda b: other_register(b), None),
         # every trip copy's measurement moved above its classical br, so it runs also where (c & 1) is 0
         ("h", "hoist_trips", r"(  br i1 %[\w.]+, label %[\w.]+, label %[\w.]+\n\n[\w.]+:[^\n]*\n)"

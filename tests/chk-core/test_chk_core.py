@@ -1267,6 +1267,37 @@ class ExitRoles(unittest.TestCase):
         self.assertEqual(out.count("call void @cqd_out_ctl_measure(i32 %v)"), 1)
         self.assertLess(out.index("cqd_out_ctl_measure"), out.index("define i32 @p_t("))
 
+    # cq-2pdir: me_cbr's other_register mutant in the rolled form (CQ_K_ROLLED=1): the trip's one site measures a copy of
+    # select(j == 3, v_j, w), v_j the carried header phi (its advance a three-rail select back to it), w loop-invariant
+    ROLLED = ("define i32 @h(i32 %w, i32 %v0, i32 %a) {\nbb:\n  br label %H\nH:\n"
+              "  %j = phi i32 [ 0, %bb ], [ %j1, %H ]\n  %v = phi i32 [ %v0, %bb ], [ %vn, %H ]\n"
+              "  %t = call i32 @cqrt_alloc_i32(i32 0)\n  %last = icmp eq i32 %j, 3\n"
+              "  %reg = select i1 %last, i32 %v, i32 %w\n  call void @cqrt_copy_i32(i32 %reg, i32 %t)\n"
+              "  %m = call i32 @cqrt_measure_i32(i32 %t), !cq.measure !6\n"
+              "  %s = call i32 @cq_template_lshr_i32_hl(i32 %v, i32 1)\n"
+              "  %vn = call i32 @cq_template_select_i32(i32 %a, i32 %s, i32 %v)\n"
+              "  %j1 = add i32 %j, 1\n  %c = icmp ult i32 %j1, 4\n  br i1 %c, label %H, label %X\nX:\n  ret i32 0\n}\n")
+
+    def test_rolled_site_register_by_trip(self):
+        trees, choices = {}, {}
+        run.measure_site_classes(self.ROLLED, {}, trees, choices)
+        (ln, t), = trees.items()
+        self.assertEqual(t.split()[:3], ["S", str(self.ROLLED.splitlines().index("  %reg = select i1 %last, i32 %v, i32 %w")), "2"])
+        self.assertEqual(run._walk_meas_tree(t, {int(t.split()[1]): 0}), t.split()[4])   # v's register
+        self.assertEqual(run._walk_meas_tree(t, {int(t.split()[1]): 1}), t.split()[6])   # w's register
+        self.assertNotEqual(t.split()[4], t.split()[6])
+        self.assertIsNone(run._walk_meas_tree(t, {}))
+        out = run.ctl_measures_module(self.ROLLED)
+        self.assertIn("call void @cqd_out_lsel(i32", out)
+        self.assertLess(out.index("call void @cqd_out_meas_tree("), out.index("@cqrt_measure_i32(i32 %t)"))
+        # the correct form: the site copies w (or the carried v) on every trip, no classical choice, nothing logged
+        for reg in ("%w", "%v"):
+            ok = self.ROLLED.replace("cqrt_copy_i32(i32 %reg,", f"cqrt_copy_i32(i32 {reg},")
+            trees = {}
+            run.measure_site_classes(ok, {}, trees, {})
+            self.assertEqual(trees, {})
+            self.assertNotIn("cqd_out_lsel", run.ctl_measures_module(ok))
+
 
 class HostClone(unittest.TestCase):
     """cq-aou6: a declared clone whose fn the host defines (libm, also through an llvm.<fn>.f64 intrinsic
