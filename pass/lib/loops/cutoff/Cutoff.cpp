@@ -2928,7 +2928,7 @@ static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
   for (User *u : ld->users())
     if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->getIntrinsicID() == Intrinsic::umin && II->getArgOperand(1) == k)
       return II;
-  IRBuilder<> EB(ld->getNextNode());
+  IRBuilder<> EB(ld->getParent(), std::next(ld->getIterator()));   // cq-bh7xh: the entry block may still be open
   return EB.CreateBinaryIntrinsic(Intrinsic::umin, ld, k);
 }
 
