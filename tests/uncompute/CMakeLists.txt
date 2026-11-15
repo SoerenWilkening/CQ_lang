@@ -42,3 +42,10 @@ add_test(NAME uncompute.probes
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# cq-9kcq: the rolled K-loop (CQ_K_ROLLED=1, until step S14): a kept exit rail copied out before its readers in the exit block.
+add_test(NAME uncompute.probes_rolled
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --case rolled_exit_copy
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(uncompute.probes_rolled PROPERTIES ENVIRONMENT "CQ_K_ROLLED=1")

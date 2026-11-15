@@ -3528,7 +3528,15 @@ struct Uncompute::Impl {
       for (Use &u : xh->uses())
         if (auto *ui = dyn_cast<Instruction>(u.getUser()); ui && ui->getParent() && !beforeOrIn(d, ui->getParent()))
           outside.push_back(&u);
-      IRBuilder<> BXc(X->getTerminator());
+      // cq-9kcq (rolled K-loop): X may already hold readers of x lowered after the loop (the rolled loop's exit block
+      // continues into the code after it); the copy goes before the first of them, else at X's end.
+      Instruction *at = X->getTerminator();
+      for (Instruction &xi : *X)
+        if (!isa<PHINode>(xi) && is_contained(xi.operands(), xh)) {
+          at = &xi;
+          break;
+        }
+      IRBuilder<> BXc(at);
       CallInst *f = track(BXc.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, w}),
                                          {Constant::getNullValue(irTypeOf(C, w))}));
       track(BXc.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {xh, f}));
