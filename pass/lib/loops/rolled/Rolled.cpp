@@ -657,6 +657,7 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     }
   };
   Instruction *anchor = nullptr;   // a reverse instruction for the uses of the external initial rails
+  Instruction *fallbackAnchor = nullptr;
 
   // cq-h5uj: the copies of the exit values are undone first (they read the last trip's rails, a trip's merge's arms included).
   BasicBlock *copyBlock = nullptr;
@@ -733,7 +734,11 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
         uniq.push_back(mapPred(p));
     auto back = [&](BasicBlock *p) { return region.count(p) ? R[segOf.lookup(p)] : Z; };
     if (uniq.size() == 1) {
-      B.CreateBr(back(uniq[0]));
+      BranchInst *br = B.CreateBr(back(uniq[0]));
+      // cq-9kcq S11e: a region whose first segment is entered once from outside (a rolled K-loop whose trip 0 test region
+      // opened it) reaches Z from that segment's reverse: the last reverse instruction before Z.
+      if (!fallbackAnchor && !region.count(uniq[0]))
+        fallbackAnchor = br;
       continue;
     }
     BasicBlock *hd = headOf[i];
@@ -806,6 +811,8 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
       BX.CreateCondBr(ran, start, join);
     }
   }
+  if (!anchor)
+    anchor = fallbackAnchor;
   if (!anchor && !externalInits.empty())
     internalError("loops-classical: no reverse instruction reads the loop's initial rails");
   for (Value *h : externalInits)
