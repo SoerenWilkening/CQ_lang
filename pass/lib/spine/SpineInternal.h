@@ -121,6 +121,10 @@ struct Shared {
   // Rules 2, 14 (owner, cq-2z29a): a loop-carried value's rail once measured: it stays the value every template of the trip reads (its next value,
   // the exit test), and only a cq_measure of it, or of a rail computed from it, is a classical re-read (classicalRead).
   llvm::DenseSet<const llvm::Value *> carriedMeasured;
+  // cq-9kcq (CR rules 2, 14): the headers of the original K-loops lowered as one rolled trip (loops-cutoff, CQ_K_ROLLED).
+  // The rail a trip's carried value gets from the trip before is measured only where a next trip runs (the trip
+  // counter, a classical condition), so lowerMeasure measures a kept basis copy of it, as with a classical exit test.
+  llvm::DenseSet<const llvm::BasicBlock *> rolledHeaders;
   // cq-ihlt (Collapse.cpp): a rail passed to a rule 18 clone whose callee measures that formal. `call`
   // is the original call; `out` the last instruction the call's lowering emitted (the re-read goes right
   // after it), nullptr when the lowering ended at the start of `endBlock`; `arg` the original actual,
