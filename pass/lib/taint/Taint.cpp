@@ -2366,6 +2366,18 @@ void Analyzer::transferCall(CallBase &CB) {
     }
     if ((blockCT(CB.getParent()) || cur->ctl) && cur->aborts.insert(&CB).second)
       st.changed = true;   // rule 16: an abort event
+    // cq-gk1ki (rule 18): a defined noreturn callee handed a quantum argument or called under a quantum predicate is
+    // lifted like any callee with a body (its clone carries rule 16's abort form), unless, with classical arguments, it
+    // aborts on every path with nothing before (the noreturn call it ends in: spine Classify's Class::Noreturn).
+    if (!G->isDeclaration() && !hostCallee(*G)) {
+      bool q = false;
+      for (Value *A : actuals)
+        q = q || L(A).any();
+      if ((q || blockCT(CB.getParent()) || cur->ctl) && (q || !taint_detail::abortsOnEveryPath(*G))) {
+        lift(CB, G, actuals, false);
+        return;
+      }
+    }
     if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
       bool q = false;
       for (Value *A : actuals)

@@ -12,6 +12,7 @@
 // not in a _ctl clone) is Classical whatever its callee, except the CQ.h surface.
 #include "SpineInternal.h"
 #include "../bus/BusInternal.h"
+#include "../taint/DeadEnd.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
@@ -151,67 +152,6 @@ bool isFenvFunction(StringRef n) {
   return false;
 }
 
-// cq-wskg (rule 16): a function with a body that aborts on every path with nothing before: its CFG is
-// acyclic, it has no return, every `unreachable` follows a terminal noreturn call (a bodiless noreturn
-// callee other than longjmp/_longjmp/siglongjmp and setjmp, llvm.trap, llvm.ubsantrap, or a defined
-// callee of this same class), and every other instruction is side-effect free (no other call but
-// debug and lifetime intrinsics). Its call is the noreturn call it ends in: abort_i1(pred) (`static
-// void die(void) { abort(); }`). `onStack` breaks recursion (a recursive callee is not of the class).
-bool abortsOnEveryPath(const Function &G, SmallPtrSetImpl<const Function *> &onStack);
-
-bool terminalNoreturn(const CallBase &CB, SmallPtrSetImpl<const Function *> &onStack) {
-  const Function *F = dyn_cast<Function>(CB.getCalledOperand()->stripPointerCasts());
-  if (!F || CB.isInlineAsm())
-    return false;
-  if (F->isIntrinsic())
-    return F->getIntrinsicID() == Intrinsic::trap || F->getIntrinsicID() == Intrinsic::ubsantrap;
-  if (CB.hasFnAttr(Attribute::ReturnsTwice) || F->hasFnAttribute(Attribute::ReturnsTwice))
-    return false;
-  if (!hostCallee(*F))
-    return abortsOnEveryPath(*F, onStack);
-  StringRef n = F->getName();
-  if (n == "longjmp" || n == "_longjmp" || n == "siglongjmp")
-    return false;
-  return CB.doesNotReturn() || F->doesNotReturn();
-}
-
-bool abortsOnEveryPath(const Function &G, SmallPtrSetImpl<const Function *> &onStack) {
-  if (G.isDeclaration() || !onStack.insert(&G).second)
-    return false;
-  // Acyclic: no back edge on a depth-first walk from the entry.
-  SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 4> backEdges;
-  FindFunctionBackedges(G, backEdges);
-  bool ok = backEdges.empty();
-  for (const BasicBlock &BB : G) {
-    for (const Instruction &I : BB) {
-      if (!ok)
-        break;
-      if (isa<UnreachableInst>(I)) {
-        auto *c = dyn_cast_or_null<CallBase>(I.getPrevNode());
-        ok = c && terminalNoreturn(*c, onStack);
-        continue;
-      }
-      if (I.isTerminator()) {
-        ok = isa<BranchInst>(I) || isa<SwitchInst>(I);
-        continue;
-      }
-      if (auto *c = dyn_cast<CallBase>(&I)) {
-        if (isa<UnreachableInst>(c->getNextNode()))
-          continue;   // checked at the unreachable
-        if (auto *ii = dyn_cast<IntrinsicInst>(c))
-          if (isa<DbgInfoIntrinsic>(ii) || ii->getIntrinsicID() == Intrinsic::lifetime_start ||
-              ii->getIntrinsicID() == Intrinsic::lifetime_end)
-            continue;
-        ok = false;
-        continue;
-      }
-      ok = !I.mayHaveSideEffects();
-    }
-  }
-  onStack.erase(&G);
-  return ok;
-}
-
 } // namespace
 
 namespace calls {
@@ -341,29 +281,24 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     return Class::Alloc;
 
   if (!hostCallee(*F) && (CB.doesNotReturn() || F->doesNotReturn())) {
-    // cq-wskg: a defined noreturn callee (rule 16) is never lifted (taint publishes no clone for it).
-    // Built: under a quantum predicate, with no quantum or non-classical-object argument, a callee that
-    // aborts on every path with nothing before is the noreturn call it ends in, abort_i1(pred)
-    // (tape::lowerNoreturn). A classical call with classical arguments is the ordinary call (the
-    // program ends there). Everything else is unimplemented, never the original call under the
-    // predicate: a callee with effects before its exit (tape entries before abort_i1), one that may
-    // longjmp (rule 24: the escaped flag through its frame), one handed quantum data.
-    bool qMem = false;
-    for (const Use &u : CB.args())
-      qMem = qMem || nonClassicalObject(T, S, u.get());
-    if (qArg || qMem)
-      unimplemented("spine: calls::classify: a defined noreturn function called with a quantum or "
-                    "non-classical-object argument (rule 16)",
-                    &CB);
-    if (!qPred)
+    // cq-wskg, cq-gk1ki: a defined noreturn callee. A classical call with classical arguments is the ordinary call (the
+    // program ends there). Under a quantum predicate, with no quantum argument, a callee that aborts on every path with
+    // nothing before is the noreturn call it ends in, abort_i1(pred) (tape::lowerNoreturn). Any other call with a quantum
+    // argument or under a quantum predicate is rule 18's: lifted like any callee with a body (taint lifts it), its clone
+    // (_ctl under the predicate) carrying the abort form inside (rule 16; owner rulings 2026-11-14 Q1, Q7).
+    if (!qArg && !qPred) {
+      bool qMem = false;
+      for (const Use &u : CB.args())
+        qMem = qMem || nonClassicalObject(T, S, u.get());
+      if (qMem)
+        unimplemented("spine: calls::classify: a defined noreturn function called with a non-classical-object "
+                      "argument (rule 16)",
+                      &CB);
       return Class::Classical;
-    SmallPtrSet<const Function *, 8> onStack;
-    if (abortsOnEveryPath(*F, onStack))
+    }
+    if (!qArg && taint_detail::abortsOnEveryPath(*F))
       return Class::Noreturn;
-    unimplemented("spine: calls::classify: a defined noreturn function under a quantum predicate that does "
-                  "not abort on every path with nothing before (rule 16: its effects would be tape entries "
-                  "before abort_i1; rule 24: a longjmp in it escapes through its frame)",
-                  &CB);
+    return Class::Lift;
   }
 
   if (!hostCallee(*F)) {
