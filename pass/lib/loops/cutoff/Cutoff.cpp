@@ -67,6 +67,7 @@
 #include <vector>
 
 #include "Exits.h"
+#include "../rolled/Rolled.h"
 #include "cq/Aggregates.h"
 #include "cq/Bus.h"
 #include "cq/Predicate.h"
@@ -2668,8 +2669,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // carried header phi's binding and of every accumulator (an exit rail, an affine induction's offset and exit rail).
   // X has the latch as its one predecessor, so the final state is the latch's bindings. a_K is a copy of the chain's
   // last predicate into a fresh rail (alloc_i1(0) + copy_i1), the one kept (CR rule 14, owner 2026-11-15: both forms).
-  // Not yet: the region (segments, flushTrips, the reverse loop: S3b), and every shape outside this subset, which keeps
-  // the static copies with a note naming the site.
+  // The region and the reverse loop: S3b, below. Not yet: every shape outside this subset, which keeps the static copies
+  // with a note naming the site.
   auto rolledHere = [&]() -> bool {
     static const bool on = [] {
       const char *e = std::getenv("CQ_K_ROLLED");
@@ -2709,10 +2710,23 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     return true;
   };
+  // cq-9kcq S3b (step 6): the trip is the one segment of a rolled::Region (its records are the segment's Uncompute scope; the
+  // seeds of the entry are its own seed scope, released at the reverse's end Z); after the a_K copy at X, flushTrips (a rail
+  // made and last read in the trip is undone in its trip), then the exit values are read in place or copied out and the
+  // reverse loop runs at X or, deferred, after their readers (Region::wireExits, finishExits). The reverse pops the trips
+  // the come-from index replays (the header's entry edge ends it).
+  std::shared_ptr<rolled::Region> rreg;
+  unsigned rSeedScope = ~0u;
+  BasicBlock *rX = nullptr, *rHead = nullptr;
   auto rolledBody = [&](Value *q0) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
     IRBuilder<> &B = ctx.B();
     Type *i32 = Type::getInt32Ty(Cx);
+    rreg = std::make_shared<rolled::Region>(ctx, ctx.out());
+    rreg->setDiagAt(H->getTerminator());
+    BasicBlock *seedHead = B.GetInsertBlock();
+    rSeedScope = ctx.unc().openScope();
+    rreg->setOwnSeedScope(rSeedScope);
     // Every carried quantum value enters as a handle: a literal start is seeded first.
     for (PHINode *h : hphis)
       if (isQ(h) && !ctx.operand(h).handle && !qind.count(h))
@@ -2726,7 +2740,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     BasicBlock *E = B.GetInsertBlock();
     BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
     B.CreateBr(Hd);
-    B.SetInsertPoint(Hd);
+    ctx.unc().closeScope(rSeedScope);
+    ctx.unc().leaveScope(rSeedScope, seedHead);
+    rreg->startSeg(Hd);
+    rreg->addHead(Hd, E);
+    rHead = Hd;
     // (value, its phi in H, how the latch value is read)
     struct Carry {
       PHINode *phi;
@@ -2737,6 +2755,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       PHINode *p = B.CreatePHI(handle ? handleTy(Cx) : init->getType(), 2);
       p->addIncoming(init, E);
       if (handle) {
+        rreg->addExternalInit(init);
         ctx.unc().recordExternal(p, Role::UserRegister);
         ctx.unc().noteCarried(p);
       }
@@ -2782,6 +2801,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
     BasicBlock *Xb = BasicBlock::Create(Cx, "", &ctx.out());
     B.CreateCondBr(B.CreateICmpULT(j1, ConstantInt::get(i32, c)), Hd, Xb);
+    rreg->endSeg();
+    rX = Xb;
     j->addIncoming(j1, Lt);
     qp->addIncoming(qn, Lt);
     for (Carry &k : carry)
@@ -2946,6 +2967,45 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   exitPhiVals.reserve(exitPhis.size());
   for (auto &[P, h] : exitPhis)
     exitPhiVals.push_back(exitOf(h));
+  if (rreg) {
+    // cq-9kcq S3b: the rolled loop's exit (the builder at its exit block X).
+    std::vector<std::pair<const Value *, Operand>> out;
+    std::vector<RailType> outW;
+    DenseMap<const Value *, Operand *> slot;
+    auto add = [&](const Value *v, Operand &o) {
+      if (!o.handle)
+        return;
+      // A carried value no trip changes (a register rotated in place, rule 10: its header phi names its entry rail on every
+      // edge) is that rail after the loop, read in place: the reverse never touches a rail from before the loop. One the
+      // seed scope minted is the region's (wireExits keeps it as the register).
+      if (auto *ph = dyn_cast<PHINode>(o.v); ph && ph->getParent() == rHead) {
+        Value *one = nullptr;
+        bool single = true;
+        for (Value *in : ph->incoming_values())
+          if (in != ph && in != one)
+            single = single && !one, one = in;
+        if (single && one && none_of(ctx.unc().scopeRecords(rSeedScope), [&](const Record &r) { return r.forward == one; })) {
+          o = Operand{one, true};
+          return;
+        }
+      }
+      out.push_back({v, o});
+      outW.push_back(railOf(v->getType()));
+      slot[v] = &o;
+    };
+    for (size_t k = 0; k < exitRebinds.size(); ++k)
+      add(exitRebinds[k].first, exitVals[k]);
+    for (size_t k = 0; k < exitPhis.size(); ++k)
+      add(exitPhis[k].first, exitPhiVals[k]);
+    DenseSet<const Value *> keptFinal;
+    rolled::Region::ExitWiring wiring = rreg->wireExits(
+        rSeedScope, out, outW, nullptr, keptFinal, [&](const Value *v) { return !rolled::readersKeep(ctx, L, v); },
+        [&](const Value *v, Operand op) { *slot.lookup(v) = op; });
+    bool keptInPlace = rreg->hasCopyScope() && any_of(out, [&](const std::pair<const Value *, Operand> &o) {
+      return o.second.handle && wiring.ownedH.count(o.second.v) && rolled::readersKeep(ctx, L, o.first);
+    });
+    rreg->finishExits(rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg);
+  }
   for (size_t k = 0; k < exitRebinds.size(); ++k) {
     const Value *v = exitRebinds[k].first;
     // A trip-0 test (test0) that skips every trip leaves v unbound where it ended the chain (closeTests).
