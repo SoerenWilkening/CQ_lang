@@ -2439,6 +2439,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // chain end.
   std::vector<std::pair<size_t, Value *>> sixGuard;   // test index -> its "went on" flag at the current join
   SmallPtrSet<PHINode *, 8> chainPhis;                  // closeTests' phis of the chain's end
+  SmallPtrSet<Value *, 4> cutCopies;                    // a_K's copies on the received-K cut paths (closeTests)
   auto closeTests = [&](Value *q) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
     RailType i1{Kind::Int, 1};
@@ -2546,6 +2547,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         CallInst *cpy = ctx.emitCore(cp, {o.cut, f});
         ctx.unc().recordCore(cpy, cp, {Operand{o.cut, true}, Operand{f, true}}, fid);
         qSkip = f;
+        cutCopies.insert(f);
       }
       Value *stopSkip = now.stop && now.stop != o.snap.stop ? (o.snap.stop ? o.snap.stop : zero(i1)) : nullptr;
       Value *armSkip = now.armK && now.armK != o.snap.armK ? (o.snap.armK ? o.snap.armK : zero(i1)) : nullptr;
@@ -2611,7 +2613,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // variant of a library exists"; §1.4: the table clone takes "the cutoff K as a classical i32"). In a table clone the trips
   // are cut at the K it received: after the test that gives the predicate of trip n (n bodies made), n < c, a classical
   // branch on n < K_received. Where it is false no later trip is made and the test's predicate is a_K (closeTests copies it
-  // into a fresh rail on that path; it is kept like the full chain's end); where true the chain goes on as without it.
+  // into a fresh rail on that path, kept there; the full chain's end is kept only where B > K); where true the chain goes on as without it.
   // The branch is closed with the Q10 tests (closeTests), so every value read after the loop is the state where the
   // chain ended. Not built: a received K above c (= min(K, B) of the clone's own K) still runs c trips.
   bool cutMade = false;
@@ -2735,9 +2737,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.emitCore(abi::CoreSpec{abi::Core::AbortI1, i1}, {f});
     ctx.unc().setRole(fid, Role::Abort);
   } else if (keep || cutMade) {
-    // With a received-K cut a_K is kept also where c = B (min(K_received, B) may be below B); the full chain's end then
-    // reads 0 (no leak, a known basis state).
-    if (segHook && chainPhis.count(dyn_cast<PHINode>(q))) {
+    // With a received-K cut where c = B <= K (cq-dav, CR rule 27 "Cutoff": min(K_received, B) trips; rule 14: no predicate
+    // is kept where the bound is reached, 190's _b3) only a_K's copy on a cut path is kept; the full chain's end and the
+    // other tests' |0> seeds are garbage as without the cut.
+    if ((segHook || !keep) && chainPhis.count(dyn_cast<PHINode>(q))) {
       // In a classically bounded loop's trip the reverse loop mirrors each segment's records whatever merge keeps them:
       // the chain's end through the tests' joins is kept arm by arm. Each arm exists on its own path only (the chain's
       // last predicate in the innermost Run, a |0> seed or a_K's copy in each Skip), so where it exists it is a_K.
@@ -2747,7 +2750,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             keepArms(in);
           return;
         }
-        ctx.unc().setRole(ctx.unc().idOf(v), Role::KeptOverflow);
+        if (keep || cutCopies.count(v))
+          ctx.unc().setRole(ctx.unc().idOf(v), Role::KeptOverflow);
       };
       keepArms(q);
     } else {
