@@ -282,6 +282,14 @@ add_test(NAME loops-cutoff-table-k-self
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-9kcq S6 (CR §1.4 "Received K": the K of that activation in place of its own, smaller or larger; owner 2026-11-15):
+# the reproducer tk_f with a received K 6 above the callee's own 4 (tk6_f, tk6_d) and 2 below it (tk2_f), each §6-checked
+# against the one C module (the C oracle runs the callee at the K its caller passes); the own_k mutant is rejected.
+add_test(NAME loops-cutoff-table-k6
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k6.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # both write build/tests/loops-cutoff/out/table_k.*.ll
 set_tests_properties(loops-cutoff-table-k loops-cutoff-table-k-self PROPERTIES RESOURCE_LOCK loops-cutoff-table-k-out)
 # cq-lv2ba (CR rules 14, 16): a classically bounded sub-loop with an abort arm behind a classical condition of a K-trip,

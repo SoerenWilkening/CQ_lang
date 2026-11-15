@@ -170,6 +170,8 @@ public:
   // cq-9kcq (CR rule 27 "Cutoff", §1.4): in a table clone the K the clone received (its trailing classical i32), else
   // nullptr. Every K-loop of the clone, nested ones included, is cut at it (lowerLoop's kCut).
   Value *receivedK = nullptr;
+  // The loop's bound B (cutoffBound), when known: with a received K the rolled driver cuts at umin(K, B) at run time.
+  std::optional<uint64_t> bound;
   Value *stopRail() const { return stopped; }   // the last lowerLoop's XOR of its noreturn arms' flags
   // Owner ruling Q10 (CR rule 14, rule 8): the classical conjunct of the next lowerLoop's trip-0 test (its pre-header
   // guard) that its caller did not branch on, or nullptr. lowerLoop opens a test on it before trip 0 (closeTests joins
@@ -2702,8 +2704,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a noreturn arm or no live exit (S9)";
     else if (t0)
       why = "a classical conjunct of the trip-0 test, owner ruling Q10 (S5: the entry edge into the exit block)";
-    else if (receivedK)
-      why = "a received K (S6)";
     else if (c == 0)
       why = "K = 0 or B = 0 (S6)";
     else if (!L.getSubLoops().empty())
@@ -2736,7 +2736,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // the come-from index replays (the header's entry edge ends it).
   std::shared_ptr<rolled::Region> rreg;
   unsigned rSeedScope = ~0u;
-  BasicBlock *rX = nullptr, *rHead = nullptr;
+  BasicBlock *rX = nullptr, *rHead = nullptr, *rCont = nullptr;
+  bool rKeptRt = false;   // the rolled driver made a_K's copy under a run-time branch on K < B (and set its role)
   auto rolledBody = [&](Value *q0) -> Value * {
     LLVMContext &Cx = ctx.M.getContext();
     IRBuilder<> &B = ctx.B();
@@ -2756,6 +2757,27 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (auto &[h, qi] : qind)
       if (qi.exitRail && !qi.exitRail->handle)
         qi.exitRail = Operand{seedRail(qi.exitRail->v, h->getType()), true};
+    // cq-9kcq S6 (ROLLED_DESIGN.md §3 step 1; CR §1.4 "Received K", rule 27 "Cutoff"; owner 2026-11-15): the trips run
+    // to the run-time bound n = umin(Krt, B) (Krt when no bound is known), Krt the received K (a table clone's K
+    // parameter; in a function a table clone reaches, select(@__cq_k == -1, own K, @__cq_k)) in place of the own K,
+    // smaller or larger. a_K is kept where Krt < B (always where no bound is known): a classical branch at X when that
+    // is not constant. With no received K both are the constants c and keep.
+    Value *nRt = ConstantInt::get(i32, c);
+    Value *keepRt = nullptr;
+    bool keepAny = keep;
+    if (receivedK) {
+      Value *Krt = receivedK;
+      if (Krt->getType() != i32)
+        internalError("loops-cutoff: a received K that is not an i32", H->getTerminator());
+      if (bound && *bound <= 0xFFFFFFFFull) {
+        Constant *Bc = ConstantInt::get(i32, *bound);
+        nRt = B.CreateBinaryIntrinsic(Intrinsic::umin, Krt, Bc);
+        keepRt = B.CreateICmpULT(Krt, Bc);
+      } else {
+        nRt = Krt;
+      }
+      keepAny = true;
+    }
     BasicBlock *E = B.GetInsertBlock();
     BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
     B.CreateBr(Hd);
@@ -2865,7 +2887,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     rTrip = nullptr;
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
-    B.CreateCondBr(B.CreateICmpULT(j1, ConstantInt::get(i32, c)), Hd, Xb);
+    B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
     rreg->endSeg();
     rX = Xb;
     j->addIncoming(j1, Lt);
@@ -2887,15 +2909,33 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       ctx.unc().recordMerge(qx);
       qn = qx;
     }
-    if (!keep)
+    if (!keepAny)
       return qn;
+    BasicBlock *Jn = nullptr;
+    if (keepRt) {
+      // cq-9kcq S6: a_K is kept only where K < B (CR rule 14): Run makes the copy, kept; the reverse follows at Jn.
+      BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
+      BasicBlock *Skip = BasicBlock::Create(Cx, "", &ctx.out());
+      Jn = BasicBlock::Create(Cx, "", &ctx.out());
+      B.CreateCondBr(keepRt, Run, Skip);
+      BranchInst::Create(Jn, Skip);
+      ctx.unc().noteClassicalArm(Jn, Skip);
+      B.SetInsertPoint(Run);
+    }
     RailType i1{Kind::Int, 1};
     CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
     RailId fid = ctx.unc().recordSeed(f);
     abi::CoreSpec cp{abi::Core::Copy, i1};
     CallInst *cpy = ctx.emitCore(cp, {qn, f});
     ctx.unc().recordCore(cpy, cp, {Operand{qn, true}, Operand{f, true}}, fid);
-    return f;
+    if (!Jn)
+      return f;
+    ctx.unc().setRole(fid, Role::KeptOverflow);
+    B.CreateBr(Jn);
+    B.SetInsertPoint(Jn);
+    rCont = Jn;
+    rKeptRt = true;
+    return qn;
   };
 
   if (t0) {
@@ -2998,6 +3038,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.unc().recordCore(cpy, cp, {Operand{seed, true}, Operand{f, true}}, fid);
     ctx.emitCore(abi::CoreSpec{abi::Core::AbortI1, i1}, {f});
     ctx.unc().setRole(fid, Role::Abort);
+  } else if (rKeptRt) {
+    // the rolled driver kept a_K's copy where K < B (its role set there)
   } else if (keep || cutMade) {
     // With a received-K cut where c = B <= K (cq-dav, CR rule 27 "Cutoff": min(K_received, B) trips; rule 14: no predicate
     // is kept where the bound is reached, 190's _b3) only a_K's copy on a cut path is kept; the full chain's end and the
@@ -3083,7 +3125,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       return o.second.handle && !rKeptFinal.count(o.second.v) && wiring.ownedH.count(o.second.v) &&
              rolled::readersKeep(ctx, L, o.first);
     });
-    rreg->finishExits(rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg);
+    rreg->finishExits(rCont ? rCont : rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg, rX);
   }
   for (size_t k = 0; k < exitRebinds.size(); ++k) {
     const Value *v = exitRebinds[k].first;
@@ -3274,6 +3316,7 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
   Cutoff U(ctx, A);
   U.seedPred = ctx.currentPredicate();
   U.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
+  U.bound = B;
   spine::Shared &sh = spine::shared(ctx);
   Value *savedZero = sh.tripZeroRail;
   if (guardIsTripZero(*mL, A.SE))
@@ -3364,6 +3407,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   C.segHook = segHook;
   C.test0 = test0;
   C.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
+  C.bound = B;
   C.lowerLoop(*mL, seed, c, !B || *B > K, false);
   return C.stopRail();
 }
