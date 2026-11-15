@@ -44,6 +44,7 @@
 #include "cq/Abi.h"
 #include "cq/Order.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -592,6 +593,14 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   // or merged by a phi with its unrotated self, keeps h; the Ry hits a copy.
   if (u && (cyclic || mixedPhiEdges(sh, v, &T, reach)))
     return rotateCopy();
+  // cq-eglo: T inside a cycle where v is defined per trip (a header phi), v read after the cycle's exit (p2b: `do { old
+  // = x; cq_theta(&x, t); } while (...); ... old`). A copy taken at T is one rail per trip that the exit would have to
+  // carry out of the loop; the exit read h, the rotated rail, instead. The Ry hits a copy per trip and h keeps v's
+  // value on every trip (CR rule 2, f684858: pre-rotation copies per path and trip).
+  if (u && inCycle(T.getParent()))
+    for (const Instruction *r : vReaders)
+      if (r->getParent() != T.getParent() && !isPotentiallyReachable(r->getParent(), T.getParent()))
+        return rotateCopy();
   readers.append(vReaders.begin(), vReaders.end());
   // cq-drcl: the copy is emitted at T, so it is available to a reader after T only when every output
   // path to the reader passes T's output block: quantum arms are linearized, a classical branch is
