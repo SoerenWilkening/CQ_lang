@@ -6,7 +6,7 @@ Usage: run_probes.py --plugin P --opt O probes/NAME.O1.ll [...]. For each probe 
   - no CQ.h surface call is left in an entry;
   - every entry (each external `define` in NAME.c) is §6-equal to its own C program (`python3 -m cqcheck user`,
     the C oracle) within a time limit.
-The count options (--measures, --measures-in, --br-in, --calls-in) count executions with no received K, read from the
+The count options (--measures, --measures-in, --br-in, --test-br-in, --calls-in) count executions with no received K, read from the
 lowered CFG (ktrips.py, cq-9kcq), so they hold the same for a K-loop's K static copies and for its rolled form (one
 trip run K times by a classical trip counter).
 Outputs go to build/tests/loops-cutoff/out/.
@@ -206,6 +206,17 @@ def measures(fn_body: str):
     return ktrips.runs(fn_body, r"call [^@]*@cqrt_measure_", invariant_once=True)
 
 
+def test_brs(fn_body: str):
+    """The executions of a conditional br on an `icmp` the function computes (a classical condition, CR rule 8), with no
+    received K (ktrips.runs): the trip counter's own br and its test before trip 0 are not counted, nor a br on a phi of
+    flags (the copied form's uncompute dispatch). Owner ruling Q10: a K-loop's classical exit conjunct is such a br at
+    each of its tests, in the copied form (a test per copy) and the rolled one (one test run once per trip) alike."""
+    conds = [v for v, rhs in ktrips.defs(fn_body).items() if rhs.startswith("icmp ")]
+    if not conds:
+        return 0
+    return ktrips.runs(fn_body, r"^  br i1 (?:" + "|".join(map(re.escape, conds)) + r"),", skip_latches=True)
+
+
 def entries(o1: str):
     return [m.group(1) for m in re.finditer(r"^define (?!internal|private)[^\n]*@(\w+)\(", o1, re.M)
             if "noinline" not in m.group(0)]
@@ -246,6 +257,11 @@ def one(a, probe: Path) -> int:
             got = ktrips.runs(body(mod, fn), r"^  br i1 ", skip_latches=True)
             if got is None or got < int(n):
                 why.append(f"{got} conditional br runs in @{fn}, fewer than {n}")
+        for spec in a.test_br_in or []:
+            fn, n = spec.split("=")
+            got = test_brs(body(mod, fn))
+            if got != int(n):
+                why.append(f"{got} runs of a br on a classical icmp in @{fn}, not {n}")
         for spec in a.calls_in or []:
             fn, callee, n = spec.split("=")
             got = ktrips.runs(body(mod, fn), r"call [^@\n]*@" + re.escape(callee) + r"\(")
@@ -280,6 +296,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=240, help="seconds for one entry's §6 check")
     ap.add_argument("--br-in", action="append", help="NAME=N: function NAME must run at least N conditional br, a K-loop's trips "
                     "counted, its trip counter's own br not (cq-jws5r)")
+    ap.add_argument("--test-br-in", action="append", help="NAME=N: the runs of a conditional br on an icmp of function NAME, "
+                    "exactly N, a K-loop's trips counted, its trip counter's own br not (owner ruling Q10)")
     ap.add_argument("--calls-in", action="append", help="NAME=CALLEE=N: the runs of a call of CALLEE in function NAME, a K-loop's "
                     "trips counted")
     ap.add_argument("--c-side", action="append",

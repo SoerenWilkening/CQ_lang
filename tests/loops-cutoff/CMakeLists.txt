@@ -211,10 +211,12 @@ add_test(NAME loops-cutoff-trip-factor
 # cq-kbygn exit-test part (owner ruling Q10; CR rule 14): the classical conjunct of a K-loop's exit test is a `br` at each
 # of the K tests (the chain ends where it is false, no later trip), for `while (c && q)`, `do ... while (c && q)` and a c
 # that changes in the loop. Each entry §6-checked against its C program; the mutant without test 0's br is rejected.
+# --test-br-in: the conjunct's br runs once per test, exactly, in the copied and the rolled form: K + 1 = 5 tests for the
+# loops tested at the top (a_0 to a_K: before trip 0 and after each trip), K = 4 for the do-while (a_0 is the seed).
 add_test(NAME loops-cutoff-exit-conjunct
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
-          --br-in ec_while=8 --br-in ec_do=8 --br-in ec_vary=8
+          --test-br-in ec_while=5 --test-br-in ec_do=4 --test-br-in ec_vary=5
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_conjunct.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq with owner rulings Q2 and Q3 of 2026-11-14 (CR 1.4 "Received K", rule 27 "Cutoff", rule 6): @__cq_k carries the
