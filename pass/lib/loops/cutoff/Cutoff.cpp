@@ -889,6 +889,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     SmallVector<Operand, 2> accs;
   };
   std::vector<CPhi> cphis;
+  bool cphiEarlier = false;   // cq-9kcq S8: some phi of C was bound by an earlier unit (rolledHere)
   // A value of the unit read after it other than by a phi of C: its exit value, a rail that takes this
   // trip's value where the trip leaves the loop (acc' = select(q_j & X_j, v_j, acc), X_j the trip's
   // exit edges). SSA dominance makes v defined on every path to the reader, so where the reader runs
@@ -934,6 +935,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Pred cH = pH.classicalFactor(ctx.T, ctx.S);
       std::vector<std::pair<Pred, Operand>> outside;
       bool earlier = ctx.bound(&P);
+      cphiEarlier |= earlier;
       // A loop of an earlier unit's tail runs under the assumption of its header's paths, and an incoming that skips the loop
       // (stpcpy: a pre-header guard where the first word already holds the zero) lies outside it. That edge is read under the
       // assumption's classical part only: the classical facts of the tail's paths, not the quantum branches into the header.
@@ -2701,11 +2703,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           }
           if (any_of(I.uses(), [&](const Use &U) {
+                // a phi of the body reads it there (on its edge from the region); a header phi on its latch's edge
                 auto *ui = cast<Instruction>(U.getUser());
-                const BasicBlock *ub = ui->getParent();
-                if (auto *phi = dyn_cast<PHINode>(ui))
-                  ub = phi->getIncomingBlock(U);
-                return !region.count(ub);
+                if (!region.count(ui->getParent()))
+                  return true;
+                auto *phi = dyn_cast<PHINode>(ui);
+                return phi && !region.count(phi->getIncomingBlock(U));
               }))
             regionOut.push_back(&I);
         }
@@ -2721,10 +2724,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a nested K-loop (S10)";
     else if (segHook)
       why = "a K-loop in a classically bounded loop's trip (S11)";
-    else if (latches.size() != 1)
-      why = "several latches (S8)";
-    else if (multi || !xaccs.empty() || !cphis.empty())
-      why = "a multi-exit loop (S8)";
+    else if (any_of(U.arm, [&](BasicBlock *b) {
+               Loop *l = A.LI.getLoopFor(b);
+               return l && !l->contains(H);
+             }))
+      why = "a loop of the exit arm (S10, S11)";
+    else if (cphiEarlier)
+      // join_units (cq-9kcq S8): the walker's join of the earlier unit's arms reads them at the rolled header, a join whose
+      // entry path never ran their blocks (pred's JoinRepair, Flags.cpp joinAbove)
+      why = "a continuation phi an earlier loop unit bound (two units into one join)";
+    else if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
+      why = "an aggregate value of the loop read after it";
     else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
       why = "a noreturn arm or no live exit (S9)";
     else if (!L.getSubLoops().empty())
@@ -2970,6 +2980,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                        },
                        [&, I, hd = o.handle](Value *v) { set(I, Operand{v, hd}); }, o.handle});
     }
+    // cq-9kcq S8: the multi-exit form's accumulators (a phi of the continuation, a value of the unit read after it) take
+    // the trip's value where it exits: carried in phis of H as the exit rails are.
+    for (size_t i = 0; i < cphis.size(); ++i) {
+      Value *in = cphis[i].acc.v;
+      PHINode *p = phiFor(in, true);
+      cphis[i].acc = Operand{p, true};
+      carry.push_back({p, in, [&, i]() -> Value * { return cphis[i].acc.v; },
+                       [&, i](Value *v) { cphis[i].acc = Operand{v, true}; }, true});
+    }
+    for (size_t i = 0; i < xaccs.size(); ++i) {
+      Value *in = xaccs[i].acc[0].v;
+      PHINode *p = phiFor(in, true);
+      xaccs[i].acc[0] = Operand{p, true};
+      carry.push_back({p, in, [&, i]() -> Value * { return xaccs[i].acc[0].v; },
+                       [&, i](Value *v) { xaccs[i].acc[0] = Operand{v, true}; }, true});
+    }
     // The classical reachability the evaluation before the loop computed reads its values; the trip reads the phis.
     creach.clear();
     Value *qc = qp;
@@ -2984,111 +3010,138 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerBlocks(qc, inBody);
     else
       lowerBlocks(qc, all);
+    // cq-9kcq S8: the exit arm runs in the trip under the trip's exit flags; the accumulators take its values.
+    if (multi)
+      capture(qc, regionForm ? std::function<bool(const BasicBlock *)>(inBody) : std::function<bool(const BasicBlock *)>(all));
     if (!Xb)
       Xb = BasicBlock::Create(Cx, "", &ctx.out());
-    // The test that ends the trip: the latch's (body form; the state advances after its operands are read) or the header
-    // test region's, lowered after the advance (region form).
-    const Pred &go = regionForm ? regionCont : cont;
-    const Instruction *tat = regionForm ? at : latch->getTerminator();
-    std::function<void()> between = [&] { advance(qc); };
-    if (regionForm) {
-      advance(qc);
-      Value *qr = qc;
-      lowerBlocks(qr, inRegion);
-      if (qr != qc)
-        internalError("loops-cutoff: the header test region changed the trip predicate in the rolled trip", at);
-      between = [] {};
+    // The tests of the trip and the exit edges into X (cq-9kcq S5, S7, S8). Each edge carries the state X reads on it: the
+    // zero-trip guard's (E) the entry values and q0; a classical exit conjunct's Skip (owner ruling Q10, CR rule 14: `br C,
+    // Run, Skip` after the trip's state advanced; Skip mints a_{j+1} as a |0> seed) the state at that test; the counter's the
+    // state where the trip count is reached, and a_K. X's phi `ix` names the edge taken and the reverse starts at that edge's
+    // segment (Region's exitIndex).
+    struct XEdge {
+      BasicBlock *from;
+      std::vector<Value *> state;   // per carry
+      Value *q;
+    };
+    std::vector<XEdge> xe;
+    if (zeroGuard) {
+      std::vector<Value *> st;
+      for (Carry &k : carry)
+        st.push_back(k.init);
+      xe.push_back({E, st, q0});
     }
-    // cq-9kcq S5 (owner ruling Q10, CR rule 14): the exit test's classical conjunct C is a classical exit edge of the
-    // rolled loop: after the trip's state advances, `br C, Run, Skip`; Skip mints a_{j+1} as a |0> seed and goes to the exit
-    // block X (a segment of its own, mirrored by the reverse); Run makes a_{j+1} = a_j & Q and goes on to the latch. X's phi
-    // `exit` names the edge taken, and the reverse starts at that edge's segment (Region's exitIndex).
-    BasicBlock *skipB = nullptr;
-    Value *qSkip = nullptr;
-    Value *qn;
-    if (Pred Cc = go.isBottom() ? Pred::top() : go.classicalFactor(ctx.T, ctx.S); Cc.isTop()) {
-      qn = chainTest(qc, go, tat, between);
-    } else {
+    auto snap = [&]() {
+      std::vector<Value *> st;
+      for (Carry &k : carry)
+        st.push_back(k.now());
+      return st;
+    };
+    // One test of the chain: go is the predicate of going on; `between` runs after its operands are read (the advance).
+    auto test = [&](Value *qin, const Pred &go, const Instruction *tat, const std::function<void()> &between) -> Value * {
+      Pred Cc = go.isBottom() ? Pred::top() : go.classicalFactor(ctx.T, ctx.S);
+      if (Cc.isTop())
+        return chainTest(qin, go, tat, between);
       Pred Q = go.quantumPart(ctx.T, ctx.S);
       Value *g = classicalValue(ctx, Cc);
       Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q);
       between();
       if (auto *k = dyn_cast<ConstantInt>(g); !(k && k->isOne())) {
+        std::vector<Value *> st = snap();
         BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
-        skipB = BasicBlock::Create(Cx, "", &ctx.out());
+        BasicBlock *skipB = BasicBlock::Create(Cx, "", &ctx.out());
         B.CreateCondBr(g, Run, skipB);
         rreg->branchSeg(skipB);
         RailType i1{Kind::Int, 1};
         CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
         ctx.unc().recordSeed(z);
-        qSkip = z;
         B.CreateBr(Xb);
+        xe.push_back({skipB, st, z});
         rreg->branchSeg(Run);
       }
-      qn = fQ ? andRail(qc, fQ) : qc;
+      return fQ ? andRail(qin, fQ) : qin;
+    };
+    auto none = [] {};
+    auto adv = [&] { advance(qc); };
+    // cq-9kcq S7: two tests per trip (189: a header test region and an exit from the body): the trip is the body, the latch
+    // test, the counter test, then the region lowered again and its header test. a_K is the predicate after the K-th latch
+    // test; no (K+1)-th header test is made (CR rule 14, ruling Q15).
+    bool bodyExits = regionForm && multi && any_of(exiting, [&](BasicBlock *e) {
+                       return !region.count(e) && any_of(successors(e), liveEdge);
+                     });
+    Value *qn;
+    BasicBlock *Lt, *back;
+    Value *j1;
+    if (!regionForm || bodyExits) {
+      qn = test(qc, cont, latch->getTerminator(), adv);
+    } else {
+      advance(qc);
+      Value *qr = qc;
+      lowerBlocks(qr, inRegion);
+      if (multi)
+        capture(qr, inRegion);
+      if (qr != qc)
+        internalError("loops-cutoff: the header test region changed the trip predicate in the rolled trip", at);
+      qn = test(qc, regionCont, at, none);
+    }
+    Lt = B.GetInsertBlock();
+    j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
+    xe.push_back({Lt, snap(), qn});
+    if (!bodyExits) {
+      B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
+      back = Lt;
+    } else {
+      BasicBlock *R = BasicBlock::Create(Cx, "", &ctx.out());
+      B.CreateCondBr(B.CreateICmpULT(j1, nRt), R, Xb);
+      rreg->branchSeg(R);
+      Value *qr = qn;
+      lowerBlocks(qr, inRegion);
+      if (multi)
+        capture(qr, inRegion);
+      if (qr != qn)
+        internalError("loops-cutoff: the header test region changed the trip predicate in the rolled trip", at);
+      qn = test(qn, regionCont, at, none);
+      back = B.GetInsertBlock();
+      B.CreateBr(Hd);
     }
     segHook = nullptr;
     rTrip = nullptr;
-    BasicBlock *Lt = B.GetInsertBlock();
-    Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
-    B.CreateCondBr(B.CreateICmpULT(j1, nRt), Hd, Xb);
     rreg->endSeg();
     rX = Xb;
-    j->addIncoming(j1, Lt);
-    qp->addIncoming(qn, Lt);
-    std::vector<Value *> latchNow;
-    for (Carry &k : carry) {
-      latchNow.push_back(k.now());
-      k.phi->addIncoming(latchNow.back(), Lt);
-    }
+    j->addIncoming(j1, back);
+    qp->addIncoming(qn, back);
+    for (Carry &k : carry)
+      k.phi->addIncoming(k.now(), back);
     B.SetInsertPoint(Xb);
-    if (zeroGuard) {
-      // X is entered from E (the zero-trip guard) with the entry values as the state, from the latch with the last trip's,
-      // and from Skip (a classical exit conjunct) with the state that trip advanced to: phis of X over the edges, the exit
-      // index naming the edge (Region's exitIndex; the guard's edge reverses nothing but the entry's seeds). The chain's
-      // end is q0 on the guard's edge, a_K on the latch's, the |0> seed where the conjunct ended the chain.
-      std::vector<std::pair<BasicBlock *, unsigned>> edges{{E, 0}, {Lt, 1}};
-      if (skipB)
-        edges.push_back({skipB, 2});
-      PHINode *ix = B.CreatePHI(i32, edges.size());
-      for (auto &[b, k] : edges) {
-        ix->addIncoming(ConstantInt::get(i32, k), b);
-        rreg->addExitEdge(ix, b);
+    if (xe.size() == 1) {
+      for (size_t i = 0; i < carry.size(); ++i)
+        carry[i].put(xe[0].state[i]);
+      qn = xe[0].q;
+    } else {
+      // phis of X over the edges; a value equal on every edge (no trip changes it: a register rotated in place, rule 10) is
+      // read as it is
+      PHINode *ix = B.CreatePHI(i32, xe.size());
+      for (size_t e = 0; e < xe.size(); ++e) {
+        ix->addIncoming(ConstantInt::get(i32, e), xe[e].from);
+        rreg->addExitEdge(ix, xe[e].from);
       }
       for (size_t i = 0; i < carry.size(); ++i) {
         Carry &k = carry[i];
-        if (latchNow[i] == k.init) {
-          // no trip changes it (a register rotated in place, rule 10): its entry rail on every edge
-          k.put(k.init);
+        if (all_of(xe, [&](const XEdge &x) { return x.state[i] == xe[0].state[i]; })) {
+          k.put(xe[0].state[i]);
           continue;
         }
-        PHINode *x = B.CreatePHI(k.phi->getType(), edges.size());
-        x->addIncoming(k.init, E);
-        x->addIncoming(latchNow[i], Lt);
-        if (skipB)
-          x->addIncoming(latchNow[i], skipB);
+        PHINode *x = B.CreatePHI(k.phi->getType(), xe.size());
+        for (XEdge &x0 : xe)
+          x->addIncoming(x0.state[i], x0.from);
         if (k.handle)
           ctx.unc().recordMerge(x);
         k.put(x);
       }
-      PHINode *qx = B.CreatePHI(handleTy(Cx), edges.size());
-      qx->addIncoming(q0, E);
-      qx->addIncoming(qn, Lt);
-      if (skipB)
-        qx->addIncoming(qSkip, skipB);
-      ctx.unc().recordMerge(qx);
-      qn = qx;
-    } else if (skipB) {
-      // The carried state is the same SSA value on both edges (it advanced before the test's branch); the chain's end is
-      // a_K on the latch edge and the |0> seed where the conjunct ended the chain.
-      PHINode *ix = B.CreatePHI(i32, 2);
-      ix->addIncoming(ConstantInt::get(i32, 0), Lt);
-      ix->addIncoming(ConstantInt::get(i32, 1), skipB);
-      rreg->addExitEdge(ix, Lt);
-      rreg->addExitEdge(ix, skipB);
-      PHINode *qx = B.CreatePHI(handleTy(Cx), 2);
-      qx->addIncoming(qn, Lt);
-      qx->addIncoming(qSkip, skipB);
+      PHINode *qx = B.CreatePHI(handleTy(Cx), xe.size());
+      for (XEdge &x0 : xe)
+        qx->addIncoming(x0.q, x0.from);
       ctx.unc().recordMerge(qx);
       qn = qx;
     }
@@ -3188,6 +3241,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
       lowerBlocks(q, inRegion);
       abortArms(q, inRegion);
+      if (multi)
+        capture(q, inRegion);
       if (Pred C = regionCont.isBottom() ? Pred::top() : regionCont.classicalFactor(ctx.T, ctx.S); C.isTop()) {
         q = conj(q, regionCont, at);
       } else {
@@ -3337,6 +3392,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       add(exitPhis[k].first, exitPhiVals[k]);
     for (auto &[I, o] : regionVals)
       add(I, o);
+    // cq-9kcq S8: the multi-exit accumulators, read after the loop (bound below from the wired operands).
+    for (CPhi &cp : cphis)
+      add(cp.P, cp.acc);
+    for (XAcc &xa : xaccs)
+      if (xa.acc.size() == 1)
+        add(xa.V, xa.acc[0]);
     rolled::Region::ExitWiring wiring = rreg->wireExits(
         rSeedScope, out, outW, nullptr, rKeptFinal,
         [&](const Value *v) {

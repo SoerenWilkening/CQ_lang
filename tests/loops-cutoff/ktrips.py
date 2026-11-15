@@ -11,7 +11,13 @@ and undoes the trips in a reverse loop (exited by a switch on a popped value). W
 
     pre: %g = icmp ult i32 0, N                       (%g may be `and i1` with a classical trip-0 conjunct)
          br i1 %g, label %H, label %exit              (the same exit block as the latch's)
- N is evaluated with no received K
+With two tests per trip (cq-9kcq S7, 189: a header test region and an exit from the body) the counter's br goes on to the
+header test region R, which goes back to H: R runs after every trip but the last (N - 1 times; its blocks are the trip
+loop's `after`):
+
+    L: br i1 %c, label %R, label %exit        R: ... br label %H        (H: %j = phi i32 [ 0, %pre ], [ %j1, %R ])
+
+N is evaluated with no received K
 (@__cq_k all ones, owner ruling Q2: -1 is "none"; a table clone's K parameter, its last one, likewise), which is the
 function's own K. A cycle with neither shape is a loop of the C program (a classically bounded loop): a site in it is
 counted once per iteration of that loop, i.e. once.
@@ -100,7 +106,7 @@ def value(d, v: str, depth=0, tableK=None):
 
 def counter_loops(fn_body: str):
     """The rolled trip loops: [(blocks of the loop, header, counter phi, block of the counter's br, N or None, top,
-    block of the counter's test before trip 0 or None)]. A
+    block of the counter's test before trip 0 or None, blocks after the counter's test)]. A
     loop is the natural loop of the counter's back edge: its header (the block of the phi starting at 0) and every block
     reaching the latch without passing the header. top: the counter test is also made before trip 0, by the one block
     entering the header (a trip may not run: N, not at least 1)."""
@@ -130,10 +136,19 @@ def counter_loops(fn_body: str):
             continue
         jphi = j.group(1)
         head = where.get(jphi)
+        after = set()
+        back = lab
         if head != m.group(2):
-            continue
+            # two tests per trip: the counter phi's next value comes back from a block the counter's go-on edge reaches
+            inc = re.findall(r"\[ (\S+), %([-\w.$]+) \]", d.get(jphi, ""))
+            backs = [b for v, b in inc if v == jv]
+            if len(backs) != 1 or head is None or backs[0] == lab or head not in bl.get(backs[0], ([], []))[1]:
+                continue
+            back = backs[0]
+            if back != m.group(2) and back not in reach(bl, m.group(2)):
+                continue
         latch = lab
-        loop, todo = {head, latch}, [latch]
+        loop, todo = {head, latch, back}, [latch, back]
         while todo:
             x = todo.pop()
             if x == head:
@@ -162,7 +177,16 @@ def counter_loops(fn_body: str):
                 guard = outside[0] if top else None
         if N is not None and (N < 0 or N >= 1 << 31):
             N = None   # a table clone's K parameter read as none: its own K is not in the IR
-        out.append((loop, head, jphi, lab, N, top, guard))
+        if back != lab:
+            # the blocks after the counter's test: reached from its go-on edge without passing the header or the latch
+            after, todo = {m.group(2)}, [m.group(2)]
+            while todo:
+                x = todo.pop()
+                for y in bl.get(x, ([], []))[1]:
+                    if y in loop and y not in after and y not in (head, lab):
+                        after.add(y)
+                        todo.append(y)
+        out.append((loop, head, jphi, lab, N, top, guard, after))
     return out
 
 
@@ -189,7 +213,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
     bl, order = blocks(fn_body)
     loops = counter_loops(fn_body)
     rev = reverse_loops(fn_body)
-    latches = {lt for _, _, _, lt, _, _, _ in loops} | {g for *_, g in loops if g}
+    latches = {lt for _, _, _, lt, _, _, _, _ in loops} | {g for *_, g, _ in loops if g}
     defined_in = lambda v, loop: any(re.match(r"^\s*" + re.escape(v) + r" = ", l) for x in loop for l in bl[x][0])
     n = 0
     for lab in order:
@@ -201,7 +225,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
             if lab in rev:
                 return None
             k = 1
-            for loop, _, _, _, N, top, _ in loops:
+            for loop, _, _, _, N, top, _, after in loops:
                 if lab not in loop:
                     continue
                 if invariant_once:
@@ -210,7 +234,7 @@ def runs(fn_body: str, site: str, invariant_once=False, skip_latches=False):
                         continue
                 if N is None:
                     return None
-                k *= N if top else max(N, 1)
+                k *= (N if top else max(N, 1)) - (1 if lab in after and (N if top else max(N, 1)) else 0)
             n += k
     return n
 
@@ -310,6 +334,18 @@ def _selftest() -> int:
         if runs(other.replace("MUTANT", ""), r"@cq_template_mul_i32_hl\(") != 1:
             print("FAIL ktrips: a branch before the loop that is not its zero-trip guard read as one")
             bad += 1
+    # two tests per trip (cq-9kcq S7): the header test region after the counter's test runs N - 1 times, the trip N times;
+    # a back edge that the counter's go-on edge does not reach is no trip loop (a C program's loop: once)
+    two = _ROLLED.replace("[ %j1, %h ]", "[ %j1, %r ]").replace("[ %w, %h ]", "[ %w2, %r ]").replace(
+        "br i1 %c, label %h, label %x", "br i1 %c, label %r, label %x\n\nr:\n  %w2 = call i32 @cq_template_add_i32_hl(i32 %w, i32 1)\n  br label %h")
+    for site, want in ((r"@cq_template_mul_i32_hl\(", 4), (r"@cq_template_add_i32_hl\(", 3)):
+        if runs(two.replace("MUTANT", ""), site) != want:
+            print(f"FAIL ktrips: two tests per trip {site!r}: {runs(two.replace('MUTANT', ''), site)}, not {want}")
+            bad += 1
+    stray = two.replace("br i1 %c, label %r, label %x", "br i1 %c, label %x, label %x\n\nz:\n  br label %r")
+    if runs(stray.replace("MUTANT", ""), r"@cq_template_add_i32_hl\(") != 1:
+        print("FAIL ktrips: a back edge the counter's test does not lead to read as a trip loop")
+        bad += 1
     print("ok   ktrips" if not bad else f"FAIL ktrips: {bad}")
     return 1 if bad else 0
 
