@@ -1522,7 +1522,9 @@ site on an input where the C program does not reach it is accepted iff every con
 the C run left the path to the site is quantum under rule 2's static collapse (a quantum arm, a
 trip behind a quantum exit or break, a `_ctl` predicate); where one of them is classical, an
 argument or a statically collapsed outcome, it is a failure. An accepted extra execution is no
-event of that input, and its measured rail is a kept rail. Trip j's copy of a body `cq_measure`
+event of that input, and its measured rail is a kept rail. It is permitted, not required: a
+lowering that leaves it out and agrees on everything compared is equal under §6 (rule 14 fixes
+the form the compiler emits). Trip j's copy of a body `cq_measure`
 measures trip j's carried rail (rule 14). A function with no body (rules 16, 27) is
 modelled on both sides by one deterministic stand-in of the name and argument bits; the model is the
 checker's, not the spec's. The stand-in of a declared clone (rule 27) must have an effect that occurs
