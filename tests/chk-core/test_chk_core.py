@@ -1298,6 +1298,25 @@ class ExitRoles(unittest.TestCase):
             self.assertEqual(trees, {})
             self.assertNotIn("cqd_out_lsel", run.ctl_measures_module(ok))
 
+    # cq-0xhre (CR rule 14, cq-amtcn): a measured carried v whose next value is classical (computed from the trip's outcome)
+    # advances by select_<W>_lh(a_j, next, prev): the K copies measure one register, one site. `_ll` has no rail prev.
+    @staticmethod
+    def _lh_trips(sel: str) -> str:
+        lines = ["define i32 @f(i32 %v0, i32 %a) {", "bb:", "  %n0 = add i32 0, 0"]
+        for j in range(4):
+            lines += [f"  %t{j} = call i32 @cqrt_alloc_i32(i32 0)", f"  call void @cqrt_copy_i32(i32 %v{j}, i32 %t{j})",
+                      f"  %m{j} = call i32 @cqrt_measure_i32(i32 %t{j}), !cq.measure !6", f"  %n{j + 1} = add i32 %n{j}, %m{j}",
+                      f"  %s{j} = lshr i32 %m{j}, 1", f"  %v{j + 1} = call i32 @{sel}(i32 %a, i32 %s{j}, i32 %v{j})"]
+        return "\n".join(lines + ["  ret i32 %n4", "}"]) + "\n"
+
+    def test_carried_advance_literal_next(self):
+        self.assertEqual(len(set(run.measure_site_classes(self._lh_trips("cq_template_select_i32_lh")).values())), 1)
+        self.assertTrue(run._SELECT3.match("  %v = call i32 @cq_template_select_i64_lh(i32 %a, i64 7, i32 %p)"))
+        self.assertTrue(run._SELECT3.match("  %v = call i32 @cq_template_select_f64_lh(i32 %a, double 1.5e+00, i32 %p)"))
+        for other in ("cq_template_select_i32_ll", "cq_template_select_i32_hl", "cq_template_select_i32_lh_unc",
+                      "cq_template_select_i32_lhq"):
+            self.assertEqual(len(set(run.measure_site_classes(self._lh_trips(other)).values())), 4, other)
+
 
 class HostClone(unittest.TestCase):
     """cq-aou6: a declared clone whose fn the host defines (libm, also through an llvm.<fn>.f64 intrinsic

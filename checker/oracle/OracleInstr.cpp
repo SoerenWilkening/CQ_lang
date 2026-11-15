@@ -1748,6 +1748,14 @@ public:
                 chosen = nonZero(B, s, inc);
               }
               Value *n = merge ? railPick(B, condVals, merge, chosen) : chosen;
+              // cq-zk0aj (owner 2026-11-15, cq-amtcn; CR rule 14 at 7e54992): "A loop-carried value with a rail among its
+              // incoming values is a rail in every trip ... A test that reads the carried rail before the trip's
+              // measurement, or another unmeasured rail, is quantum." The header phi of a rail is a fresh rail each trip
+              // (over SH_OPAQUE), whatever incoming the sample took: classical only where the trip's own cq_measure of it
+              // marked it (the uses that measurement dominates read the outcome, as taint's measuredRead says), never by
+              // the earlier trip's outcome it was computed from (ex_pre: v & 4 on trip 1, v the shift of trip 0's outcome).
+              if (Loop *PL = LI.getLoopFor(BB); q(P) && PL && PL->getHeader() == BB)
+                n = B.CreateCall(h3("__cqo_sh_v"), {n, opaque(), zero()});
               sh[P] = q(P) ? railPick(B, {P}, n, zero()) : n;
             }
           }

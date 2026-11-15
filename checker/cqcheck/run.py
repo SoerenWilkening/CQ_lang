@@ -2446,11 +2446,16 @@ def _rail_tester(body: str, handle_fns: Sequence[str]):
 
 
 _MEASURE = re.compile(r"^(\s+)%[-\w.$\"]+ = call \S+ @cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
-# a select template on three rails (no literal operand) and a copy_<W> (not the _controlled form): run.measure_site_classes
-_SELECT3 = re.compile(r"^\s+(%[-\w.$\"]+) = call \S+ @cq_template_select_[a-z0-9]+\(i32 %[-\w.$\"]+, "
-                      r"i32 %[-\w.$\"]+, i32 (%[-\w.$\"]+)\)")
+# rule 14's carried advance select_<W>(a_j, next, prev) whose prev is a rail: the bare all-handle form, or `_lh` where next is
+# a literal (CR rule 14: "every carried value advances by a select on a_j", a literal next included; since cq-amtcn the next
+# value of a measured carried v is computed from the trip's outcome, classical: cq-0xhre). BACKEND_ABI §2 select shapes:
+# `hl`/`lh`/`ll` give the arms and the condition is always a handle; `_hl` and `_ll` have no rail prev and carry no register.
+# The width word is the rail type (iN, f32, f64, f80). Also a copy_<W> (not the _controlled form): run.measure_site_classes
+_SELECT_TMPL = r"@cq_template_select_(?:i\d+|f\d+)(?:_lh)?\("
+_SELECT3 = re.compile(r"^\s+(%[-\w.$\"]+) = call \S+ " + _SELECT_TMPL + r"i32 %[-\w.$\"]+, "
+                      r"(?:i32 %[-\w.$\"]+|[^%,()\s]+ [^,()\s]+), i32 (%[-\w.$\"]+)\)")
 _COPY = re.compile(r"@cqrt_copy_[a-z0-9]+\(i32 (%[-\w.$\"]+), i32 (%[-\w.$\"]+)\)")
-_SELECT_COND = re.compile(r"^\s+%[-\w.$\"]+ = call \S+ @cq_template_select_[a-z0-9]+\(i32 (%[-\w.$\"]+), ")
+_SELECT_COND = re.compile(r"^\s+%[-\w.$\"]+ = call \S+ " + _SELECT_TMPL + r"i32 (%[-\w.$\"]+), ")
 
 
 # §1.4's clone grammar without its _ctl word, read right to left: the C function a clone is the lowering of.
