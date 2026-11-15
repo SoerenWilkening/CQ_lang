@@ -45,9 +45,10 @@ MUTANTS = {
     # me_cbr (cq-v8cn7, cq-1ye9c; CR rules 2, 8, 14): a measurement behind a classical branch runs only where the
     # classical arguments take it; a trip copy is the site only if it measures the site's register.
     "me_cbr": [
-        # the last trip copy (trip 3, which no sample reaches) measures a copy of v (the rail trip 0 shifts), not w
-        ("h", "other_register", r"(?s)(lshr_i32_hl\(i32 (%[\w.]+), i32 1\).*)(call void @cqrt_copy_i32\(i32 )%[\w.]+"
-         r"(, i32 %[\w.]+\)\n  %[\w.]+ = call i32 @cqrt_measure_i32)", r"\1\3\2\4"),
+        # the last trip (trip 3, which no sample reaches) measures a copy of v (the rail the trip shifts), not w: in the
+        # copied form the last trip copy, in the rolled one (cq-9kcq) the trip's site chosen by trip index, j == K - 1
+        # (rolled: accepted by §6 at 31bbc2ec, checker bead cq-2pdir)
+        ("h", "other_register", lambda b: other_register(b), None),
         # every trip copy's measurement moved above its classical br, so it runs also where (c & 1) is 0
         ("h", "hoist_trips", r"(  br i1 %[\w.]+, label %[\w.]+, label %[\w.]+\n\n[\w.]+:[^\n]*\n)"
          r"(  %[\w.]+ = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32[^\n]*\n"
@@ -148,6 +149,21 @@ def own_k(fn_body: str, k: int):
         return fn_body
     head, rest = fn_body.split("\n", 1)
     return head + "\n" + re.sub(re.escape(p) + r"(?![-\w.$])", str(k), rest)
+
+
+def other_register(fn_body: str):
+    """me_cbr's h with its last trip's measurement on a copy of v (the operand of the trip's lshr), not of w."""
+    loops = ktrips.counter_loops(fn_body)
+    if not loops:                    # the copied form: the last copy_i32 feeding a cqrt_measure after trip 0's shift
+        return re.sub(r"(?s)(lshr_i32_hl\(i32 (%[\w.]+), i32 1\).*)(call void @cqrt_copy_i32\(i32 )%[\w.]+"
+                      r"(, i32 %[\w.]+\)\n  %[\w.]+ = call i32 @cqrt_measure_i32)", r"\1\3\2\4", fn_body, count=1)
+    _, _, j, _, n, *_ = loops[0]     # the rolled form: one site, its register a classical select on the trip counter
+    v = re.search(r"lshr_i32_hl\(i32 (%[\w.]+), i32 1\)", fn_body)
+    if n is None or not v:
+        return fn_body
+    return re.sub(r"(call void @cqrt_copy_i32\(i32 )(%[\w.]+)(, i32 %[\w.]+\)\n  %[\w.]+ = call i32 @cqrt_measure_i32)",
+                  lambda m: f"%cq.last = icmp eq i32 {j}, {n - 1}\n  %cq.reg = select i1 %cq.last, i32 {v.group(1)}, i32 "
+                  f"{m.group(2)}\n  {m.group(1)}%cq.reg{m.group(3)}", fn_body, count=1)
 
 
 def mutants(a, probe: Path, mod: str, out: Path) -> int:
