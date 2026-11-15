@@ -3079,6 +3079,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // trip runs where the loop runs); it is no carried value, and after the K trips the caller aborts on it.
     bool frozen = U.live.empty() && U.abort.empty() && !exits::hasNoreturnArm(L);
     PHINode *qp = frozen ? nullptr : phiFor(q0, true);
+    // cq-wuzt3 (rules 5, 8, 14; 55): a_0 is an arm's false-edge flag (a guard that is not trip 0 of the latch test seeds
+    // the chain; guardIsTripZero); a kept store under the chain closes its bracket in trip 0 (bus::emitKeptStore). Read by
+    // stores of this trip only (a nested K-loop's chain is its own phi); lowerCutoff restores it.
+    if (top && qp && q0 == seed && q0 != spine::shared(ctx).tripZeroRail && ctx.unc().negatedAtomOf(q0)) {
+      spine::shared(ctx).rolledZeroQ = qp;
+      spine::shared(ctx).rolledZeroJ = j;
+    }
     for (PHINode *h : hphis) {
       Operand o = ctx.operand(h);
       PHINode *p;
@@ -3996,11 +4003,13 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
   U.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
   U.bound = B;
   spine::Shared &sh = spine::shared(ctx);
-  Value *savedZero = sh.tripZeroRail;
+  Value *savedZero = sh.tripZeroRail, *savedZQ = sh.rolledZeroQ, *savedZJ = sh.rolledZeroJ;
   if (guardIsTripZero(*mL, A.SE))
     sh.tripZeroRail = seed;   // the chain's a_0 stays as the control of a kept store of trip 0 (rule 14, 91)
   U.lowerLoop(*mL, seed, c, !B || *B > K, true);
   sh.tripZeroRail = savedZero;
+  sh.rolledZeroQ = savedZQ;
+  sh.rolledZeroJ = savedZJ;
 }
 
 namespace exits {

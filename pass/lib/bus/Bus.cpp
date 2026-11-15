@@ -261,6 +261,16 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
       ctx.unc().noteUse(ctx.unc().idOf(addr.v), close);   // the address's item may read the flag: never inside the bracket
   }
   ctx.unc().noteKeptStore(call, v, c);
+  // cq-wuzt3 (rules 5, 8, 14; 55): the store reads a kept copy of the rolled trip's predicate phi (noteKeptStore, a carried
+  // phi). In trip 0 that predicate is the guard's false-edge flag, whose kept rail is the guard's atom (rule 8's X bracket,
+  // as keptControl keeps it in a static trip 0): trip 0's copy is closed by an X, xorc with the classical j == 0.
+  spine::Shared &sh = spine::shared(ctx);
+  if (c && c == sh.rolledZeroQ && sh.rolledZeroJ && call->getArgOperand(0) != c) {
+    Value *f = call->getArgOperand(0);
+    IRBuilder<> &B = ctx.B();
+    Value *first = B.CreateICmpEQ(sh.rolledZeroJ, Constant::getNullValue(sh.rolledZeroJ->getType()));
+    ctx.emitCore(abi::CoreSpec{abi::Core::Xorc, RailType{Kind::Int, 1}}, {f, first});
+  }
   ctx.unc().noteVersionChange(call);
 }
 
