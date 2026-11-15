@@ -2708,8 +2708,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "K = 0 or B = 0 (S6)";
     else if (!L.getSubLoops().empty())
       why = "a sub-loop in the trip (S10, S11)";
-    else if (classicalTerms)
-      why = "a classical branch in the trip (S3b: segments)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
     else if (any_of(hphis, [&](PHINode *h) {
@@ -2830,8 +2828,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Value *qc = qp;
     auto all = [](const BasicBlock *) { return true; };
     rTrip = rreg.get();
+    // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
+    // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
+    segHook = rreg->segHook();
     lowerBlocks(qc, all);
     Value *qn = chainTest(qc, cont, latch->getTerminator(), [&] { advance(qc); });
+    segHook = nullptr;
     rTrip = nullptr;
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
