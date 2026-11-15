@@ -110,7 +110,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
 from cqcheck.compare import HOST_EFFECTS
 from cqcheck import cachegc
@@ -346,6 +346,19 @@ void cqd_out_sel(int id, int h) {
 void cqd_out_meas_chain(int id, int chained) {
   char b[120];
   snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_chain\",\"id\":%d,\"c\":%d}", id, chained);
+  cqe_log(b);
+}
+/* cq-2pdir (rulings Q8, cq-47f8h: a rolled trip's one site measures the carried rail of each trip): a classical select or
+   join (an LLVM select or phi of handles) some measurement's register is read through: which operand it took (cqd_out_lsel),
+   and, before the measurement, the tree of such choices down to the registers (cqd_out_meas_tree) */
+void cqd_out_lsel(int id, int k) {
+  char b[120];
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"lsel\",\"id\":%d,\"k\":%d}", id, k);
+  cqe_log(b);
+}
+void cqd_out_meas_tree(const char *t) {
+  char b[1024];
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_tree\",\"t\":\"%s\"}", t);
   cqe_log(b);
 }
 static void cqd_out_regions(void) {
@@ -1150,6 +1163,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     meas_site: Optional[int] = None
     meas_chain: List[Tuple[Any, Any]] = []
     sel_z: Dict[Any, int] = {}
+    lsel_k: Dict[Any, Any] = {}
+    meas_tree: Optional[str] = None
     direct_fx: List[dict] = []
     tape_out, tape_seq, deferred_r = "", [], []
     q2: List[dict] = []
@@ -1187,6 +1202,11 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                         cur["sel_other"] = True
                     break
             meas_chain = []
+            if meas_tree is not None:   # cq-2pdir: the register this execution reads, through the classical choices taken
+                reg = _walk_meas_tree(meas_tree, lsel_k)
+                if reg is not None:
+                    cur["reg"] = reg
+                meas_tree = None
         elif ev == "ret":
             rets.append({"call": e.get("call"), "fn": e.get("fn"),
                          "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")})
@@ -1213,6 +1233,10 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                 sel_z[e.get("id")] = 0 if e.get("z") else 1
             elif e.get("table") == "meas_chain":
                 meas_chain.append((e.get("id"), e.get("c")))
+            elif e.get("table") == "lsel":
+                lsel_k[e.get("id")] = e.get("k")
+            elif e.get("table") == "meas_tree":
+                meas_tree = e.get("t")
             elif e.get("table") == "q2":           # rulings Q2: a host callee given a pointer into a QUANTUM object
                 q2.append({"name": e.get("name"), "addr": e.get("addr")})
             else:
@@ -2447,7 +2471,9 @@ def _canon(line: str, operand: str = "", result: str = "") -> str:
     return re.sub(r"%[-\w.$\"]+", name, re.sub(r", !cq\.measure !\d+", "", line))
 
 
-def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, str, bool]]]] = None) -> Dict[int, int]:
+def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, str, bool]]]] = None,
+                         trees: Optional[Dict[int, str]] = None,
+                         choices: Optional[Dict[int, Tuple[str, Any]]] = None) -> Dict[int, int]:
     """Line index of each cqrt_measure call of the lowered module -> its call-site class (cq-47f8h, owner 2026-11-07:
     measurements are identified by call site). The pass unrolls a K-loop's body, one measure call per trip (cq-9kcq);
     the copies are one site of the C program. Two calls of one function and one width are copies of one site when
@@ -2457,7 +2483,12 @@ def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, s
     shape alone does not tell which register is measured); the classes are the closure of that relation.
     `chains` (rulings Q8), when given, receives for each measurement line the three-rail selects `root` reads it through,
     in order: (line, condition operand, carried advance: its result is another three-rail select's previous operand).
-    The classes stay static; per sample the trace tells where the select may be followed (ctl_measures_module)."""
+    The classes stay static; per sample the trace tells where the select may be followed (ctl_measures_module).
+    `trees` (cq-2pdir), when given, receives for each measurement whose register is read through a classical choice (an LLVM
+    select or a join phi of handles; a loop header's carried phi, one incoming of which `root` reads back to the phi, is
+    the carried register itself, rulings Q8) the tree of those choices down to the registers, in prefix form
+    (`S <line> <n> <subtree>...`, `L <register id>`), and `choices` each such choice's line: ("s", condition) or
+    ("p", incoming block labels). The rolled trip's one site so names, per execution, the register it measures."""
     lines = text.splitlines()
     parent: Dict[int, int] = {}
 
@@ -2468,6 +2499,7 @@ def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, s
         return x
 
     fn_start = None
+    leaf_ids: Dict[Tuple[int, str], int] = {}
     bodies: List[Tuple[int, int]] = []
     for i, ln in enumerate(lines):
         if ln.startswith("define"):
@@ -2515,10 +2547,42 @@ def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, s
                     break
             return v
         keys: Dict[Tuple, int] = {}
+        def_line: Dict[str, int] = {}
+        for i in range(a, b):
+            dm = re.match(r"^\s+(%[-\w.$\"]+) = (select i1 |phi i32 )", lines[i])
+            if dm:
+                def_line[dm.group(1)] = i
+
+        def tree(v: str, at: int, seen: FrozenSet[str]) -> Tuple[str, bool]:
+            """cq-2pdir: (prefix tree, whether any classical choice is in it) of the register(s) v reads at line `at`."""
+            r = root(v, at)
+            ln = def_line.get(r)
+            if ln is not None and r not in seen:
+                rhs = lines[ln]
+                sm = re.match(r"^\s+%[-\w.$\"]+ = select i1 (\S+), i32 (\S+), i32 (\S+)", rhs)
+                if sm:
+                    ops, kind = [sm.group(2), sm.group(3)], ("s", sm.group(1))
+                else:
+                    inc = re.findall(r"\[\s*([^,\]]+?)\s*,\s*(%[-\w.$\"]+)\s*\]", rhs)
+                    ops, kind = [x for x, _ in inc], ("p", [lb for _, lb in inc])
+                    if any(root(x, ln) == r for x in ops):      # a carried header phi: the register itself
+                        ops = []
+                if ops:
+                    subs = [tree(x, ln, seen | {r}) for x in ops]
+                    if len({t for t, _ in subs}) > 1:
+                        if choices is not None:
+                            choices[ln] = kind
+                        return f"S {ln} {len(subs)} " + " ".join(t for t, _ in subs), True
+                    return subs[0]
+            return f"L {leaf_ids.setdefault((a, r), len(leaf_ids))}", False
         for i in range(a, b):
             m = _MEASURE.match(lines[i])
             if not m:
                 continue
+            if trees is not None:
+                t, chose = tree(m.group(2), i, frozenset())
+                if chose:
+                    trees[i] = t
             parent[i] = i
             w = re.search(r"@cqrt_measure_(\w+)\(", lines[i]).group(1)
             res = re.match(r"^\s+(%[-\w.$\"]+) =", lines[i]).group(1)
@@ -2539,6 +2603,34 @@ def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, s
     return {i: find(i) for i in parent}
 
 
+def _walk_meas_tree(t: str, taken: Dict[Any, Any]) -> Optional[str]:
+    """cq-2pdir: the register (`L <n>`) a measurement read, its tree (measure_site_classes `trees`, written in prefix form:
+    `S <choice id> <operands> <subtree>...`) walked by the operand each classical choice took last; None where one was not
+    seen (unknown: no register is claimed)."""
+    tok = t.split()
+    pos = 0
+
+    def walk() -> Tuple[Optional[str], bool]:
+        nonlocal pos
+        kind = tok[pos]
+        if kind == "L":
+            pos += 2
+            return tok[pos - 1], True
+        cid, n = int(tok[pos + 1]), int(tok[pos + 2])
+        pos += 3
+        k = taken.get(cid)
+        out: Optional[str] = None
+        for x in range(n):
+            r, _ = walk()
+            if x == k:
+                out = r
+        return out, True
+    try:
+        return walk()[0]
+    except (IndexError, ValueError):
+        return None
+
+
 def ctl_measures_module(text: str) -> str:
     """Rule 19: inside a _ctl clone a cq_measure is a controlled copy, measured whatever the predicate; where
     it reads 0 the predicate may be 0 and the C program never reached it (compare._meas_options). Each such
@@ -2549,9 +2641,14 @@ def ctl_measures_module(text: str) -> str:
     in_ctl = used = False
     fn = None
     chains: Dict[int, List[Tuple[int, str, bool]]] = {}
-    sites = measure_site_classes(text, chains)
+    trees: Dict[int, str] = {}
+    choices: Dict[int, Tuple[str, Any]] = {}
+    sites = measure_site_classes(text, chains, trees, choices)
     sel_cond = {ln: c for ch in chains.values() for ln, c, _ in ch}
-    for ln_i, line in enumerate(text.splitlines()):
+    lines = text.splitlines()
+    gl: List[str] = []
+    pend: List[int] = []
+    for ln_i, line in enumerate(lines):
         if line.startswith("define"):
             in_ctl = bool(re.search(r"@\S*_ctl(?:_unc)?\(", line))
             d = _DEFINE_NAME.match(line)
@@ -2566,9 +2663,23 @@ def ctl_measures_module(text: str) -> str:
             for ln, _, chained in chains.get(ln_i, ()):
                 out.append(f"{m.group(1)}call void @cqd_out_meas_chain(i32 {ln}, i32 {int(chained)})")
             out.append(f"{m.group(1)}call void @cqd_out_meas_fn(ptr @.cqd.fn.{fns.setdefault(fn, len(fns))}, i32 {sites.get(ln_i, -1)})")
+        if m and not in_ctl and ln_i in trees:
+            out.append(f"{m.group(1)}call void @cqd_out_meas_tree(ptr @.cqd.tree.{ln_i})")
+            gl.append(f'@.cqd.tree.{ln_i} = private unnamed_addr constant [{len(trees[ln_i]) + 1} x i8] c"{trees[ln_i]}\\00"')
         out.append(line)
         if ln_i in sel_cond:   # rulings Q8: the select's condition, right after it (the select line's number is its id)
             out.append(f"  call void @cqd_out_sel(i32 {ln_i}, i32 {sel_cond[ln_i]})")
+        ch = choices.get(ln_i)
+        if ch and ch[0] == "s":    # cq-2pdir: which operand a classical select took (0: the true one)
+            out.append(f"  %cq.lk.{ln_i} = select i1 {ch[1]}, i32 0, i32 1")
+            out.append(f"  call void @cqd_out_lsel(i32 {ln_i}, i32 %cq.lk.{ln_i})")
+        elif ch:                   # ... and a join: an index phi beside it, logged after the block's last phi
+            out.append(f"  %cq.lk.{ln_i} = phi i32 " + ", ".join(f"[ {x}, {b} ]" for x, b in enumerate(ch[1])))
+            pend.append(ln_i)
+        if pend and not re.match(r"^\s+%[-\w.$\"]+ = phi ", lines[ln_i + 1] if ln_i + 1 < len(lines) else ""):
+            for p in pend:
+                out.append(f"  call void @cqd_out_lsel(i32 {p}, i32 %cq.lk.{p})")
+            pend = []
     if used:
         out.append("declare void @cqd_out_ctl_measure(i32)")
     if sel_cond:
@@ -2578,6 +2689,11 @@ def ctl_measures_module(text: str) -> str:
         out.append("declare void @cqd_out_meas_fn(ptr, i32)")
         for name, i in fns.items():
             out.append(f'@.cqd.fn.{i} = private unnamed_addr constant [{len(name) + 1} x i8] c"{name}\\00"')
+    if choices:
+        out.append("declare void @cqd_out_lsel(i32, i32)")
+    if gl:
+        out.append("declare void @cqd_out_meas_tree(ptr)")
+        out += gl
     return "\n".join(out) + "\n"
 
 
