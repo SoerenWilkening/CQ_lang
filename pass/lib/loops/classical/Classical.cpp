@@ -1794,6 +1794,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     return ps;
   };
   enum class EK { Linear, Merge, Real };
+  // cq-vs1eo (CR rule 14 with rules 8, 9): a classical region nested in a quantum arm whose arms leave straight for a join
+  // that other linearized code of the trip still has to reach (`if (q) { if (c) a; else b; } else { ... }` meeting at one
+  // block). The walk rejoins the region in a block of its own (rejoin, below): its real edges into the join end there, and
+  // the open flow goes on from it. Such an edge is a linearized incoming of the join from then on, with the rejoin's fact
+  // and, per phi of the join, the rejoin's value.
+  DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, Pred> rejoinFact;
+  DenseMap<std::pair<const PHINode *, const BasicBlock *>, Operand> rejoinVal;
   auto termQ = [&](const Instruction *t) {
     if (auto *br = dyn_cast<BranchInst>(t))
       return br->isConditional() && isQ(br->getCondition());
@@ -1874,6 +1881,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     return k;
   };
   edgeKindAt = [&](const BasicBlock *u, const BasicBlock *s) {
+    if (rejoinFact.count({u, s}))
+      return EK::Linear;
     if (Loop *k = kunit(u); k && kunit(s) != k)
       return kReal(k) ? EK::Real : EK::Linear;
     if (subOf(u))
@@ -2258,7 +2267,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // its edge's quantum part (u's classical fact holds on that path). One select chain per edge, made at
   // the end of u's output block (rule 9: one select per distinct incoming, a fresh rail).
   auto mixedEdge = [&](BasicBlock *u, BasicBlock *s) {
-    auto factAt = [&](const BasicBlock *p) { return edgeFact(p, s); };
+    auto factAt = [&](const BasicBlock *p) {
+      auto r = rejoinFact.find({p, s});
+      return r != rejoinFact.end() ? r->second : edgeFact(p, s);
+    };
     const Pred uf = factAt(u);
     for (PHINode &p : s->phis()) {
       if (edgeVal.count({&p, u}) || edgeFieldsM.count({&p, u}))
@@ -2296,12 +2308,15 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (auto tp = kTailPred.find(pi); kp && tp != kTailPred.end())
           e = tp->second & ctx.preds().edge(pi, s);   // its classical atoms too: the unit's value is read where they exclude it
         const Value *v = p.getIncomingValue(i);
+        auto rj = rejoinVal.find({&p, pi});
+        if (rj != rejoinVal.end())
+          v = rj->second.v;   // the rejoin's value of the region (cq-vs1eo)
         if (auto k = find(vals, v); k != vals.end()) {
           arms[k - vals.begin()].first = arms[k - vals.begin()].first | e;
           continue;
         }
         vals.push_back(v);
-        arms.push_back({e, composite ? Operand{nullptr, false} : ctx.operand(v)});
+        arms.push_back({e, composite ? Operand{nullptr, false} : rj != rejoinVal.end() ? rj->second : ctx.operand(v)});
       }
       if (kp) {
         Pred E = Pred::bottom();
@@ -2996,6 +3011,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     SmallVector<std::pair<BasicBlock *, Value *>, 4> in;
     bool differ = false;
     for (const BasicBlock *p : fwdPreds(b)) {
+      if (rejoinFact.count({p, b}))
+        continue;   // its flow went on from the rejoin (cq-vs1eo)
       Value *v = outOf.lookup(p);
       if (!v)
         v = fallback;   // the exit of a sub-loop, whose walk had no entry here
@@ -3295,6 +3312,124 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     aOut[b] = aCur;
     stopOut[b] = stopCur;
   };
+  auto drain = [&]() {
+    for (unsigned k = 0; k < pending.size();) {
+      BasicBlock *w = pending[k];
+      if (!pendSet.count(w) || mustWait(w)) {
+        ++k;
+        continue;
+      }
+      pendSet.erase(w);
+      visit(w);
+      k = 0;
+    }
+  };
+  // cq-vs1eo (CR rule 14 with rules 8, 9): the walk waits with no open block for a linearized block w (the other quantum
+  // arm) while a classical region nested in an earlier arm has left for a join s still to walk. Where the region's real
+  // edges into s hold on every path w runs on, they end in a rejoin block R instead: R's phis join the region's values of
+  // s's phis (rule 9: a classical join of the arm's values, a phi of handles), the open flow goes on from R under the
+  // region's fact, and s takes those edges as linearized incomings carrying R's values (a mixed join, mixedEdge).
+  auto rejoin = [&]() -> bool {
+    if (cur)
+      return false;
+    BasicBlock *w = nullptr;
+    for (BasicBlock *b : pending)
+      if (pendSet.count(b)) {
+        auto [anyReal, anyLin] = entryKinds(b);
+        if (!anyReal && anyLin && none_of(fwdPreds(b), [&](const BasicBlock *p) { return pendSet.count(p) != 0; })) {
+          w = b;
+          break;
+        }
+      }
+    if (!w)
+      return false;
+    Pred need = Pred::bottom();
+    for (const BasicBlock *p : fwdPreds(w))
+      need = need | edgeFact(p, w);
+    for (BasicBlock *s : pending) {
+      if (!pendSet.count(s) || s == w)
+        continue;
+      SmallVector<BasicBlock *, 4> rs;
+      Pred f = Pred::bottom();
+      for (const BasicBlock *p : fwdPreds(s))
+        if (factOf.count(p) && !pendSet.count(p) && edgeKind(p, s) == EK::Real && edgeFrom.count({p, s}) && armed(p) &&
+            !subOf(p) && !kunit(p)) {
+          rs.push_back(const_cast<BasicBlock *>(p));
+          f = f | edgeFact(p, s);
+        }
+      if (rs.empty() || !(need & !f).isBottom())
+        continue;
+      BasicBlock *R = newBlock();
+      for (BasicBlock *p : rs)
+        edgeFrom[{p, s}]->getTerminator()->replaceSuccessorWith(ob(s), R);
+      startSeg(R);
+      curFact = f;
+      for (PHINode &P : s->phis()) {
+        const bool q = isQ(&P);
+        if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
+          noteUnbuilt("loops-classical: a composite phi of a join a classical region nested in a quantum arm rejoins", &P);
+          continue;
+        }
+        SmallVector<std::pair<BasicBlock *, Operand>, 4> in;
+        for (BasicBlock *p : rs) {
+          Operand o;
+          if (auto e = edgeVal.find({&P, p}); e != edgeVal.end())
+            o = Operand{e->second, true};
+          else
+            o = ctx.operand(P.getIncomingValueForBlock(p));
+          if (q && !o.handle) {
+            if (auto e = edgeSeed.find({&P, p}); e != edgeSeed.end())
+              o = Operand{e->second, true};
+            else
+              internalError("loops-classical: a classical incoming of a phi of handles with no edge seed", &P);
+          }
+          in.push_back({edgeFrom[{p, s}], o});
+        }
+        Operand v = in.front().second;
+        if (any_of(in, [&](const auto &x) { return x.second.v != v.v; })) {
+          PHINode *np = ctx.B().CreatePHI(q ? handleTy(ctx.M.getContext()) : P.getType(), unsigned(in.size()));
+          for (BasicBlock *pb : predecessors(R))
+            for (auto &[from, o] : in)
+              if (from == pb) {
+                np->addIncoming(o.v, pb);
+                break;
+              }
+          if (q)
+            ctx.unc().recordMerge(np);
+          v = Operand{np, q};
+        }
+        for (BasicBlock *p : rs)
+          rejoinVal[{&P, p}] = v;
+      }
+      for (BasicBlock *p : rs)
+        rejoinFact[{p, s}] = f;
+      // The trip predicate and the stop rail at R: the region's, joined as at any classical join.
+      for (auto [outOf, var] : {std::make_pair(&aOut, &aCur), std::make_pair(&stopOut, &stopCur)}) {
+        if (!*var)
+          continue;
+        SmallVector<std::pair<BasicBlock *, Value *>, 4> in;
+        for (BasicBlock *p : rs)
+          if (Value *x = outOf->lookup(p))
+            in.push_back({edgeFrom[{p, s}], x});
+        if (in.empty())
+          continue;
+        *var = in.front().second;
+        if (all_of(in, [&](const auto &x) { return x.second == in.front().second; }))
+          continue;
+        PHINode *ph = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), unsigned(in.size()));
+        for (BasicBlock *pb : predecessors(R))
+          for (auto &[from, x] : in)
+            if (from == pb) {
+              ph->addIncoming(x, pb);
+              break;
+            }
+        ctx.unc().recordMerge(ph);
+        *var = ph;
+      }
+      return true;
+    }
+    return false;
+  };
   for (BasicBlock *b : rpo) {
     if (b == header || !L.contains(b))
       continue;
@@ -3308,17 +3443,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     } else {
       visit(b);
     }
-    for (unsigned k = 0; k < pending.size();) {
-      BasicBlock *w = pending[k];
-      if (!pendSet.count(w) || mustWait(w)) {
-        ++k;
-        continue;
-      }
-      pendSet.erase(w);
-      visit(w);
-      k = 0;
-    }
+    drain();
   }
+  while (!pendSet.empty() && rejoin())
+    drain();
   if (!pendSet.empty())
     unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &*(*pendSet.begin())->begin());
   if (cur)
