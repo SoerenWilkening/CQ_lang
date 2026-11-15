@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 
 #include "cq/Predicate.h"
@@ -27,6 +28,7 @@
 
 namespace llvm { class Loop; class LoopInfo; class PHINode; class ScalarEvolution; class Value; class DominatorTree; class GlobalVariable; class Module; }
 namespace cq { class LoweringContext; }
+namespace cq::loops::rolled { class Region; }
 
 namespace cq::loops::exits {
 
@@ -114,8 +116,12 @@ llvm::GlobalVariable *receivedKGlobal(llvm::Module &M);
 // (an indirect call's, a declared clone's).
 llvm::Value *receivedKBelow(cq::LoweringContext &ctx, unsigned K);
 
+// cq-9kcq S11 (CQ_K_ROLLED): `region` is the classically bounded loop's rolled region (loops-classical's Unit) whose trip
+// holds L; under the switch L rolls inside it (its header and trip blocks segments of that region, its a_K copy kept per
+// enclosing trip), else it keeps its K static copies.
 llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed,
-                               const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0 = nullptr);
+                               const std::function<void(llvm::BasicBlock *)> &segHook, llvm::Value *test0 = nullptr,
+                               cq::loops::rolled::Region *region = nullptr);
 
 // CR rule 14 (case 1 or 3 inside a quantum-exit loop's trip, cq-h5uj): a classically bounded loop L of one
 // unrolled trip of a K-loop (a sub-loop of its body or a loop of its exit arm), lowered by loops-classical
@@ -129,6 +135,13 @@ llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Va
 // Returns the XOR of the flags of the noreturn arms of L's nest (hasNoreturnArm; nullptr when none), an exit rail: an edge
 // into such an arm is an exit edge of the K-loop too (CR rules 14, 16).
 llvm::Value *lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+
+// cq-9kcq S11 (CQ_K_ROLLED): as lowerClassicalInTrip, for a trip-local L in a rolled K-trip: L is a sub-unit of the
+// K-loop's region (the caller adds it with Region::addSub), its reverse placed in the trip by that region's flushTrips.
+// resetAt: the K-loop's output header. stop: as lowerClassicalInTrip's result.
+std::shared_ptr<cq::loops::rolled::Region> lowerClassicalSubInTrip(cq::LoweringContext &ctx, llvm::Loop &L,
+                                                                  llvm::Value *trip, llvm::BasicBlock *resetAt,
+                                                                  llvm::Value *&stop);
 
 // Has L, a loop inside L, or a loop of L's exit arm a noreturn arm?
 bool hasNoreturnArm(const llvm::Loop &L);

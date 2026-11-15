@@ -232,6 +232,14 @@ public:
     run(c);
     return stopFinal;
   }
+  // cq-9kcq S11 (CQ_K_ROLLED, ROLLED_DESIGN.md §3 step 7): as runInTrip, in a rolled K-trip: the unit is a trip-local
+  // sub-unit of the K-loop's region (nested, as 176's sub-loops of a classically bounded trip), its reverse placed in the
+  // trip by that region's flushTrips; resetAt is the K-loop's output header (where "the sub-loop ran" is false again).
+  Value *runSubInTrip(Case c, Value *trip, BasicBlock *reset) {
+    nested = true;
+    resetAt = reset;
+    return runInTrip(c, trip);
+  }
   Value *stopFinal = nullptr;   // the XOR of the arm flags of this unit, for the enclosing K-loop (nullptr: none)
 
 private:
@@ -2385,7 +2393,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (Pred hp = qp(b); !hp.isTop())
             sf = ctx.preds().flag(ctx, hp);
         if (classify(*S, ctx.T, ctx.S) == Case::QuantumExit) {
-          noteStop(exits::lowerNestedCutoff(ctx, *S, sf, segHook()));
+          noteStop(exits::lowerNestedCutoff(ctx, *S, sf, segHook(), nullptr, this));
           followBuilder();
         } else {
           noteStop(exits::lowerClassicalInTrip(ctx, *S, sf));
@@ -3054,7 +3062,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         Value *t0 = nullptr;
         if (Pred cf = cfOf(ctx.preds().block(b)); !(curFact & !cf).isBottom())
           t0 = classicalValue(ctx, cf);
-        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook(), t0));
+        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd, segHook(), t0, this));
         clearTail(sl, keepTail);
         followInsert();
         for (PHINode &P : C->phis())
@@ -3826,6 +3834,34 @@ Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
       if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
         sh.binds.erase(&p);
   return std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip);
+}
+
+std::shared_ptr<rolled::Region> lowerClassicalSubInTrip(LoweringContext &ctx, Loop &L, Value *trip, BasicBlock *resetAt,
+                                                         Value *&stop) {
+  Case c = classify(L, ctx.T, ctx.S);
+  if (c == Case::QuantumExit)
+    internalError("loops-classical: lowerClassicalSubInTrip of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
+  if (!trip)
+    internalError("loops-classical: a loop in a K-loop trip with no trip rail", L.getHeader()->getTerminator());
+  // As lowerClassicalInTrip: the phis of the unit (and the continuation phis a multi-exit case-3 unit binds) are bound anew.
+  spine::Shared &sh = spine::shared(ctx);
+  Unit SU = unitOf(L);
+  auto forget = [&](BasicBlock *b) {
+    for (PHINode &p : b->phis())
+      sh.binds.erase(&p);
+  };
+  for (BasicBlock *b : L.blocks())
+    forget(b);
+  for (BasicBlock *b : SU.arm)
+    forget(b);
+  if (c == Case::ClassicalBoundQuantumExit && SU.cont &&
+      (SU.multi() || liveExiting(L) != L.getLoopLatch() || !SU.abort.empty()))
+    for (PHINode &p : SU.cont->phis())
+      if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
+        sh.binds.erase(&p);
+  auto sub = std::make_shared<cq::loops::Unit>(ctx, L);
+  stop = sub->runSubInTrip(c, trip, resetAt);
+  return sub;
 }
 
 } // namespace exits

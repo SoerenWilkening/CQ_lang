@@ -178,10 +178,15 @@ public:
   // it like the later tests); taken by that call alone, not by the K-loops nested in its trips.
   Value *test0 = nullptr;
 
-private:
   // cq-9kcq S10 (CR rule 14: "nested inner loops keep one a_K per outer trip"): the rolled region whose trip rolledBody is
-  // lowering, or nullptr. A K-loop nested in that trip adds its header and segments to it (no region of its own).
+  // lowering, or nullptr. A K-loop nested in that trip adds its header and segments to it (no region of its own). S11: set
+  // by lowerNestedCutoff to the classically bounded loop's region whose trip holds the loop.
   rolled::Region *rolledTrip = nullptr;
+  // cq-9kcq S11: while rolledBody lowers a trip, the output header of the innermost rolled loop (a trip-local classically
+  // bounded loop of the trip is a sub-unit of rolledTrip reset there); nullptr outside a rolled trip.
+  BasicBlock *tripHead = nullptr;
+
+private:
   LoweringContext &ctx;
   Analyses &A;
   DenseSet<const Value *> mine;   // values this module has bound (bind, then rebind per trip)
@@ -1268,9 +1273,30 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto *gc = dyn_cast<ConstantInt>(g);
     if (gc && gc->isZero())
       internalError("loops-cutoff: a sub-loop lowered where the trip's classical path never reaches it", at);
+    // cq-9kcq S11 (ROLLED_DESIGN.md §3 step 7): in a rolled trip S is a sub-unit of the K-loop's region, entered from the
+    // open segment; the trip goes on in a fresh segment after it (the reverse passes the sub-unit through its come-from).
+    auto lowerSub = [&]() -> Value * {
+      if (!tripHead)
+        return exits::lowerClassicalInTrip(ctx, S, trip);
+      IRBuilder<> &B = ctx.B();
+      BasicBlock *entry = B.GetInsertBlock();
+      Function &Of = ctx.out();
+      BasicBlock *last = &Of.back();
+      Value *st = nullptr;
+      std::shared_ptr<rolled::Region> sub = exits::lowerClassicalSubInTrip(ctx, S, trip, tripHead, st);
+      std::vector<BasicBlock *> made;
+      for (auto it = std::next(last->getIterator()); it != Of.end(); ++it)
+        made.push_back(&*it);
+      BasicBlock *cont = B.GetInsertBlock();
+      BasicBlock *nx = BasicBlock::Create(ctx.M.getContext(), "", &Of);
+      B.CreateBr(nx);
+      rolledTrip->addSub(sub, entry, cont, made);
+      rolledTrip->startSeg(nx);
+      return st;
+    };
     if (gc) {
       // No classical guard: S runs wherever the trip runs.
-      stopped = exits::lowerClassicalInTrip(ctx, S, trip);
+      stopped = lowerSub();
       for (PHINode *P : cBound) {
         unitPhi.erase(P);
         boundThisTrip.insert(P);
@@ -1332,7 +1358,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (segHook)
       segHook(Run);
     ctx.B().SetInsertPoint(Run);
-    Value *subStop = exits::lowerClassicalInTrip(ctx, S, trip);
+    Value *subStop = lowerSub();
     BasicBlock *ran = ctx.B().GetInsertBlock();
     ctx.B().CreateBr(Join);
     BranchInst::Create(Join, Skip);
@@ -2730,6 +2756,59 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       for (Loop *S : l->getLoopsInPreorder())
         innerLoops.push_back(S);
   }
+  // cq-9kcq S11 (as loops-classical's Unit::tripLocal, 176): a classically bounded loop S of a trip of the innermost K-loop
+  // P around it whose quantum values read after S die within P's trip (read only by code of P's trip: no header phi of P,
+  // no call, store or return, nothing outside P), with one exiting block, no noreturn arm, no loop inside it, no quantum
+  // store and no call with an effect: a sub-unit of the rolled region, its reverse placed in the trip.
+  auto tripLocalSub = [&](Loop &S) -> bool {
+    Loop *P = S.getParentLoop();
+    if (!P || classify(*P, ctx.T, ctx.S) != Case::QuantumExit || classify(S, ctx.T, ctx.S) != Case::ClassicalBound ||
+        !S.getSubLoops().empty() || !S.getExitingBlock() || !exits::unitOf(S).abort.empty() || exits::hasNoreturnArm(S))
+      return false;
+    for (BasicBlock *b : S.blocks())
+      for (Instruction &I : *b) {
+        if (auto *si = dyn_cast<StoreInst>(&I); si && isQ(si->getValueOperand()))
+          return false;
+        if (auto *CB = dyn_cast<CallBase>(&I)) {
+          if (isa<DbgInfoIntrinsic>(CB))
+            continue;
+          calls::Class k = calls::classify(*CB, ctx.T, ctx.S);
+          if (k != calls::Class::Classical && k != calls::Class::TemplateIntrinsic && k != calls::Class::Phi)
+            return false;
+          if (k == calls::Class::Classical && CB->mayWriteToMemory())
+            return false;
+        }
+        if (!isQ(&I))
+          continue;
+        SmallVector<const Instruction *, 8> work;
+        SmallPtrSet<const Instruction *, 16> seen;
+        for (const User *u : I.users())
+          if (auto *ui = dyn_cast<Instruction>(u); ui && !S.contains(ui))
+            work.push_back(ui);
+        while (!work.empty()) {
+          const Instruction *x = work.pop_back_val();
+          if (!seen.insert(x).second)
+            continue;
+          if (!P->contains(x) || (x->getParent() == P->getHeader() && isa<PHINode>(x)) || isa<StoreInst>(x) ||
+              isa<CallBase>(x) || isa<ReturnInst>(x))
+            return false;
+          for (Loop *o : P->getSubLoops())
+            if (o != &S && o->contains(x))
+              return false;
+          // P's exit test: the chain's predicate a_j, carried, reads it (a branch inside the trip is rule 8's flag, as in
+          // loops-classical's trip-local sub-loops)
+          if (x->isTerminator()) {
+            if (P->isLoopExiting(x->getParent()))
+              return false;
+            continue;
+          }
+          for (const User *u : x->users())
+            if (auto *ui = dyn_cast<Instruction>(u))
+              work.push_back(ui);
+        }
+      }
+    return true;
+  };
   auto rolledHere = [&]() -> bool {
     static const bool on = [] {
       const char *e = std::getenv("CQ_K_ROLLED");
@@ -2750,10 +2829,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a continuation phi an earlier loop unit bound (two units into one join)";
     else if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
       why = "an aggregate value of the loop read after it";
-    else if (any_of(innerLoops, [&](Loop *S) { return classify(*S, ctx.T, ctx.S) != Case::QuantumExit; }))
-      // S10 rolls the nested K-loops and the K-loops of the exit arm; a classically bounded loop in the trip
-      // (classicalSub) is S11's
-      why = "a classically bounded sub-loop in the trip or its exit arm (S11)";
+    else if (any_of(innerLoops, [&](Loop *S) { return classify(*S, ctx.T, ctx.S) != Case::QuantumExit && !tripLocalSub(*S); }))
+      // S10 rolls the nested K-loops and the K-loops of the exit arm; S11 a trip-local classically bounded loop of a trip
+      // (a sub-unit of the region, its reverse in the trip). One whose values outlive the trip, or of the exit arm, is not.
+      why = "a classically bounded sub-loop in the trip or its exit arm whose values outlive the trip";
     else if (multi && any_of(U.arm, [&](BasicBlock *b) {
                Loop *l = A.LI.getLoopFor(b);
                return l && !l->contains(H);
@@ -3082,8 +3161,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
     rTrip = RG;
     rolled::Region *outerTrip = rolledTrip;
+    BasicBlock *outerHead = tripHead;
     std::function<void(BasicBlock *)> outerHook = segHook;
     rolledTrip = RG;
+    tripHead = Hd;
     // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
     // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
     segHook = RG->segHook();
@@ -3193,6 +3274,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     segHook = outerHook;
     rTrip = nullptr;
     rolledTrip = outerTrip;
+    tripHead = outerHead;
     if (top)
       rreg->endSeg();
     else
@@ -3533,6 +3615,67 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
              rolled::readersKeep(ctx, L, o.first);
     });
     rreg->finishExits(rCont ? rCont : rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg, rX);
+  } else if (rolled && !top) {
+    // cq-9kcq S11 (CR rules 2, 5, 14): a nested rolled K-loop's exit value is a rail of one record of its trip, made again in
+    // every trip, which the enclosing reverse mirrors per trip. A reader after the loop that keeps the rail it reads (a
+    // measurement in place, a stored value, a return: rolled::readersKeep's keepers) would keep that record in every trip
+    // (me_outer: the K-1 earlier trips' selects left as garbage). Such a value is copied at X (alloc + copy, a record of the
+    // enclosing trip's segment): the reader keeps the copy and the loop's records are undone as any other.
+    auto keeps = [&](const Value *v) {
+      SmallVector<const Value *, 4> work{v};
+      SmallPtrSet<const Value *, 8> seen{v};
+      while (!work.empty()) {
+        const Value *x = work.pop_back_val();
+        for (const User *u : x->users()) {
+          auto *ui = dyn_cast<Instruction>(u);
+          if (!ui || L.contains(ui))
+            continue;
+          if (auto *P = dyn_cast<PHINode>(ui)) {
+            if (seen.insert(P).second)
+              work.push_back(P);
+            continue;
+          }
+          if (isa<ReturnInst>(ui))
+            return true;
+          if (auto *st = dyn_cast<StoreInst>(ui); st && st->getValueOperand() == x)
+            return true;
+          if (auto *CB = dyn_cast<CallBase>(ui); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Measure &&
+                                                 !ctx.S.table && !ctx.S.ctl &&
+                                                 spine::measuredOnEveryPath(ctx, CB->getArgOperand(0)))
+            return true;
+        }
+      }
+      return false;
+    };
+    DenseMap<Value *, Value *> copyOf;
+    auto copyOut = [&](const Value *v, Operand &o) {
+      if (!o.handle || rKeptFinal.count(o.v) || !keeps(v))
+        return;
+      if (Value *c = copyOf.lookup(o.v)) {
+        o = Operand{c, true};
+        return;
+      }
+      RailType w = railOf(v->getType());
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                 {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+      RailId fid = ctx.unc().recordSeed(f);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cpy = ctx.emitCore(cp, {o.v, f});
+      ctx.unc().recordCore(cpy, cp, {o, Operand{f, true}}, fid);
+      copyOf[o.v] = f;
+      o = Operand{f, true};
+    };
+    for (size_t k = 0; k < exitRebinds.size(); ++k)
+      copyOut(exitRebinds[k].first, exitVals[k]);
+    for (size_t k = 0; k < exitPhis.size(); ++k)
+      copyOut(exitPhis[k].first, exitPhiVals[k]);
+    for (auto &[I, o] : regionVals)
+      copyOut(I, o);
+    for (CPhi &cp : cphis)
+      copyOut(cp.P, cp.acc);
+    for (XAcc &xa : xaccs)
+      if (xa.acc.size() == 1)
+        copyOut(xa.V, xa.acc[0]);
   }
   for (auto &[I, o] : regionVals)
     ctx.rebind(I, {o});
@@ -3801,7 +3944,7 @@ bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p
 
 
 Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::function<void(BasicBlock *)> &segHook,
-                         Value *test0) {
+                         Value *test0, rolled::Region *region) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
   Loop *mL = A.LI.getLoopFor(L.getHeader());
@@ -3814,6 +3957,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
   C.segHook = segHook;
+  C.rolledTrip = region;   // cq-9kcq S11: read only under CQ_K_ROLLED (rolledHere)
   C.test0 = test0;
   C.receivedK = receivedKOf(ctx, K);   // cq-9kcq: CR rule 27 "Cutoff", §1.4, owner ruling Q2
   C.bound = B;
