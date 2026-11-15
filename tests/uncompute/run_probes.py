@@ -66,7 +66,17 @@ CASES = [
     # cq-j9bvd (CR rules 9, 14): a case-3 loop with two classical exit tests cleans its pre-loop templates; the run flag's
     # walk enters the trip cycle through a single-predecessor block (was: x < i's pre-loop template leaked).
     ("loop_two_exits", "two_exits", [], "pass", []),
+    # cq-a24ig (CR rules 6, 14, 27 "Cutoff", owner ruling Q2): a by-name helper's K-loop cut at the received K; the items
+    # cleaned at the return under one run flag share the flag and one block (SIZE_BOUNDS).
+    ("kcut_items", "kc", [], "pass", []),
 ]
+
+# cq-a24ig: probe -> (regex, most occurrences in the lowered module). kcut_items at ab02e1db: 300 run phis and 152 item
+# blocks (each item of a received-K cut loop minted its own run phis over every trip copy, in a block of its own); 24 and
+# 24 with the flags shared.
+SIZE_BOUNDS = {
+    "kcut_items": [(r"(?m)^  %[\w.]+ = phi i1 ", 60), (r"(?m)^[\w.]*\.cq\.arm\d*:", 60)],
+}
 
 
 def main() -> int:
@@ -102,6 +112,9 @@ def main() -> int:
             for m in match:
                 if not re.search(m, text):
                     why.append("no match for " + m)
+            for m, most in SIZE_BOUNDS.get(probe, []):
+                if (n := len(re.findall(m, text))) > most:
+                    why.append(f"{n} matches of {m}, at most {most}")
             c = subprocess.CompletedProcess([], 0, "PASS", "") if expect == "lower" else subprocess.run(
                 [sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
                  "--entry", entry], capture_output=True, text=True, cwd=ROOT / "checker")

@@ -144,6 +144,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -162,6 +163,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/IR/ValueHandle.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/IR/Dominators.h"
@@ -641,8 +643,11 @@ struct Uncompute::Impl {
     std::vector<SmallVector<unsigned, 2>> rev;      // the blocks with an edge to each block
     DenseMap<unsigned, BitVector> to;               // per target: the blocks with a path of length >= 1 to it
     std::unique_ptr<DominatorTree> DT;
+    // cq-a24ig: flagAt's answers while the CFG stands, by the at block and the events per block (see flagAt).
+    std::map<std::vector<uintptr_t>, WeakVH> flagMemo;
     void build() {
       dirty = false;
+      flagMemo.clear();
       idx.clear();
       ord.clear();
       rev.clear();
@@ -1453,6 +1458,44 @@ struct Uncompute::Impl {
       llvm::stable_sort(kv.second, [&](unsigned x, unsigned y) {
         return evs[x].at != evs[y].at && cq::comesBefore(evs[x].at, evs[y].at);
       });
+    // cq-a24ig: the flag is a function of the path alone, decided by dflt, the events of each block in their order with
+    // their conditions, and the CFG. While the CFG stands (an active ReachCache that is not dirty), a query at a block
+    // holding no event asks what an earlier query with the same events at the same block asked: its answer is reused
+    // where it still dominates `at` (a K-loop cut by the received K has thousands of items placed at a return, each of
+    // which minted its own chain of run phis over every trip copy).
+    std::vector<uintptr_t> memoKey;
+    ReachCache *rc = activeReach();
+    if (rc && rc->F != at->getFunction())
+      rc = nullptr;
+    if (rc && !byBlock.count(at->getParent())) {
+      if (rc->dirty)
+        rc->build();
+      SmallVector<const BasicBlock *, 8> bs;
+      for (auto &kv : byBlock)
+        bs.push_back(kv.first);
+      llvm::sort(bs, [&](const BasicBlock *x, const BasicBlock *y) { return std::less<const BasicBlock *>()(x, y); });
+      memoKey.push_back(reinterpret_cast<uintptr_t>(at->getParent()));
+      memoKey.push_back(dflt);
+      for (const BasicBlock *b : bs) {
+        const SmallVector<unsigned, 2> &is = byBlock.find(b)->second;
+        memoKey.push_back(reinterpret_cast<uintptr_t>(b));
+        memoKey.push_back(is.size());
+        for (unsigned i : is) {
+          memoKey.push_back(evs[i].set);
+          memoKey.push_back(reinterpret_cast<uintptr_t>(conds[i]));
+        }
+      }
+      if (auto it = rc->flagMemo.find(memoKey); it != rc->flagMemo.end()) {
+        Value *v = it->second;
+        if (v && isa<ConstantInt>(v))
+          return v;
+        if (auto *vi = dyn_cast_or_null<Instruction>(v); vi && vi->getParent() && vi->getFunction() == at->getFunction() &&
+                                                          (vi->getParent() == at->getParent()
+                                                               ? vi != at && cq::comesBefore(vi, at)
+                                                               : dominates(vi->getParent(), at->getParent())))
+          return v;
+      }
+    }
     std::vector<PHINode *> made;
     std::vector<Instruction *> ops;   // and/xor made here
     DenseMap<BasicBlock *, Value *> startOf, endOf;
@@ -1670,6 +1713,8 @@ struct Uncompute::Impl {
         }
     }
     sweepChooses(r);
+    if (!memoKey.empty() && activeReach() == rc && !rc->dirty)
+      rc->flagMemo[memoKey] = r;
     return r;
   }
   // Choice values nothing reads (a flag that folded to a constant): erased, to a fixed point.
@@ -2655,6 +2700,21 @@ struct Uncompute::Impl {
   void wrapArmItems(Function &F) {
     if (armItems.empty())
       return;
+    // cq-a24ig: items placed one after another in one block under the same flag are one item (one block entered when
+    // the flag holds).
+    std::vector<ArmItem> joined;
+    for (ArmItem &a : armItems) {
+      if (!joined.empty()) {
+        ArmItem &p = joined.back();
+        if (p.cond == a.cond && p.last->getParent() == a.first->getParent() && p.last->getNextNode() == a.first &&
+            p.first->getParent() == p.last->getParent()) {
+          p.last = a.last;
+          continue;
+        }
+      }
+      joined.push_back(a);
+    }
+    armItems.swap(joined);
     std::vector<BasicBlock *> made;
     for (auto it = armItems.rbegin(); it != armItems.rend(); ++it) {
       BasicBlock *X = it->first->getParent();
