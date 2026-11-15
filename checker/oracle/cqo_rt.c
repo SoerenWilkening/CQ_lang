@@ -1030,9 +1030,12 @@ void __cqo_trip(const char *loop, int64_t n, int32_t kq) {
 
 /* cnt trips begun (the counter after this header run, or before entering the body of a loop that
  * tests at its header): one more than K means the exit test after the K-th body admitted trip K+1. */
-static int64_t k_recv; /* the K a table clone received (rule 19: the caller's; rule 27: its by-name callees too), 0: none */
+/* The K a table clone received (rule 19: the caller's; rule 27: its by-name callees too), -1: none. CR §1.4 "Received K",
+ * owner 2026-11-15: it is the K of that activation and of what it calls by name, in place of each function's own K,
+ * smaller or larger, 0 included (CR §0: K = 0 is legal, no trip runs). */
+static int64_t k_recv = -1;
 void __cqo_kcheck(const char *loop, int64_t cnt, int64_t K, int32_t kq) {
-    if (k_recv) K = k_recv;
+    if (k_recv >= 0) K = k_recv;
     if (kq && cnt > K) kcap(loop, K, act_path);
 }
 
@@ -1071,7 +1074,7 @@ void __cqo_rec_exit(int32_t on) {
 void __cqo_rec_down(const char *fn, int64_t K, int32_t on) {
     if (!on) return;
     if (nrecs == 0) { note("internal recursion level outside an activation"); _exit(95); }
-    if (k_recv) K = k_recv;
+    if (k_recv >= 0) K = k_recv;
     long long *d = rec_count(fn);
     if (*d >= K) kcap(recs[nrecs - 1].id, K, recs[nrecs - 1].path);
     ++*d;
@@ -1083,16 +1086,18 @@ void __cqo_rec_up(const char *fn, int32_t on) {
 }
 
 /* An indirect call (rule 19). K is the K of the caller's enclosing function, read by the table clone and what it calls by
- * name; an activation the table clone entered ends with the call. Returns what __cqo_ptr_leave puts back. */
+ * name; a caller running under a received K passes that one on (the pass: a table clone's calls pass its K parameter, a
+ * by-name callee's pass @__cq_k). The K in force is put back at the return, as the table clone restores @__cq_k; an
+ * activation the table clone entered ends with the call. Returns what __cqo_ptr_leave puts back. */
 int64_t __cqo_ptr_enter(int64_t K) {
-    int64_t saved = (k_recv << 8) | nrecs;
-    if (!k_recv) k_recv = K;
+    int64_t saved = (int64_t)((uint64_t)(k_recv + 1) << 8) | nrecs;
+    if (k_recv < 0) k_recv = K;
     return saved;
 }
 
 void __cqo_ptr_leave(int64_t saved) {
     while (nrecs > (int)(saved & 0xff)) __cqo_rec_exit(1);
-    k_recv = saved >> 8;
+    k_recv = (int64_t)((uint64_t)saved >> 8) - 1;
 }
 
 /* the step budget: loop-header executions of one sample (the setup's do not count; cq-u9al) */

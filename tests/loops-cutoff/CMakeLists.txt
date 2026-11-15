@@ -268,6 +268,17 @@ add_test(NAME loops-cutoff-table-k
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900 --c-side table_k=table_k_c.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-fy1k5 (CR §1.4 "Received K", §6 "the same cutoff as the circuit"; owner 2026-11-15): the C oracle runs a K-loop of a
+# function reached through a pointer, and of what that calls by name, at the K the caller passes (cqo_rt.c k_recv), so the
+# same entries are §6-checked against table_k.O1.ll itself (each received K 2 at most the callees' own 4); the own_k
+# mutant is rejected against the one C module.
+add_test(NAME loops-cutoff-table-k-self
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/table_k.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# both write build/tests/loops-cutoff/out/table_k.*.ll
+set_tests_properties(loops-cutoff-table-k loops-cutoff-table-k-self PROPERTIES RESOURCE_LOCK loops-cutoff-table-k-out)
 # cq-lv2ba (CR rules 14, 16): a classically bounded sub-loop with an abort arm behind a classical condition of a K-trip,
 # its counter read after it: a rail on the run path (the sub-loop's only way on is its quantum exit), a |0> seed on the
 # skip path. §6-checked against its C program.
