@@ -578,18 +578,18 @@ _K2_ALLOC = {"malloc": "__cqo_malloc_k2", "calloc": "__cqo_calloc_k2", "aligned_
 
 def _k2_line(o1_text: str, fn: str) -> Optional[int]:
     """CR §0 CQ_K2(fn, k), as the pass's loops::resolveK2 reads it (owner ruling 2026-11-15, cq-z9vt): the attribute
-    "cq-k2" cqcc bound per unit onto the definition ("0": none), else the constant __cq_k2_<fn> with llvm-link's
+    "cq-k2" cqcc bound per unit onto the definition ("none": no line), else the constant __cq_k2_<fn> with llvm-link's
     copies __cq_k2_<fn>.N, the largest k. None: no line; a constant 0 is a line (owner ruling Q2 of 2026-11-15, CR §0:
     K = 0 is legal; K2 resolves as K does)."""
     m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\((.*)$", o1_text, re.M)
     if m:
-        inline = re.search(r'"cq-k2"="(\d+)"', m.group(1))
+        inline = re.search(r'"cq-k2"="(\d+|none)"', m.group(1))
         group = re.search(r"#(\d+)", m.group(1))
         if not inline and group:
             g = re.search(r"^attributes #" + group.group(1) + r" = \{[^\n]*\}", o1_text, re.M)
-            inline = g and re.search(r'"cq-k2"="(\d+)"', g.group(0))
+            inline = g and re.search(r'"cq-k2"="(\d+|none)"', g.group(0))
         if inline:
-            return int(inline.group(1)) or None
+            return None if inline.group(1) == "none" else int(inline.group(1))
     ks = [int(v) for v in re.findall(r"^@__cq_k2_" + re.escape(fn) + r"(?:\.\d+)?\s*=[^\n]*?\bi64 (\d+)", o1_text, re.M)]
     return max(ks, default=None)
 
