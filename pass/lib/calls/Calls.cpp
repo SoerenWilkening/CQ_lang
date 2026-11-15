@@ -687,7 +687,7 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
     tmp->eraseFromParent();
   }
   // Owner ruling Q2 (CR 1.4 "Received K", rule 27 "Cutoff"): in a function a table clone reaches by name, the K received
-  // through @__cq_k is passed down, the smaller of it and the callee's own.
+  // through @__cq_k is passed down, in place of the callee's own unless it is all ones (owner 2026-11-15).
   if (Value *r = loops::exits::receivedKBelow(ctx, K))
     return r;
   return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), K);
@@ -1158,7 +1158,7 @@ Constant *sigString(Module &M, FunctionType *FT) {
 Value *enclosingK(LoweringContext &ctx) {
   if (ctx.S.table)
     return spine::shared(ctx).tableK;
-  // Owner ruling Q2: in a function a table clone reaches by name, umin(@__cq_k, its own K).
+  // Owner ruling Q2: in a function a table clone reaches by name, select(@__cq_k == -1, its own K, @__cq_k).
   if (Value *r = loops::exits::receivedKBelow(ctx, ctx.K(*ctx.S.F)))
     return r;
   return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), ctx.K(*ctx.S.F));
@@ -1187,7 +1187,7 @@ void insertActivationCounter(LoweringContext &ctx) {
   GlobalVariable *act = activationCounter(ctx.M, F.getName());
   Value *K = S.table ? static_cast<Value *>(C.getArg(C.arg_size() - 1)) : nullptr;
   // Owner ruling Q2 (CR 1.4 "Received K"; rule 27 "Cutoff": "quantum-depth recursion is cut at K"): in a function a table
-  // clone reaches by name the cut is at umin(@__cq_k, own K); the load (made for the body's K-loops or here) moves into
+  // clone reaches by name the cut is at select(@__cq_k == -1, own K, @__cq_k); the load (made for the body's K-loops or here) moves into
   // the new entry block, ahead of the counter, so it stays the one load on entry.
   if (!K)
     if (Value *r = loops::exits::receivedKBelow(ctx, ctx.K(F)))
@@ -1198,13 +1198,15 @@ void insertActivationCounter(LoweringContext &ctx) {
   IRBuilder<> B(entry);
   if (K && !S.table) {
     GlobalVariable *g = loops::exits::receivedKGlobal(ctx.M);
+    // The load and its select(ld == -1, K, ld) (owner 2026-11-15, loops-cutoff's loadedReceivedK), in body order.
     SmallVector<Instruction *, 4> hoist;
+    SmallPtrSet<const Value *, 2> lds;
     for (Instruction &I : *body)
       if (auto *l = dyn_cast<LoadInst>(&I); l && l->getPointerOperand() == g) {
+        lds.insert(l);
         hoist.push_back(l);
-        for (User *u : l->users())
-          if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->getIntrinsicID() == Intrinsic::umin && II->getParent() == body)
-            hoist.push_back(II);
+      } else if ((isa<ICmpInst>(I) || isa<SelectInst>(I)) && any_of(I.operands(), [&](const Use &o) { return lds.count(o.get()); })) {
+        hoist.push_back(&I);
       }
     for (Instruction *I : hoist)
       I->moveBefore(*entry, entry->end());

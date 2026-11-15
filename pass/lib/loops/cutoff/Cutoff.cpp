@@ -18,8 +18,8 @@
 // spelling of the same gate sequence.
 // In a table clone (cq-9kcq, CR rule 27 "Cutoff", §1.4) the trips are cut at the K the clone receives, a classical
 // branch before each trip after the first (kCut); in a function a table clone of the module reaches by name, at the
-// smaller of @__cq_k and its own K (owner ruling Q2 of 2026-11-14); a received K above the clone's own c still runs c
-// trips (the rolled form, not built).
+// received @__cq_k unless it is all ones, else its own K (owner ruling Q2 as corrected 2026-11-15); a received K above
+// the loop's own c still runs c trips (the rolled form, not built: the recorded deviation).
 //
 // Two trip shapes, by the header's test region (the C oracle's definition, cq-arch T1.2 and CR rule
 // 14 for header-tested loops 09, 37, 54, 189): the header plus the blocks it reaches through single-
@@ -59,6 +59,7 @@
 // pointer and aggregate values across the loop, the unit shapes exits::unitOf rejects.
 #include "cq/Loops.h"
 
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
@@ -2661,6 +2662,142 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.B().SetInsertPoint(Run);
   };
 
+  // cq-9kcq S3a (ROLLED_DESIGN.md §3 steps 3-5, behind the temporary switch CQ_K_ROLLED=1 until S14; owner 2026-11-15):
+  // the body form's c trips as ONE emission of the trip inside a classical loop H .. latch with a trip counter j:
+  // `j' = j + 1; br (j' < c), H, X`. H holds a phi of j, of the chain predicate q (a handle, noteCarried), of every
+  // carried header phi's binding and of every accumulator (an exit rail, an affine induction's offset and exit rail).
+  // X has the latch as its one predecessor, so the final state is the latch's bindings. a_K is a copy of the chain's
+  // last predicate into a fresh rail (alloc_i1(0) + copy_i1), the one kept (CR rule 14, owner 2026-11-15: both forms).
+  // Not yet: the region (segments, flushTrips, the reverse loop: S3b), and every shape outside this subset, which keeps
+  // the static copies with a note naming the site.
+  auto rolledHere = [&]() -> bool {
+    static const bool on = [] {
+      const char *e = std::getenv("CQ_K_ROLLED");
+      return e && StringRef(e) == "1";
+    }();
+    if (!on)
+      return false;
+    const char *why = nullptr;
+    if (!top)
+      why = "a nested K-loop (S10)";
+    else if (segHook)
+      why = "a K-loop in a classically bounded loop's trip (S11)";
+    else if (latches.size() != 1)
+      why = "several latches (S8)";
+    else if (multi || !xaccs.empty() || !cphis.empty())
+      why = "a multi-exit loop (S8)";
+    else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
+      why = "a noreturn arm or no live exit (S9)";
+    else if (!six.empty())
+      why = "rule 6 in the trip (S4)";
+    else if (t0 || !cont.classicalFactor(ctx.T, ctx.S).isTop())
+      why = "a classical conjunct of the exit test, owner ruling Q10 (S5)";
+    else if (receivedK)
+      why = "a received K (S6)";
+    else if (c == 0)
+      why = "K = 0 or B = 0 (S6)";
+    else if (!L.getSubLoops().empty())
+      why = "a sub-loop in the trip (S10, S11)";
+    else if (classicalTerms)
+      why = "a classical branch in the trip (S3b: segments)";
+    else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
+      why = "an aggregate carried value";
+    if (why) {
+      noteUnbuilt(std::string("loops-cutoff: CQ_K_ROLLED: the K-loop keeps its static copies: ") + why,
+                  H->getTerminator());
+      return false;
+    }
+    return true;
+  };
+  auto rolledBody = [&](Value *q0) -> Value * {
+    LLVMContext &Cx = ctx.M.getContext();
+    IRBuilder<> &B = ctx.B();
+    Type *i32 = Type::getInt32Ty(Cx);
+    // Every carried quantum value enters as a handle: a literal start is seeded first.
+    for (PHINode *h : hphis)
+      if (isQ(h) && !ctx.operand(h).handle && !qind.count(h))
+        set(h, Operand{seedRail(ctx.operand(h).v, h->getType()), true});
+    for (auto &[h, r] : exitRail)
+      if (!r.handle)
+        r = Operand{seedRail(r.v, h->getType()), true};
+    for (auto &[h, qi] : qind)
+      if (qi.exitRail && !qi.exitRail->handle)
+        qi.exitRail = Operand{seedRail(qi.exitRail->v, h->getType()), true};
+    BasicBlock *E = B.GetInsertBlock();
+    BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
+    B.CreateBr(Hd);
+    B.SetInsertPoint(Hd);
+    // (value, its phi in H, how the latch value is read)
+    struct Carry {
+      PHINode *phi;
+      std::function<Value *()> now;
+    };
+    std::vector<Carry> carry;
+    auto phiFor = [&](Value *init, bool handle) {
+      PHINode *p = B.CreatePHI(handle ? handleTy(Cx) : init->getType(), 2);
+      p->addIncoming(init, E);
+      if (handle) {
+        ctx.unc().recordExternal(p, Role::UserRegister);
+        ctx.unc().noteCarried(p);
+      }
+      return p;
+    };
+    PHINode *j = B.CreatePHI(i32, 2);
+    j->addIncoming(ConstantInt::get(i32, 0), E);
+    PHINode *qp = phiFor(q0, true);
+    for (PHINode *h : hphis) {
+      Operand o = ctx.operand(h);
+      PHINode *p = phiFor(o.v, o.handle);
+      set(h, Operand{p, o.handle});
+      carry.push_back({p, [&, h, hd = o.handle]() -> Value * {
+                         Operand n = ctx.operand(h);
+                         if (n.handle != hd)
+                           internalError("loops-cutoff: a carried value changes between rail and classical in the rolled trip", h);
+                         return n.v;
+                       }});
+    }
+    for (PHINode *h : hphis) {
+      if (auto it = exitRail.find(h); it != exitRail.end()) {
+        PHINode *p = phiFor(it->second.v, true);
+        it->second = Operand{p, true};
+        carry.push_back({p, [&, h]() -> Value * { return exitRail.find(h)->second.v; }});
+      }
+      if (auto it = qind.find(h); it != qind.end()) {
+        QInduction &qi = it->second;
+        PHINode *p = phiFor(qi.off, false);
+        qi.off = p;
+        carry.push_back({p, [&, h]() -> Value * { return qind.find(h)->second.off; }});
+        if (qi.exitRail) {
+          PHINode *x = phiFor(qi.exitRail->v, true);
+          qi.exitRail = Operand{x, true};
+          carry.push_back({x, [&, h]() -> Value * { return qind.find(h)->second.exitRail->v; }});
+        }
+      }
+    }
+    Value *qc = qp;
+    auto all = [](const BasicBlock *) { return true; };
+    lowerBlocks(qc, all);
+    Value *qn = chainTest(qc, cont, latch->getTerminator(), [&] { advance(qc); });
+    BasicBlock *Lt = B.GetInsertBlock();
+    Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
+    BasicBlock *Xb = BasicBlock::Create(Cx, "", &ctx.out());
+    B.CreateCondBr(B.CreateICmpULT(j1, ConstantInt::get(i32, c)), Hd, Xb);
+    j->addIncoming(j1, Lt);
+    qp->addIncoming(qn, Lt);
+    for (Carry &k : carry)
+      k.phi->addIncoming(k.now(), Lt);
+    B.SetInsertPoint(Xb);
+    if (!keep)
+      return qn;
+    RailType i1{Kind::Int, 1};
+    CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
+    RailId fid = ctx.unc().recordSeed(f);
+    abi::CoreSpec cp{abi::Core::Copy, i1};
+    CallInst *cpy = ctx.emitCore(cp, {qn, f});
+    ctx.unc().recordCore(cpy, cp, {Operand{qn, true}, Operand{f, true}}, fid);
+    return f;
+  };
+
   if (t0) {
     // The trip-0 test's classical conjunct (owner ruling Q10): where it is false the chain ends before trip 0 (a_0 a |0>
     // seed through closeTests' phi, the state its initial value) and no trip is emitted.
@@ -2718,6 +2855,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!bodyExits)
         kCut(q, j + 1);
     }
+  } else if (rolledHere()) {
+    q = rolledBody(q);
   } else {
     auto all = [](const BasicBlock *) { return true; };
     for (unsigned j = 0; j < c; ++j) {
@@ -2928,8 +3067,10 @@ static bool reachedFromTable(LoweringContext &ctx) {
   return reached.count(ctx.S.F) != 0;
 }
 
-// Owner ruling Q2: in a function a table clone can reach by name, the K its K-loops are cut at: @__cq_k loaded once on
-// entry (the first block of the function lowered), the smaller of it and the loop's own K (unsigned).
+// Owner ruling Q2 as corrected 2026-11-15 (CR §1.4 "Received K": a value other than all ones is the K of that
+// activation, in place of its own, whether smaller or larger): in a function a table clone can reach by name, the K its
+// K-loops are cut at: @__cq_k loaded once on entry (the first block of the function lowered), then
+// select(ld == -1, K, ld) with K the loop's own.
 static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
   GlobalVariable *g = exits::receivedKGlobal(ctx.M);
   Type *i32 = Type::getInt32Ty(ctx.M.getContext());
@@ -2948,11 +3089,25 @@ static Value *loadedReceivedK(LoweringContext &ctx, unsigned K) {
     ld = EB.CreateLoad(i32, g);
   }
   Constant *k = ConstantInt::get(i32, K);
+  Constant *none = ConstantInt::getAllOnesValue(i32);
+  ICmpInst *is = nullptr;
   for (User *u : ld->users())
-    if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->getIntrinsicID() == Intrinsic::umin && II->getArgOperand(1) == k)
-      return II;
-  IRBuilder<> EB(ld->getParent(), std::next(ld->getIterator()));   // cq-bh7xh: the entry block may still be open
-  return EB.CreateBinaryIntrinsic(Intrinsic::umin, ld, k);
+    if (auto *c = dyn_cast<ICmpInst>(u);
+        c && c->getPredicate() == ICmpInst::ICMP_EQ && c->getOperand(0) == ld && c->getOperand(1) == none) {
+      is = c;
+      break;
+    }
+  if (is)
+    for (User *u : is->users())
+      if (auto *S = dyn_cast<SelectInst>(u);
+          S && S->getCondition() == is && S->getTrueValue() == k && S->getFalseValue() == ld)
+        return S;
+  if (!is) {
+    IRBuilder<> EB(ld->getParent(), std::next(ld->getIterator()));   // cq-bh7xh: the entry block may still be open
+    is = cast<ICmpInst>(EB.CreateICmpEQ(ld, none));
+  }
+  IRBuilder<> EB(is->getParent(), std::next(is->getIterator()));
+  return EB.CreateSelect(is, k, ld);
 }
 
 // cq-9kcq: the K a K-loop of the function being lowered is cut at, or nullptr: a table clone's received K (its trailing
