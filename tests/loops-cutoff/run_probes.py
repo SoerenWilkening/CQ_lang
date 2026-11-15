@@ -101,9 +101,12 @@ MUTANTS = {
     ],
     # cq-9kcq with owner ruling Q2 (2026-11-14): a by-name helper of a table clone ignores @__cq_k (its own K 4 where kh_1
     # passed 2); a table clone does not restore @__cq_k at its returns, so kh_after's by-name call of h1 after the table
-    # call runs at 2 instead of its own 4.
+    # call runs at 2 instead of its own 4. helper_own_k (cq-rin8c): kh_1's rail pointer dispatches to t1's _t_ctl clone
+    # and its twin (__cq_clone_resolve variants 1 and 3), which call h1's _ctl clone and its twin; the plain h1 clone
+    # runs only under the forward table clone (kh_cls), so it is the _ctl pair that ignores the received K.
     "table_kh": [
-        ("__cq_q_h1_11@kh_1", "helper_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
+        ("__cq_q_h1_11_ctl+__cq_q_h1_11_ctl_unc@kh_1", "helper_own_k", r"load i32, ptr @__cq_k, align 4",
+         r"add i32 -1, 0"),
         ("__cq_q_t1_11_t_ctl@kh_after", "no_restore", r"  store i32 %\d+, ptr @__cq_k, align 4\n  ret", r"  ret"),
         # the helper's quantum-depth recursion, and the K a helper passes through a pointer, at its own K 4
         ("__cq_q_hr_1_ctl@kh_rec", "rec_own_k", r"load i32, ptr @__cq_k, align 4", r"add i32 -1, 0"),
