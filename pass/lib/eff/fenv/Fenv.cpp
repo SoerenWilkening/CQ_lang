@@ -127,6 +127,7 @@
 #include "cq/Abi.h"
 #include "cq/Bus.h"
 #include "cq/Calls.h"
+#include "cq/FenvCarry.h"
 #include "cq/Loops.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
@@ -524,6 +525,8 @@ struct State {
   DenseSet<const Value *> merges;     // phis and selects over handles this module recorded as merges
   // Rule 2 collapse probes (writeBack): private binding keys, one per state piece (0 FLAGS, 1 MODE).
   Instruction *probeKey[2] = {nullptr, nullptr};
+  // cq-9kcq S12b (FenvCarry.h): the keys naming the carried pieces (0 FLAGS, 1 MODE) in a loop's exit wiring.
+  Instruction *pieceKey[2] = {nullptr, nullptr};
   // Analyses of original functions (the walked one).
   std::map<const Function *, std::unique_ptr<DominatorTree>> dt;
   std::map<const Function *, std::unique_ptr<LoopInfo>> li;
@@ -2589,6 +2592,75 @@ Value *cloneExitFlags(LoweringContext &ctx, ReturnInst &ret) {
   if (!c.flags)
     return seed(ctx, st, i32(ctx, 0));
   return c.flags;
+}
+
+// cq-9kcq S12b, cq-v1fu (CR rules 14, 23): the loop hook, contract in cq/FenvCarry.h. A piece is carried when some
+// instruction of L may change it: FLAGS by a raising op, a <fenv.h> call that writes the flags, a call of a body that holds
+// or changes the environment (a clone carrying it returns the new flags, E1) or an indirect call in a function that
+// accesses the environment; MODE by an instruction that writes the mode.
+std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const Loop &L) {
+  std::vector<CarriedPiece> out;
+  const Instruction *at = L.getHeader()->getTerminator();
+  if (!at || at->getFunction() != ctx.S.F)
+    return out;
+  bool flags = false, mode = false;
+  bool envFn = accessesEnv(*ctx.S.F);
+  for (const BasicBlock *bb : L.blocks())
+    for (const Instruction &I : *bb) {
+      flags |= writesFlags(I);
+      mode |= writesMode(I);
+      auto *CB = dyn_cast<CallBase>(&I);
+      if (!CB || isa<IntrinsicInst>(CB) || CB->isInlineAsm() || fenvFn(*CB) != FenvFn::None)
+        continue;
+      if (const Function *G = CB->getCalledFunction()) {
+        SmallPtrSet<const Function *, 8> seen;
+        flags |= !hostCallee(*G) && bodyTouchesFenv(*G, seen);
+      } else {
+        flags |= envFn;
+      }
+    }
+  if (!flags && !mode)
+    return out;
+  State &st = state(ctx, *at);
+  Part p = cur(ctx, st);
+  Part q = p;
+  if (flags && !q.flags)
+    q.flags = seed(ctx, st, i32(ctx, 0));
+  if (mode && !q.mode)
+    q.mode = seed(ctx, st, classicalModeNow(ctx, st));
+  if (!q.same(p))
+    define(ctx, st, kState, q);
+  if (flags)
+    out.push_back({0, q.flags});
+  if (mode)
+    out.push_back({1, q.mode});
+  return out;
+}
+
+Value *pieceNow(LoweringContext &ctx, unsigned id) {
+  State &st = state(ctx, &ctx.M);
+  Part p = cur(ctx, st);
+  Value *h = id == 0 ? p.flags : p.mode;
+  if (!h)
+    internalError("eff-fenv: a carried piece of the floating-point environment with no rail at the builder's point");
+  return h;
+}
+
+void bindPiece(LoweringContext &ctx, unsigned id, Value *h) {
+  State &st = state(ctx, &ctx.M);
+  Part p = cur(ctx, st);
+  (id == 0 ? p.flags : p.mode) = h;
+  if (id == 1)
+    st.modeVal = nullptr;
+  define(ctx, st, kState, p);
+}
+
+const Value *pieceKey(LoweringContext &ctx, unsigned id) {
+  State &st = state(ctx, &ctx.M);
+  Instruction *&k = st.pieceKey[id & 1];
+  if (!k)
+    k = new AllocaInst(Type::getInt32Ty(C(ctx)), 0, nullptr, Align(4), "", static_cast<Instruction *>(nullptr));
+  return k;
 }
 
 } // namespace cq::fenv
