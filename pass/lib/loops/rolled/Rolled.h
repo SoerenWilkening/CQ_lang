@@ -138,6 +138,12 @@ public:
   // cq-9kcq S4: a rule-6 old rail whose clean-up follows `at` (lateR6).
   void addLateR6(RailId old, llvm::Instruction *at) { lateR6.push_back({old, at}); }
   void setDiagAt(const llvm::Instruction *at) { diagAt = at; }
+  // cq-9kcq S5: an exit edge of the loop into its exit block X from the segment block `from`; ix is X's phi naming the
+  // edge taken (ix's incoming value on from's edge is this edge's index, in the order of the calls).
+  void addExitEdge(llvm::PHINode *ix, llvm::BasicBlock *from) {
+    exitIndex = ix;
+    exitSegs.push_back(from);
+  }
   bool hasCopyScope() const { return copyScope != ~0u; }
 
   // The exit of the outermost loop at its exit block T (the builder there), after the trips (cq-fx3s, cq-h5uj; moved from

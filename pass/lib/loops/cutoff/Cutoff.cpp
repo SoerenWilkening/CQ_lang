@@ -2700,16 +2700,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       why = "a multi-exit loop (S8)";
     else if (!U.abort.empty() || exits::hasNoreturnArm(L) || U.live.empty())
       why = "a noreturn arm or no live exit (S9)";
-    else if (t0 || !cont.classicalFactor(ctx.T, ctx.S).isTop())
-      why = "a classical conjunct of the exit test, owner ruling Q10 (S5)";
+    else if (t0)
+      why = "a classical conjunct of the trip-0 test, owner ruling Q10 (S5: the entry edge into the exit block)";
     else if (receivedK)
       why = "a received K (S6)";
     else if (c == 0)
       why = "K = 0 or B = 0 (S6)";
     else if (!L.getSubLoops().empty())
       why = "a sub-loop in the trip (S10, S11)";
-    else if (classicalTerms)
-      why = "a classical branch in the trip (S3b: segments)";
     else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
     else if (any_of(hphis, [&](PHINode *h) {
@@ -2830,12 +2828,43 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Value *qc = qp;
     auto all = [](const BasicBlock *) { return true; };
     rTrip = rreg.get();
+    // cq-9kcq S4b: a classical branch of the trip makes its blocks (Run, Skip, Join) segments of the region, as in a
+    // classically bounded loop's trip (cq-kk46l); the reverse replays the path a trip took through its come-from index.
+    segHook = rreg->segHook();
     lowerBlocks(qc, all);
-    Value *qn = chainTest(qc, cont, latch->getTerminator(), [&] { advance(qc); });
+    BasicBlock *Xb = BasicBlock::Create(Cx, "", &ctx.out());
+    // cq-9kcq S5 (owner ruling Q10, CR rule 14): the exit test's classical conjunct C is a classical exit edge of the
+    // rolled loop: after the trip's state advances, `br C, Run, Skip`; Skip mints a_{j+1} as a |0> seed and goes to the exit
+    // block X (a segment of its own, mirrored by the reverse); Run makes a_{j+1} = a_j & Q and goes on to the latch. X's phi
+    // `exit` names the edge taken, and the reverse starts at that edge's segment (Region's exitIndex).
+    BasicBlock *skipB = nullptr;
+    Value *qSkip = nullptr;
+    Value *qn;
+    if (Pred Cc = cont.isBottom() ? Pred::top() : cont.classicalFactor(ctx.T, ctx.S); Cc.isTop()) {
+      qn = chainTest(qc, cont, latch->getTerminator(), [&] { advance(qc); });
+    } else {
+      Pred Q = cont.quantumPart(ctx.T, ctx.S);
+      Value *g = classicalValue(ctx, Cc);
+      Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q);
+      advance(qc);
+      if (auto *k = dyn_cast<ConstantInt>(g); !(k && k->isOne())) {
+        BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out());
+        skipB = BasicBlock::Create(Cx, "", &ctx.out());
+        B.CreateCondBr(g, Run, skipB);
+        rreg->branchSeg(skipB);
+        RailType i1{Kind::Int, 1};
+        CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(Cx)});
+        ctx.unc().recordSeed(z);
+        qSkip = z;
+        B.CreateBr(Xb);
+        rreg->branchSeg(Run);
+      }
+      qn = fQ ? andRail(qc, fQ) : qc;
+    }
+    segHook = nullptr;
     rTrip = nullptr;
     BasicBlock *Lt = B.GetInsertBlock();
     Value *j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
-    BasicBlock *Xb = BasicBlock::Create(Cx, "", &ctx.out());
     B.CreateCondBr(B.CreateICmpULT(j1, ConstantInt::get(i32, c)), Hd, Xb);
     rreg->endSeg();
     rX = Xb;
@@ -2844,6 +2873,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (Carry &k : carry)
       k.phi->addIncoming(k.now(), Lt);
     B.SetInsertPoint(Xb);
+    if (skipB) {
+      // The carried state is the same SSA value on both edges (it advanced before the test's branch); the chain's end is
+      // a_K on the latch edge and the |0> seed where the conjunct ended the chain.
+      PHINode *ix = B.CreatePHI(i32, 2);
+      ix->addIncoming(ConstantInt::get(i32, 0), Lt);
+      ix->addIncoming(ConstantInt::get(i32, 1), skipB);
+      rreg->addExitEdge(ix, Lt);
+      rreg->addExitEdge(ix, skipB);
+      PHINode *qx = B.CreatePHI(handleTy(Cx), 2);
+      qx->addIncoming(qn, Lt);
+      qx->addIncoming(qSkip, skipB);
+      ctx.unc().recordMerge(qx);
+      qn = qx;
+    }
     if (!keep)
       return qn;
     RailType i1{Kind::Int, 1};
