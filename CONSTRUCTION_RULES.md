@@ -1031,6 +1031,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     opens, needs no analysis. The asm fences in `CQ.h`'s macros are consumed.
     **Memory.** An in-place form inverts exactly (swap, gate, swap reversed is the form of
     the inverse gate), and a load un-copied inside the region reverses into itself. Example owed (§8).
+    This holds whatever the cell holds (rule 3 asks nothing about it): after a region that holds
+    `g++` on a bus cell and no later flush point, the cell reads `g − 1`, and the reference of
+    §6 applies the inverses of the region's in-place forms in reverse order at the `end`. An
+    overwriting store is a kept store, a flush point, and stays forward; an update of a
+    host-resident object (rule 20) is classical code, no gate, and runs forward.
     **A value made in the region and read after its `end`.** A rail made inside the region
     crosses the `end` only where a rule keeps it (a measured rail, a rotated register, a kept
     store's rail, a kept `a_K`). Every other one is uncomputed inside the region after its last
