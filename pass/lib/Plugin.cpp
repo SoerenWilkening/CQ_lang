@@ -1371,7 +1371,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // cq-m8biu: taint's kept-a_K test (rule 19). cutoffBound reads only the loop, SCEV and the specialization's bounds.
     TO.kOf = [KO](const llvm::Function &F) { return cq::loops::resolveK(F, KO); };
     TO.boundOf = [](const llvm::Loop &L, llvm::ScalarEvolution &SE, const cq::Specialization &P) {
-      return cq::loops::exits::cutoffBound(L, SE, cq::TaintInfo(), P);
+      return cq::loops::exits::cutoffBound(L, SE, P);
     };
     if (TO.roots.empty() && TO.listed.empty() && !callsCqSurface(M) && !referencesDeclaredClone(M))
       return PreservedAnalyses::all();
