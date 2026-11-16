@@ -141,8 +141,6 @@ bool cq::comesBefore(const Instruction *a, const Instruction *b) {
   return pa < pb;
 }
 
-void cq::orderMoved(const Instruction *I) { state().labels.erase(I); }
-
 void cq::orderReset() {
   State &S = state();
   S.labels.clear();

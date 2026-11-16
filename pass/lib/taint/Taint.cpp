@@ -2205,7 +2205,6 @@ void Analyzer::transferCall(CallBase &CB) {
     return;
   }
   if (isMeasure(G)) {
-    cur->hasMeasure = true;
     cur->measuresRail = cur->measuresRail || L(actuals[0]).any();
     // A measurement moved after a loop's trips (Plugin's measureAfterTrips) merges with the paths past it under a quantum choice: tainted too.
     if (blockCT(CB.getParent()) || cur->ctl || CB.getMetadata("cq.after.trips"))
@@ -2784,7 +2783,6 @@ void Analyzer::analyze(SpecState &S) {
     // A declared clone: every result is a handle (rule 27).
     S.ret = allLanes(lanesOf(S.F->getReturnType()));
     S.fenvExit = fenvstate::kIdentity;
-    S.analyzedOnce = true;
     S.hasEffect = true;
     return;
   }
@@ -2906,7 +2904,6 @@ void Analyzer::analyze(SpecState &S) {
   for (auto &[V, l] : S.lanes)
     if (l.any())
       S.anyQuantum = true;
-  S.analyzedOnce = true;
   cur = nullptr;
 }
 
