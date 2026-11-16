@@ -3,6 +3,18 @@
 Branch `flat-memory` at 8c3b8d5, CQ_spec 4d08ffa, LLVM 19.1.7, K = 4. Per-row results: [`libc_results.tsv`](libc_results.tsv).
 A row is one libc function, or one function@mask when the mask names which inputs are quantum. The check is `cqcheck user --light` (16 samples): a smoke test, not a proof, and once it hid a miscompile.
 
+## Update 2026-11-16: 797 rows re-checked with rolled K-loops, no verdict changed
+
+Since S14 (cq-9kcq) a quantum-exit loop is one rolled trip in a classical loop with a run-time K; the K static copies are gone. All 797 non-heavy rows were lowered and checked again (`cqcheck user --light`, 16 samples; 600 s and 2 GB per row, the eight `printf`-family rows 2400 s and 6 GB, one at a time). CQ_spec ae03a2e, K = 4.
+
+- **Run 1 at db64dc51:** 769 PASS, 6 not compared (the six structure-only rows, as recorded), 22 FAIL. No row hit a limit.
+- **The 22 failures were one pass bug of the rolled form (cq-mysin):** `sscanf`, `vsscanf`, `ctime`, and the `printf`, `fprintf`, `vprintf`, `vfprintf`, `sprintf`, `snprintf`, `vsprintf`, `vsnprintf` (with their masks), `wprintf`, `fwprintf`, `vwprintf`, `vfwprintf` rows. In a nested rolled loop the back-edge value of the floating-point environment was read in the loop's exit block. Each of four rows tried passed with the copies form and failed with the rolled one. Fixed in 7bece64a.
+- **Run 2 after the fix:** the 22 rows, all PASS, 16 of 16 samples compared.
+- **Result:** 791 PASS and 6 PASS (STRUCTURE ONLY) of 797, as recorded; `libc_results.tsv` is unchanged. 775 rows were checked at db64dc51 and not again after the fix; the fix changed no lowering among 372 probes and spec examples other than its own probe.
+- **Not re-checked:** the 16 heavy rows; they keep the PASS of 6213d213.
+
+**Lowering size.** `mbsrtowcs@0`: 15.1 MB and 31.8 s with the copies, 1.4 MB and 1.4 s rolled. `sscanf`: 146 MB with the copies, 12.6 MB rolled.
+
 ## Update 2026-11-15: a sample only; the table is NOT re-checked at 3526c7e4
 
 `libc_results.tsv` still holds the state at `flat-memory` 112075bc. Since then the pass changed for the rulings of 2026-11-14 and 2026-11-15 (end of shot at a certain `noreturn`, the received K in table clones and by-name helpers, `_ctl` clones for callees with a kept a_K, `CQ_K` per unit) and for about 40 fixes. Every sweep row is entered through a table clone, so every row's lowering changed.
