@@ -559,6 +559,37 @@ define i32 @fc_inv_rr6k(i32 noundef %0, double noundef %1) local_unnamed_addr #0
   ret i32 %19
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @fc_inv_slrot(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #4
+  tail call void @__cq_invert_begin() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !66
+  %6 = and i32 %4, 1
+  %7 = icmp eq i32 %6, 0
+  br i1 %7, label %15, label %8
+
+8:                                                ; preds = %3, %8
+  %9 = phi i32 [ %12, %8 ], [ %5, %3 ]
+  %10 = phi i32 [ %11, %8 ], [ %4, %3 ]
+  %11 = lshr i32 %10, 1
+  %12 = tail call i32 @cq_theta_ui32(i32 noundef %9, double noundef %2) #4
+  %13 = and i32 %10, 2
+  %14 = icmp eq i32 %13, 0
+  br i1 %14, label %15, label %8, !llvm.loop !67
+
+15:                                               ; preds = %8, %3
+  %16 = phi i32 [ %4, %3 ], [ %11, %8 ]
+  %17 = phi i32 [ %5, %3 ], [ %12, %8 ]
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !68
+  tail call void @__cq_invert_end() #5
+  %18 = tail call i32 @cq_measure_ui32(i32 noundef %17) #6
+  %19 = add i32 %16, 3
+  %20 = tail call i32 @cq_measure_ui32(i32 noundef %19) #6
+  %21 = add i32 %20, %18
+  ret i32 %21
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { noduplicate "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -576,63 +607,66 @@ attributes #6 = { nounwind }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
-!6 = !{i64 2147518036}
+!6 = !{i64 2147518544}
 !7 = distinct !{!7, !8, !9}
 !8 = !{!"llvm.loop.mustprogress"}
 !9 = !{!"llvm.loop.unroll.disable"}
-!10 = !{i64 2147518092}
-!11 = !{i64 2147519961}
+!10 = !{i64 2147518600}
+!11 = !{i64 2147520469}
 !12 = distinct !{!12, !8, !9}
-!13 = !{i64 2147520017}
-!14 = !{i64 2147521886}
-!15 = !{i64 2147521942}
+!13 = !{i64 2147520525}
+!14 = !{i64 2147522394}
+!15 = !{i64 2147522450}
 !16 = distinct !{!16, !8, !9}
-!17 = !{i64 2147524826}
+!17 = !{i64 2147525334}
 !18 = distinct !{!18, !8, !9}
-!19 = !{i64 2147525897}
-!20 = !{i64 2147528524}
-!21 = !{i64 2147528580}
+!19 = !{i64 2147526405}
+!20 = !{i64 2147529032}
+!21 = !{i64 2147529088}
 !22 = distinct !{!22, !8, !9}
-!23 = !{i64 2147530449}
-!24 = !{i64 2147530505}
+!23 = !{i64 2147530957}
+!24 = !{i64 2147531013}
 !25 = distinct !{!25, !8, !9}
-!26 = !{i64 2147532374}
-!27 = !{i64 2147532430}
+!26 = !{i64 2147532882}
+!27 = !{i64 2147532938}
 !28 = distinct !{!28, !8, !9}
-!29 = !{i64 2147534299}
+!29 = !{i64 2147534807}
 !30 = distinct !{!30, !8, !9}
-!31 = !{i64 2147534355}
-!32 = !{i64 2147537239}
+!31 = !{i64 2147534863}
+!32 = !{i64 2147537747}
 !33 = distinct !{!33, !8, !9}
-!34 = !{i64 2147537295}
-!35 = !{i64 2147539164}
+!34 = !{i64 2147537803}
+!35 = !{i64 2147539672}
 !36 = distinct !{!36, !8, !9}
-!37 = !{i64 2147539220}
-!38 = !{i64 2147541097}
+!37 = !{i64 2147539728}
+!38 = !{i64 2147541605}
 !39 = distinct !{!39, !8, !9}
-!40 = !{i64 2147541153}
-!41 = !{i64 2147544037}
-!42 = !{i64 2147544093}
+!40 = !{i64 2147541661}
+!41 = !{i64 2147544545}
+!42 = !{i64 2147544601}
 !43 = distinct !{!43, !8, !9}
-!44 = !{i64 2147548112}
-!45 = !{i64 2147548168}
+!44 = !{i64 2147548620}
+!45 = !{i64 2147548676}
 !46 = distinct !{!46, !8, !9}
-!47 = !{i64 2147550045}
+!47 = !{i64 2147550553}
 !48 = distinct !{!48, !8, !9}
-!49 = !{i64 2147550101}
-!50 = !{i64 2147551978}
-!51 = !{i64 2147552034}
+!49 = !{i64 2147550609}
+!50 = !{i64 2147552486}
+!51 = !{i64 2147552542}
 !52 = distinct !{!52, !8, !9}
 !53 = distinct !{!53, !8, !9}
-!54 = !{i64 2147553911}
+!54 = !{i64 2147554419}
 !55 = distinct !{!55, !8, !9}
-!56 = !{i64 2147553967}
-!57 = !{i64 2147556610}
-!58 = !{i64 2147556666}
+!56 = !{i64 2147554475}
+!57 = !{i64 2147557118}
+!58 = !{i64 2147557174}
 !59 = distinct !{!59, !8, !9}
-!60 = !{i64 2147558543}
+!60 = !{i64 2147559051}
 !61 = distinct !{!61, !8, !9}
-!62 = !{i64 2147558599}
-!63 = !{i64 2147561491}
+!62 = !{i64 2147559107}
+!63 = !{i64 2147561999}
 !64 = distinct !{!64, !8, !9}
-!65 = !{i64 2147561547}
+!65 = !{i64 2147562055}
+!66 = !{i64 2147567089}
+!67 = distinct !{!67, !8, !9}
+!68 = !{i64 2147568160}

@@ -87,6 +87,9 @@ MUTANTS = {
         ("fc_inv", "reverse_after_end", lambda b: reverse_after_end(b), None),
         ("fc_inv_r6cls", "r6_reverse_after_end", lambda b: reverse_after_end(b), None),
         ("fc_inv_add", "stale_read", lambda b: stale_read(b), None),
+        # fc_inv_slrot's rotation of r repeated after the end (the slice case: the repeat runs only what y and the exit test
+        # depend on; a rotation is never repeated): r's preparation Ry once more right after cqrt_invert_end
+        ("fc_inv_slrot", "repeat_rotation", lambda b: repeat_rotation(b), None),
     ],
     "agg_region": [
         ("vec_region", "other_field", lambda b: other_field(b), None),
@@ -239,6 +242,18 @@ def stale_read(fn_body: str):
         return fn_body
     a, b = end + add.start(1), end + add.end(1)
     return fn_body[:a] + sel.group(1) + fn_body[b:]
+
+
+def repeat_rotation(fn_body: str):
+    """diff_fc's fc_inv_slrot with the last cqrt_ry_i32 before cqrt_invert_begin (r's preparation) made once more right after
+    cqrt_invert_end."""
+    begin = fn_body.find("  call void @cqrt_invert_begin()\n")
+    end = fn_body.find("  call void @cqrt_invert_end()\n")
+    rys = re.findall(r"^  call void @cqrt_ry_i32\(i32 %[\w.]+, double %[\w.]+\)\n", fn_body[:begin], re.M)
+    if begin < 0 or end < 0 or not rys:
+        return fn_body
+    at = end + len("  call void @cqrt_invert_end()\n")
+    return fn_body[:at] + rys[-1] + fn_body[at:]
 
 
 def other_field(fn_body: str):

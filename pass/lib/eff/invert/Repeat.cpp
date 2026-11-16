@@ -23,9 +23,8 @@
 // what the re-read values and the copy's branches depend on remains (the markers, CQ.h's fences and everything else
 // go). That remainder must be pure (no call but a memory-free intrinsic, no memory access): a loop whose body holds a
 // rotation, a measurement, a bus store or an effect is repeated only by the slice its read values and exit tests depend
-// on (CR: "where those read nothing such an instruction produces"). Every loop the remainder enters must itself be pure
-// (the pure-loop case); a loop with such an instruction, or a remainder that reads one, is left as it was (the kept copy,
-// a §6 leak: the construction is owed, CR §8).
+// on (CR: "where those read nothing such an instruction produces"); such an instruction is never repeated. A remainder
+// that reads one (or a load) is left as it was (the kept copy, a §6 leak: the construction is owed, CR §8).
 //
 // Taint: only where every specialization of the function holds each re-read value quantum (classical code is never
 // rewritten). The scaffold re-taints the module when anything changed.
@@ -249,35 +248,48 @@ bool Repeater::repeatRegion(RegionCut &r) {
     }
   if (reread.empty())
     return false;
-  // What the copy keeps: the re-read values and every branch of the region, with what they read in the region.
+  // What the copy keeps: the re-read values and every branch of the region, with what they read in the region. The
+  // remainder is pure (CR: the instructions the read values and exit tests depend on, "where those read nothing such an
+  // instruction produces"); a loop it enters may hold a rotation, a measurement, a bus store, an effect or a call besides:
+  // the copy drops them (never repeated). A re-read value whose remainder reads one of them (or a load: what a bus store
+  // may have produced) is left as it was, and so is the region when a branch's does: the construction is owed (CR §8), the
+  // kept copy stays a §6 leak. A region with a path that ends (an abort's unreachable) is left as well: the copy would keep
+  // the dead end without the call that ends the path.
   SetVector<Instruction *> need;
-  SmallVector<Instruction *, 16> work(seeds.begin(), seeds.end());
+  auto close = [&](ArrayRef<Instruction *> from, SetVector<Instruction *> &into) {
+    SmallVector<Instruction *, 16> work(from.begin(), from.end());
+    while (!work.empty()) {
+      Instruction *I = work.pop_back_val();
+      if (!made(I) && !I->isTerminator())
+        continue;
+      if (!into.insert(I))
+        continue;
+      if (!pureForRepeat(*I) || isMarkerCall(*I))
+        return false;
+      for (Value *o : I->operands())
+        if (auto *oi = dyn_cast<Instruction>(o); oi && made(oi))
+          work.push_back(oi);
+    }
+    return true;
+  };
+  SmallVector<Instruction *, 16> terms;
   for (BasicBlock *b : r.blocks)
     if (b != r.end->getParent())
-      work.push_back(b->getTerminator());
-  while (!work.empty()) {
-    Instruction *I = work.pop_back_val();
-    if (!made(I) && !I->isTerminator())
-      continue;
-    if (!need.insert(I))
-      continue;
-    for (Value *o : I->operands())
-      if (auto *oi = dyn_cast<Instruction>(o); oi && made(oi))
-        work.push_back(oi);
+      terms.push_back(b->getTerminator());
+  if (!close(terms, need))
+    return false;
+  for (Instruction *V : seeds) {
+    SetVector<Instruction *> own = need;
+    if (close({V}, own))
+      need = std::move(own);
+    else
+      erase_if(reread, [&](const std::pair<Instruction *, unsigned> &u) { return u.first->getOperand(u.second) == V; });
   }
-  // The pure-loop case: the remainder is pure, and every loop it enters is pure as a whole.
-  SmallPtrSet<Loop *, 4> loops;
-  for (Instruction *I : need) {
-    if (!pureForRepeat(*I) || isMarkerCall(*I))
+  if (reread.empty())
+    return false;
+  for (BasicBlock *b : r.blocks)
+    if (isa<UnreachableInst>(b->getTerminator()))
       return false;
-    if (Loop *L = regionLoop(in, I->getParent()))
-      loops.insert(L);
-  }
-  for (Loop *L : loops)
-    for (BasicBlock *b : L->blocks())
-      for (Instruction &I : *b)
-        if (!pureForRepeat(I))
-          return false;
 
   // The cut. E's block ends at E; B's block's part after B is a block of its own.
   BasicBlock *Be = r.end->getParent();

@@ -192,3 +192,13 @@ unsigned fc_inv_rr6k(unsigned x0, double th) {
   cq_invert_end();
   return cq_measure(s ^ cq_measure(z));
 }
+/* the slice case: a rotation of a register from before the region in the loop body; the repeat after the end runs only the slice y and the
+ * exit test depend on (the rotation is never repeated); r crosses the end as a rotated register */
+unsigned fc_inv_slrot(unsigned x0, unsigned r0, double th) {
+  unsigned y = x0; cq_theta(&y, th);
+  unsigned r = r0; cq_theta(&r, th);
+  cq_invert_begin();
+  while (y & 1) { y >>= 1; cq_theta(&r, th); }
+  cq_invert_end();
+  return cq_measure(r) + cq_measure(y + 3);
+}
