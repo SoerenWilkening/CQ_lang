@@ -921,6 +921,39 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
 bool readersKeep(LoweringContext &ctx, const Loop &top, const Value *v) {
   SmallVector<const Value *, 4> work{v};
   SmallPtrSet<const Value *, 8> seen{v};
+  // cq-shndm (CR rules 5, 9): a phi names its incoming rail only where its choice is classical. Where x and another incoming
+  // value of P can both be taken under the same classical facts (a quantum choice: the multi-exit hub's value, the exit arm's
+  // `N - n` and the zero-trip guard's `n` at musl wcsrtombs' return), the merge is rule 9's select chain, a template that
+  // reads x and keeps nothing of it. Edges from blocks no path reaches are no choice.
+  SmallPtrSet<const BasicBlock *, 32> reach;
+  auto reachable = [&](const BasicBlock *b) {
+    if (reach.empty()) {
+      const BasicBlock *entry = &b->getParent()->getEntryBlock();
+      SmallVector<const BasicBlock *, 32> st{entry};
+      reach.insert(entry);
+      while (!st.empty())
+        for (const BasicBlock *s : successors(st.pop_back_val()))
+          if (reach.insert(s).second)
+            st.push_back(s);
+    }
+    return reach.count(b) != 0;
+  };
+  auto quantumArm = [&](const PHINode &P, const Value *x) {
+    const BasicBlock *bb = P.getParent();
+    Pred onX = Pred::bottom(), onOther = Pred::bottom();
+    for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+      const Value *in = P.getIncomingValue(i);
+      const BasicBlock *u = P.getIncomingBlock(i);
+      if (isa<UndefValue>(in) || !reachable(u))
+        continue;
+      Pred e = ctx.preds().edge(u, bb).classicalProjection(ctx.T, ctx.S);
+      if (in == x)
+        onX = onX | e;
+      else
+        onOther = onOther | e;
+    }
+    return !(onX & onOther).isBottom();
+  };
   while (!work.empty()) {
     const Value *x = work.pop_back_val();
     for (const User *u : x->users()) {
@@ -928,6 +961,8 @@ bool readersKeep(LoweringContext &ctx, const Loop &top, const Value *v) {
       if (!ui || top.contains(ui))
         continue;
       if (auto *P = dyn_cast<PHINode>(ui)) {
+        if (quantumArm(*P, x))
+          return false;
         if (seen.insert(P).second)
           work.push_back(P);
         continue;
