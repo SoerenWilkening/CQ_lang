@@ -1043,7 +1043,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     kept rail. A rotation, a measurement, a bus store and an effect entry are never repeated: a
     loop whose body holds one repeats only the instructions its read values and exit tests
     depend on, where those read nothing such an instruction produces (the other case and an
-    example are owed, §8).
+    example are owed, §8). A bus load is repeated like any pure instruction when no memory
+    version change (rule 5) lies between the `begin` and the repeat: the cell then holds what
+    the in-region load read. Where one does, the load reads what a store produced.
     **A marker under a quantum predicate.** `__cq_invert_begin/end` are `noduplicate`, so the
     only marker in an arm is one the C program wrote there. It is a host call, executed on
     every path at its position in the arm's lowered code, whose gates carry the arm flag.
