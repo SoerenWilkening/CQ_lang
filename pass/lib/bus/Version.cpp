@@ -176,11 +176,13 @@ bool notesOwnChange(const LoweringContext &ctx, const Instruction &I) {
   return calls::classify(*CB, ctx.T, ctx.S) == calls::Class::MemIntrinsic;
 }
 
-bool versionChange(const LoweringContext &ctx, const Instruction &I) {
+bool versionChange(const LoweringContext &ctx, const Instruction &I) { return versionChange(ctx.T, ctx.S, I); }
+
+bool versionChange(const TaintInfo &T, const Specialization &S, const Instruction &I) {
   if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
-    return !ctx.T.deadVolatileStore(I);
+    return !T.deadVolatileStore(I);
   if (auto *A = dyn_cast<AllocaInst>(&I))
-    return !ctx.T.hostResident(A, ctx.S);
+    return !T.hostResident(A, S);
   auto *CB = dyn_cast<CallBase>(&I);
   if (!CB || isa<DbgInfoIntrinsic>(CB))
     return false;
@@ -198,13 +200,13 @@ bool versionChange(const LoweringContext &ctx, const Instruction &I) {
   if (hostCallee(*G)) {
     // An effect entry notes its change at the tape_effect call itself (Tape.cpp): the readers of its fields and of what
     // precedes are un-copied before it (99). A format entry is none.
-    if (ctx.T.isEffectEntry(*CB, ctx.S) || formatEntry(*G))
+    if (T.isEffectEntry(*CB, S) || formatEntry(*G))
       return false;
-    if (endsProgram(*CB, *G) && !ctx.T.listedRoot(*G))
+    if (endsProgram(*CB, *G) && !T.listedRoot(*G))
       return false;
-    return hostCallWrites(*CB) || ctx.T.listedRoot(*G);
+    return hostCallWrites(*CB) || T.listedRoot(*G);
   }
-  return writesMemory(ctx.T, *G);
+  return writesMemory(T, *G);
 }
 
 } // namespace cq::bus
