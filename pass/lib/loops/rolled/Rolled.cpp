@@ -14,6 +14,7 @@
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -983,6 +984,46 @@ bool readersKeep(LoweringContext &ctx, const Loop &top, const Value *v) {
   return true;
 }
 
+bool readAfterInvertEnd(const Loop &top, const Value *v) {
+  const Function *F = top.getHeader()->getParent();
+  if (!isa<Instruction>(v) || cast<Instruction>(v)->getFunction() != F)
+    return false;
+  // The ends a path from the loop reaches (an end before the loop closes an earlier region).
+  SmallVector<const Instruction *, 2> ends;
+  for (const BasicBlock &b : *F)
+    for (const Instruction &I : b)
+      if (auto *c = dyn_cast<CallInst>(&I))
+        if (const Function *g = c->getCalledFunction(); g && g->getName() == "__cq_invert_end" &&
+                                                         isPotentiallyReachable(&top.getHeader()->front(), c))
+          ends.push_back(c);
+  if (ends.empty())
+    return false;
+  // After an end: reached from it on a path that does not enter the loop again (an enclosing loop's next trip).
+  SmallPtrSet<BasicBlock *, 1> excl{top.getHeader()};
+  auto after = [&](const Instruction *u) {
+    return any_of(ends, [&](const Instruction *e) { return e != u && isPotentiallyReachable(e, u, &excl); });
+  };
+  SmallVector<const Value *, 4> work{v};
+  SmallPtrSet<const Value *, 8> seen{v};
+  while (!work.empty()) {
+    const Value *x = work.pop_back_val();
+    for (const User *u : x->users()) {
+      auto *ui = dyn_cast<Instruction>(u);
+      if (!ui || ui->getFunction() != F || top.contains(ui))
+        continue;
+      if (after(ui))
+        return true;
+      // Read through a merge, or by a pure instruction the spine recomputes after the end from its operands (Dispatch's
+      // closeRegionRails): what reads it after the end reads v there.
+      if ((isa<PHINode>(ui) || isa<BinaryOperator>(ui) || isa<CmpInst>(ui) || isa<CastInst>(ui) || isa<SelectInst>(ui) ||
+           isa<FreezeInst>(ui) || isa<UnaryOperator>(ui)) &&
+          seen.insert(ui).second)
+        work.push_back(ui);
+    }
+  }
+  return false;
+}
+
 bool cleanedAfter(const Loop &top, const Value *v) {
   if (!isa<Instruction>(v) || isa<PHINode>(v))
     return false;
@@ -1046,7 +1087,8 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
                                      ArrayRef<RailType> outW, Value *stopCur, const DenseSet<const Value *> &keptFinal,
                                      function_ref<bool(const Value *)> scopedOf,
                                      function_ref<void(const Value *, Operand)> put,
-                                     function_ref<bool(const Value *)> perTripCopy) {
+                                     function_ref<bool(const Value *)> perTripCopy,
+                                     function_ref<bool(const Value *)> afterEnd) {
   std::vector<unsigned> scs{seedScope};
   for (const Seg &sg : segs)
     scs.push_back(sg.scope);
@@ -1068,6 +1110,7 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
     exits.push_back(U.idOf(stopCur));   // read in place by the enclosing K-loop's predicate
   }
   std::vector<unsigned> copied;   // the values whose exit rail is no record of the loop: copied out, below
+  DenseSet<unsigned> kept;        // cq-037u2: the copies kept past an enclosing cq_invert region's end (afterEnd)
   for (unsigned oi = 0; oi < out.size(); ++oi) {
     const Value *v = out[oi].first;
     Operand op = out[oi].second;
@@ -1100,6 +1143,16 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
     bool perTrip = perTripCopy && perTripCopy(v) && any_of(segs, [&](const Seg &sg) {
                      return any_of(U.scopeRecords(sg.scope), [&](const Record &r) { return r.forward == op.v; });
                    });
+    // cq-037u2 (CR rule 17 with rule 14): the loop lies in an open cq_invert region of its function, whose gates the backend
+    // replays reversed at the region's end, so the trips, the copy-out and the reverse must all lie inside it (the sandwich
+    // reverses into itself, as the spine uncomputes a region-made rail before the end: resolveRegionMade). A value read after
+    // the end is never read in place (the deferred reverse would follow that reader past the end): it is copied out and the
+    // copy is kept (no reverse un-copies it).
+    if (afterEnd && afterEnd(v)) {
+      kept.insert(oi);
+      copied.push_back(oi);
+      continue;
+    }
     if (ownedH.count(op.v) && !perTrip) {
       put(v, op);
       RailId x = U.idOf(op.v);
@@ -1129,7 +1182,8 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
   // cq-9kcq S6c: the copies the loop keeps as its output (not scopedOf) are made before the copy scope opens: one made in
   // the open scope would be a record of the deferred item, owned and un-copied by it, while its rail is kept (an exit
   // value read in place by a measurement next to one merely computed from: exit_conjunct's ec_while_t).
-  std::stable_partition(copied.begin(), copied.end(), [&](unsigned oi) { return !scopedOf(out[oi].first); });
+  auto scopedAt = [&](unsigned oi) { return !kept.count(oi) && scopedOf(out[oi].first); };
+  std::stable_partition(copied.begin(), copied.end(), [&](unsigned oi) { return !scopedAt(oi); });
   for (unsigned oi : copied) {
     const Value *v = out[oi].first;
     Operand op = out[oi].second;
@@ -1150,7 +1204,7 @@ Region::ExitWiring Region::wireExits(unsigned seedScope, ArrayRef<std::pair<cons
     // after the loop is a select over the copies (CR rule 14 case 3): its readers keep the select, not the copies, which
     // are the copy scope's; readersKeep follows the exit phi as if it were the copy (a kept copy left garbage, and recorded
     // in an open copy scope it was owned by the item it was read by: recordDeferred's internal error).
-    bool scoped = scopedOf(v);
+    bool scoped = scopedAt(oi);
     if (scoped && copyScope == ~0u)
       copyScope = U.openScope();   // closed after the last copy (below)
     RailId fid = ctx.unc().recordSeed(f);

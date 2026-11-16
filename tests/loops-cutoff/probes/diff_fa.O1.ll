@@ -42,6 +42,36 @@ declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #1
 ; Function Attrs: cold noreturn nounwind
 declare void @abort() local_unnamed_addr #2
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @fa_qabort(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #3
+  %4 = and i32 %3, 1
+  %5 = icmp eq i32 %4, 0
+  br i1 %5, label %16, label %6
+
+6:                                                ; preds = %2, %11
+  %7 = phi i32 [ %12, %11 ], [ 0, %2 ]
+  %8 = phi i32 [ %13, %11 ], [ %3, %2 ]
+  %9 = icmp sgt i32 %8, -1
+  br i1 %9, label %11, label %10
+
+10:                                               ; preds = %6
+  tail call void @abort() #5
+  unreachable
+
+11:                                               ; preds = %6
+  %12 = add i32 %7, %8
+  %13 = lshr i32 %8, 1
+  %14 = and i32 %8, 2
+  %15 = icmp eq i32 %14, 0
+  br i1 %15, label %16, label %6, !llvm.loop !9
+
+16:                                               ; preds = %11, %2
+  %17 = phi i32 [ 0, %2 ], [ %12, %11 ]
+  %18 = tail call i32 @cq_measure_ui32(i32 noundef %17) #4
+  ret i32 %18
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { cold noreturn nounwind "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -61,3 +91,4 @@ attributes #5 = { cold noreturn nounwind }
 !6 = distinct !{!6, !7, !8}
 !7 = !{!"llvm.loop.mustprogress"}
 !8 = !{!"llvm.loop.unroll.disable"}
+!9 = distinct !{!9, !7, !8}

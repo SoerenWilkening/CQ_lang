@@ -1,6 +1,7 @@
 /* tests/loops-cutoff probe (nr-S25; CR rule 14 case 2): differential family FC: K-loops inside a cq_invert region (CR rule 17 with rule 14).
  * Each entry is checked against its C program. At d5e32f61 fc_inv and fc_inv_do fail (cq-037u2): the rolled trip's reverse loop is placed after cqrt_invert_end;
- * the K-static-copies lowering (4afda23b) passed them.
+ * the K-static-copies lowering (4afda23b) passed them. fc_inv_trip and fc_inv_cbound (nr-S26) failed in both forms: a value read after the region was read in
+ * place, its reverse deferred past the end. Since cq-037u2 each such value is copied out and kept, and the reverse runs inside the region.
  * Regenerate:
  * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec diff_fc.c -o diff_fc.O1.ll */
 #include "CQ.h"
@@ -36,4 +37,22 @@ unsigned fc_inv_call(unsigned x0, double th) {
   r = fc_g(x);
   cq_invert_end();
   return cq_measure(r);
+}
+/* a rotation of a register from before the region in every trip, the loop's carried value read after the region */
+unsigned fc_inv_trip(unsigned x0, unsigned r0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned r = r0; cq_theta(&r, th);
+  cq_invert_begin();
+  while (x & 1) { x >>= 1; cq_theta(&r, th); }
+  cq_invert_end();
+  return cq_measure(r) + cq_measure(x);
+}
+/* a classically bounded loop with a quantum exit conjunct in the region (rule 14 case 1, loops-classical) */
+unsigned fc_inv_cbound(unsigned x0, unsigned n, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned s = 1;
+  cq_invert_begin();
+  for (unsigned i = 0; i < (n & 7) && (x & 1); i++) { s = s * 2 + x; x >>= 1; }
+  cq_invert_end();
+  return cq_measure(s);
 }

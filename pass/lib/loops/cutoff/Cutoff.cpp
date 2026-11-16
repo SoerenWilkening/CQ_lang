@@ -1105,7 +1105,23 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // only when its final value is read after the loop.
   DenseSet<const PHINode *> six;
   DenseSet<const Value *> sixSeeds;   // a seed as trip 0's old rail is freed directly, not cleaned (rule 6, rule 7)
-  if (top && !multi && latches.size() == 1) {
+  // cq-njnmt (CR rules 6, 14, 16): a noreturn arm behind a classical condition of the trip (an assert on a measured outcome)
+  // is entered by a real branch, after which the trip leaves the loop without its latch segment: the clean-up placed at the
+  // latch block's end would not run there, and the reverse loop's mirror of the trip finds the old rail still read (the
+  // select taking the new value). The old rail is undone by the reverse loop like any carried rail.
+  bool classicalAbort = any_of(U.abort, [&](BasicBlock *b) {
+    return any_of(predecessors(b), [&](BasicBlock *p) {
+      if (!L.contains(p))
+        return false;
+      const Instruction *t = p->getTerminator();
+      if (auto *br = dyn_cast<BranchInst>(t))
+        return br->isConditional() && !isQ(br->getCondition());
+      if (auto *sw = dyn_cast<SwitchInst>(t))
+        return !isQ(sw->getCondition());
+      return false;
+    });
+  });
+  if (top && !multi && latches.size() == 1 && !classicalAbort) {
     BasicBlock *pre = L.getLoopPredecessor();
     for (PHINode *h : hphis) {
       if (!pre || !isQ(h) || !(h->getType()->isIntegerTy() || h->getType()->isFloatingPointTy()) || !h->hasOneUse() ||
@@ -3255,6 +3271,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // cq-9kcq S12c: the environment's pieces at X, named by eff-fenv's keys (i32 rails: FLAGS, MODE)
     for (auto &[id, o] : rFenv)
       add(fenv::pieceKey(ctx, id), o, RailType{Kind::Int, 32});
+    auto afterEnd = [&](const Value *v) { return rolled::readAfterInvertEnd(L, valueOf(v)); };
     rolled::Region::ExitWiring wiring = rreg->wireExits(
         rSeedScope, out, outW, nullptr, rKeptFinal,
         [&](const Value *v) {
@@ -3295,7 +3312,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           if (any_of(rFenv, [&](const std::pair<unsigned, Operand> &p) { return fenv::pieceKey(ctx, p.first) == v; }))
             return false;
           return rolled::cleanedAfter(L, valueOf(v));
-        });
+        },
+        // cq-037u2 (CR rule 17 with rule 14): inside an open cq_invert region, a value read after its end is a kept copy
+        ctx.unc().invertOpen() ? function_ref<bool(const Value *)>(afterEnd) : function_ref<bool(const Value *)>());
     for (auto &[o, first] : dups)
       *o = *slot.lookup(first);
     for (auto &[id, o] : rFenv)
