@@ -167,6 +167,8 @@ LOOP_IN = {"pc5b": ("cf", False), "pa2b": ("g", False), "pa1b": ("h", False), "p
 # cq-os2bx (owner Q1): musl __fwritex's shape, an exit arm with a call and stores runs once after the loop.
 ARM_ONCE_PROBE = PROBES / "arm_once.O1.ll"
 ARM_ONCE = ["ao_write"]
+# The loop is fwritex's (noinline, lowered in place): its reverse loop is in fwritex, never in the entry's body.
+LOOP_FN = {"ao_write": "fwritex"}
 # cq-qb3n (CR rules 2, 5): a do-while measuring a classical join of the carried value and an arm's update every trip.
 RUS_PROBE = PROBES / "rus.O1.ll"
 RUS = ["rus_xor", "rus_mul"]
@@ -224,8 +226,9 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
                 from cqcheck import run as cqrun
                 if "@cqe__set_kept_ak(" not in body(cqrun.kept_ak_module(text), fn):
                     why.append(f"{fn}: no kept a_K: the loop with no classical bound is no K-loop (rule 14 case 2)")
-        elif e not in MEASURED_SEC6 and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
-            why.append("no push/pop: the reverse loop is missing")
+        elif e not in MEASURED_SEC6 and ("@cqrt_push(" not in (lb := body(text, LOOP_FN.get(e, e))) or
+                                         "@cqrt_pop()" not in lb):
+            why.append(LOOP_FN.get(e, e) + ": no push/pop: the reverse loop is missing")
         t0 = time.time()
         try:
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
@@ -346,7 +349,6 @@ def main() -> int:
         # Owner ruling 2026-11-05: no stop for an unbuilt shape; these probes run on, and §6 judges every entry.
         for probe, _ in FATAL:
             entries = re.findall(r"^define (?!internal|private)[^\n]*@(\w+)\(", probe.read_text(), re.M)
-            NO_REVERSE.extend(entries)
             failures += check_probe(a, probe, entries, out)
     print("FAILED" if failures else "ok")
     return 1 if failures else 0
