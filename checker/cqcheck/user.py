@@ -90,7 +90,6 @@ _OUT_OF_BUDGET = re.compile(r"exceeded \d+ search nodes without an order-consist
 SUBSET_SEED = 20261028
 DEFAULT_JOBS = 4      # runner processes when $CQCHECK_JOBS is unset (machine load, CLAUDE.md memory)
 
-_IDENT = r"[-A-Za-z$._0-9]+"
 _INT_C = {8: ("signed char", "unsigned char"), 16: ("short", "unsigned short"), 32: ("int", "unsigned"),
           64: ("long long", "unsigned long long"), 128: ("__int128", "unsigned __int128")}
 _FP_C = {"half": "_Float16", "float": "float", "double": "double", "x86_fp80": "long double"}

@@ -1,6 +1,6 @@
 """Checker input sampling (cq-w0-chk-drivers): DriverSpec to SampleSet.
 
-Sample encoding (every consumer renders it with `drivers.c_value`): `{"call": i, "args": [...]}`
+Sample encoding (every consumer reads the bit pattern): `{"call": i, "args": [...]}`
 where `i` indexes DriverSpec.calls and each argument is
 
   * a scalar: the hex bit pattern of the C value at its storage width, "0x..." (`_Bool` "0x0" or

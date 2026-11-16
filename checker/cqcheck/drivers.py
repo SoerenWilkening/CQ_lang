@@ -359,10 +359,6 @@ class Inst:
             return re.findall(r"label\s+(" + _LOCAL + ")", self.text)
         return []
 
-    @property
-    def is_terminator(self) -> bool:
-        return self.op in ("br", "switch", "ret", "unreachable", "indirectbr", "resume", "callbr", "invoke")
-
 
 @dataclass
 class Function:
@@ -1690,27 +1686,6 @@ def _scalar_bits(ct: CType, v) -> int:
     return int(v, 16)
 
 
-def c_value(ct: CType, v: str) -> str:
-    """A C expression with the exact bit pattern of sample value `v` (sampling encoding)."""
-    if ct.kind == "p":
-        return v
-    n = _scalar_bits(ct, v)
-    if ct.kind == "i":
-        if ct.bits == 1:
-            return "(_Bool)" + str(n & 1)
-        if ct.bits > 64:
-            n &= (1 << ct.bits) - 1
-            return f"(((({ct.spelling})0x{n >> 64:x}ULL) << 64) | ({ct.spelling})0x{n & ((1 << 64) - 1):x}ULL)"
-        return f"(({ct.spelling})0x{n:x}ULL)"
-    if ct.bits == 16:
-        return f"cqd_f16(0x{n & 0xffff:04x}u)"
-    if ct.bits == 32:
-        return f"cqd_f32(0x{n:08x}u)"
-    if ct.bits == 64:
-        return f"cqd_f64(0x{n:016x}ULL)"
-    return f"cqd_f80(0x{n & ((1 << 64) - 1):016x}ULL, 0x{n >> 64:04x}u)"
-
-
 DRIVER_PRELUDE = r"""
 #include <stdint.h>
 #include <string.h>
@@ -1733,7 +1708,7 @@ static inline long double cqd_f80(uint64_t m, uint16_t e) {
 #     <call> <arg> <arg> ...
 #
 # <call> is the decimal index into spec.calls; one <arg> per argument of that call: a scalar is its
-# sample value's bit pattern as "0x" + lowercase hex digits (the value c_value renders, at most 128
+# sample value's bit pattern as "0x" + lowercase hex digits (the exact bit pattern, at most 128
 # bits); a pointer is "p" + the hex of the UTF-8 bytes of its C expression, which must be one the
 # driver was rendered with, followed, for an argument with a fill, by "-" (the object as the setup
 # left it) or by one "0x" token per element. Record k (0-based, in file order) runs with
@@ -1898,7 +1873,7 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
                   reset_globals: str = "") -> str:
     """A C driver (cq-arch Z2): `int <main_name>(void)` runs the setup once, then reads the sample
     file named by $CQD_SAMPLES (sample_file) and makes one call per record, in order. Scalar
-    arguments are the records' bit patterns (bit-identical to c_value); a pointer argument is one of
+    arguments are the records' bit patterns (bit-identical to the baked form); a pointer argument is one of
     the expressions of `samples` (and of the example's drivers.txt line), so the source does not
     depend on scalar values: one build serves every sample.
 

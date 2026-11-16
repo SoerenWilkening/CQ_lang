@@ -45,7 +45,7 @@ encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers rend
   {"bits": "0x..."}    the raw bit pattern of the ctype (long double: the 80-bit x87 pattern)
   "bits:0x..."         the same
   "0x<hex digits>"     for an arithmetic ctype, its exact bit pattern: the sampling encoding that
-                       drivers.c_value renders for the C oracle (cq-arch Z1, cq-a4mf), so both
+                       the driver renders for the C oracle (cq-arch Z1, cq-a4mf), so both
                        sides receive the same value
   string               for an fp ctype, anything else Python's float() or float.fromhex() reads
                        ("nan", "-inf", "-0.0", "0x1p-1074"); for a pointer ctype, its C expression
@@ -223,7 +223,7 @@ def encode_arg(ctype: str, value: Any) -> Tuple[str, Any]:
             raise SampleError(f"bit pattern for non-arithmetic ctype {ctype}")
         return "bits", int(value[5:], 0) & ((1 << bits) - 1)
     if isinstance(value, str) and kind in ("int", "fp") and _BITS_RE.fullmatch(value):
-        # drivers.c_value's encoding: a bare 0x-hex sample value is the exact bit pattern.
+        # the sample file's encoding: a bare 0x-hex sample value is the exact bit pattern.
         n = int(value, 16) & ((1 << bits) - 1)
         return "bits", (n & 1) if bits == 1 else n
     if isinstance(value, bool):
@@ -2817,19 +2817,6 @@ def _deferred_read(e: dict) -> List[str]:
                    and "r" in x and x.get("pred") == 1 and isinstance(x.get("name"), str)})
 
 
-def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:
-    events, bad = [], []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            bad.append({"what": "trace", "h": None, "msg": f"unparsable trace line: {line[:200]}"})
-    return events, bad
-
-
 def run_sample(lowered: Path, spec: DriverSpec, sample: dict, side: str, *, timeout: float = DEFAULT_TIMEOUT,
                rt_sources: Optional[Sequence[Path]] = None, extra_sources: Sequence[Path] = (),
                c_module: Optional[Path] = None) -> RunResult:
@@ -2933,46 +2920,8 @@ _BAD = "__bad_line"
 _UNREAD = ('{"ev":"bus"', '{"ev":"cells"')
 
 
-def _parse_lines(text: str) -> Tuple[List[dict], bool]:
-    """(every trace line of a runner as an event, whether a line was torn): one json.loads over the
-    whole trace, line by line only when that fails (a line torn by a killed process becomes
-    {"ev": _BAD, "line"})."""
-    # the bus and cells events (rt_bus.c; only in a trace with CQE_COMPACT=0, cq-9hzgh) are unread
-    lines = [l for l in text.split("\n") if l.strip() and not l.startswith(_UNREAD)]
-    if not lines:
-        return [], False
-    try:
-        return json.loads("[" + ",".join(lines) + "]"), False
-    except json.JSONDecodeError:
-        out = []
-        for l in lines:
-            try:
-                out.append(json.loads(l))
-            except json.JSONDecodeError:
-                out.append({"ev": _BAD, "line": l.strip()})
-        return out, True
-
-
-def _split_shots(events: List[dict]) -> Tuple[List[dict], Dict[int, Tuple[List[dict], Optional[dict]]]]:
-    """(the runner's events before its first shot, k -> (the shot's events, its shot_end frame or None))."""
-    pre: List[dict] = []
-    shots: Dict[int, Tuple[List[dict], Optional[dict]]] = {}
-    cur: Optional[List[dict]] = pre
-    for e in events:
-        ev = e.get("ev") if isinstance(e, dict) else None
-        if ev == "shot":
-            cur = []
-            shots[e["k"]] = (cur, None)
-        elif ev == "shot_end":
-            shots[e["k"]] = (shots.get(e["k"], ([], None))[0], e)
-            cur = None                     # nothing of a shot follows its end
-        elif cur is not None:
-            cur.append(e)
-    return pre, shots
-
-
 def _with_bad(events: List[dict], torn: bool = True) -> Tuple[List[dict], List[dict]]:
-    """(events, the 'trace' violations of torn lines), as _parse_trace gives them; torn False: the
+    """(events, the 'trace' violations of torn lines), as the trace parser gives them; torn False: the
     trace had none."""
     if not torn or not any(e.get("ev") == _BAD for e in events):
         return events, []
@@ -3086,7 +3035,7 @@ def _stream_shots(trace: Path, side: str, items: Sequence[Tuple[dict, str, Optio
                   timeout: float) -> Tuple[List[dict], Dict[int, RunResult], Dict[int, List[dict]]]:
     """One pass over a runner's trace, line by line: (the events before its first shot, k -> the
     RunResult of every finished shot k of `items`, k -> the events of a shot with no end). What
-    _parse_lines and _split_shots gave, with each finished shot turned into its result at once."""
+    a whole-trace parse gave, with each finished shot turned into its result at once."""
     pre: List[dict] = []
     done: Dict[int, RunResult] = {}
     open_shots: Dict[int, List[dict]] = {}
