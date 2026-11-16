@@ -4,17 +4,18 @@ Reference for the team that implements the runtime the lowered program calls: ev
 `cq_template_*` family with its contract and with how it is built. CONSTRUCTION_RULES.md (CR) is
 normative and wins over this file. A point taken from an example and not from CR is tagged
 *(corpus)*. §5 lists the questions this file raised, each with its ruling. §6 says which parts of
-CR this file follows and what CR leaves open.
+CR this file follows.
 
 - **Ground truth.** Bennett.jl `824458d10e879c3fef673c231a02e5461dac667f` (CR §0) and BennettVM.jl
   `23d28e6471f9cf5d8a22177d08260ca86adfe841`, for the reversible circuits of the core XOR gates
   (§1.1–§1.9), the templates (§2) and their totalization only. Memory, pointers, calls and loops
   are CR's own design and have no reference implementation. A citation `path:function` is
   relative to that repo's root and names source read at that revision; "BJ" is Bennett.jl, "BVM"
-  BennettVM.jl.
+  BennettVM.jl. Bennett.jl is a reference to read, never a dependency: the backend implements
+  its own circuits, and Bennett.jl has none at f16, bf16, f32 and f80.
 - **Ref.** names the reference circuit or semantics. **Impl.** says how the function is built
-  under the gate-set rule (§0, obligation 8): a BJ circuit, a composition that is spelled out, or
-  "not a gate" with what the runtime does instead. Where BJ's result differs from the contract,
+  under the gate-set rule (§0, obligation 8): the BJ circuit it follows, a composition that is
+  spelled out, or "not a gate" with what the runtime does instead. Where BJ's result differs from the contract,
   the Impl. line says what is adapted.
 - **EXTEND** marks a family with no Bennett.jl implementation. The entry states the IEEE contract
   an extension must meet; §2.11 gives the route to its circuit.
@@ -151,7 +152,7 @@ cross this ABI.
    records, the host-boundary logic, the HOST/QUANTUM overlay, handle management.
    An X/CX/CCX circuit returns every ancilla it takes to `|0⟩` before the call returns.
    Bennett.jl emits exactly such gate lists (BJ `src/gates.jl:NOTGate`/`CNOTGate`/`ToffoliGate`,
-   all ancillae back at 0) and is the intended source of the reversible circuits.
+   all ancillae back at 0) and is the reference for the reversible circuits.
 
 **Building the circuits** (how an Impl. line is read). x_i is bit i of rail x.
 - *BJ gate emitters* (`lower_add!`, `lower_mux!`, …) append NOT/CNOT/Toffoli gates on wire
@@ -160,11 +161,12 @@ cross this ABI.
   CX of its result into the result rail, the same gates in reverse order ("wrapped" below; BJ
   `src/bennett_transform.jl:_bennett_default`). An emitter that only XORs into its result
   wires and takes no ancilla is emitted straight onto the result rail.
-- *BJ soft kernels* (`soft_fadd`, `_soft_udiv_compile`, …) are branchless Julia functions on
-  unsigned-integer bit patterns. BJ `src/Bennett.jl:reversible_compile` turns one into a gate
-  list `(args, 0) → (args, f(args))` with every ancilla 0 ("compiled" below). That list, on the
-  operand rails and the result rail, is the template. A kernel has fixed widths: its argument
-  types are `Int8`…`UInt64`, `Bool`, `Float64` and tuples of them.
+- *BJ soft kernels* (`soft_fadd`, `_soft_udiv_compile`, …) are branchless integer programs on
+  bit patterns: shifts, adds, compares and selects, no data-dependent branch. The circuit of a
+  kernel is each of its operations as the integer circuit of §2.2–§2.5 on ancilla rails, the
+  whole wrapped ("compiled" below). The kernel is the specification of the circuit; the backend
+  builds it at the widths it needs. BJ's own compiler (`src/Bennett.jl:reversible_compile`)
+  does the same for its 64-bit kernels and may be used to generate or cross-check a gate list.
 - *The result rail in any state.* A template and a core XOR gate are `o ^= f(args)` whatever o
   holds, not only for o = `|0⟩`: `cq_invert` replays them on a rail a rotation has acted on
   (§1.13, CR rule 17). Both constructions above give that map. A circuit that overwrites a copy
@@ -273,9 +275,12 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
     it, added in as the rounding (BJ `src/adder.jl:lower_add!`); negation under s (BJ
     `src/lowering/aggregate.jl:_cond_negate_inplace!`); 0 under e = 0x7FF. The whole is wrapped
     (§0) with K as the result rail.
-    *The backend's proof obligation:* the window is cut to a finite width, and it must be wide
-    enough that the cut never changes k for any of the 2^64 inputs. The guard width that
-    guarantees it depends on N and is not given by CR (§6).
+    *Exact means exact:* k is the correctly rounded value for every one of the 2^64 inputs, so
+    the circuit is a function of N alone and two backends with the same N agree. The window is
+    cut to a finite width; the guard width that keeps the cut from ever changing k is found
+    once per N at design time, by the worst-case search used for argument reduction (for each
+    exponent, the significand that brings val·2^N/P closest to half an integer). No tolerance
+    is granted.
   - *Rotations (a).* For each ladder bit i < N and each qubit q of h: Ry(P·2^(i−N)) on q,
     controlled by K_i. `_controlled`: t ^= c ∧ K_i by CCX on a fresh ancilla, the controlled Ry
     from t, the same CCX again. Then the reduction once more, which returns K to `|0⟩`, and K is
@@ -293,7 +298,8 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Impl.** Rotation (a): one P(θ) on f, nothing for a non-finite θ. No X/CX/CCX.
 - **Fusion.** The bracket `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` (t |0⟩) equals CCP(θ)
   on a, b (CR §6), and `xor_i1(a, t) · rz_i1(t, θ) · xor_i1(a, t)` equals P(θ) on a. The backend
-  may emit either form. Never fuse to a controlled Rz: Rz(θ) = e^{−iθ/2}·P(θ), and under a
+  appends the calls as they come (CCX, P, CCX: obligation 8); a synthesis stage after it may
+  fuse either bracket. Never fuse to a controlled Rz: Rz(θ) = e^{−iθ/2}·P(θ), and under a
   control that global factor becomes a relative phase. The and-bracket occurs in 11 examples
   (08, 23, 60, 116, 117, 118, 137, 148, 152, 154, 185).
 
@@ -389,8 +395,12 @@ circuit.
 - **No fault.** A load, or the displaced read of a store or swap, at an address that is not
   readable host memory and not a QUANTUM cell reads 0 and never faults. A classical-valued store
   to an address that is not writable host memory makes the cell QUANTUM and writes no host byte.
-  For a superposed address the backend reads and overlays exactly the cells the address rail can
-  reach; what the shot needs of them is the backend's resource question, like N and K.
+  For an address rail that is not classical-valued, the set R of addresses it *can reach* is the
+  set the backend bounds the rail's value to. R contains every value the rail has an amplitude
+  on; any such R gives the same unitary (a flag of an address outside the support never
+  fires), so a circuit builder, which cannot know the support, takes the bound it can prove. The
+  backend reads and overlays exactly the cells of R. A looser R costs qubits and turns more HOST
+  cells QUANTUM; how tight it is is the backend's resource question, like N and K.
 - **Undo (CR rule 5).** The lowered code undoes a bus event in two cases only, and the backend
   relies on nothing else:
   1. *A load copy* is un-copied (`_unc`) after the last consumer of the loaded value and every
@@ -441,7 +451,7 @@ circuit.
     *Fixed:* the unitary Σ_a |a⟩⟨a| ⊗ U_a, U_a being the `_hl` access at a; `addr`, c and v
     unchanged; every ancilla `|0⟩` at return; the little-endian byte order and the wrap mod
     2^64; under c = 0 no cell touched and no host byte read; the overlay state afterwards.
-    *Left to the backend:* the decoder, how R is found (§6), the order of the cells, whether
+    *Left to the backend:* the decoder, how tight R is (No fault, above), the order of the cells, whether
     flags are shared between the S bytes of one access. One decoder is unary iteration, BJ
     `src/qrom.jl:_qrom_tree!`: one CCX and two CX per tree node give the two child flags from the
     parent flag and one address bit, and the same three gates take them back; a bucket brigade
@@ -500,42 +510,47 @@ its fields; a format entry when the fields its format string consumes are writte
   call whose result CR rule 16 computes in the circuit the compiler emits the bare entry (no
   r): no value the lowered program reads depends on whether the backend defers a call.
 
-  The table the backend holds, for every callee the corpus and CR rule 16 name. The arguments
-  of the C signature are the fields, in order. A string is NUL-terminated and captured as the
-  Capture clause below says. The identifier matters for an INPUT call only: any other call
-  with a quantum field is deferred, whichever field it is. † marks what CR does not settle
-  (§6); the backend treats such a callee as "any other name" until it is ruled.
+  The table the backend holds. An INPUT call is one that reads a stream or descriptor, or reads
+  or changes its input state; every other callee is an OUTPUT call. The arguments of the C
+  signature are the fields, in order. A string is NUL-terminated and captured as the Capture
+  clause below says. The identifier matters for an INPUT call only: any other call with a
+  quantum field is deferred, whichever field it is. An `_unlocked` form is its locked one.
 
   | callee | class | buffer or string | length | identifier |
   |---|---|---|---|---|
-  | `fgets(s, n, f)` | INPUT (210) | s, written | n | f |
+  | `fgets(s, n, f)`, `fgetws(s, n, f)` | INPUT (210) | s, written | n characters (`fgetws`: of 4 bytes) | f |
   | `fread(p, size, nmemb, f)` | INPUT | p, written | size·nmemb | f |
-  | `read(fd, p, n)` | INPUT | p, written | n | fd |
-  | every other reading stream call (`fgetc`, `getc`, `getchar`, `ungetc`, the `scanf` family, the wide readers, …) | † CR names the class, not the callees | † | † | † |
-  | `printf(fmt, …)` | OUTPUT, the format entry (47, 138, 209) | fmt and each `%s` argument: strings | | |
-  | `fprintf(f, fmt, …)` | OUTPUT | fmt and each `%s` argument: strings | | |
-  | `vprintf(fmt, ap)`, `vfprintf(f, fmt, ap)` | OUTPUT | fmt: a string; the `va_list` block † | | |
-  | `wprintf`, `fwprintf`, `vwprintf`, `vfwprintf`, `fputws(s, f)` | OUTPUT | a wide string † | | |
-  | `puts(s)`, `fputs(s, f)` | OUTPUT (99) | s: a string | | |
+  | `read(fd, p, n)`, `pread(fd, p, n, off)` | INPUT | p, written | n | fd |
+  | `gets(s)` | INPUT | s, written, at most K2 bytes | | stdin |
+  | `fgetc(f)`, `getc(f)`, `getchar()`, `fgetwc(f)`, `getwc(f)`, `getwchar()`, `getw(f)`, `ungetc(c, f)`, `ungetwc(c, f)`, `feof(f)`, `ferror(f)`, `clearerr(f)` | INPUT | none | | f |
+  | `scanf(fmt, …)`, `fscanf(f, fmt, …)`, `vscanf(fmt, ap)`, `vfscanf(f, fmt, ap)`, and the wide `wscanf`, `fwscanf`, `vwscanf`, `vfwscanf` | INPUT | fmt: a string (wide in the `w` forms), read; each pointer the format consumes: written with what its conversion stores | | f |
+  | `getline(lp, np, f)`, `getdelim(lp, np, d, f)`, `fgetln(f, np)` | INPUT | the pointer cell `*lp`, the size cell `*np` and the line they name: written | | f |
+  | `printf(fmt, …)` | OUTPUT, the format entry (47, 138, 209) | fmt and each `%s` argument: strings (`%ls`: wide) | | |
+  | `fprintf(f, fmt, …)`, `vprintf(fmt, ap)`, `vfprintf(f, fmt, ap)` | OUTPUT | fmt and each `%s` argument: strings; the arguments of a `v` form through its `va_list` | | |
+  | `wprintf`, `fwprintf`, `vwprintf`, `vfwprintf` | OUTPUT | as the row above with a wide fmt | | |
+  | `puts(s)`, `fputs(s, f)`, `perror(s)`; `fputws(s, f)` | OUTPUT (99) | s: a string; `fputws`: a wide string | | |
   | `putchar(c)`, `putc(c, f)`, `fputc(c, f)`, `putwchar(c)`, `putwc(c, f)`, `fputwc(c, f)` | OUTPUT (209) | none | | |
   | `fwrite(p, size, nmemb, f)` | OUTPUT (99) | p, read | size·nmemb | |
   | `write(fd, p, n)` | OUTPUT | p, read | n | |
   | `fflush(f)`, `fclose(f)`, `ftell(f)`, `fileno(f)`, `fwide(f, m)`, `fseek(f, off, w)`, `fseeko(f, off, w)`, `close(fd)`, `lseek(fd, off, w)`, `tmpfile()` | OUTPUT | none | | |
-  | `remove(path)`, `rename(old, new)`, `fopen(path, mode)`, `open(path, flags, …)` | OUTPUT (102) | each pointer argument: a string | | |
-  | `fsetpos(f, pos)`, `setvbuf(f, buf, mode, size)` | OUTPUT | pos, buf † | | |
+  | `remove(path)`, `unlink(path)`, `rename(old, new)`, `fopen(path, mode)`, `open(path, flags, …)` | OUTPUT (102) | each pointer argument: a string | | |
+  | `fsetpos(f, pos)` | OUTPUT | pos: an `fpos_t`, read | `sizeof` in the host library | |
+  | `setvbuf(f, buf, mode, size)` | OUTPUT | none: buf is not read at the call; the host library keeps and later writes it as host memory (§1.10 Overlay) | | |
   | `raise(sig)` | OUTPUT (102, 212) | none | | |
   | `abort()`, `exit(code)`, `_Exit(code)`, any other `noreturn` callee | OUTPUT, followed by `abort_i1` (CR rule 16) | none known | | |
   | `__assert_fail(expr, file, line, func)` | OUTPUT, `noreturn` | expr, file, func: strings | | |
-  | `__builtin_trap`, `setjmp`, `longjmp` | † | | | |
-  | the fenv calls of CR rule 23 | OUTPUT | the `fenv_t` or `fexcept_t` object some of them read or write † | | |
+  | `llvm.trap` (`__builtin_trap`) | OUTPUT, `noreturn`; no host symbol of that name: the backend performs a trap | none | | |
+  | the fenv calls of CR rule 23 | OUTPUT | the `fenv_t` or `fexcept_t` object: read by `fesetenv`, `feupdateenv`, `fesetexceptflag`, written by `fegetenv`, `feholdexcept`, `fegetexceptflag` | `sizeof` in the host library | |
   | a null `name` | OUTPUT; the callee is the host address in the first field (96, 97, 211) | none known | | |
   | any other name | OUTPUT | none known | | |
 
   Never an effect entry, so never seen by the backend under these names: `malloc`, `calloc`,
   `aligned_alloc`, `realloc` (`__cq_alloc`, §1.10), `free` (nothing), `memcpy`, `memmove`,
-  `memset` (bus accesses, CR rule 22), `signal` (the signal table, CR rule 16), the `pthread_*`
-  calls (CR rule 24), the string formatters `sprintf`, `snprintf`, `sscanf` and their kin
-  (lifted, CR rule 16), and the `errno` accessor.
+  `memset` (bus accesses, CR rule 22), `signal` (the signal table, CR rule 16), `setjmp` and
+  `longjmp` (host calls as they stand, CR rule 24: they must run in the caller's frame; under a
+  quantum predicate a `longjmp` is `abort_i1` alone), the `pthread_*` calls (CR rule 24), the
+  string formatters `sprintf`, `snprintf`, `sscanf` and their kin (lifted, CR rule 16), and the
+  `errno` accessor.
 - **Deferred.** A deferred event is one of the last two rows, an unresolved format entry or
   abort flag, or any event that is not an INPUT call behind one; its r is `|0⟩`. At the end of
   the shot (process exit: return from `main`, `exit`, or an `atexit` handler the backend registers on its first call; a
@@ -545,7 +560,9 @@ its fields; a format entry when the fields its format string consumes are writte
 - **Capture.** A buffer or string a deferred entry reads is captured when the entry is
   complete, never at the end of the shot, under the entry's predicate c, over the extent the backend knows by `name` (a classical length; an OUTPUT buffer's rail
   length n at the bound K2, byte j under `j < n`; a NUL-terminated string up to its first HOST
-  0 byte or K2 bytes): a HOST cell as its byte, a QUANTUM cell XOR-copied under c into a fresh tape
+  0 byte or K2 bytes, a wide string in 4-byte units up to its first zero unit; a `va_list`: its
+  24 bytes and through them the slots the format's conversions take, as `va_arg` reads them,
+  CR rule 16 *Variadic calls*): a HOST cell as its byte, a QUANTUM cell XOR-copied under c into a fresh tape
   rail (as `cqrt_tape_write_i8_controlled`; a cell at an address rail by the `_controlled`
   load), measured at the end of the shot; under c = 0 no cell is read and the rail stays `|0⟩`. The
   performed call receives the captured bytes of a string followed by a 0 and reads them up to the
@@ -848,8 +865,9 @@ All results are IEEE, round to nearest even unless `_rm`/`_rmq` is present. Oper
 bit patterns. `llvm.fmuladd` reaches the backend as `fmul` then `fadd` (unfused, CR §2). Only
 `llvm.fma` uses `fma`. A NaN result follows x86 SSE in IR operand order: the first NaN operand, quieted; an invalid operation gives `0xFFF8000000000000` (f32 `0xFFC00000`, f16 `0xFE00`, bf16 `0xFFC0`, f80 the real indefinite `0xFFFF_C000000000000000`) (CR §2).
 An f80 operand in a non-canonical encoding (pseudo-NaN, pseudo-Inf, unnormal) is an invalid
-operand: the result is the real indefinite, with INVALID; a pseudo-denormal reads as a denormal
-(CR §2).
+operand: it reads as the real indefinite, a NaN, so an fp result is the real indefinite and a
+compare (`fcmp`, `fcmps`) is unordered, each with INVALID in its `_exc` word, as x87 does; a
+pseudo-denormal reads as a denormal (CR §2).
 
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
@@ -894,17 +912,18 @@ operand: the result is the real indefinite, with INVALID; a pseudo-denormal read
   kernel with a mode operand (§2.11).
 - `is_fpclass`: §2.11.
 
-### 2.11 EXTEND: the soft functions to write
-An EXTEND family gets its circuit the way the f64 families do: a branchless function on bit
-patterns, compiled by BJ `src/Bennett.jl:reversible_compile`. Bennett.jl has none of these
-functions at the pinned revision; each has to be written. What the route needs from Bennett.jl
-was tried at that revision (Julia 1.12.1 with LLVM.jl 9.13.2; with LLVM.jl 10.4.3 the package
-fails to load on a missing `LLVM.NewPMPassBuilder`): scratch models were compiled and their
-circuits simulated against a host reference on sampled inputs. A model that compiled shows that
-the route exists. It does not show a production kernel correct: each kernel owes its own test
-against its CR §2 rows.
+### 2.11 EXTEND: the kernels the backend writes
+An EXTEND family gets its circuit the way the f64 families do: a branchless integer kernel on
+bit patterns, built from the integer circuits of §2.2–§2.5 (§0). Bennett.jl has no kernel for
+these families; the backend writes each one, with BJ's f64 kernel as the model for the
+algorithm. The last column records a cross-check, not a dependency: scratch kernels of each
+kind were given to BJ's compiler at the pinned revision (Julia 1.12.1 with LLVM.jl 9.13.2; with
+LLVM.jl 10.4.3 the package fails to load on a missing `LLVM.NewPMPassBuilder`) and the
+X/CX/CCX circuits it produced were simulated against a host reference on sampled inputs. That
+shows such a kernel yields a clean circuit at these widths and what it costs. It does not show
+a production kernel correct: each kernel owes its own test against its CR §2 rows.
 
-| family | function to write | modelled on | tried |
+| family | kernel to write | modelled on | cross-check with BJ's compiler |
 |---|---|---|---|
 | `fadd` `fsub` `fmul` `fdiv` `sqrt` `fma`, the rounding ops, `fmax`/`fmin`, `fcmp` at f16, bf16, f32 | the f64 body on `UInt16`/`UInt32` with the format's field widths (fraction 10, 7, 23 bits; exponent 5, 8, 8) | BJ `soft_fadd`, `soft_fmul`, `soft_fdiv`, `soft_fsqrt`, `soft_fma`, `soft_floor`…, and the shared steps `src/softfloat/softfloat_common.jl:_sf_normalize_clz`, `_sf_handle_subnormal`, `_sf_round_and_pack` | an f32 and an f16 add compiled (47,978 and 42,868 gates) and agreed with native `Float32` and `Float16` addition on 600 samples each. `Float32` and `Float16` arguments are rejected, so the functions take the unsigned integer. BJ's own f32 route (`fpext`, the f64 kernel, `fptrunc`) rounds twice and BJ does not call it bit-exact (`src/softfloat/fpconv.jl`, header) |
 | every f80 op | functions on the pair (significand `UInt64`, sign and exponent `UInt16`) with a tuple result; wider intermediates as (hi, lo) `UInt64` pairs. The explicit integer bit and the non-canonical encodings (§2.9) have no f64 counterpart | the same kernels with BJ `src/softfloat/softfloat_common.jl:_add128`, `_sub128`, `_shiftRightJam128`, `_sf_widemul_u64_to_128` (the `soft_fma` helpers) for the 64-bit steps | the plumbing only: a `(UInt64, UInt16)` operand pair, a tuple result, a 64×64→128 product and a 128-bit align-and-add through the helpers all compiled. A `UInt128` argument is rejected, and a `UInt128` intermediate failed on an `i128` constant. No f80 kernel was written |
@@ -1052,6 +1071,14 @@ Q1: §0 obligation 4. Q2, Q3: §1.4–§1.7. Q4, Q12, Q21: §0. Q5, Q14, Q18, Q2
 Q15: §2.1, §2.9. Q10: §2.10. Q11: §2.6. Q13: withdrawn, no store is popped (§1.10). Q16, Q19:
 §1.11. Q17: §1.12. Q20: CR §2.
 
+Decided in this file, where CR leaves the matter to the backend or its text already settles it:
+Q25 (the cells an address rail can reach: the bound the backend can prove, any superset of the
+support): §1.10. Q26 ("reduced exactly mod P" is exact for every f64, no tolerance): §1.5. Q27
+(which callees are INPUT calls, and their buffers): §1.11. Q28 (wide strings, `va_list`
+blocks, host-library objects, `setvbuf`): §1.11. Q29 (`llvm.trap`; `setjmp`/`longjmp` are
+never entries): §1.11. Q30 (an f80 compare of a non-canonical operand is unordered): §2.9. Q31
+(the backend appends brackets as called; fusion is a later stage's): §1.6.
+
 ---
 
 ## 6. Keeping this file in step with CR
@@ -1079,26 +1106,3 @@ replaced by a chosen bit pattern), must give the named outputs, the clean rails 
 rails that CR §6 item 1 asks for, with the rotation list of item 2 read off the gates the
 backend appended. This file adds no acceptance criterion. When `examples/` changes, the counts
 of the header and of §4 are recomputed with the header's commands.
-
-**Open in CR.** CR is silent on the points below and this file fixes nothing for them. A
-backend that needs one asks for a ruling; the ruling goes into CR first.
-1. *The cells an address rail can reach* (CR §1.3 "makes every cell it can reach QUANTUM"; CR §2
-   "decided per cell"; §1.10): the exact support of the address rail's state, or any superset
-   the backend can bound it by. The unitary is the same either way. What differs is which HOST
-   cells a store or swap turns QUANTUM, whose bytes host code then reads as unspecified, and
-   which host bytes a load reads.
-2. *"Reduced exactly mod P"* (CR §1.3; §1.5): P is irrational, so a fixed circuit rounds
-   correctly for every f64 only with a proven guard width. CR gives no bound and no tolerance:
-   whether a result one grid step off at such an input conforms is not said.
-3. *INPUT calls* (CR rule 16 names the stream functions as a class and uses "input call" without
-   a list): which callees besides `fgets`, `fread` and `read` are INPUT calls, and which of
-   their arguments are buffer, length and identifier (§1.11, the rows marked †).
-4. *Extents the capture of §1.11 does not define*: a wide string (`fputws`, the wide formats), a
-   `va_list` block (`vprintf`, `vfprintf`), a buffer the host library retains (`setvbuf`), and
-   objects of the host library's own types (`fpos_t`, `fenv_t`, `fexcept_t`, `jmp_buf`).
-5. *An effect entry the backend cannot perform as a call*: `__builtin_trap` has no host symbol
-   (`llvm.trap`), and `setjmp`/`longjmp` performed from inside the backend are not the caller's
-   (CR rules 16, 24).
-6. *A compare of an f80 operand in a non-canonical encoding*: CR §2 gives the result of a
-   value-returning op (the real indefinite) and of `is_fpclass` (a quiet NaN), not of `fcmp` and
-   `fcmps`.
