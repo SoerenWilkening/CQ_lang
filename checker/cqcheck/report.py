@@ -772,6 +772,3 @@ def format_table(verdicts: Sequence[Verdict]) -> str:
                  f"textual match {sum(1 for v in verdicts if v.diff_lines == 0)}")
     return "\n".join(lines)
 
-
-def verdict_dict(v: Verdict) -> dict:
-    return dataclasses.asdict(v)

@@ -20,7 +20,7 @@
 namespace {
 
 struct Gate {
-  bool theta, opt, free_ok, has_target;
+  bool free_ok, has_target;
   int64_t target;
   std::vector<int64_t> sup;
   std::vector<uint8_t> pred;
@@ -72,7 +72,6 @@ struct Matcher {
   std::vector<Gate> g;
   std::vector<Site> st;
   std::vector<size_t> off;  // word offset of (j, s) in the used state
-  std::vector<size_t> nwords;
   size_t total_words = 0;
 
   std::vector<int> assign;
@@ -363,8 +362,8 @@ extern "C" int64_t cq_match_c(const int64_t *in, int64_t nin, int64_t *out, int6
   M.g.resize(n);
   for (int i = 0; i < n; ++i) {
     Gate &e = M.g[i];
-    e.theta = rd();
-    e.opt = rd();
+    rd();  // is_theta, opt: in the format, not used here
+    rd();
     e.free_ok = rd();
     e.has_target = rd();
     e.target = rd();
@@ -400,7 +399,6 @@ extern "C" int64_t cq_match_c(const int64_t *in, int64_t nin, int64_t *out, int6
   }
   M.st.resize(M.m);
   M.off.resize((size_t)M.m * nS);
-  M.nwords.resize((size_t)M.m * nS);
   for (int j = 0; j < M.m; ++j) {
     Site &s_ = M.st[j];
     s_.theta = rd();
@@ -416,7 +414,6 @@ extern "C" int64_t cq_match_c(const int64_t *in, int64_t nin, int64_t *out, int6
       }
       size_t words = (s_.occ[s].size() + 63) / 64;
       M.off[(size_t)j * nS + s] = M.total_words;
-      M.nwords[(size_t)j * nS + s] = words;
       M.total_words += words;
     }
   }

@@ -386,18 +386,6 @@ def split(row: Row, picks: Dict[int, Row]) -> List[Row]:
     return out
 
 
-def split_from(row: Row, k: int) -> Row:
-    """The rails of a row (no pattern) after its first k, as a row (k < its count)."""
-    if k == 0:
-        return row
-    n, st = row.get("n", 1), row["step"]
-    out = {f: v for f, v in row.items() if f not in ("h", "n", "step")}
-    out["h"] = row["h"] + k * st
-    if n - k > 1:
-        out["n"], out["step"] = n - k, st
-    return out
-
-
 _SMALL_RUN = 16   # a row of at most this many rails is looked up by its handles (KeptIndex.small)
 
 

@@ -1,6 +1,6 @@
 """Checker input sampling (cq-w0-chk-drivers): DriverSpec to SampleSet.
 
-Sample encoding (every consumer renders it with `drivers.c_value`): `{"call": i, "args": [...]}`
+Sample encoding (every consumer reads the bit pattern): `{"call": i, "args": [...]}`
 where `i` indexes DriverSpec.calls and each argument is
 
   * a scalar: the hex bit pattern of the C value at its storage width, "0x..." (`_Bool` "0x0" or
@@ -111,7 +111,6 @@ import math
 import os
 import random
 import re
-import sys
 import shlex
 import shutil
 import select
@@ -4008,7 +4007,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
         bounded = [str(ci) for ci in range(len(spec.calls)) if g.has_driver_object(ci) and g.classical_slots(ci)]
         bound_note = (f"; in calls {', '.join(bounded)} (which pass a driver object) an integer classical "
                       f"argument ranges over [0, its drivers.txt value]") if bounded else ""
-        loops_out = [] if LIGHT else trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site,
+        loops_out = [] if LIGHT else trip_classes(spec, example_dir, g, pb, searcher, pool,
                                                   bound_note)
         trips_cls = {"K": K, "loops": loops_out}
         if not loops_out:
@@ -4102,7 +4101,7 @@ def trip_hit(events: Sequence[dict], loops: Sequence[dict], loop: str, t: int) -
     return any(r.get("loop") == loop and r.get("capped") is True and t > int(r["n"]) for r in loops)
 
 
-def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site, bound_note) -> List[dict]:
+def trip_classes(spec, example_dir, g, pb, searcher, pool, bound_note) -> List[dict]:
     """Per loop and per target trip count, a sample on which the C oracle's trip counter reports that
     count. The probe build's header counters drive the search; candidates within one trip of a target
     (the probe counts header executions, the oracle trips begun, and a skipped guard as 0) go to the
@@ -4597,7 +4596,6 @@ def _trip_runs(o1: Path, spec, smp: List[dict], uncut: bool = False) -> list:
 
 def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict]) -> None:
     """Fill or prove the empty trip targets of `out` (trip_classes' result) with constructed inputs."""
-    from cqcheck import oracle
     cands = trip_constructed_inputs(g)
     if not cands:
         for lpo in out:
@@ -4684,7 +4682,7 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                                f"the cost budget of {cost_budget()} before reaching it: no proof (cq-hsan)")
             else:
                 e["empty"] += f"; {why} (cq-oou2)"
-    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, obs, ub_only,
+    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, ub_only,
                       open_stops if over_all else None)
 
 
@@ -4775,7 +4773,7 @@ def trip_route_inputs(g: "Gen", mod: "D.Module", o1: Path, loops: Sequence[Loop]
 UNCOVERED_LISTED = 5          # stopped inputs named in an uncovered line (all are counted)
 
 
-def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict], cands, smp, kruns, obs,
+def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict], cands, smp, kruns,
                       ub_only: Optional[Set[Tuple[str, str]]] = None,
                       open_stops: Optional[Callable[[str, int], List[int]]] = None) -> None:
     """The trip targets still empty after the search and the constructed inputs within the budget

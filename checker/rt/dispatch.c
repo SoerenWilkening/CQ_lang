@@ -721,7 +721,7 @@ static inline void log_gate_(const char *sym, int32_t h, const int32_t *srcs, in
     log_gate_full(sym, h, srcs, ns);
 }
 
-static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, const char *angle_fields,
+static void log_rot(const char *ev, int32_t h, int32_t ctl, const char *angle_fields,
                     const char *pre) {
   sbuf b = {0};
   sb_addf(&b, "{\"ev\":\"%s\",\"h\":%lld,%s,\"ctl\":[", ev, cqe__hname(h), angle_fields);
@@ -739,7 +739,6 @@ static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, con
   sb_add(&b, "\"}");
   cqe_log(b.p);
   free(b.p);
-  (void)c;
 }
 
 /* Parse "<W>" from the start of s; returns pointer after it, or NULL. */
@@ -1025,14 +1024,14 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
     char *hx = cqe__hexa(cqe__val(a));
     snprintf(fields, sizeof fields, "\"a\":%lld,\"aval\":\"%s\"", cqe__hname(a), hx);
     free(hx);
-    log_rot("ry_qangle", c, h, cf, fields, pre);
+    log_rot("ry_qangle", h, cf, fields, pre);
     cqe__add_dep(h, a);
   } else {
     ang = c->raw[n - 1].w[0];
     if (!ctl || (cqe__val(cf)->w[0] & 1))
       pre = ry_fire(h, ang, &undo);
     snprintf(fields, sizeof fields, "\"theta\":\"0x%llx\"", (unsigned long long)c->raw[n - 1].w[0]);
-    log_rot("ry", c, h, cf, fields, pre);
+    log_rot("ry", h, cf, fields, pre);
   }
   free(pre);
   if (undo && cqe__ry_unprep(h, ang))
