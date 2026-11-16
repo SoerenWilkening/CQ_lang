@@ -1267,7 +1267,7 @@ class ExitRoles(unittest.TestCase):
         self.assertEqual(out.count("call void @cqd_out_ctl_measure(i32 %v)"), 1)
         self.assertLess(out.index("cqd_out_ctl_measure"), out.index("define i32 @p_t("))
 
-    # cq-2pdir: me_cbr's other_register mutant in the rolled form (CQ_K_ROLLED=1): the trip's one site measures a copy of
+    # cq-2pdir: me_cbr's other_register mutant in the rolled lowering: the trip's one site measures a copy of
     # select(j == 3, v_j, w), v_j the carried header phi (its advance a three-rail select back to it), w loop-invariant
     ROLLED = ("define i32 @h(i32 %w, i32 %v0, i32 %a) {\nbb:\n  br label %H\nH:\n"
               "  %j = phi i32 [ 0, %bb ], [ %j1, %H ]\n  %v = phi i32 [ %v0, %bb ], [ %vn, %H ]\n"
@@ -1453,7 +1453,7 @@ declare void @__cq_q_e_r_1_t_unc(i32, i32, i32)
 class ReceivedKCut(unittest.TestCase):
     """cq-wqr8p (CR rule 14, §1.4 "Received K"): recv_k_cut.c's g runs at most 2 trips and is called through a pointer
     whose rail makes the dispatch call the `_t_ctl` table clone and its twin (__cq_clone_resolve variants 1 and 3) at
-    the received K 2. The rolled lowering (CQ_K_ROLLED=1) passes; the same with the trip bound of the clone and its
+    the received K 2. The rolled lowering passes; the same with the trip bound of the clone and its
     twin forced to 1 (a cut one trip early, a_K set where C runs its second trip) is rejected. The review mutant of
     cq-wqr8p cut the plain `_t` clone, which no dispatch of that module calls, and so changed nothing that runs."""
     BOUND = "  %37 = icmp ult i32 %36, %2\n"

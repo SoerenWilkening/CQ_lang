@@ -242,6 +242,7 @@ private:
     (void)id;
     return t;
   }
+  static bool isAggr(const Value *v) { return v->getType()->isAggregateType() || v->getType()->isVectorTy(); }
   Value *seedRail(Value *classical, Type *ty) {
     RailType w = railOf(ty);
     CallInst *s = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {classical});
@@ -799,7 +800,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           exitRail.insert({h, Operand{nullptr, false}});
           exitRebinds.push_back({&I, h});
-        } else if (fromInduction(&I)) {
+        } else if (fromInduction(&I) || isAggr(&I)) {
+          // cq-9kcq S21: an aggregate value takes the general capture too (one rail per field, rule 26)
           takeGeneral("loops-cutoff: a value of a nested K-loop's test region computed from an induction, read "
                       "after the loop (cq-lgkx)",
                       &I);
@@ -2458,17 +2460,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
     return true;
   };
-  // The rolled trip carries one field per value: an aggregate one runs on as an unbuilt shape, named by a note.
+  // The rolled trip carries an aggregate value one field per header phi (cq-9kcq S21: the general exit capture's rails, a
+  // value of the header test region); an aggregate carried header phi runs on as an unbuilt shape, named by a note.
   auto noteAggregates = [&]() {
     const char *why = nullptr;
-    if (any_of(xaccs, [](const XAcc &x) { return x.acc.size() != 1; }))
-      why = "an aggregate value of the loop read after it";
-    else if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
+    if (any_of(hphis, [&](PHINode *h) { return !ctx.bound(h) || ctx.fields(h).size() != 1; }))
       why = "an aggregate carried value";
-    else if (regionForm && any_of(regionOut, [&](const Instruction *I) {
-               return I->getType()->isAggregateType() || I->getType()->isVectorTy();
-             }))
-      why = "an aggregate value of the header test region read by the body or after the loop";
     if (why)
       noteUnbuilt(std::string("loops-cutoff: the rolled K-loop carries one field per value: ") + why, H->getTerminator());
   };
@@ -2549,7 +2546,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // cq-9kcq S7: a quantum value of the header test region the evaluation before the loop folded to a literal enters the
     // rolled trip as a seed too (a carried handle, below).
     for (Instruction *I : regionOut)
-      if (ctx.bound(I) && isQ(I) && !ctx.operand(I).handle)
+      if (ctx.bound(I) && isQ(I) && !isAggr(I) && !ctx.operand(I).handle)
         set(I, Operand{seedRail(ctx.operand(I).v, I->getType()), true});
     // cq-9kcq S6 (ROLLED_DESIGN.md §3 step 1; CR §1.4 "Received K", rule 27 "Cutoff"; owner 2026-11-15): the trips run
     // to the run-time bound n = umin(Krt, B) (Krt when no bound is known), Krt the received K (a table clone's K
@@ -2754,6 +2751,34 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (Instruction *I : regionOut) {
       if (!ctx.bound(I))
         continue;   // not lowered (a value of a block the region evaluation did not reach)
+      if (isAggr(I)) {
+        // cq-9kcq S21 (CR rules 14, 26): an aggregate value is carried one field per phi of H, each as a scalar value of the
+        // region (a classical field of a quantum value stays classical: the evaluation's fields are what the trip reads).
+        SmallVector<Operand, 4> fs = ctx.fields(I);
+        for (size_t k = 0; k < fs.size(); ++k) {
+          Operand o = fs[k];
+          PHINode *p = phiFor(o.v, o.handle);
+          fs[k] = Operand{p, o.handle};
+          carry.push_back({p, o.v, [&, I, k, hd = o.handle]() -> Value * {
+                             Operand n = ctx.fields(I)[k];
+                             if (n.handle == hd)
+                               return n.v;
+                             if (!hd)
+                               internalError("loops-cutoff: a classical field of the header test region becomes a rail in the rolled trip", I);
+                             return seedRail(n.v, n.v->getType());   // the trip's evaluation folded it
+                           },
+                           [&, I, k, hd = o.handle](Value *v) {
+                             SmallVector<Operand, 4> now = ctx.fields(I);
+                             now[k] = Operand{v, hd};
+                             mine.insert(I);
+                             ctx.rebind(I, now);
+                           },
+                           o.handle});
+        }
+        mine.insert(I);
+        ctx.rebind(I, fs);
+        continue;
+      }
       Operand o = ctx.operand(I);
       // cq-9kcq (p38_cutx; CR rules 10, 14): a region value that is a header phi's latch value and enters on that phi's
       // rail (a carried register rotated in place, `x = theta(x)` in the header) is that phi's rail in every trip: it shares
@@ -2796,13 +2821,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       carry.push_back({p, in, [&, i]() -> Value * { return cphis[i].acc.v; },
                        [&, i](Value *v) { cphis[i].acc = Operand{v, true}; }, true});
     }
-    for (size_t i = 0; i < xaccs.size(); ++i) {
-      Value *in = xaccs[i].acc[0].v;
-      PHINode *p = phiFor(in, true);
-      xaccs[i].acc[0] = Operand{p, true};
-      carry.push_back({p, in, [&, i]() -> Value * { return xaccs[i].acc[0].v; },
-                       [&, i](Value *v) { xaccs[i].acc[0] = Operand{v, true}; }, true});
-    }
+    // cq-9kcq S21 (CR rules 14, 26): an aggregate value's capture is one rail per field, each carried in a phi of H.
+    for (size_t i = 0; i < xaccs.size(); ++i)
+      for (size_t k = 0; k < xaccs[i].acc.size(); ++k) {
+        Value *in = xaccs[i].acc[k].v;
+        PHINode *p = phiFor(in, true);
+        xaccs[i].acc[k] = Operand{p, true};
+        carry.push_back({p, in, [&, i, k]() -> Value * { return xaccs[i].acc[k].v; },
+                         [&, i, k](Value *v) { xaccs[i].acc[k] = Operand{v, true}; }, true});
+      }
     // cq-9kcq S11e: the stop rail, minted before the header, is carried like the accumulators above.
     if (stopAcc && inKLoop) {
       Value *in = stopAcc;
@@ -3177,6 +3204,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // wired once: with the zero-trip guard it is X's merge, which is copied out, and a second copy would be left live.
     DenseMap<const Value *, const Value *> firstOf;
     std::vector<std::pair<Operand *, const Value *>> dups;
+    // cq-9kcq S21: a field of an aggregate value is wired under its own key (its rail at X), which names the value
+    DenseMap<const Value *, const Value *> fieldOf;
+    auto valueOf = [&](const Value *v) { return fieldOf.lookup(v) ? fieldOf.lookup(v) : v; };
     auto add = [&](const Value *v, Operand &o, std::optional<RailType> w = std::nullopt) {
       if (!o.handle)
         return;
@@ -3213,14 +3243,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (CPhi &cp : cphis)
       add(cp.P, cp.acc);
     for (XAcc &xa : xaccs)
-      if (xa.acc.size() == 1)
+      if (!xa.V->getType()->isAggregateType() && !xa.V->getType()->isVectorTy())
         add(xa.V, xa.acc[0]);
+      else
+        for (size_t k = 0; k < xa.acc.size(); ++k) {
+          fieldOf[xa.acc[k].v] = xa.V;
+          add(xa.acc[k].v, xa.acc[k], xa.rails[k]);
+        }
     // cq-9kcq S12c: the environment's pieces at X, named by eff-fenv's keys (i32 rails: FLAGS, MODE)
     for (auto &[id, o] : rFenv)
       add(fenv::pieceKey(ctx, id), o, RailType{Kind::Int, 32});
     rolled::Region::ExitWiring wiring = rreg->wireExits(
         rSeedScope, out, outW, nullptr, rKeptFinal,
         [&](const Value *v) {
+          v = valueOf(v);
           // cq-9kcq S12c: the environment after the loop is read by eff-fenv until it is replaced; rule 5 uncomputes a copy
           // after that reader, as any value only computed from
           if (any_of(rFenv, [&](const std::pair<unsigned, Operand> &p) { return fenv::pieceKey(ctx, p.first) == v; }))
@@ -3252,7 +3288,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     };
     bool keptInPlace = rreg->hasCopyScope() && any_of(out, [&](const std::pair<const Value *, Operand> &o) {
       return o.second.handle && !rKeptFinal.count(o.second.v) && wiring.ownedH.count(o.second.v) && !isFenvKey(o.first) &&
-             rolled::readersKeep(ctx, L, o.first);
+             rolled::readersKeep(ctx, L, valueOf(o.first));
     });
     rreg->finishExits(rCont ? rCont : rX, rSeedScope, wiring, keptInPlace, latch->getTerminator(), rreg, rX);
   } else if (!top) {
@@ -3288,14 +3324,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       return false;
     };
     DenseMap<Value *, Value *> copyOf;
-    auto copyOut = [&](const Value *v, Operand &o) {
+    auto copyOut = [&](const Value *v, Operand &o, std::optional<RailType> fw = std::nullopt) {
       if (!o.handle || rKeptFinal.count(o.v) || !keeps(v))
         return;
       if (Value *c = copyOf.lookup(o.v)) {
         o = Operand{c, true};
         return;
       }
-      RailType w = railOf(v->getType());
+      RailType w = fw ? *fw : railOf(v->getType());
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                  {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
       RailId fid = ctx.unc().recordSeed(f);
@@ -3314,8 +3350,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (CPhi &cp : cphis)
       copyOut(cp.P, cp.acc);
     for (XAcc &xa : xaccs)
-      if (xa.acc.size() == 1)
+      if (!xa.V->getType()->isAggregateType() && !xa.V->getType()->isVectorTy())
         copyOut(xa.V, xa.acc[0]);
+      else
+        for (size_t k = 0; k < xa.acc.size(); ++k)
+          copyOut(xa.V, xa.acc[k], xa.rails[k]);   // cq-9kcq S21: one copy per field
   }
   for (auto &[I, o] : regionVals)
     ctx.rebind(I, {o});
