@@ -22,3 +22,20 @@ llvm::SmallVector<llvm::Function *, 4> splitMarkerPaths(llvm::Module &M, const T
 llvm::SmallPtrSet<const llvm::BasicBlock *, 16> blocksReachingInvertEnd(const llvm::Function &F);
 
 } // namespace cq::invert
+
+namespace llvm { class Loop; }
+
+namespace cq::invert {
+
+// cq-oyirf (CR rule 17 "A value made in the region and read after its end", owner ruling 2026-11-16; Repeat.cpp): in each
+// tainted function, a use after a cq_invert region's end of a quantum value the region made, through a computation whose
+// pure cone in the region reaches a loop, reads instead the same value of a copy of the region's pure remainder placed
+// right after the end (the loop runs again there); a loop value read by what keeps its rail (a measurement, a call, a
+// return, a store, a phi) still crosses the end. The repeated loops' headers carry `cq.repeat` (repeatedLoop). Run after
+// the final taint, which it reads; returns the functions it changed (the scaffold re-taints them).
+llvm::SmallVector<llvm::Function *, 4> repeatAfterEnd(llvm::Module &M, const TaintInfo &T);
+
+// Is L a loop repeatAfterEnd placed after a region's end? It keeps no a_K (the in-region loop's is the kept rail).
+bool repeatedLoop(const llvm::Loop &L);
+
+} // namespace cq::invert

@@ -95,3 +95,100 @@ unsigned fc_inv_r6pre(unsigned x0, unsigned y0, double th) {
   cq_invert_end();
   return cq_measure(s);
 }
+/* cq-oyirf (owner ruling 2026-11-16, CR rule 17 "A value made in the region and read after its end"; nr-S29): a loop's value read after the
+ * region's end through a computation is no kept copy; the loop is uncomputed inside the region and runs again after the end (forward, read in
+ * place, then its reverse), keeping no a_K of its own. Each entry failed before (a leaked copy, or a dirty free). */
+/* the K-loop's exit value computed from after the region */
+unsigned fc_inv_add(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned y = x;
+  cq_invert_begin();
+  while (y & 1) { y >>= 1; }
+  cq_invert_end();
+  return cq_measure(y + 3);
+}
+/* the K-loop's exit value read inside the region, the result after it (the guard, the selects and t run again after the end) */
+unsigned fc_inv_in(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned s = 3, t;
+  cq_invert_begin();
+  while (x & 1) { s = s * 5 + x; x >>= 1; }
+  t = s * 7 + x;
+  cq_invert_end();
+  return cq_measure(t);
+}
+/* a classically bounded loop (loops-classical), its value read after the end with a value made after it */
+unsigned fc_inv_rcls(unsigned x0, unsigned n, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned z = x0 ^ 9; cq_theta(&z, th);
+  unsigned s = 1;
+  cq_invert_begin();
+  for (unsigned i = 0; i < (n & 7); i++) { s = s * 3 + x; x >>= 1; }
+  cq_invert_end();
+  return cq_measure(s + cq_measure(z));
+}
+/* a classically bounded loop whose value the region computes from (s + 1), the merge measured after the end: s is no rule-6 register */
+unsigned fc_inv_rclsin(unsigned x0, unsigned n, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned s = 1;
+  cq_invert_begin();
+  for (unsigned i = 0; i < (n & 7); i++) { s = s * 3 + x; x >>= 1; }
+  cq_invert_end();
+  return cq_measure(s + 1);
+}
+/* a do-while K-loop */
+unsigned fc_inv_rdo(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned s = 3;
+  cq_invert_begin();
+  do { s = s * 5 + x; x >>= 1; } while (x & 1);
+  cq_invert_end();
+  return cq_measure(s ^ 5);
+}
+/* a K-loop nested in a classically bounded loop */
+unsigned fc_inv_rnest(unsigned x0, unsigned n, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned y = x;
+  cq_invert_begin();
+  for (unsigned i = 0; i < (n & 3); i++) { while (y & 1) { y >>= 1; } y += 3; }
+  cq_invert_end();
+  return cq_measure(y * 3);
+}
+/* the exit value read by two readers after the end */
+unsigned fc_inv_rtwo(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned y = x;
+  cq_invert_begin();
+  while (y & 1) { y >>= 1; }
+  cq_invert_end();
+  return cq_measure(y + 3) + cq_measure(y * 5);
+}
+/* a quantum exit conjunct under a classical bound 9 > K (rule 14 case 1) */
+unsigned fc_inv_rbk(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned y = x, s = 0;
+  cq_invert_begin();
+  for (unsigned i = 0; i < 9 && (y & 1); i++) { y >>= 1; s += 2; }
+  cq_invert_end();
+  return cq_measure(y - s);
+}
+/* a value the region computes before the loop is the loop's entry value */
+unsigned fc_inv_rpre(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned y;
+  cq_invert_begin();
+  y = x * 3;
+  while (y & 1) { y >>= 1; }
+  cq_invert_end();
+  return cq_measure(y + 3);
+}
+/* a K-loop's rule-6 accumulator read after the end through a computation */
+unsigned fc_inv_rr6k(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned z = x0 ^ 9; cq_theta(&z, th);
+  unsigned s = 1;
+  cq_invert_begin();
+  while (x & 1) { s += x; x >>= 1; }
+  cq_invert_end();
+  return cq_measure(s ^ cq_measure(z));
+}

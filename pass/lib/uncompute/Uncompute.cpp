@@ -4355,6 +4355,33 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
     return out;
   RailId start = I.lastRegionStart;
   I.lastRegionStart = kNone;
+  // cq-oyirf (CR rule 17 "A value made in the region and read after its end"): a rule-14 reverse loop the region's loop
+  // deferred after its readers (recordDeferred) whose readers all lie in the region is placed before end too, once the
+  // rails read in the region are placed; the rails it read (the seed, a test before the loop) are then candidates in turn.
+  // To a fixed point.
+  for (bool progress = true; progress;) {
+    progress = false;
+    size_t before = out.size();
+    resolveRegionMadeOnce(end, keep, start, out);
+    progress = out.size() != before;
+    Impl::Ctx c{Impl::Mode::Local, end, nullptr};
+    for (RailId g = I.rails.size(); g-- > start;) {   // last loop first (cq-k0v13)
+      // (An item whose exit rails nothing reads after the loop has no anchor: it is ready here as well.)
+      if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g) ||
+          !(I.deferredAnchors(I.defs[I.rails[g].deferred]).empty() || I.deferredLocalReady(g, end)))
+        continue;
+      if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
+        continue;
+      I.place(g, c);
+      progress = true;
+    }
+  }
+  return out;
+}
+
+void Uncompute::resolveRegionMadeOnce(Instruction *end, function_ref<bool(Value *)> keep, RailId start,
+                                      SmallVectorImpl<Value *> &out) {
+  Impl &I = *impl;
   I.pruneCleanups();
   SmallVector<RailId, 16> cands;
   for (RailId g = start; g < I.rails.size(); ++g) {
@@ -4367,7 +4394,14 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
     const BasicBlock *D = I.defBlock(g);
     if (!D || !Impl::dominates(D, end->getParent()))
       continue;   // made in an arm inside the region: its arm's own flush places it
-    if (any_of(r.handle->users(), [](const User *u) { return isa<PHINode>(u) || isa<SelectInst>(u); }))
+    // cq-oyirf: a rolled loop's header phi over its entry rail (a value the region made before the loop) is no such merge:
+    // the loop's reverse reads the entry rail last (a pending reverse keeps it, below), and nothing frees it but its own item.
+    if (any_of(r.handle->users(), [&](const User *u) {
+          if (!isa<PHINode>(u) && !isa<SelectInst>(u))
+            return false;
+          auto it = I.byHandle.find(u);
+          return it == I.byHandle.end() || !I.rails[it->second].carried;
+        }))
       continue;   // an arm of a merge: the merge's own item frees it where the path took it
     cands.push_back(g);
   }
@@ -4384,7 +4418,7 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
       }
   }
   if (cands.empty())
-    return out;
+    return;
   for (RailId g : cands)
     out.push_back(I.rails[g].handle);
   // Rule 5 as anywhere: each item as early as its uses and barriers allow, by the end at the latest. Those
@@ -4400,7 +4434,6 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
   }
   if (!far.empty())
     resolveAt(end, far);
-  return out;
 }
 
 void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {

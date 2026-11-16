@@ -1548,6 +1548,20 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     } else {
       trace("taint: final (preliminary, CFG unchanged)");
     }
+    // 3a. CR rule 17 (cq-oyirf, owner ruling 2026-11-16): a loop inside a cq_invert region whose quantum value is read after
+    // the end through a computation runs again after the end (eff-invert Repeat.cpp): which values are quantum is a question
+    // of taint, so taint afresh once more when it copied anything.
+    {
+      SmallVector<Function *, 4> rep = cq::invert::repeatAfterEnd(M, T);
+      for (Function *F : rep) {
+        trace("rule 17 repeat after end: changed @" + F->getName());
+        FAM.invalidate(*F, PreservedAnalyses::none());
+      }
+      if (!rep.empty()) {
+        T = cq::TaintInfo();
+        T = cq::computeTaint(M, TO);
+      }
+    }
     // 3b. A measurement in a loop's exit arm runs once after the trips: which ones is a question of taint, and the rewrite leaves the
     // loops' own CFG as it is, so taint afresh once more.
     {

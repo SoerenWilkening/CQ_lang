@@ -364,8 +364,12 @@ private:
   // cq-8zz4v (CR rules 6, 14, 17): inside an open cq_invert region the outermost loop copies out a final value read after
   // the region's end (wireExits' afterEnd, cq-037u2), so that final rail is undone by the reverse loop inside the region:
   // it is no register kept past the loop, and its chain is not cleaned per trip.
+  // cq-oyirf (CR rule 17 "A value made in the region and read after its end"): nor is a final value read in the region only
+  // by what does not keep it (a computation: its rail crosses the end only where a rule keeps it, and is uncomputed inside
+  // the region after its last reader there).
   bool copiedAtEnd(const Value *fin) {
-    return !nested && !inTrip && U.invertOpen() && rolled::readAfterInvertEnd(top, fin);
+    return !nested && !inTrip && U.invertOpen() &&
+           (rolled::readAfterInvertEnd(top, fin) || !rolled::keptByReader(ctx, top, fin));
   }
   void cleanInvariantOnExit(Loop &L, BasicBlock *T);
   BasicBlock *unitExit = nullptr;   // the outermost loop's T
