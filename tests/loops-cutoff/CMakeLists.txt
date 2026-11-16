@@ -67,6 +67,14 @@ add_test(NAME loops-cutoff-trip-exit
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_exit.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-shndm (CR rules 5, 9, 14, 20 to 22): multi-exit quantum-exit K-loops whose trips access memory (a load through a quantum
+# index, a stored quantum value, *p++ and the walked *ws of musl wcsrtombs, an exit inside a classical branch, the region
+# form, a callee clone under a quantum predicate), one entry per shape; with a mutant (the exit hub value's copy left live).
+add_test(NAME loops-cutoff-exit-mem
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_mem.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-z6nkx: musl mbsrtowcs' two scan loops into one tail; strlen's tail edge excluding its unit; stpcpy's skip of a loop in a tail; its head's flag seed.
 add_test(NAME loops-cutoff-tail-phis
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

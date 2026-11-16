@@ -84,6 +84,11 @@ MUTANTS = {
     "trip_exit": [
         ("te_sub", "prev_trip", lambda b: prev_trip(b), None),
     ],
+    # cq-shndm (CR rules 5, 9, 14): em_wcs_f's copy at X of the exit hub's value (read by the select that joins the storing exit
+    # arm's N - n at the return) left live: its un-copy after that reader (the first un-copy of the deferred reverse) dropped
+    "exit_mem": [
+        ("em_wcs_f@em_wcs", "keep_hub", r"  call void @cqrt_copy_i32\(i32 %[\w.]+, i32 (%[\w.]+)\)\n  call void @cqrt_free\(i32 \1\)\n", ""),
+    ],
     "me_exit": [
         ("ex_pre", "const_test", lambda b: re.sub(r"(@cq_template_and_i32_hl(?:_unc)?\((?:i32 %[\w.]+, )+i32 )4\)", r"\g<1>0)", b),
          None),
