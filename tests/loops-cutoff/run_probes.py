@@ -90,6 +90,9 @@ MUTANTS = {
         # fc_inv_slrot's rotation of r repeated after the end (the slice case: the repeat runs only what y and the exit test
         # depend on; a rotation is never repeated): r's preparation Ry once more right after cqrt_invert_end
         ("fc_inv_slrot", "repeat_rotation", lambda b: repeat_rotation(b), None),
+        # owner ruling 2026-11-16 (cq-oyirf follow-up, rule 17 with rule 5): fc_inv_rld's y + 3 after the end reads the in-region
+        # loop's trip select (its load's value folded in, undone inside the region) in place of the repeated loop's exit value
+        ("fc_inv_rld", "stale_load_read", lambda b: stale_read(b), None),
     ],
     "agg_region": [
         ("vec_region", "other_field", lambda b: other_field(b), None),

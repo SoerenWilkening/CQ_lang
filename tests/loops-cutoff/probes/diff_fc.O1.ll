@@ -5,9 +5,9 @@ target triple = "x86_64-apple-macosx16.0.0"
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !6
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !6
   br label %4
 
 4:                                                ; preds = %4, %2
@@ -18,27 +18,33 @@ define i32 @fc_inv(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   br i1 %7, label %9, label %4, !llvm.loop !7
 
 9:                                                ; preds = %4
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !10
-  tail call void @__cq_invert_end() #5
-  %10 = tail call i32 @cq_measure_ui32(i32 noundef %5) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !10
+  tail call void @__cq_invert_end() #6
+  %10 = tail call i32 @cq_measure_ui32(i32 noundef %5) #7
   ret i32 %10
 }
 
-declare i32 @cq_theta_ui32(i32 noundef, double noundef) local_unnamed_addr #1
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #1
+
+declare i32 @cq_theta_ui32(i32 noundef, double noundef) local_unnamed_addr #2
 
 ; Function Attrs: noduplicate
-declare void @__cq_invert_begin() local_unnamed_addr #2
+declare void @__cq_invert_begin() local_unnamed_addr #3
 
 ; Function Attrs: noduplicate
-declare void @__cq_invert_end() local_unnamed_addr #2
+declare void @__cq_invert_end() local_unnamed_addr #3
 
-declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #1
+declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #2
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) #1
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_do(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !11
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !11
   br label %4
 
 4:                                                ; preds = %4, %2
@@ -52,26 +58,26 @@ define i32 @fc_inv_do(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   br i1 %11, label %12, label %4, !llvm.loop !12
 
 12:                                               ; preds = %4
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !13
-  tail call void @__cq_invert_end() #5
-  %13 = tail call i32 @cq_measure_ui32(i32 noundef %8) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !13
+  tail call void @__cq_invert_end() #6
+  %13 = tail call i32 @cq_measure_ui32(i32 noundef %8) #7
   ret i32 %13
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_call(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !14
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !14
   %4 = tail call fastcc i32 @fc_g(i32 noundef %3)
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !15
-  tail call void @__cq_invert_end() #5
-  %5 = tail call i32 @cq_measure_ui32(i32 noundef %4) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !15
+  tail call void @__cq_invert_end() #6
+  %5 = tail call i32 @cq_measure_ui32(i32 noundef %4) #7
   ret i32 %5
 }
 
 ; Function Attrs: nofree noinline norecurse nosync nounwind ssp memory(none) uwtable
-define internal fastcc i32 @fc_g(i32 noundef %0) unnamed_addr #3 {
+define internal fastcc i32 @fc_g(i32 noundef %0) unnamed_addr #4 {
   %2 = and i32 %0, 1
   %3 = icmp eq i32 %2, 0
   br i1 %3, label %12, label %4
@@ -93,10 +99,10 @@ define internal fastcc i32 @fc_g(i32 noundef %0) unnamed_addr #3 {
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_trip(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !17
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !17
   %6 = and i32 %4, 1
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %15, label %8
@@ -105,7 +111,7 @@ define i32 @fc_inv_trip(i32 noundef %0, i32 noundef %1, double noundef %2) local
   %9 = phi i32 [ %12, %8 ], [ %5, %3 ]
   %10 = phi i32 [ %11, %8 ], [ %4, %3 ]
   %11 = lshr i32 %10, 1
-  %12 = tail call i32 @cq_theta_ui32(i32 noundef %9, double noundef %2) #4
+  %12 = tail call i32 @cq_theta_ui32(i32 noundef %9, double noundef %2) #5
   %13 = and i32 %10, 2
   %14 = icmp eq i32 %13, 0
   br i1 %14, label %15, label %8, !llvm.loop !18
@@ -113,19 +119,19 @@ define i32 @fc_inv_trip(i32 noundef %0, i32 noundef %1, double noundef %2) local
 15:                                               ; preds = %8, %3
   %16 = phi i32 [ %4, %3 ], [ %11, %8 ]
   %17 = phi i32 [ %5, %3 ], [ %12, %8 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !19
-  tail call void @__cq_invert_end() #5
-  %18 = tail call i32 @cq_measure_ui32(i32 noundef %17) #6
-  %19 = tail call i32 @cq_measure_ui32(i32 noundef %16) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !19
+  tail call void @__cq_invert_end() #6
+  %18 = tail call i32 @cq_measure_ui32(i32 noundef %17) #7
+  %19 = tail call i32 @cq_measure_ui32(i32 noundef %16) #7
   %20 = add i32 %19, %18
   ret i32 %20
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_cbound(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !20
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !20
   %5 = and i32 %1, 7
   %6 = icmp ne i32 %5, 0
   %7 = and i32 %4, 1
@@ -135,9 +141,9 @@ define i32 @fc_inv_cbound(i32 noundef %0, i32 noundef %1, double noundef %2) loc
 
 10:                                               ; preds = %13, %3
   %11 = phi i32 [ 1, %3 ], [ %18, %13 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !21
-  tail call void @__cq_invert_end() #5
-  %12 = tail call i32 @cq_measure_ui32(i32 noundef %11) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !21
+  tail call void @__cq_invert_end() #6
+  %12 = tail call i32 @cq_measure_ui32(i32 noundef %11) #7
   ret i32 %12
 
 13:                                               ; preds = %3, %13
@@ -157,18 +163,18 @@ define i32 @fc_inv_cbound(i32 noundef %0, i32 noundef %1, double noundef %2) loc
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_r6cls(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !23
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !23
   %5 = and i32 %1, 7
   %6 = icmp eq i32 %5, 0
   br i1 %6, label %7, label %10
 
 7:                                                ; preds = %10, %3
   %8 = phi i32 [ 1, %3 ], [ %15, %10 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !24
-  tail call void @__cq_invert_end() #5
-  %9 = tail call i32 @cq_measure_ui32(i32 noundef %8) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !24
+  tail call void @__cq_invert_end() #6
+  %9 = tail call i32 @cq_measure_ui32(i32 noundef %8) #7
   ret i32 %9
 
 10:                                               ; preds = %3, %10
@@ -185,9 +191,9 @@ define i32 @fc_inv_r6cls(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_r6bnd(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !26
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !26
   %5 = and i32 %1, 7
   %6 = icmp ne i32 %5, 0
   %7 = and i32 %4, 1
@@ -197,9 +203,9 @@ define i32 @fc_inv_r6bnd(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 
 10:                                               ; preds = %13, %3
   %11 = phi i32 [ 1, %3 ], [ %17, %13 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !27
-  tail call void @__cq_invert_end() #5
-  %12 = tail call i32 @cq_measure_ui32(i32 noundef %11) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !27
+  tail call void @__cq_invert_end() #6
+  %12 = tail call i32 @cq_measure_ui32(i32 noundef %11) #7
   ret i32 %12
 
 13:                                               ; preds = %3, %13
@@ -218,9 +224,9 @@ define i32 @fc_inv_r6bnd(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_r6k(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !29
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !29
   %4 = and i32 %3, 1
   %5 = icmp eq i32 %4, 0
   br i1 %5, label %13, label %6
@@ -236,18 +242,18 @@ define i32 @fc_inv_r6k(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
 
 13:                                               ; preds = %6, %2
   %14 = phi i32 [ 1, %2 ], [ %9, %6 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !31
-  tail call void @__cq_invert_end() #5
-  %15 = tail call i32 @cq_measure_ui32(i32 noundef %14) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !31
+  tail call void @__cq_invert_end() #6
+  %15 = tail call i32 @cq_measure_ui32(i32 noundef %14) #7
   ret i32 %15
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_r6pre(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !32
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !32
   %6 = and i32 %4, 1
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %15, label %8
@@ -263,17 +269,17 @@ define i32 @fc_inv_r6pre(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 
 15:                                               ; preds = %8, %3
   %16 = phi i32 [ %5, %3 ], [ %11, %8 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !34
-  tail call void @__cq_invert_end() #5
-  %17 = tail call i32 @cq_measure_ui32(i32 noundef %16) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !34
+  tail call void @__cq_invert_end() #6
+  %17 = tail call i32 @cq_measure_ui32(i32 noundef %16) #7
   ret i32 %17
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_add(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !35
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !35
   br label %4
 
 4:                                                ; preds = %4, %2
@@ -284,18 +290,18 @@ define i32 @fc_inv_add(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
   br i1 %7, label %9, label %4, !llvm.loop !36
 
 9:                                                ; preds = %4
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !37
-  tail call void @__cq_invert_end() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !37
+  tail call void @__cq_invert_end() #6
   %10 = add i32 %5, 3
-  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #6
+  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #7
   ret i32 %11
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_in(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !38
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !38
   %4 = and i32 %3, 1
   %5 = icmp eq i32 %4, 0
   br i1 %5, label %16, label %6
@@ -318,30 +324,30 @@ define i32 @fc_inv_in(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   %17 = phi i32 [ 21, %2 ], [ %15, %14 ]
   %18 = phi i32 [ %3, %2 ], [ %11, %14 ]
   %19 = add i32 %17, %18
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !40
-  tail call void @__cq_invert_end() #5
-  %20 = tail call i32 @cq_measure_ui32(i32 noundef %19) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !40
+  tail call void @__cq_invert_end() #6
+  %20 = tail call i32 @cq_measure_ui32(i32 noundef %19) #7
   ret i32 %20
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rcls(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
   %5 = xor i32 %0, 9
-  %6 = tail call i32 @cq_theta_ui32(i32 noundef %5, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !41
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %5, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !41
   %7 = and i32 %1, 7
   %8 = icmp eq i32 %7, 0
   br i1 %8, label %9, label %14
 
 9:                                                ; preds = %14, %3
   %10 = phi i32 [ 1, %3 ], [ %19, %14 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !42
-  tail call void @__cq_invert_end() #5
-  %11 = tail call i32 @cq_measure_ui32(i32 noundef %6) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !42
+  tail call void @__cq_invert_end() #6
+  %11 = tail call i32 @cq_measure_ui32(i32 noundef %6) #7
   %12 = add i32 %11, %10
-  %13 = tail call i32 @cq_measure_ui32(i32 noundef %12) #6
+  %13 = tail call i32 @cq_measure_ui32(i32 noundef %12) #7
   ret i32 %13
 
 14:                                               ; preds = %3, %14
@@ -358,9 +364,9 @@ define i32 @fc_inv_rcls(i32 noundef %0, i32 noundef %1, double noundef %2) local
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rclsin(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !44
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !44
   %5 = and i32 %1, 7
   %6 = icmp eq i32 %5, 0
   br i1 %6, label %9, label %12
@@ -371,9 +377,9 @@ define i32 @fc_inv_rclsin(i32 noundef %0, i32 noundef %1, double noundef %2) loc
 
 9:                                                ; preds = %7, %3
   %10 = phi i32 [ 2, %3 ], [ %8, %7 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !45
-  tail call void @__cq_invert_end() #5
-  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !45
+  tail call void @__cq_invert_end() #6
+  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #7
   ret i32 %11
 
 12:                                               ; preds = %3, %12
@@ -390,9 +396,9 @@ define i32 @fc_inv_rclsin(i32 noundef %0, i32 noundef %1, double noundef %2) loc
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rdo(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !47
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !47
   br label %4
 
 4:                                                ; preds = %4, %2
@@ -406,18 +412,18 @@ define i32 @fc_inv_rdo(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
   br i1 %11, label %12, label %4, !llvm.loop !48
 
 12:                                               ; preds = %4
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !49
-  tail call void @__cq_invert_end() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !49
+  tail call void @__cq_invert_end() #6
   %13 = xor i32 %8, 5
-  %14 = tail call i32 @cq_measure_ui32(i32 noundef %13) #6
+  %14 = tail call i32 @cq_measure_ui32(i32 noundef %13) #7
   ret i32 %14
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rnest(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !50
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !50
   %5 = and i32 %1, 3
   %6 = icmp eq i32 %5, 0
   br i1 %6, label %10, label %7
@@ -429,10 +435,10 @@ define i32 @fc_inv_rnest(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 
 10:                                               ; preds = %19, %3
   %11 = phi i32 [ %4, %3 ], [ %20, %19 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !51
-  tail call void @__cq_invert_end() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !51
+  tail call void @__cq_invert_end() #6
   %12 = mul i32 %11, 3
-  %13 = tail call i32 @cq_measure_ui32(i32 noundef %12) #6
+  %13 = tail call i32 @cq_measure_ui32(i32 noundef %12) #7
   ret i32 %13
 
 14:                                               ; preds = %14, %7
@@ -451,9 +457,9 @@ define i32 @fc_inv_rnest(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rtwo(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !54
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !54
   br label %4
 
 4:                                                ; preds = %4, %2
@@ -464,21 +470,21 @@ define i32 @fc_inv_rtwo(i32 noundef %0, double noundef %1) local_unnamed_addr #0
   br i1 %7, label %9, label %4, !llvm.loop !55
 
 9:                                                ; preds = %4
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !56
-  tail call void @__cq_invert_end() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !56
+  tail call void @__cq_invert_end() #6
   %10 = add i32 %5, 3
-  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #6
+  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #7
   %12 = mul i32 %5, 5
-  %13 = tail call i32 @cq_measure_ui32(i32 noundef %12) #6
+  %13 = tail call i32 @cq_measure_ui32(i32 noundef %12) #7
   %14 = add i32 %13, %11
   ret i32 %14
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rbk(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !57
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !57
   %4 = and i32 %3, 1
   %5 = icmp eq i32 %4, 0
   br i1 %5, label %6, label %11
@@ -486,10 +492,10 @@ define i32 @fc_inv_rbk(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
 6:                                                ; preds = %11, %2
   %7 = phi i32 [ %3, %2 ], [ %15, %11 ]
   %8 = phi i32 [ 0, %2 ], [ %16, %11 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !58
-  tail call void @__cq_invert_end() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !58
+  tail call void @__cq_invert_end() #6
   %9 = sub i32 %7, %8
-  %10 = tail call i32 @cq_measure_ui32(i32 noundef %9) #6
+  %10 = tail call i32 @cq_measure_ui32(i32 noundef %9) #7
   ret i32 %10
 
 11:                                               ; preds = %2, %11
@@ -508,9 +514,9 @@ define i32 @fc_inv_rbk(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rpre(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !60
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !60
   %4 = mul i32 %3, 3
   br label %5
 
@@ -522,20 +528,20 @@ define i32 @fc_inv_rpre(i32 noundef %0, double noundef %1) local_unnamed_addr #0
   br i1 %8, label %10, label %5, !llvm.loop !61
 
 10:                                               ; preds = %5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !62
-  tail call void @__cq_invert_end() #5
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !62
+  tail call void @__cq_invert_end() #6
   %11 = add i32 %6, 3
-  %12 = tail call i32 @cq_measure_ui32(i32 noundef %11) #6
+  %12 = tail call i32 @cq_measure_ui32(i32 noundef %11) #7
   ret i32 %12
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_rr6k(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
   %4 = xor i32 %0, 9
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %4, double noundef %1) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !63
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %4, double noundef %1) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !63
   %6 = and i32 %3, 1
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %15, label %8
@@ -551,20 +557,20 @@ define i32 @fc_inv_rr6k(i32 noundef %0, double noundef %1) local_unnamed_addr #0
 
 15:                                               ; preds = %8, %2
   %16 = phi i32 [ 1, %2 ], [ %11, %8 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !65
-  tail call void @__cq_invert_end() #5
-  %17 = tail call i32 @cq_measure_ui32(i32 noundef %5) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !65
+  tail call void @__cq_invert_end() #6
+  %17 = tail call i32 @cq_measure_ui32(i32 noundef %5) #7
   %18 = xor i32 %17, %16
-  %19 = tail call i32 @cq_measure_ui32(i32 noundef %18) #6
+  %19 = tail call i32 @cq_measure_ui32(i32 noundef %18) #7
   ret i32 %19
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @fc_inv_slrot(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
-  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #4
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #4
-  tail call void @__cq_invert_begin() #5
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !66
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %2) #5
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !66
   %6 = and i32 %4, 1
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %15, label %8
@@ -573,7 +579,7 @@ define i32 @fc_inv_slrot(i32 noundef %0, i32 noundef %1, double noundef %2) loca
   %9 = phi i32 [ %12, %8 ], [ %5, %3 ]
   %10 = phi i32 [ %11, %8 ], [ %4, %3 ]
   %11 = lshr i32 %10, 1
-  %12 = tail call i32 @cq_theta_ui32(i32 noundef %9, double noundef %2) #4
+  %12 = tail call i32 @cq_theta_ui32(i32 noundef %9, double noundef %2) #5
   %13 = and i32 %10, 2
   %14 = icmp eq i32 %13, 0
   br i1 %14, label %15, label %8, !llvm.loop !67
@@ -581,22 +587,66 @@ define i32 @fc_inv_slrot(i32 noundef %0, i32 noundef %1, double noundef %2) loca
 15:                                               ; preds = %8, %3
   %16 = phi i32 [ %4, %3 ], [ %11, %8 ]
   %17 = phi i32 [ %5, %3 ], [ %12, %8 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #6, !srcloc !68
-  tail call void @__cq_invert_end() #5
-  %18 = tail call i32 @cq_measure_ui32(i32 noundef %17) #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !68
+  tail call void @__cq_invert_end() #6
+  %18 = tail call i32 @cq_measure_ui32(i32 noundef %17) #7
   %19 = add i32 %16, 3
-  %20 = tail call i32 @cq_measure_ui32(i32 noundef %19) #6
+  %20 = tail call i32 @cq_measure_ui32(i32 noundef %19) #7
   %21 = add i32 %20, %18
   ret i32 %21
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @fc_inv_rld(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = alloca [4 x i32], align 16
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #5
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #7
+  store i32 %4, ptr %3, align 16, !tbaa !69
+  %5 = getelementptr inbounds i8, ptr %3, i64 4
+  %6 = xor i32 %4, 5
+  store i32 %6, ptr %5, align 4, !tbaa !69
+  %7 = getelementptr inbounds i8, ptr %3, i64 8
+  store i32 3, ptr %7, align 8, !tbaa !69
+  %8 = getelementptr inbounds i8, ptr %3, i64 12
+  %9 = add i32 %4, 1
+  store i32 %9, ptr %8, align 4, !tbaa !69
+  tail call void @__cq_invert_begin() #6
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !73
+  %10 = and i32 %4, 1
+  %11 = icmp eq i32 %10, 0
+  br i1 %11, label %23, label %12
+
+12:                                               ; preds = %2, %12
+  %13 = phi i32 [ %20, %12 ], [ %4, %2 ]
+  %14 = lshr i32 %13, 2
+  %15 = and i32 %13, 3
+  %16 = zext nneg i32 %15 to i64
+  %17 = getelementptr inbounds [4 x i32], ptr %3, i64 0, i64 %16
+  %18 = load i32, ptr %17, align 4, !tbaa !69
+  %19 = and i32 %18, 2
+  %20 = xor i32 %19, %14
+  %21 = and i32 %13, 4
+  %22 = icmp eq i32 %21, 0
+  br i1 %22, label %23, label %12, !llvm.loop !74
+
+23:                                               ; preds = %12, %2
+  %24 = phi i32 [ %4, %2 ], [ %20, %12 ]
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #7, !srcloc !75
+  tail call void @__cq_invert_end() #6
+  %25 = add i32 %24, 3
+  %26 = tail call i32 @cq_measure_ui32(i32 noundef %25) #7
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #7
+  ret i32 %26
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
-attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
-attributes #2 = { noduplicate "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
-attributes #3 = { nofree noinline norecurse nosync nounwind ssp memory(none) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
-attributes #4 = { nomerge nounwind }
-attributes #5 = { noduplicate nounwind }
-attributes #6 = { nounwind }
+attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #3 = { noduplicate "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #4 = { nofree noinline norecurse nosync nounwind ssp memory(none) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #5 = { nomerge nounwind }
+attributes #6 = { noduplicate nounwind }
+attributes #7 = { nounwind }
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}
@@ -607,66 +657,73 @@ attributes #6 = { nounwind }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
-!6 = !{i64 2147518544}
+!6 = !{i64 2147519212}
 !7 = distinct !{!7, !8, !9}
 !8 = !{!"llvm.loop.mustprogress"}
 !9 = !{!"llvm.loop.unroll.disable"}
-!10 = !{i64 2147518600}
-!11 = !{i64 2147520469}
+!10 = !{i64 2147519268}
+!11 = !{i64 2147521137}
 !12 = distinct !{!12, !8, !9}
-!13 = !{i64 2147520525}
-!14 = !{i64 2147522394}
-!15 = !{i64 2147522450}
+!13 = !{i64 2147521193}
+!14 = !{i64 2147523062}
+!15 = !{i64 2147523118}
 !16 = distinct !{!16, !8, !9}
-!17 = !{i64 2147525334}
+!17 = !{i64 2147526002}
 !18 = distinct !{!18, !8, !9}
-!19 = !{i64 2147526405}
-!20 = !{i64 2147529032}
-!21 = !{i64 2147529088}
+!19 = !{i64 2147527073}
+!20 = !{i64 2147529700}
+!21 = !{i64 2147529756}
 !22 = distinct !{!22, !8, !9}
-!23 = !{i64 2147530957}
-!24 = !{i64 2147531013}
+!23 = !{i64 2147531625}
+!24 = !{i64 2147531681}
 !25 = distinct !{!25, !8, !9}
-!26 = !{i64 2147532882}
-!27 = !{i64 2147532938}
+!26 = !{i64 2147533550}
+!27 = !{i64 2147533606}
 !28 = distinct !{!28, !8, !9}
-!29 = !{i64 2147534807}
+!29 = !{i64 2147535475}
 !30 = distinct !{!30, !8, !9}
-!31 = !{i64 2147534863}
-!32 = !{i64 2147537747}
+!31 = !{i64 2147535531}
+!32 = !{i64 2147538415}
 !33 = distinct !{!33, !8, !9}
-!34 = !{i64 2147537803}
-!35 = !{i64 2147539672}
+!34 = !{i64 2147538471}
+!35 = !{i64 2147540340}
 !36 = distinct !{!36, !8, !9}
-!37 = !{i64 2147539728}
-!38 = !{i64 2147541605}
+!37 = !{i64 2147540396}
+!38 = !{i64 2147542273}
 !39 = distinct !{!39, !8, !9}
-!40 = !{i64 2147541661}
-!41 = !{i64 2147544545}
-!42 = !{i64 2147544601}
+!40 = !{i64 2147542329}
+!41 = !{i64 2147545213}
+!42 = !{i64 2147545269}
 !43 = distinct !{!43, !8, !9}
-!44 = !{i64 2147548620}
-!45 = !{i64 2147548676}
+!44 = !{i64 2147549288}
+!45 = !{i64 2147549344}
 !46 = distinct !{!46, !8, !9}
-!47 = !{i64 2147550553}
+!47 = !{i64 2147551221}
 !48 = distinct !{!48, !8, !9}
-!49 = !{i64 2147550609}
-!50 = !{i64 2147552486}
-!51 = !{i64 2147552542}
+!49 = !{i64 2147551277}
+!50 = !{i64 2147553154}
+!51 = !{i64 2147553210}
 !52 = distinct !{!52, !8, !9}
 !53 = distinct !{!53, !8, !9}
-!54 = !{i64 2147554419}
+!54 = !{i64 2147555087}
 !55 = distinct !{!55, !8, !9}
-!56 = !{i64 2147554475}
-!57 = !{i64 2147557118}
-!58 = !{i64 2147557174}
+!56 = !{i64 2147555143}
+!57 = !{i64 2147557786}
+!58 = !{i64 2147557842}
 !59 = distinct !{!59, !8, !9}
-!60 = !{i64 2147559051}
+!60 = !{i64 2147559719}
 !61 = distinct !{!61, !8, !9}
-!62 = !{i64 2147559107}
-!63 = !{i64 2147561999}
+!62 = !{i64 2147559775}
+!63 = !{i64 2147562667}
 !64 = distinct !{!64, !8, !9}
-!65 = !{i64 2147562055}
-!66 = !{i64 2147567089}
+!65 = !{i64 2147562723}
+!66 = !{i64 2147567757}
 !67 = distinct !{!67, !8, !9}
-!68 = !{i64 2147568160}
+!68 = !{i64 2147568828}
+!69 = !{!70, !70, i64 0}
+!70 = !{!"int", !71, i64 0}
+!71 = !{!"omnipotent char", !72, i64 0}
+!72 = !{!"Simple C/C++ TBAA"}
+!73 = !{i64 2147571463}
+!74 = distinct !{!74, !8, !9}
+!75 = !{i64 2147571519}

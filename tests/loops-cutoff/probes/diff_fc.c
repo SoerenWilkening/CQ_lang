@@ -202,3 +202,15 @@ unsigned fc_inv_slrot(unsigned x0, unsigned r0, double th) {
   cq_invert_end();
   return cq_measure(r) + cq_measure(y + 3);
 }
+/* owner ruling 2026-11-16 (cq-oyirf follow-up, CR rule 17 with rule 5): a load in the repeated slice (an array element at a quantum index, the
+ * array stored before the region) is repeated when no memory version change lies between the region's begin and the repeat; the repeated
+ * load is un-copied by rule 5 after its last reader. Failed before (any load blocked the repeat: the kept copy leaked). */
+unsigned fc_inv_rld(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned a[4] = {x, x ^ 5, 3, x + 1};
+  unsigned y = x;
+  cq_invert_begin();
+  while (y & 1) { y = (y >> 2) ^ (a[y & 3] & 2); }
+  cq_invert_end();
+  return cq_measure(y + 3);
+}

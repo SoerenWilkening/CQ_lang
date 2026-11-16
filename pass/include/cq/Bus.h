@@ -50,6 +50,9 @@ void lowerRealloc(LoweringContext &, llvm::CallBase &);
 // host-resident object, observable volatile store, allocation, effect entry, host call not memory(none|read),
 // table-clone call, call of a function that writes memory)? writesMemory is the least fixpoint over calls by name.
 bool versionChange(const LoweringContext &, const llvm::Instruction &origI);
+// The same question for one specialization, outside a lowering (eff-invert Repeat.cpp, rule 17 with rule 5). An effect
+// entry answers false here as above: it notes its change at its tape_effect call (TaintInfo::isEffectEntry).
+bool versionChange(const TaintInfo &, const Specialization &, const llvm::Instruction &origI);
 bool writesMemory(const TaintInfo &, const llvm::Function &);
 // An allocation or a bus copy: its lowering notes the change itself, at the __cq_alloc call or the copy's first store.
 bool notesOwnChange(const LoweringContext &, const llvm::Instruction &origI);

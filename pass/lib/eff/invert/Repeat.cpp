@@ -24,12 +24,21 @@
 // go). That remainder must be pure (no call but a memory-free intrinsic, no memory access): a loop whose body holds a
 // rotation, a measurement, a bus store or an effect is repeated only by the slice its read values and exit tests depend
 // on (CR: "where those read nothing such an instruction produces"); such an instruction is never repeated. A remainder
-// that reads one (or a load) is left as it was (the kept copy, a §6 leak: the construction is owed, CR §8).
+// that reads one is left as it was (the kept copy, a §6 leak: the construction is owed, CR §8).
+//
+// A load in the remainder (owner ruling 2026-11-16, cq-oyirf follow-up, rule 17 with rule 5) is repeated when no memory
+// version change lies between the region's begin and the repeat (the region: the repeat sits right after its end), for
+// any specialization of the function: rule 5's own classification (bus::versionChange: a bus store, an in-place form's
+// store on a cell, an allocation, a call that is one), and an effect entry, which notes its change at its tape_effect
+// call. CQ.h's fences beside the markers are none (the walker consumes them, emitting nothing). Wherever one lies there, the load counts as reading what a store produced: the owed case above. A volatile load
+// is an observable access, never repeated. The repeated load is lowered like any other (rule 5: its un-copy after its
+// last reader, its rail freed when no version change overtook it).
 //
 // Taint: only where every specialization of the function holds each re-read value quantum (classical code is never
 // rewritten). The scaffold re-taints the module when anything changed.
 #include "Split.h"
 
+#include "cq/Bus.h"
 #include "cq/Effects.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -251,10 +260,27 @@ bool Repeater::repeatRegion(RegionCut &r) {
   // What the copy keeps: the re-read values and every branch of the region, with what they read in the region. The
   // remainder is pure (CR: the instructions the read values and exit tests depend on, "where those read nothing such an
   // instruction produces"); a loop it enters may hold a rotation, a measurement, a bus store, an effect or a call besides:
-  // the copy drops them (never repeated). A re-read value whose remainder reads one of them (or a load: what a bus store
-  // may have produced) is left as it was, and so is the region when a branch's does: the construction is owed (CR §8), the
+  // the copy drops them (never repeated). A re-read value whose remainder reads one of them (or a load where the
+  // region holds a memory version change: what a store produced) is left as it was, and so is the region when a branch's does: the construction is owed (CR §8), the
   // kept copy stays a §6 leak. A region with a path that ends (an abort's unreachable) is left as well: the copy would keep
-  // the dead end without the call that ends the path.
+  // the dead end without the call that ends the path. A load is repeated only when the region holds no memory version
+  // change (rule 5; owner ruling 2026-11-16, see the head of this file).
+  bool versionChangeInRegion = false;
+  for (BasicBlock *b : r.blocks)
+    for (Instruction &I : *b) {
+      // CQ.h's fence beside a marker is the marker's: the walker consumes it and emits nothing (Dispatch: no change noted).
+      if (versionChangeInRegion || !made(&I) || isMarkerFence(I))
+        continue;
+      auto *CB = dyn_cast<CallBase>(&I);
+      for (const Specialization &S : T.specializations())
+        if (S.F == &F && (bus::versionChange(T, S, I) || (CB && T.isEffectEntry(*CB, S))))
+          versionChangeInRegion = true;
+    }
+  auto repeatable = [&](const Instruction &I) {
+    if (auto *L = dyn_cast<LoadInst>(&I))
+      return !versionChangeInRegion && !L->isVolatile();
+    return pureForRepeat(I);
+  };
   SetVector<Instruction *> need;
   auto close = [&](ArrayRef<Instruction *> from, SetVector<Instruction *> &into) {
     SmallVector<Instruction *, 16> work(from.begin(), from.end());
@@ -264,7 +290,7 @@ bool Repeater::repeatRegion(RegionCut &r) {
         continue;
       if (!into.insert(I))
         continue;
-      if (!pureForRepeat(*I) || isMarkerCall(*I))
+      if (!repeatable(*I) || isMarkerCall(*I))
         return false;
       for (Value *o : I->operands())
         if (auto *oi = dyn_cast<Instruction>(o); oi && made(oi))
