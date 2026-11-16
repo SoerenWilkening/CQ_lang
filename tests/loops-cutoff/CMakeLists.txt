@@ -424,3 +424,11 @@ add_test(NAME loops-cutoff-diff-fa
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_fa.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-mysin (CR rules 14, 23): a nested quantum-exit K-loop whose trips change the quantum floating-point environment, in a
+# clone called under a quantum predicate (zero-trip guards): the inner loop's carried environment piece takes its latch value
+# at the end of the trip, not at the inner exit block (musl printf_core, sscanf, ctime).
+add_test(NAME loops-cutoff-nest-fenv
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/nest_fenv.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
