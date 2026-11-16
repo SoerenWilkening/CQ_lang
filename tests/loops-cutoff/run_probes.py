@@ -81,9 +81,15 @@ MUTANTS = {
     # cq-8zz4v (CR rules 6, 14, 17): fc_inv_r6cls's accumulator, copied out and undone by the reverse loop since it is no longer
     # cleaned per trip in the region; the same move of cqrt_invert_end before that reverse loop leaves the replay reversed
     # recomputing the chain the region's trips made
+    # cq-oyirf (owner ruling 2026-11-16, CR rule 17): fc_inv_add's y + 3 after the end reads the in-region loop's carried y (its
+    # trip select, undone by the reverse loop inside the region) in place of the value of the loop run again after the end
     "diff_fc": [
         ("fc_inv", "reverse_after_end", lambda b: reverse_after_end(b), None),
         ("fc_inv_r6cls", "r6_reverse_after_end", lambda b: reverse_after_end(b), None),
+        ("fc_inv_add", "stale_read", lambda b: stale_read(b), None),
+        # fc_inv_slrot's rotation of r repeated after the end (the slice case: the repeat runs only what y and the exit test
+        # depend on; a rotation is never repeated): r's preparation Ry once more right after cqrt_invert_end
+        ("fc_inv_slrot", "repeat_rotation", lambda b: repeat_rotation(b), None),
     ],
     "agg_region": [
         ("vec_region", "other_field", lambda b: other_field(b), None),
@@ -222,6 +228,32 @@ def reverse_after_end(fn_body: str):
     if not m:
         return fn_body
     return b[:m[-1].end()] + end + b[m[-1].end():]
+
+
+def stale_read(fn_body: str):
+    """diff_fc's fc_inv_add with the add of 3 after cqrt_invert_end reading the region's first trip select (the in-region loop's
+    carried y, undone inside the region) in place of the repeated loop's exit value."""
+    end = fn_body.find("  call void @cqrt_invert_end()\n")
+    if end < 0:
+        return fn_body
+    sel = re.search(r"^  (%[\w.]+) = call i32 @cq_template_select_i32\(", fn_body[:end], re.M)
+    add = re.search(r"@cq_template_add_i32_hl\(i32 (%[\w.]+), i32 3\)", fn_body[end:])
+    if not sel or not add:
+        return fn_body
+    a, b = end + add.start(1), end + add.end(1)
+    return fn_body[:a] + sel.group(1) + fn_body[b:]
+
+
+def repeat_rotation(fn_body: str):
+    """diff_fc's fc_inv_slrot with the last cqrt_ry_i32 before cqrt_invert_begin (r's preparation) made once more right after
+    cqrt_invert_end."""
+    begin = fn_body.find("  call void @cqrt_invert_begin()\n")
+    end = fn_body.find("  call void @cqrt_invert_end()\n")
+    rys = re.findall(r"^  call void @cqrt_ry_i32\(i32 %[\w.]+, double %[\w.]+\)\n", fn_body[:begin], re.M)
+    if begin < 0 or end < 0 or not rys:
+        return fn_body
+    at = end + len("  call void @cqrt_invert_end()\n")
+    return fn_body[:at] + rys[-1] + fn_body[at:]
 
 
 def other_field(fn_body: str):

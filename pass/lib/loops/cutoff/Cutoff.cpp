@@ -74,6 +74,7 @@
 
 #include "Exits.h"
 #include "../rolled/Rolled.h"
+#include "../../eff/invert/Split.h"
 #include "cq/Aggregates.h"
 #include "cq/Bus.h"
 #include "cq/Predicate.h"
@@ -469,6 +470,11 @@ private:
 };
 
 void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
+  // cq-oyirf (CR rule 17, owner ruling 2026-11-16): a loop run again after a cq_invert region's end keeps no a_K; the
+  // in-region loop's is the kept rail.
+  const bool repeat = invert::repeatedLoop(L);
+  if (repeat)
+    keep = false;
   Value *t0 = test0;
   test0 = nullptr;
   BasicBlock *H = L.getHeader();
@@ -1148,7 +1154,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // cq-8zz4v (CR rules 6, 14, 17): inside an open cq_invert region a final value read after the region's end is copied
       // out (wireExits' afterEnd, cq-037u2) and its rail undone by the reverse loop inside the region: no register is kept
       // past the loop, so the chain is not cleaned per trip.
-      if (ok && live && ctx.unc().invertOpen() && rolled::readAfterInvertEnd(L, Up))
+      // cq-oyirf (CR rule 17): nor is a final value read in the region only by what does not keep it (a computation).
+      if (ok && live && ctx.unc().invertOpen() &&
+          (rolled::readAfterInvertEnd(L, Up) || !rolled::keptByReader(ctx, L, Up)))
         live = false;
       if (ok && live && exits::initDead(ctx, L, h->getIncomingValueForBlock(pre), h))
         six.insert(h);
@@ -2592,7 +2600,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       } else {
         nRt = Krt;
       }
-      keepAny = true;
+      keepAny = !repeat;
     }
     // cq-9kcq S6b, S6c (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is legal, no trip runs, every carried value keeps its
     // entry value, a_K is the predicate of reaching trip 0): where the bound is not a constant of at least 1 (a received K,

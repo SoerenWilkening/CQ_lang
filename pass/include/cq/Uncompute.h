@@ -145,6 +145,9 @@ public:
   // (a later reader recomputes them after end).
   llvm::SmallVector<llvm::Value *, 8> resolveRegionMade(llvm::Instruction *end,
                                                         llvm::function_ref<bool(llvm::Value *)> keep);
+  // One round of resolveRegionMade over the rails from `start` on (its deferred items aside); appends the handles placed.
+  void resolveRegionMadeOnce(llvm::Instruction *end, llvm::function_ref<bool(llvm::Value *)> keep, RailId start,
+                             llvm::SmallVectorImpl<llvm::Value *> &out);
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   // Is a mirror being emitted? A deferred reverse placed in one runs in the scope's own reverse, under no guard of its own.

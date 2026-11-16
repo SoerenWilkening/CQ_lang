@@ -984,6 +984,46 @@ bool readersKeep(LoweringContext &ctx, const Loop &top, const Value *v) {
   return true;
 }
 
+bool keptByReader(LoweringContext &ctx, const Loop &top, const Value *v) {
+  SmallVector<const Value *, 4> work{v};
+  SmallPtrSet<const Value *, 8> seen{v};
+  while (!work.empty()) {
+    const Value *x = work.pop_back_val();
+    for (const User *u : x->users()) {
+      auto *ui = dyn_cast<Instruction>(u);
+      if (!ui || top.contains(ui))
+        continue;
+      // What names x's rail itself: a merge, an alias.
+      if (isa<PHINode>(ui) || isa<FreezeInst>(ui)) {
+        if (seen.insert(ui).second)
+          work.push_back(ui);
+        continue;
+      }
+      if (isa<ReturnInst>(ui))
+        return true;
+      if (auto *st = dyn_cast<StoreInst>(ui); st && st->getValueOperand() == x)
+        return true;
+      if (auto *CB = dyn_cast<CallBase>(ui)) {
+        if (isa<DbgInfoIntrinsic>(CB))
+          continue;
+        switch (calls::classify(*CB, ctx.T, ctx.S)) {
+        case calls::Class::Measure:
+          if (!ctx.S.table && !ctx.S.ctl && spine::measuredOnEveryPath(ctx, CB->getArgOperand(0)))
+            return true;
+          continue;
+        case calls::Class::Phi:
+        case calls::Class::TemplateIntrinsic:
+        case calls::Class::LibmIntrinsic:
+          continue;
+        default:
+          return true;   // a rotation of it (rule 2, 10), a clone's actual, an effect: as before
+        }
+      }
+    }
+  }
+  return false;
+}
+
 bool readAfterInvertEnd(const Loop &top, const Value *v) {
   const Function *F = top.getHeader()->getParent();
   if (!isa<Instruction>(v) || cast<Instruction>(v)->getFunction() != F)
@@ -1003,10 +1043,12 @@ bool readAfterInvertEnd(const Loop &top, const Value *v) {
   auto after = [&](const Instruction *u) {
     return any_of(ends, [&](const Instruction *e) { return e != u && isPotentiallyReachable(e, u, &excl); });
   };
-  SmallVector<const Value *, 4> work{v};
-  SmallPtrSet<const Value *, 8> seen{v};
+  // (x, through a pure instruction): cq-oyirf: a pure instruction of the region the spine does not recompute after the end
+  // (one read after it only through a merge, which crosses the end as a rail of its own) reads v inside the region only.
+  SmallVector<std::pair<const Value *, bool>, 4> work{{v, false}};
+  SmallPtrSet<const Value *, 8> seen{v}, seenPure;
   while (!work.empty()) {
-    const Value *x = work.pop_back_val();
+    auto [x, pure] = work.pop_back_val();
     for (const User *u : x->users()) {
       auto *ui = dyn_cast<Instruction>(u);
       if (!ui || ui->getFunction() != F || top.contains(ui))
@@ -1015,10 +1057,14 @@ bool readAfterInvertEnd(const Loop &top, const Value *v) {
         return true;
       // Read through a merge, or by a pure instruction the spine recomputes after the end from its operands (Dispatch's
       // closeRegionRails): what reads it after the end reads v there.
-      if ((isa<PHINode>(ui) || isa<BinaryOperator>(ui) || isa<CmpInst>(ui) || isa<CastInst>(ui) || isa<SelectInst>(ui) ||
-           isa<FreezeInst>(ui) || isa<UnaryOperator>(ui)) &&
-          seen.insert(ui).second)
-        work.push_back(ui);
+      if (isa<PHINode>(ui)) {
+        if (!pure && seen.insert(ui).second)
+          work.push_back({ui, false});
+      } else if ((isa<BinaryOperator>(ui) || isa<CmpInst>(ui) || isa<CastInst>(ui) || isa<SelectInst>(ui) ||
+                  isa<FreezeInst>(ui) || isa<UnaryOperator>(ui)) &&
+                 seenPure.insert(ui).second) {
+        work.push_back({ui, true});
+      }
     }
   }
   return false;

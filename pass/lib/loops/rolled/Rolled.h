@@ -81,6 +81,12 @@ bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value 
 // Over-approximates: a yes costs one copy.
 bool cleanedAfter(const llvm::Loop &top, const llvm::Value *v);
 
+// cq-oyirf (CR rule 17 "A value made in the region and read after its end"): does some reader after the loop `top` keep v's
+// rail itself (through merges and aliases): a measurement on every path, a rotation, a return, a stored value, a call that
+// takes it? A rail an outermost loop in an open cq_invert region makes crosses the region's end only where a rule keeps it;
+// one only computed from is uncomputed inside the region (no rule-6 register), Classical copiedAtEnd and Cutoff's `six`.
+bool keptByReader(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value *v);
+
 // cq-037u2 (CR rule 17 with rule 14): is v, a value of the loop `top`, read after the end of a cq_invert region that a path
 // from the loop reaches (by an instruction such a path reaches without entering the loop again, directly or through merges
 // and pure instructions, which the spine recomputes after the end)? wireExits' afterEnd for a loop lowered inside an open
