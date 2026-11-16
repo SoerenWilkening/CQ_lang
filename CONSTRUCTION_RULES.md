@@ -1031,6 +1031,19 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     opens, needs no analysis. The asm fences in `CQ.h`'s macros are consumed.
     **Memory.** An in-place form inverts exactly (swap, gate, swap reversed is the form of
     the inverse gate), and a load un-copied inside the region reverses into itself. Example owed (§8).
+    **A value made in the region and read after its `end`.** A rail made inside the region
+    crosses the `end` only where a rule keeps it (a measured rail, a rotated register, a kept
+    store's rail, a kept `a_K`). Every other one is uncomputed inside the region after its last
+    reader there, and a reader after the `end` gets the value recomputed after the `end` from
+    the values live before the `begin`, uncomputed after its last reader as anywhere else. No
+    copy of it is kept across the `end` (§6 item 1: a leak). What is recomputed is the value's
+    pure cone, a loop in it included: the loop runs again after the `end` (forward, its values
+    read in place, then its reverse loop), so its gates appear inside the region, replayed
+    reversed, and once more after it. The repeat keeps no `a_K`: the in-region loop's is the
+    kept rail. A rotation, a measurement, a bus store and an effect entry are never repeated: a
+    loop whose body holds one repeats only the instructions its read values and exit tests
+    depend on, where those read nothing such an instruction produces (the other case and an
+    example are owed, §8).
     **A marker under a quantum predicate.** `__cq_invert_begin/end` are `noduplicate`, so the
     only marker in an arm is one the C program wrote there. It is a host call, executed on
     every path at its position in the arm's lowered code, whose gates carry the arm flag.
@@ -1598,7 +1611,9 @@ Owed, no source yet. Each fixes the construction its rule names:
   a `for (;;)` with a quantum body; a pointer-chase K-loop.
 - rule 16: `printf` whose count the program reads, and `%s` of a pointer rail; an output call of a buffer that holds QUANTUM cells (with 99); a variadic call's block (with
   95); `main` returning a loaded value and `exit` of one (rule 19).
-- rule 17: a K-loop with a clone call inside a region; `cq_invert_begin()` inside a quantum arm with its `end`
+- rule 17: a K-loop with a clone call inside a region; a K-loop inside a region whose exit value is read
+  after the `end` through a computation, and one whose read value depends on a rotation, measurement or store
+  of its body (construction owed too); `cq_invert_begin()` inside a quantum arm with its `end`
   after the join, a pair inside one arm, an `end` in each arm closing one `begin`; a kept store and an in-place
   form inside a region.
 - rule 18: a static callee under `#pragma STDC FENV_ACCESS ON` measured from a plain caller (the mode literal 0,
