@@ -1145,6 +1145,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         else
           live = true;
       }
+      // cq-8zz4v (CR rules 6, 14, 17): inside an open cq_invert region a final value read after the region's end is copied
+      // out (wireExits' afterEnd, cq-037u2) and its rail undone by the reverse loop inside the region: no register is kept
+      // past the loop, so the chain is not cleaned per trip.
+      if (ok && live && ctx.unc().invertOpen() && rolled::readAfterInvertEnd(L, Up))
+        live = false;
       if (ok && live && exits::initDead(ctx, L, h->getIncomingValueForBlock(pre), h))
         six.insert(h);
     }
