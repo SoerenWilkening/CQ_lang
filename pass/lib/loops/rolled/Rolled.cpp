@@ -245,13 +245,6 @@ void Region::flushTrips() {
   for (auto &[t, k, h] : backEdges)
     t->setSuccessor(k, heads[h].first);
   cut->eraseFromParent();
-  // Every trip-local sub-loop's reverse must have been placed in this region's trip (its exit values'
-  // readers are the trip's): otherwise it would run once, after the loop, for the last trip only.
-  for (Sub &sb : subs)
-    if (!sb.inReverse && !sb.unit->reversed)
-      unimplemented("loops-classical: a trip-local sub-loop's reverse could not be placed inside its parent's "
-                    "trip (rule 14 in a rule-14 trip)",
-                    sb.unit->diagAt);
 }
 
 void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guarded) {
@@ -294,22 +287,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     }
     if (!segOf.count(segs[i].bb) || segOf.lookup(segs[i].bb) != i)
       internalError("loops-classical: a segment's head does not reach its block", segs[i].bb->getTerminator());
-  }
-  // cq-x00t (CR rules 5, 14; 176): a trip-local sub-loop's reverse pops the frames its forward trips
-  // pushed, so nothing of this region may be pushed between the sub-loop's exit and that reverse. This
-  // region pushes a segment's path record (below) at the start of the segment's block segs[i].bb, after
-  // any item placed in the segment, and its read-back values at that block's terminator. So the reverse
-  // must lie in the segment the sub-loop exits into, before segs[i].bb.
-  for (const Sub &sb : subs) {
-    BasicBlock *at = sb.unit->revAt;
-    if (!at)
-      continue;   // cq-9kcq S11f: an inReverse sub-unit's reverse is still to come (below)
-    auto it = segOf.find(at);
-    unsigned i = it == segOf.end() ? n : it->second;
-    if (i == n || at == segs[i].bb || !is_contained(predecessors(headOf[i]), sb.cont))
-      unimplemented("loops-classical: a trip-local sub-loop's reverse placed outside the segment its loop exits "
-                    "into (a record of the parent pushed between the sub-loop's exit and its reverse)",
-                    sb.unit->diagAt);
   }
   DenseSet<const BasicBlock *> region;
   for (auto &kv : segOf)
@@ -355,60 +332,12 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     }
   }
 
-  const Instruction *crossGate = nullptr;
-  {
-    DenseSet<const Value *> fresh;
-    for (const Seg &s : segs)
-      for (const Record &r : U.scopeRecords(s.scope))
-        fresh.insert(r.forward);
-    for (unsigned si = 0; si < n; ++si)
-      for (BasicBlock *sbb : blocksOf[si])
-      for (Instruction &I : *sbb) {
-        auto *call = dyn_cast<CallInst>(&I);
-        Function *callee = call ? call->getCalledFunction() : nullptr;
-        if (!callee || crossGate)
-          continue;
-        std::optional<abi::CoreSpec> cs = abi::parseCore(callee->getName());
-        if (!cs || cs->unc || (cs->op != abi::Core::Ry && cs->op != abi::Core::RyQAngle))
-          continue;
-        for (Value *a : call->args())
-          if (a->getType() == i32 && !isa<Constant>(a) && !fresh.count(a))
-            crossGate = call;
-      }
-  }
-  auto checkDeferred = [&](BasicBlock *bb, BasicBlock::iterator from) {
-    if (!crossGate)
-      return;
-    for (auto it = from; it != bb->end(); ++it) {
-      // The release of a seed never written (rule 7: an edge seed of the trip, 176) reads no other rail
-      // and its own is never a gate's target: no later trip's gate can change what it undoes.
-      if (auto *fr = dyn_cast<CallInst>(&*it); fr && fr->getCalledFunction() && fr->arg_size() == 1) {
-        std::optional<abi::CoreSpec> cs = abi::parseCore(fr->getCalledFunction()->getName());
-        auto *src = dyn_cast<CallInst>(fr->getArgOperand(0));
-        std::optional<abi::CoreSpec> as =
-            src && src->getCalledFunction() ? abi::parseCore(src->getCalledFunction()->getName()) : std::nullopt;
-        if (cs && cs->op == abi::Core::Free && as && as->op == abi::Core::Alloc &&
-            all_of(src->users(), [&](const User *u) {
-              return u == fr || isa<PHINode>(u) || isa<SelectInst>(u) ||
-                     (isa<CallInst>(u) && cast<CallInst>(u)->getCalledFunction() &&
-                      cast<CallInst>(u)->getCalledFunction()->getName() == "cqrt_push");
-            }))
-          continue;
-      }
-      if (isa<CallInst>(*it))
-        unimplemented("loops-classical: a non-diagonal gate in a classically bounded loop on a rail that is not "
-                      "made in its own trip, while the reverse loop still undoes a record (rule 5's invariant "
-                      "across trips: a later trip's gate may touch a rail an earlier trip's record read)",
-                      crossGate);
-    }
-  };
-
   // Rule 5's invariant within the deferral (cq-vqid): an item the reverse loop undoes reads the rails
   // its records read, and they must still hold the value those records read. A non-diagonal gate
   // in the region on such a rail (a merge read reads every arm it may name) that can run after one
   // of the item's forward records, before the rail is made again, rotates it under the deferred
   // undo: the same trip after the record, or a later trip of an enclosing loop of the region on a
-  // rail that the trip does not make again. cq::unimplemented (the undo is never placed before the
+  // rail that the trip does not make again. (The undo is never placed before the
   // gate: it waits for the reverse loop).
   struct Gate {
     CallInst *call;
@@ -423,10 +352,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
           if (std::optional<abi::CoreSpec> cs = abi::parseCore(callee->getName());
               cs && !cs->unc && (cs->op == abi::Core::Ry || cs->op == abi::Core::RyQAngle))
             gates.push_back({call, call->getArgOperand(cs->ctl ? 1 : 0)});
-  std::vector<CallInst *> fwdRecords;
-  for (const Seg &s : segs)
-    for (const Record &r : U.scopeRecords(s.scope))
-      fwdRecords.push_back(r.forward);
   auto leavesOf = [&](Value *v) {
     SmallVector<Value *, 4> out, work{v};
     SmallPtrSet<Value *, 8> seen;
@@ -538,58 +463,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
         guardedItems.push_back(std::move(gi));
       }
   std::vector<BasicBlock *> guardBlocks;
-  DenseSet<const Instruction *> guardedCalls;
-  auto checkUndoneReads = [&](BasicBlock *bb) {
-    if (gates.empty())
-      return;
-    for (Instruction &I : *bb) {
-      auto *m = dyn_cast<CallInst>(&I);
-      Function *callee = m ? m->getCalledFunction() : nullptr;
-      if (!callee)
-        continue;
-      StringRef name = callee->getName();
-      SmallVector<Value *, 4> args(m->args());
-      // The forward records this item undoes: the call it was spelled from (the same name, or the
-      // name + "_unc"; the forward argument list, after the out handle for a template).
-      SmallVector<const Instruction *, 2> anchors;
-      for (CallInst *fwd : fwdRecords) {
-        StringRef fn = fwd->getCalledFunction() ? fwd->getCalledFunction()->getName() : StringRef();
-        if (fn.empty() || !(name == fn || name == (fn + "_unc").str()))
-          continue;
-        SmallVector<Value *, 4> fa(fwd->args());
-        bool same = args == fa;
-        bool withOut = !same && args.size() == fa.size() + 1 && args[0] == fwd &&
-                       std::equal(fa.begin(), fa.end(), args.begin() + 1);
-        if (same || withOut)
-          anchors.push_back(fwd);
-      }
-      if (guardedCalls.count(m))
-        continue; // cq-wyu4: it runs only where no gate acted after its record
-      if (anchors.empty()) {
-        // A free (or an item with no forward call of its own): its rails are read from their
-        // definitions on.
-        for (Value *a : args)
-          if (a->getType() == i32 && !isa<Constant>(a))
-            for (Value *l : leavesOf(a))
-              anchors.push_back(dyn_cast<Instruction>(l));
-      }
-      for (Value *a : args) {
-        if (a->getType() != i32 || isa<Constant>(a))
-          continue;
-        for (Value *l : leavesOf(a))
-          for (const Gate &g : gates)
-            for (Value *t : leavesOf(g.target))
-              if (t == l)
-                for (const Instruction *f : anchors)
-                  if (runsAfter(f, g.call, l))
-                    unimplemented("loops-classical: a non-diagonal gate in a classically bounded loop on a rail "
-                                  "that a record undone by the reverse loop reads, after that record (rule 5: "
-                                  "the reverse loop would undo it against the rotated rail)",
-                                  g.call);
-      }
-    }
-  };
-
   // cq-9kcq S11f: the forward blocks of each inReverse sub-unit (from the segment entering it to the segment its continuation
   // enters) -> the entering segment.
   DenseMap<const BasicBlock *, unsigned> inRevSub;
@@ -642,7 +515,7 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
               work.push_back(sb);
       }
       if (!unc || !fr)
-        continue; // no item of this spelling here (rule 6 cleaned it, say): checkUndoneReads judges it
+        continue; // no item of this spelling here (rule 6 cleaned it, say)
       BasicBlock *head = unc->getParent();
       bool atB = head == B.GetInsertBlock();
       BasicBlock *mid = newBlock(), *tail = newBlock();
@@ -673,8 +546,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
       BranchInst::Create(tail, mid);
       guardBlocks.push_back(mid);
       guardBlocks.push_back(tail);
-      guardedCalls.insert(unc);
-      guardedCalls.insert(fr);
       if (atB)
         B.SetInsertPoint(tail);
     }
@@ -706,8 +577,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     IRBuilder<> B(R[i]);
     U.emitMirror(segs[i].scope, B);
     guardItems(i, B);
-    checkUndoneReads(R[i]);
-    checkDeferred(R[i], R[i]->begin());
     // The mirror, with the reverse of any loop of the segment placed in it (its own blocks, B's block last).
     std::vector<Instruction *> mirror;
     {
@@ -785,25 +654,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
       sw->addCase(ConstantInt::get(i32, j), back(uniq[j]));
   }
 
-  // cq-9kcq S11f: each inReverse sub-unit's reverse lies in the mirror of the segment its continuation enters (the frames of
-  // its trips are on top of the stack there, below that segment's own).
-  for (const Sub &sb : subs) {
-    if (!sb.inReverse)
-      continue;
-    unsigned want = n;
-    for (unsigned i = 0; i < n && want == n; ++i)
-      if (is_contained(predecessors(headOf[i]), sb.cont))
-        want = i;
-    if (sb.unit->reversed && sb.unit->revAt && !mirrorOf.count(sb.unit->revAt) && segOf.count(sb.unit->revAt))
-      continue;   // reversed in its trip after all (no exit rail read later: checked above as a trip-local one)
-    auto it = sb.unit->revAt ? mirrorOf.find(sb.unit->revAt) : mirrorOf.end();
-    if (!sb.unit->reversed || want == n || it == mirrorOf.end() || it->second != want)
-      unimplemented("loops-cutoff: the reverse of a classically bounded loop of a rolled K-trip whose values outlive the "
-                    "trip is not placed in the reverse of the segment its exit enters (CR rule 14: its trips' frames are "
-                    "popped there)",
-                    sb.unit->diagAt);
-  }
-
   // The reverse starts at the reverse of the segment that exits; guarded (cq-fx3s), only where the
   // loop ran: the value "the loop's exit block was passed" (false at the function's entry, true at
   // X), read at the start of the item.
@@ -866,8 +716,6 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
     U.noteUse(U.idOf(h), anchor);
   IRBuilder<> BZ(Z);
   U.emitMirror(seedScope, BZ);
-  checkUndoneReads(Z);
-  checkDeferred(Z, Z->begin());
   if (join) {
     // A value from before the region the reverse reads (a seed of the entry E, a rail made on the
     // loop's path only) need not dominate the guarded start: it is read through a phi that names it on

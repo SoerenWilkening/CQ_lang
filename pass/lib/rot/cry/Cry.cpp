@@ -76,8 +76,6 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
-#include "llvm/IR/GetElementPtrTypeIterator.h"
-#include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -254,155 +252,6 @@ bool confined(Value *h) {
   return true;
 }
 
-// cq-x80e. b - a as a constant, when the two integers differ by one on every run: equal values,
-// constants, an add of a constant on either side, and two phis of one block whose incomings differ
-// by that constant on every edge (two induction variables of one step, 59's i and i + 1; the pair is
-// assumed at the constant while its incomings are checked, an induction over the loop's trips).
-using PairDiff = SmallVector<std::tuple<const Value *, const Value *, int64_t>, 4>;
-std::optional<int64_t> constDiff(const Value *a, const Value *b, PairDiff &assumed, unsigned depth = 0) {
-  if (a == b)
-    return 0;
-  if (depth > 8 || a->getType() != b->getType() || !a->getType()->isIntegerTy() ||
-      a->getType()->getIntegerBitWidth() > 64)
-    return std::nullopt;
-  auto *ca = dyn_cast<ConstantInt>(a), *cb = dyn_cast<ConstantInt>(b);
-  if (ca && cb)
-    return cb->getSExtValue() - ca->getSExtValue();
-  for (auto &[x, y, d] : assumed)
-    if (x == a && y == b)
-      return d;
-  auto addC = [](const Value *v, const Value *&x, int64_t &c) {
-    auto *BO = dyn_cast<BinaryOperator>(v);
-    if (!BO || BO->getOpcode() != Instruction::Add)
-      return false;
-    auto *k = dyn_cast<ConstantInt>(BO->getOperand(1));
-    if (!k || k->getBitWidth() > 64)
-      return false;
-    x = BO->getOperand(0);
-    c = k->getSExtValue();
-    return true;
-  };
-  const Value *x;
-  int64_t c;
-  if (addC(a, x, c))
-    if (auto d = constDiff(x, b, assumed, depth + 1))
-      return *d - c;
-  if (addC(b, x, c))
-    if (auto d = constDiff(a, x, assumed, depth + 1))
-      return *d + c;
-  auto *pa = dyn_cast<PHINode>(a), *pb = dyn_cast<PHINode>(b);
-  if (pa && pb && pa->getParent() == pb->getParent()) {
-    // The constant from an edge that does not need the assumption, then every edge under it.
-    std::optional<int64_t> d;
-    for (unsigned i = 0; i < pa->getNumIncomingValues() && !d; ++i) {
-      PairDiff none;
-      d = constDiff(pa->getIncomingValue(i), pb->getIncomingValueForBlock(pa->getIncomingBlock(i)), none,
-                    depth + 1);
-    }
-    if (!d)
-      return std::nullopt;
-    assumed.push_back({a, b, *d});
-    bool ok = true;
-    for (unsigned i = 0; i < pa->getNumIncomingValues() && ok; ++i) {
-      std::optional<int64_t> e = constDiff(pa->getIncomingValue(i),
-                                           pb->getIncomingValueForBlock(pa->getIncomingBlock(i)), assumed, depth + 1);
-      ok = e && *e == *d;
-    }
-    assumed.pop_back();
-    if (ok)
-      return d;
-  }
-  return std::nullopt;
-}
-
-// cq-x80e. An address or a 64-bit index as base + c + sum(k * leaf), modulo 2^64 (the GEP and
-// add/sub/mul/shl arithmetic is exact modulo 2^64, so a nonzero constant difference of two forms is
-// two different addresses on every run). Any other value is a leaf.
-struct Lin {
-  const Value *base = nullptr;
-  uint64_t c = 0;
-  SmallVector<std::pair<const Value *, uint64_t>, 4> terms;
-  void add(const Value *v, uint64_t k) {
-    for (auto &[x, kx] : terms)
-      if (x == v) {
-        kx += k;
-        return;
-      }
-    terms.push_back({v, k});
-  }
-  void addLin(const Lin &o, uint64_t k) {
-    c += o.c * k;
-    for (auto &[x, kx] : o.terms)
-      add(x, kx * k);
-  }
-};
-
-Lin intLin(const Value *v, unsigned depth = 0) {
-  Lin r;
-  if (auto *C = dyn_cast<ConstantInt>(v); C && C->getBitWidth() == 64) {
-    r.c = C->getZExtValue();
-    return r;
-  }
-  auto *BO = dyn_cast<BinaryOperator>(v);
-  if (BO && depth < 12 && BO->getType()->isIntegerTy(64)) {
-    auto *k = dyn_cast<ConstantInt>(BO->getOperand(1));
-    switch (BO->getOpcode()) {
-    case Instruction::Add:
-      r.addLin(intLin(BO->getOperand(0), depth + 1), 1);
-      r.addLin(intLin(BO->getOperand(1), depth + 1), 1);
-      return r;
-    case Instruction::Sub:
-      r.addLin(intLin(BO->getOperand(0), depth + 1), 1);
-      r.addLin(intLin(BO->getOperand(1), depth + 1), uint64_t(0) - 1);
-      return r;
-    case Instruction::Mul:
-      if (k) {
-        r.addLin(intLin(BO->getOperand(0), depth + 1), k->getZExtValue());
-        return r;
-      }
-      break;
-    case Instruction::Shl:
-      if (k && k->getZExtValue() < 64) {
-        r.addLin(intLin(BO->getOperand(0), depth + 1), uint64_t(1) << k->getZExtValue());
-        return r;
-      }
-      break;
-    default:
-      break;
-    }
-  }
-  r.add(v, 1);
-  return r;
-}
-
-Lin ptrLin(const DataLayout &DL, const Value *p, unsigned depth = 0) {
-  auto *G = dyn_cast<GEPOperator>(p);
-  if (!G || depth > 12) {
-    Lin r;
-    r.base = p;
-    return r;
-  }
-  Lin r = ptrLin(DL, G->getPointerOperand(), depth + 1);
-  for (gep_type_iterator it = gep_type_begin(G), e = gep_type_end(G); it != e; ++it) {
-    const Value *idx = it.getOperand();
-    if (StructType *ST = it.getStructTypeOrNull()) {
-      r.c += DL.getStructLayout(ST)->getElementOffset(cast<ConstantInt>(idx)->getZExtValue());
-      continue;
-    }
-    uint64_t stride = it.getSequentialElementStride(DL).getFixedValue();
-    if (idx->getType()->isIntegerTy(64)) {
-      r.addLin(intLin(idx), stride);
-    } else if (auto *C = dyn_cast<ConstantInt>(idx)) {
-      r.c += uint64_t(C->getSExtValue()) * stride;
-    } else {
-      r.add(idx, stride);   // a narrower index (sign-extended): a leaf
-    }
-  }
-  return r;
-}
-
-
-
 bool leavesDistinct(LoweringContext &ctx, Value *a, Value *b) {
   if (a == b)
     return false;
@@ -419,31 +268,9 @@ bool leavesDistinct(LoweringContext &ctx, Value *a, Value *b) {
   return false;
 }
 
-// The original slot-cell load (a cq_theta's in-place operand, or a quantum branch condition of a
-// block dominating T's) whose value is the new-IR handle h, or nullptr.
-const LoadInst *originalLoad(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt, Value *h) {
-  SmallVector<const Value *, 8> cands{T.getArgOperand(0)};
-  if (auto *N = dt.getNode(T.getParent()))
-    for (auto *D = N->getIDom(); D; D = D->getIDom())
-      if (auto *Br = dyn_cast<BranchInst>(D->getBlock()->getTerminator()); Br && Br->isConditional())
-        cands.push_back(Br->getCondition());
-  for (const Value *c : cands) {
-    const Value *s = c;
-    if (auto *Tr = dyn_cast<TruncInst>(s))
-      s = Tr->getOperand(0);
-    auto *L = dyn_cast<LoadInst>(s);
-    if (!L || !ctx.T.isQuantum(c, ctx.S))
-      continue;
-    Operand o = ctx.operand(c);
-    if (o.handle && o.v == h)
-      return L;
-  }
-  return nullptr;
-}
-
 // cq-x80e. Whether the flag and the target (distinct handle values) may name one rail at run time.
-enum class Alias { Distinct, Cells, Unknown };
-Alias mayAlias(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt, Value *flag, Value *rail) {
+enum class Alias { Distinct, Unknown };
+Alias mayAlias(LoweringContext &ctx, Value *flag, Value *rail) {
   SmallVector<Value *, 4> fl, rl;
   SmallPtrSet<Value *, 8> s1, s2;
   handleLeaves(flag, fl, s1);
@@ -459,26 +286,23 @@ Alias mayAlias(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt,
 
 // ry_<W>_controlled(flag, rail, θ): a non-diagonal gate on the rail (A4), which is frozen (rule 10).
 // qangle (cq-t3rd, rule 15): θ is an f64 angle rail, ry_<W>_qangle_controlled(flag, rail, A).
-void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Value *angle, const CallInst &T,
-                  const DominatorTree &dt, bool qangle = false) {
+void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Value *angle, bool qangle = false) {
   abi::CoreSpec spec{qangle ? abi::Core::RyQAngle : abi::Core::Ry, w, /*ctl=*/true};
   RailId id = ctx.unc().idOf(rail);
   if (flag == rail) {
     // CR §1.3: an in-place target is never one of its own controls. The flag is read into a fresh
     // rail first; that copy read the register before the rotation, so it stays allocated (A4).
     flag = copyFlag(ctx, flag);
-  } else if (Alias al = w.kind == Kind::Int && w.bits == 1 ? mayAlias(ctx, T, dt, flag, rail) : Alias::Distinct;
+  } else if (Alias al = w.kind == Kind::Int && w.bits == 1 ? mayAlias(ctx, flag, rail) : Alias::Distinct;
              al != Alias::Distinct) {
     // cq-x80e (CR §1.3, rules 9, 10; 120's reference): the two handles may name one rail at run time. A
     // classical test: distinct, the bare flag controls the Ry; the same rail, the flag is copied first
-    // and the copy stays allocated (66). Two slot-cell loads compare their cell addresses (120); any
-    // other pair compares the handle values themselves, which name one rail iff they are equal (cq-oa67).
+    // and the copy stays allocated (66). The handle values are compared, which name one rail iff they are
+    // equal (cq-oa67).
     IRBuilder<> &B = ctx.B();
     LLVMContext &C = ctx.M.getContext();
     Function &out = ctx.out();
-    Value *eq = al == Alias::Cells ? B.CreateICmpEQ(cast<LoadInst>(flag)->getPointerOperand(),
-                                                    cast<LoadInst>(rail)->getPointerOperand())
-                                   : B.CreateICmpEQ(flag, rail);
+    Value *eq = B.CreateICmpEQ(flag, rail);
     BasicBlock *join = BasicBlock::Create(C, "", &out);
     BasicBlock *distinct = BasicBlock::Create(C, "", &out, join);
     BasicBlock *same = BasicBlock::Create(C, "", &out, join);
@@ -676,7 +500,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       d = d | p.eff;
     R->dirty = d;
     R->active.clear();
-    controlledRy(ctx, flag, rail, w, angle.v, T, *st.dt, angle.handle);
+    controlledRy(ctx, flag, rail, w, angle.v, angle.handle);
     R->uses = rail->getNumUses();
     st.of[&T] = R;
     for (const User *U : T.users())
@@ -798,7 +622,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       N->seed = vv;
       N->guarded = true;   // the register's handle moved: every merge of it is rule 9's
       N->locked = true;
-      controlledRy(ctx, flag, N->rail, N->w, angle.v, T, *st.dt, angle.handle);
+      controlledRy(ctx, flag, N->rail, N->w, angle.v, angle.handle);
       N->active.push_back(Prep{q, angle.v, nullptr, angle.handle});
       N->all = full;
       N->uses = N->rail->getNumUses();
@@ -832,9 +656,9 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
         abi::TemplateSpec neg;
         neg.op = "fneg";
         neg.w = RailType{Kind::Fp, 64};
-        controlledRy(ctx, gf, R->rail, R->w, ctx.emitTemplate(neg, {Operand{it->angle, true}}), T, *st.dt, true);
+        controlledRy(ctx, gf, R->rail, R->w, ctx.emitTemplate(neg, {Operand{it->angle, true}}), true);
       } else if (it->angle) {
-        controlledRy(ctx, gf, R->rail, R->w, ctx.B().CreateFNeg(it->angle), T, *st.dt);
+        controlledRy(ctx, gf, R->rail, R->w, ctx.B().CreateFNeg(it->angle));
       }
       if (it->lit)
         recordXorc(ctx, gf, *R, it->lit);
@@ -852,7 +676,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   Value *lit = xorLiteral(ctx, R->seed, vv);
   if (lit)
     recordXorc(ctx, flag, *R, lit);
-  controlledRy(ctx, flag, R->rail, R->w, angle.v, T, *st.dt, angle.handle);
+  controlledRy(ctx, flag, R->rail, R->w, angle.v, angle.handle);
   R->active.push_back(Prep{q, angle.v, lit, angle.handle});
   R->all = R->all ? (*R->all | full) : full;
   R->uses = R->rail->getNumUses();

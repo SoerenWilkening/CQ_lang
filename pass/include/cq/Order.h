@@ -9,9 +9,8 @@ namespace cq {
 // in the block (swscanf: 1550 s, 97% of it in BasicBlock::renumberInstructions). This keeps order labels with
 // gaps and labels a new instruction from its neighbours, so a comparison after an insertion costs O(log n)
 // amortized. Instructions erased, replaced, inserted or moved to another block need no call. An instruction
-// moved inside its own block must be announced with orderMoved (nothing in the pass does that today).
+// moved inside its own block is not supported.
 bool comesBefore(const llvm::Instruction *a, const llvm::Instruction *b);
-void orderMoved(const llvm::Instruction *I);
 // Drops every label (the end of a pass run).
 void orderReset();
 } // namespace cq

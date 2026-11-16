@@ -88,8 +88,7 @@ bool inTailLoopUnit(const llvm::Loop &L, const Unit &U, const llvm::BasicBlock *
 // facts"; 190's memcmp `_b3`), the trip count's maximum over the bounded formals' ranges [0, b]. With
 // several live exits a trip that ends in the body counts (the header-tested "minus one" applies only
 // when every exit leaves from the header's test region).
-std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &SE, const TaintInfo &T,
-                                    const Specialization &S);
+std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &SE, const Specialization &S);
 
 // CR rule 14 (`nested K-loops ... inner chain seeded by the outer trip predicate`): a quantum-exit loop L
 // nested in a classically bounded loop's trip (loops-classical), lowered as loops-cutoff lowers a nested

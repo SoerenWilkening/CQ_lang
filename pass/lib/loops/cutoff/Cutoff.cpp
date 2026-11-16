@@ -297,7 +297,7 @@ private:
     return xa;
   }
   // V's fields in this trip, one per capture rail, at the builder.
-  SmallVector<Operand, 4> tripFields(XAcc &xa, function_ref<bool(const BasicBlock *)> inUnit) {
+  SmallVector<Operand, 4> tripFields(XAcc &xa) {
     Type *ty = xa.V->getType();
     if (ty->isAggregateType() || ty->isVectorTy())
       return aggr::flattenResult(ctx, xa.V);
@@ -1341,7 +1341,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     // The values on the skip path: a |0> seed per rail field (minted before the branch), 0 per classical one.
     LLVMContext &Cx = ctx.M.getContext();
-    auto skipFields = [&](const Value *v, Type *ty, bool rails) {
+    auto skipFields = [&](Type *ty, bool rails) {
       SmallVector<Type *, 4> leaves;
       std::function<void(Type *)> walk = [&](Type *t) {
         if (auto *st = dyn_cast<StructType>(t)) {
@@ -1373,9 +1373,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     };
     std::vector<SmallVector<Operand, 4>> skipOut, skipPhi;
     for (Instruction *I : outs)
-      skipOut.push_back(skipFields(I, I->getType(), isQ(I)));
+      skipOut.push_back(skipFields(I->getType(), isQ(I)));
     for (PHINode *P : cBound)
-      skipPhi.push_back(skipFields(P, P->getType(), isQ(P)));
+      skipPhi.push_back(skipFields(P->getType(), isQ(P)));
     BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out()), *Skip = BasicBlock::Create(Cx, "", &ctx.out()),
                *Join = BasicBlock::Create(Cx, "", &ctx.out());
     // Where S is skipped it took no noreturn arm.
@@ -1410,7 +1410,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         ctx.B().SetInsertPoint(Skip->getTerminator());
       else
         ctx.B().SetInsertPoint(br);
-      skip = skipFields(v, v->getType(), true);
+      skip = skipFields(v->getType(), true);
     };
     for (size_t k = 0; k < outs.size(); ++k)
       railAfterRun(outs[k], skipOut[k]);
@@ -1712,7 +1712,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;
         }
         unsigned K = ctx.K(S);
-        std::optional<uint64_t> B = exits::cutoffBound(*mS, A.SE, ctx.T, ctx.S);
+        std::optional<uint64_t> B = exits::cutoffBound(*mS, A.SE, ctx.S);
         unsigned cs = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
         exits::Unit SU = exits::unitOf(*mS);
         SmallVector<BasicBlock *, 16> unitBlocks(mS->blocks().begin(), mS->blocks().end());
@@ -1935,7 +1935,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;
         }
         unsigned K = ctx.K(S);
-        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
+        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.S);
         unsigned cs = Bs ? unsigned(std::min<uint64_t>(K, *Bs)) : K;
         // cq-o5tjh (rule 8, as for a sub-loop of the trip, cq-jws5r): behind a classical condition of this evaluation
         // the loop of the arm is skipped by a real branch, its chain seeded by the quantum part of the arm's predicate
@@ -2122,7 +2122,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (X.isBottom())
         continue;
       Value *f = conj(q, X, U.cont->getFirstNonPHI());
-      SmallVector<Operand, 4> vs = tripFields(xa, [&](const BasicBlock *b) { return U.contains(L, b); });
+      SmallVector<Operand, 4> vs = tripFields(xa);
       for (unsigned k = 0; k < xa.acc.size() && k < vs.size(); ++k) {
         abi::TemplateSpec sel;
         sel.op = "select";
@@ -2516,7 +2516,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         Loop *S = subLoopOf(b);
         if (!S || S->getHeader() != b || classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
           continue;
-        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
+        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.S);
         if (Bs && *Bs <= ctx.K(S))
           continue;
         RailType i1{Kind::Int, 1};
@@ -2592,7 +2592,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (Krt->getType() != i32)
         internalError("loops-cutoff: a received K that is not an i32", H->getTerminator());
       // S10: a K-loop nested in the rolled trip has a bound of its own (the member is the loop lowerCutoff was given)
-      std::optional<uint64_t> bnd = rolledTrip && !top ? exits::cutoffBound(L, A.SE, ctx.T, ctx.S) : bound;
+      std::optional<uint64_t> bnd = rolledTrip && !top ? exits::cutoffBound(L, A.SE, ctx.S) : bound;
       if (bnd && *bnd <= 0xFFFFFFFFull) {
         Constant *Bc = ConstantInt::get(i32, *bnd);
         nRt = B.CreateBinaryIntrinsic(Intrinsic::umin, Krt, Bc);
@@ -3688,7 +3688,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   if (!seed)
     internalError("loops-cutoff: a nested K-loop with no seed", L.getHeader());
   unsigned K = ctx.K(mL);
-  std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.T, ctx.S);
+  std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.S);
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
   C.segHook = segHook;
@@ -4002,7 +4002,7 @@ BasicBlock *liveExit(const Loop &L) {
   return U.multi() ? nullptr : U.cont;
 }
 
-std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const TaintInfo &T, const Specialization &S) {
+std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Specialization &S) {
   SmallPtrSet<const BasicBlock *, 8> region;
   bool regionForm = testRegion(L, region);
   SmallVector<BasicBlock *, 4> exiting;

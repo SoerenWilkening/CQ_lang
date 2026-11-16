@@ -1343,7 +1343,7 @@ void Walker::lowerUnit(Loop &lp) {
       ac = std::make_unique<AssumptionCache>(F);
       se = std::make_unique<ScalarEvolution>(F, *tli, *ac, DT, LI);
     }
-    loops::lowerCutoff(ctx, lp, ctx.K(&lp), loops::exits::cutoffBound(lp, *se, ctx.T, ctx.S));
+    loops::lowerCutoff(ctx, lp, ctx.K(&lp), loops::exits::cutoffBound(lp, *se, ctx.S));
   } else {
     loops::lowerClassical(ctx, lp, c);
   }

@@ -94,10 +94,6 @@ public:
   // Does the rail `from` hold a function of the rail `y`, through its records (control rails included), its in-place
   // writes and a merge's arms? false when either is no recorded rail.
   bool railDependsOn(const llvm::Value *from, const llvm::Value *y) const;
-  // cq-gujb (CR rules 5, 9, 20): a rail a construction will read again after flushes the walker places before
-  // that read (a clone cell's value, read by the cell's later accesses): no flush resolves it until unpin.
-  void pin(RailId);
-  void unpin(RailId);
   // U7 (cq-g1ty, CR rule 7; 129): the role of a rail not yet uncomputed or freed anywhere, else nullopt.
   std::optional<Role> liveRole(RailId) const;
   // Is the rail, or an arm of the merge it is, an exit rail of a deferred item (recordDeferred)? Its reverse must still
@@ -108,9 +104,6 @@ public:
   void mergeToRail(RailId);
   void noteUse(RailId, llvm::Instruction *consumer);
   void noteNonDiagonal(RailId target, llvm::Instruction *gate);
-  // U9 (cq-c969, CR rules 5, 17): may `gate` (noted by noteNonDiagonal) hit a rail `handle` may name at run time? false
-  // for a value that is no recorded rail.
-  bool mayHit(const llvm::Value *handle, const llvm::Instruction *gate) const;
   void cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand>);
   // cq-mgkr (CR rule 6, dead on one classical path only; ruling cq-mzqo): oldRail is dead where the classical
   // i1 `guard` holds (the path on which a classical merge chose its bijective image) and cleaned there as

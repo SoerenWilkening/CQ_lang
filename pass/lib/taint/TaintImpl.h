@@ -124,9 +124,8 @@ struct SpecState {
   // Loops whose next trip is decided by a tainted terminator (rule 14; grows monotonically).
   llvm::SmallPtrSet<const llvm::Loop *, 4> exitQ;
   Lanes ret;
-  bool analyzedOnce = false;
 
-  bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false, hasMeasure = false;
+  bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false;
   bool hasCall = false;   // Q2: a call for rule 19's own-lowering test
   bool busLoad = false, busLoadT = false;   // rule 18: a bus load, itself / transitively
   bool taintedMeasure = false, readsEffect = false, noTwinT = false;   // rule 18, Q3: what forbids a twin besides a write

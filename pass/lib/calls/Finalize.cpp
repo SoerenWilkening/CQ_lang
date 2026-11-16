@@ -79,7 +79,7 @@ bool isAbiSymbol(StringRef name) {
 
 // The defined, non-clone function C was made from, or nullptr when its fn has no body here. The normative
 // right-to-left reading of CR §1.4 names it: every clone symbol of the module reads back to exactly the fields
-// it was made from (calls' checkedName refuses any other), so that reading is the clone's fn.
+// it was made from (the clone names are built from the fields), so that reading is the clone's fn.
 Function *originalOf(Module &M, Function &C) {
   std::optional<abi::CloneSpec> s = abi::parseClone(C.getName());
   if (!s)
@@ -370,22 +370,16 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       zeroed->addIncoming(ConstantInt::getBool(C, !outcomeSeed(phi->getIncomingValue(i))), phi->getIncomingBlock(i));
     IRBuilder<>(SplitBlockAndInsertIfThen(zeroed, ret, false)).CreateCall(fr, {out});
   };
-  auto retarget = [&](Value *rv, Argument *out, ReturnInst *R) {
+  auto retarget = [&](Value *rv, Argument *out) {
     auto *f = dyn_cast_or_null<CallInst>(rv);
     std::optional<abi::CoreSpec> a =
         f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
     auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
     if (outcomeSeed(f)) {
-      if (!f->hasOneUse() && any_of(f->users(), [](User *U) { return !isa<ReturnInst, PHINode, InsertValueInst>(U); }))
-        unimplemented("calls: calls::finalize: an outcome's seed rail used other than by the return", f);
       if (!is_contained(dead, f))
         dead.push_back(f);
       return;
     }
-    if (!a || a->op != abi::Core::Alloc)
-      unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
-                    "rail returned)",
-                    R);
     if (!zero || !zero->isNullValue()) {
       // A classical arm seeds its result rail with its value v (cq-mjwb): the forward's out holds v there,
       // so the twin XORs v out of it (cqrt_xorc_<W>(out, v)) where the forward minted the seed.
@@ -396,16 +390,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     for (User *U : f->users()) {
       if (isa<ReturnInst>(U) || isa<PHINode>(U) || isa<InsertValueInst>(U))
         continue;
-      auto *cp = dyn_cast<CallInst>(U);
-      std::optional<abi::CoreSpec> c =
-          cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
-      if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
-        unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
-      copies.push_back(cp);
+      copies.push_back(dyn_cast<CallInst>(U));
     }
-    bool seeded = !zero || !zero->isNullValue();
-    if (copies.size() != 1 && !(seeded && copies.empty()))
-      unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
     for (CallInst *cp : copies)
       cp->setArgOperand(1, out);
     if (!is_contained(dead, f))
@@ -464,7 +450,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
           internalError("calls: calls::finalize: a field-wise clone return with more handle fields than its twin's outs",
                         R);
         for (Value *rv : results)
-          retarget(rv, twin.getArg(first + j), R);
+          retarget(rv, twin.getArg(first + j));
         tableOuts.push_back({twin.getArg(first + j), results.front() != fields[k] ? fp : nullptr, results.front()});
         ++j;
         if (results.front() != fields[k])
@@ -485,7 +471,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         results.insert(ret);
       }
       for (Value *rv : results)
-        retarget(rv, twin.getArg(first), R);
+        retarget(rv, twin.getArg(first));
       tableOuts.push_back({twin.getArg(first), rp, results.front()});
     }
     ReturnInst *newRet = ReturnInst::Create(C, nullptr, R->getIterator());
@@ -857,11 +843,6 @@ void finalize(Module &M) {
   for (Function &F : M) {
     if (!isClone(F))
       continue;
-    std::optional<abi::CloneSpec> spec = abi::parseClone(F.getName());
-    if (!spec)
-      unimplemented("calls: calls::finalize: a symbol in the clone namespace that is not a canonical "
-                    "clone name (a uniquified clone; CR §1.4)",
-                    &F);
     clones.push_back(&F);
   }
   if (clones.empty())

@@ -1078,7 +1078,7 @@ std::pair<Value *, uint64_t> changeCells(LoweringContext &ctx, const Instruction
   return {a, uint64_t(DL.getTypeStoreSize(St->getValueOperand()->getType()))};
 }
 
-void takeCopy(LoweringContext &ctx, Form &F, const Plan &P, const Instruction &at, bool before) {
+void takeCopy(LoweringContext &ctx, Form &F, const Instruction &at, bool before) {
   IRBuilder<> &B = ctx.B();
   const DataLayout &DL = ctx.M.getDataLayout();
   F.d = nullptr;
@@ -1279,7 +1279,7 @@ bool inPlaceBefore(LoweringContext &ctx, Instruction &I) {
   Plan &P = plan(ctx);
   if (auto it = P.copyBefore.find(&I); it != P.copyBefore.end())
     for (Form *F : it->second)
-      takeCopy(ctx, *F, P, I, /*before=*/true);
+      takeCopy(ctx, *F, I, /*before=*/true);
   if (auto it = P.earlyAt.find(&I); it != P.earlyAt.end()) {
     for (unsigned k = 0; k <= it->second.second; ++k)
       emitPart(ctx, *it->second.first, P, k);
@@ -1294,7 +1294,7 @@ void inPlaceAfter(LoweringContext &ctx, Instruction &I) {
   Plan &P = plan(ctx);
   if (auto it = P.copyAfter.find(&I); it != P.copyAfter.end())
     for (Form *F : it->second)
-      takeCopy(ctx, *F, P, I, /*before=*/false);
+      takeCopy(ctx, *F, I, /*before=*/false);
 }
 
 bool inPlaceOnCell(LoweringContext &ctx, const Instruction &I) {

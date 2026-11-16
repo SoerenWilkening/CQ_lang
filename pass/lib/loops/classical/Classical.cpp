@@ -322,9 +322,6 @@ private:
     ctx.unc().recordCore(call, spec, ops, ctx.unc().idOf(args.back()));
   }
 
-  void check(Loop &L, Case c);
-  bool twinOf(const CallBase &CB) const;
-  bool writesCallerCells(const CallBase &CB) const;
   void resolvePreheader();
 
   // CR rule 6 on a carried value (cq-b13w). A quantum header phi p read only by a chain of updates
@@ -371,7 +368,7 @@ private:
     return !nested && !inTrip && U.invertOpen() &&
            (rolled::readAfterInvertEnd(top, fin) || !rolled::keptByReader(ctx, top, fin));
   }
-  void cleanInvariantOnExit(Loop &L, BasicBlock *T);
+  void cleanInvariantOnExit(Loop &L);
   BasicBlock *unitExit = nullptr;   // the outermost loop's T
   bool initDead(Loop &L, const Value *init, const PHINode *p);
   void disjuncts(const Value *v, bool pos, SmallVectorImpl<Disj> &out, SmallPtrSetImpl<const Value *> &inner);
@@ -665,7 +662,7 @@ bool Unit::liveAfterLoop(Loop &L, const Value *fin) {
 // y = f(x, z) run in every trip, a bijection in x, with y kept in every trip (a kept store's value rail): nothing will
 // ever uncompute through x, so it is cleaned from the last trip's image on the exit edge, at T. A zero-trip path never
 // reaches T: x stays the live register there.
-void Unit::cleanInvariantOnExit(Loop &L, BasicBlock *T) {
+void Unit::cleanInvariantOnExit(Loop &L) {
   BasicBlock *latch = L.getLoopLatch();
   if (!latch || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
     return;
@@ -763,91 +760,7 @@ bool Unit::tripLocal(Loop &sl, Loop &L) {
   return any;
 }
 
-// Does the clone call write a caller cell (a minted or forwarded slot result through a pointer argument)?
-bool Unit::writesCallerCells(const CallBase &CB) const {
-  const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
-  if (!S)
-    return false;
-  (void)S;
-  return false;   // rule 18: a clone writes the bus at its address, no caller cell (W5: writesMemory)
-}
-
-bool Unit::twinOf(const CallBase &CB) const {
-  const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
-  if (!S)
-    return true;
-  if (!CB.getType()->isVoidTy() && is_contained(ctx.T.fieldMask(&CB, ctx.S), true))
-    return true;
-  return false;
-}
-
-void Unit::check(Loop &L, Case c) {
-  if (!L.getLoopLatch())
-    unimplemented("loops-classical: a rule-14 loop with more than one latch", L.getHeader()->getTerminator());
-  // An exit into an effect-free dead end (131's unreachable switch default) is UB to take: no exit. A
-  // case-3 loop with several exits (121) is lowerLoop's multi-exit form.
-  if (c != Case::ClassicalBoundQuantumExit && (!exits::liveExiting(L) || !exits::liveExit(L)))
-    unimplemented("loops-classical: a rule-14 loop with more than one exiting block or exit block",
-                  L.getHeader()->getTerminator());
-  for (PHINode &p : L.getHeader()->phis())
-    if (isQ(&p) && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()) &&
-        !p.getType()->isPointerTy())   // rule 3: a carried pointer is an i64 handle
-      unimplemented("loops-classical: a quantum carried value of non-scalar type (aggr, rule 3)", &p);
-  for (BasicBlock *b : L.blocks())
-    for (Instruction &I : *b) {
-      if (isa<DbgInfoIntrinsic>(I))
-        continue;
-      // CR rule 20: a store in a case-3 trip runs under the trip rail, a quantum predicate (a select into a
-      // fresh rail, rule 9): mem's stores take currentFlag(), the trip rail & the block's quantum part, as their
-      // control (cq-k471), and the reverse loop undoes the select with the trip's pushed operands.
-      if (auto *CB = dyn_cast<CallBase>(&I)) {
-        calls::Class k = calls::classify(*CB, ctx.T, ctx.S);
-        switch (k) {
-        case calls::Class::Classical:
-        case calls::Class::TemplateIntrinsic:
-          break;
-        case calls::Class::Theta:
-        case calls::Class::Measure:
-        case calls::Class::Phi:
-          break;   // case 3: under the trip rail (lowerInstruction's tripFlag, cq-99f7)
-        case calls::Class::Fenv:
-          // Rule 23 inside a rule-14 trip: a constrained op is a template (or the host op) of the trip like
-          // any opcode, recorded in the trip's scope and mirrored by the reverse; a <fenv.h> call that leaves
-          // the quantum part alone is the host call. A change of the quantum part inside the loop (its
-          // loop-carried state) is eff-fenv's own construction (requirePlaced).
-          break;
-        case calls::Class::Lift:
-        case calls::Class::LibmIntrinsic:
-        case calls::Class::Declared:
-          // Rule 27 inside a rule-14 trip: a declared clone is a call group like a lifted one (its twin always
-          // exists), its _ctl form under the trip rail in case 3 (cq-ro82).
-          // Rule 18 inside a rule-14 trip (124): a clone call with nothing to undo (no quantum result, no
-          // caller cell it writes) records no call item, so each trip's call is a gate sequence of its own.
-          // One with a twin (a quantum result) is a call group recorded in the trip's scope: the reverse
-          // emits its twin with the trip's pushed operands, as it emits a template's _unc (Uncompute's item
-          // of a call group). A clone writing caller cells in the trip (slot results across trips) is the
-          // default below.
-          // Case 3: the call runs under the trip rail (currentFlag(): its _ctl clone, rules 19, 27; calls tests
-          // the trip rail, cq-ro82), recorded in the trip's scope like case 1's.
-          if (!twinOf(*CB) || !writesCallerCells(*CB))
-            break;
-          [[fallthrough]];
-        default:
-          unimplemented("loops-classical: a call of this class inside a rule-14 loop (calls-loops / loops-mem "
-                        "integration)",
-                        &I);
-        }
-        continue;
-      }
-      if (isa<LoadInst>(I) || isa<StoreInst>(I))
-        continue;   // rules 5, 20: per trip, by the spine's dispatch
-      if (I.mayWriteToMemory() && (isQ(&I) || any_of(I.operands(), [&](const Use &u) { return isQ(u.get()); })))
-        unimplemented("loops-classical: a quantum memory effect in a classically bounded loop", &I);
-    }
-}
-
 std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, BasicBlock *T, bool outermost) {
-  check(L, c);
   const bool c3 = c == Case::ClassicalBoundQuantumExit;
   BasicBlock *header = L.getHeader(), *pre = L.getLoopPredecessor(), *latch = L.getLoopLatch();
   BasicBlock *exitB = exits::liveExit(L);
@@ -3572,7 +3485,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (const Seg &sg : segs)
         U.leaveScope(sg.scope, segs.front().bb);
     if (c == Case::ClassicalBound && !nested && !inTrip)
-      cleanInvariantOnExit(L, T);
+      cleanInvariantOnExit(L);
     if (cx) {
       // One fresh block per exit edge, where the edge's value of each exit phi is read: a classical one by a phi of T,
       // a rail copied out (alloc + copy; a classical incoming the seed itself), the copy an output of the loop.
