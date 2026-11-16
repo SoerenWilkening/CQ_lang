@@ -2991,6 +2991,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       back = B.GetInsertBlock();
       B.CreateBr(Hd);
     }
+    // cq-mysin: the latch values are read at the end of `back`, before a nested loop's RG->branchSeg(Xb) moves the builder
+    // into X. A carried value read through the builder's block (a piece of the environment: fenv::pieceNow reads the state
+    // at the builder) read in X is X's merge over the exit edges, which does not dominate the back edge (reachDefs then read
+    // it through the outer header, the previous outer trip's rail, poison in outer trip 0).
+    std::vector<Value *> latchVals = snap();
     segHook = outerHook;
     rTrip = nullptr;
     rolledTrip = outerTrip;
@@ -3005,8 +3010,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       qp->addIncoming(qn, back);
     else if (qn != q0)
       internalError("loops-cutoff: a loop with no exit edge changed its chain in the rolled trip", at);
-    for (Carry &k : carry)
-      k.phi->addIncoming(k.now(), back);
+    for (size_t i = 0; i < carry.size(); ++i)
+      carry[i].phi->addIncoming(latchVals[i], back);
     B.SetInsertPoint(Xb);
     if (xe.size() == 1) {
       for (size_t i = 0; i < carry.size(); ++i)
