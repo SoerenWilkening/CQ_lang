@@ -24,25 +24,13 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import dataclasses
-import importlib
 import os
-import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from cqcheck import progress, report
 from cqcheck.contracts import Verdict, to_json
-
-
-def _unimplemented(what: str) -> int:
-    print(f"cq: unimplemented: {what}", file=sys.stderr)
-    return 1
-
-
-def _delegate(module: str, owner: str, name: str) -> Optional[Callable]:
-    fn = getattr(importlib.import_module(f"cqcheck.{module}"), name, None)
-    return fn if callable(fn) else None
 
 
 def _spec_lock() -> int:
@@ -182,18 +170,18 @@ def cmd_progress(a) -> int:
 
 
 def cmd_selftest(a) -> int:
-    fn = _delegate("mutants", "chk-selftest", "selftest")
-    return fn() if fn else _unimplemented("chk-selftest: mutants.selftest")
+    from cqcheck import mutants
+    return mutants.selftest()
 
 
 def cmd_baseline(a) -> int:
-    fn = _delegate("mutants", "chk-selftest", "baseline")
-    return fn() if fn else _unimplemented("chk-selftest: mutants.baseline")
+    from cqcheck import mutants
+    return mutants.baseline()
 
 
 def cmd_user(a) -> int:
-    fn = _delegate("user", "usercheck", "main")
-    return fn(a.o1, a.lowered, a.entry, a.samples, a.light) if fn else _unimplemented("usercheck: user.main")
+    from cqcheck import user
+    return user.main(a.o1, a.lowered, a.entry, a.samples, a.light)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

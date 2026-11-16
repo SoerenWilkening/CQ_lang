@@ -693,7 +693,7 @@ def quantum_params(mod: Module, only: Optional[Tuple[str, int]] = None) -> Quant
             fn, root = mneed.pop()
             if root.startswith("@"):
                 for f in mod.functions.values():
-                    _mem_writes(mod, f, root, vneed, want_mem, callers)
+                    _mem_writes(mod, f, root, vneed, want_mem)
                 continue
             f = mod.functions[fn]
             pi = f.param_index(root)
@@ -703,7 +703,7 @@ def quantum_params(mod: Module, only: Optional[Tuple[str, int]] = None) -> Quant
                     if pi < len(call.call_args):
                         for r in _operand_roots(g, call.call_args[pi], set()):
                             want_mem(g.name, r)
-            _mem_writes(mod, f, root, vneed, want_mem, callers)
+            _mem_writes(mod, f, root, vneed, want_mem)
             d = f.defs.get(root)
             if d is not None and d.op == "load":
                 # a pointer read from memory: the memory that holds it is what flows
@@ -900,7 +900,7 @@ def substituted_sites(mod: Module, spec: DriverSpec, call: int) -> List[ThetaSit
     return out
 
 
-def _mem_writes(mod: Module, f: Function, root: str, vneed, want_mem, callers) -> None:
+def _mem_writes(mod: Module, f: Function, root: str, vneed, want_mem) -> None:
     """Everything in f that writes memory rooted at `root` adds a need."""
     def rooted(text: str) -> bool:
         return root in _operand_roots(f, text, set())

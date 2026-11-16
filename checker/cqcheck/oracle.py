@@ -1049,7 +1049,6 @@ atexit.register(close_runners)
 def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
                   tripcap: int, k: Optional[Dict[str, int]] = None,
                   k_default: Optional[int] = None, trips_only: bool = False) -> List[SampleRun]:
-    from concurrent.futures import ThreadPoolExecutor
     exe = executable(Path(o1), spec, _pointer_samples(spec, samples), k, k_default)
     iso = isolated(program(Path(o1), k, k_default)[0])
     # cq-8m6v: a batch's runs are a function of the executable (its path is its content key), the

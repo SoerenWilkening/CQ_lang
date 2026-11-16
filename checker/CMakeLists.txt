@@ -1,7 +1,7 @@
 # The checker's tool cache (cq-8m6v): the evaluator runtime objects, the probe runtime and the C
 # oracle's plugin, prebuilt so that no example run pays for them (checker/cqcheck/prebuild.py). Every
 # entry is keyed by its sources' content; the stamp only spares a rerun of the (cheap) check.
-file(GLOB CQCHECK_TOOL_INPUTS LIST_DIRECTORIES false CONFIGURE_DEPENDS
+file(GLOB CQCHECK_TOOL_INPUTS CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/rt/*" "${CMAKE_CURRENT_SOURCE_DIR}/oracle/*"
      "${CMAKE_CURRENT_SOURCE_DIR}/cqcheck/*.py" "${CMAKE_CURRENT_SOURCE_DIR}/native/*"
      "${CMAKE_SOURCE_DIR}/pass/lib/taint/*" "${CMAKE_SOURCE_DIR}/pass/lib/spine/*"

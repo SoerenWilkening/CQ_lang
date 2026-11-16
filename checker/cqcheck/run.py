@@ -106,7 +106,6 @@ import re
 import shutil
 import struct
 import subprocess
-import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -3202,7 +3201,6 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     program is built once for the batch and its samples run in up to `jobs` runner processes (0:
     default_jobs), each running its samples in one worker process (core.c, shots); a build that fails gives every well-formed
     sample the same 'build' violation without running."""
-    from concurrent.futures import ThreadPoolExecutor
     samples = list(samples)
     preps = [_prepare(spec, s, side) for s in samples]
     good = [p for p in preps if not isinstance(p, RunResult)]

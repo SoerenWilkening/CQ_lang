@@ -964,13 +964,10 @@ def region_emission(entries: Sequence[Tuple[str, int]], final_nmeas: Optional[in
     return stack[0], unmatched, left
 
 
-def _c_order(rr: RunResult, s: int, open_end: bool = False
-             ) -> Tuple[List[Tuple[int, Dict[str, Any], bool]], List[str]]:
+def _c_order(rr: RunResult) -> List[Tuple[int, Dict[str, Any], bool]]:
     """One C sample's theta/phi sites in emission order under CR rule 17: [(original position,
-    record, negated)], and the reasons its markers do not pair up. `open_end`: the sample stops
-    early (ended or cut), so a region still open there is closed at its end (module docstring).
+    record, negated)]. A region still open where the sample stops is closed there (module docstring).
     A measurement inside a region flushes the gates before it forward (region_emission)."""
-    reasons: List[str] = []
     recs = list(rr.rotations or [])
     for rec in recs:
         if rec.get("ev") != "site" or rec.get("kind") not in ("theta", "phi") + _MARKERS:
@@ -982,7 +979,7 @@ def _c_order(rr: RunResult, s: int, open_end: bool = False
     # this path: it is closed where the sample stops.
     order, _unmatched, _left = region_emission([(r["kind"], _int(r.get("nmeas")) or 0) for r in recs],
                                                len(rr.measured or []), True)
-    return [(i, recs[i], neg) for i, neg in order], reasons
+    return [(i, recs[i], neg) for i, neg in order]
 
 
 def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
@@ -996,8 +993,7 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
     reasons: List[str] = []
     nS = len(runs)
     for s, rr in enumerate(runs):
-        seq, why = _c_order(rr, s, bool(open_end) and open_end[s])
-        reasons += why
+        seq = _c_order(rr)
         for epos, (pos, rec, neg) in enumerate(seq):
             key = (rec["fn"], rec["site"], rec["kind"])
             ang = _int(rec["angle"]) & ((1 << 64) - 1)
@@ -2369,8 +2365,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             oo, ro = _ret(o.outputs, "our"), _ret(r.outputs, "C-oracle")
             if not (capped[k] or ended[k]) and _norm(oo, nan_eq) != _norm(ro, nan_eq):
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
-        elif _norm(_rest(o.outputs, "our"), nan_eq) != _norm(_rest(r.outputs, "reference"), nan_eq):
-            reasons.append(f"sample {k}: outputs {_rest(o.outputs, 'our')} != {_rest(r.outputs, 'reference')}")
+        elif _norm(_rest(o.outputs), nan_eq) != _norm(_rest(r.outputs), nan_eq):
+            reasons.append(f"sample {k}: outputs {_rest(o.outputs)} != {_rest(r.outputs)}")
         if not (oracle == "c" and (capped[k] or ended[k])):
             reasons += _memory_reasons(k, o, r, oracle)
         reasons += _host_output(k, o, r, oracle, oracle == "c" and (capped[k] or _raised(r)))
@@ -2679,7 +2675,7 @@ _HOST_KEYS = ("stdout", "effects", "tape", "q2", "mem", "objects", "regions", "c
               "deferred_r", "hsread", "rereads")
 
 
-def _rest(outputs: Any, side: str) -> Any:
+def _rest(outputs: Any) -> Any:
     """outputs without the host output (compared by _host_output)."""
     if isinstance(outputs, dict):
         return {k: v for k, v in outputs.items() if k not in _HOST_KEYS}
@@ -2782,7 +2778,7 @@ _EXITS = ("exit", "_exit", "_Exit")
 _ENTRY_NAME = {"llvm.trap": "__builtin_trap"}
 
 
-def _without_exit_entry(o: RunResult, c: RunResult, nf: List[Any], nr: List[Any]) -> List[Any]:
+def _without_exit_entry(c: RunResult, nf: List[Any], nr: List[Any]) -> List[Any]:
     """Rule 16 (cq-byjad): a noreturn call with a rail argument and no quantum predicate is the effect entry of its
     name under an alloc_i1(true) seed, then abort_i1 of that seed. The C program ends in that call
     (outputs["end"] "noreturn:<callee>") and the oracle logs no effect for it, so ours has exactly one more effect
@@ -2816,7 +2812,7 @@ def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool
                    + (" (the C output must be a prefix of ours on a capped sample)" if open_end else ""))
     nf, nr = _effects_read(o, ofx, oracle), _effects_read(r, rfx, oracle)
     if oracle == "c":
-        nf = _without_exit_entry(o, r, nf, nr)
+        nf = _without_exit_entry(r, nf, nr)
     same = _fields_match(nf, nr) if oracle == "c" else nf == nr
     pre = open_end and (_fields_match(nf[:len(nr)], nr) if oracle == "c" else nf[:len(nr)] == nr)
     if not same and not pre:
