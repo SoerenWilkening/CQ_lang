@@ -1045,7 +1045,12 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     pure cone, a loop in it included: the loop runs again after the `end` (forward, its values
     read in place, then its reverse loop), so its gates appear inside the region, replayed
     reversed, and once more after it. The repeat keeps no `a_K`: the in-region loop's is the
-    kept rail. A rotation, a measurement, a bus store and an effect entry are never repeated: a
+    kept rail. A register the region computes and then rotates is a kept rail whose gates are
+    reversed as recorded: the rotation comes first, on the rail as allocated, and the template
+    that computes the value (`o ^= f`, ABI §2) after it. `s = f(x); cq_theta(&s, θ)` in a region
+    leaves `Ry(−θ)|0⟩` with `f(x)` XORed in on the rail of `s`, not `Ry(−θ)|f(x)⟩`: the adjoint
+    of compute-then-rotate. The reference of §6 computes the same (the compiler may warn).
+    A rotation, a measurement, a bus store and an effect entry are never repeated: a
     loop whose body holds one repeats only the instructions its read values and exit tests
     depend on, where those read nothing such an instruction produces (the other case and an
     example are owed, §8). A bus load is repeated like any pure instruction when no memory
@@ -1321,7 +1326,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     into a host part (real calls) and a quantum part (rail); constrained ops take `_rm`/`_rmq`
     and emit a second `_exc` template; fenv calls on quantum state are rail operations; a clone
     that does constrained FP work takes the caller's mode and flags rail and returns the new
-    flags rail beside its result (82); the final flags rail is an output, unless rule 2
+    flags rail beside its result (82); the final flags rail is an output, and so is the final
+    mode where it is a rail at the entry's return (the environment the C program leaves: it is
+    kept, never uncomputed, and reads what `fegetround()` returns there), unless rule 2
     collapsed it into a host write-back (65).
     Three exception behaviours. `fpexcept.strict` (`FENV_ACCESS ON`) is the model above.
     `fpexcept.ignore` and `fpexcept.maytrap` (clang's `-frounding-math` without the pragma: every
@@ -1496,7 +1503,7 @@ that class are equal iff:
    equal the C program evaluated classically on the same inputs under §2, and every rail the
    example declares clean is `0`. A named output that lives in memory is read from the bus at
    exit, at the address the C object has in that run. A rail still allocated at exit is a frozen
-   register (rule 10), a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 18, 19; the
+   register (rule 10), a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 18, 19, 23; the
    overflow predicates `a_K` and `n > K2` among them); any other live rail is a leak and FAILS,
    with or without a reference: a user program under the checker has no clean-list, so every
    rail it does not name is clean. A live rail in a known classical basis state on every input
