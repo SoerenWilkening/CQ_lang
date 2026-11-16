@@ -3686,9 +3686,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     // a rail from before the loop) is copied out first, as before.
     if (stopCur)
       stopFinal = stopCur;
+    // cq-037u2 (CR rule 17 with rule 14): an outermost loop inside an open cq_invert region keeps a copy of each value read
+    // after the region's end, made before its reverse, which then runs inside the region.
+    auto afterEnd = [&](const Value *v) { return rolled::readAfterInvertEnd(top, v); };
     rolled::Region::ExitWiring wiring = wireExits(
         seedScope, out, outW, stopCur, keptFinal,
-        [&](const Value *v) { return nested || inTrip || !extraExits.empty() || !readersKeep(v); }, put);
+        [&](const Value *v) { return nested || inTrip || !extraExits.empty() || !readersKeep(v); }, put, nullptr,
+        !nested && !inTrip && !stopCur && U.invertOpen() ? function_ref<bool(const Value *)>(afterEnd)
+                                                          : function_ref<bool(const Value *)>());
     std::vector<unsigned> &scs = wiring.scs;
     DenseSet<const Value *> &ownedH = wiring.ownedH;
     std::vector<RailId> &exits = wiring.exits;

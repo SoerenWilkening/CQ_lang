@@ -138,6 +138,8 @@ public:
   // no open region (the begin was another function's) does nothing.
   void openInvert(llvm::Instruction *begin);
   void closeInvert(llvm::Instruction *end);
+  // cq-037u2 (CR rule 17 with rule 14): is a cq_invert region of this lowering open (openInvert with no closeInvert yet)?
+  bool invertOpen() const;
   // cq-5n3n (CR rule 17, rule 5): right after closeInvert(end), the items of the rails the closed region made
   // and nothing pending reads any more, unless keep(handle), are placed before end; returns their handles
   // (a later reader recomputes them after end).

@@ -81,6 +81,12 @@ bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value 
 // Over-approximates: a yes costs one copy.
 bool cleanedAfter(const llvm::Loop &top, const llvm::Value *v);
 
+// cq-037u2 (CR rule 17 with rule 14): is v, a value of the loop `top`, read after the end of a cq_invert region that a path
+// from the loop reaches (by an instruction such a path reaches without entering the loop again, directly or through merges
+// and pure instructions, which the spine recomputes after the end)? wireExits' afterEnd for a loop lowered inside an open
+// region.
+bool readAfterInvertEnd(const llvm::Loop &top, const llvm::Value *v);
+
 class Region {
 public:
   Region(LoweringContext &ctx, llvm::Function &Out) : ctx(ctx), Mod(ctx.M), Out(Out), U(ctx.unc()) {}
@@ -185,6 +191,8 @@ public:
   // run-time K, made between X and the reverse).
   // cq-n1hy7: perTripCopy(v), when given: v's exit rail, if a trip's record (one instance per trip), is copied out even
   // though it is a record of the loop (cleanedAfter: a reader after the loop may consume the last instance in place).
+  // cq-037u2: afterEnd(v), when given (an outermost loop inside an open cq_invert region): v is read after the region's
+  // end; it is copied out and the copy kept, never read in place nor un-copied by the reverse.
   struct ExitWiring {
     std::vector<unsigned> scs;
     llvm::DenseSet<const llvm::Value *> ownedH;
@@ -195,7 +203,8 @@ public:
                        const llvm::DenseSet<const llvm::Value *> &keptFinal,
                        llvm::function_ref<bool(const llvm::Value *)> scopedOf,
                        llvm::function_ref<void(const llvm::Value *, Operand)> put,
-                       llvm::function_ref<bool(const llvm::Value *)> perTripCopy = nullptr);
+                       llvm::function_ref<bool(const llvm::Value *)> perTripCopy = nullptr,
+                       llvm::function_ref<bool(const llvm::Value *)> afterEnd = nullptr);
   bool finishExits(llvm::BasicBlock *T, unsigned seedScope, const ExitWiring &w, bool keptInPlace,
                    const llvm::Instruction *latchTerm, std::shared_ptr<Region> self, llvm::BasicBlock *X = nullptr);
 

@@ -4706,6 +4706,8 @@ bool Uncompute::leftScope(unsigned s, const Value *h) const {
 
 bool Uncompute::mirroring() const { return impl->inMirror; }
 
+bool Uncompute::invertOpen() const { return !impl->invertFrozen.empty(); }
+
 void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   impl->pruneCleanups();
   if (s >= impl->scopes.size())

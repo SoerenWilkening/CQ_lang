@@ -75,6 +75,12 @@ MUTANTS = {
     # measure v and add to n, a classical test on a value no earlier outcome fixes
     # cq-9kcq S21 (CR rules 14, 26): the vector w of the header test region is carried one field per header phi; field 1's
     # phi (read by the body as w[1]) takes field 0's latch value, so every trip after trip 0 reads w[0] for w[1]
+    # cq-037u2 (CR rule 17 with rule 14): fc_inv's cqrt_invert_end moved up to the end of the loop's exit block, before the reverse
+    # loop: the region holds the trips and the copy-out but not their reverse, so the backend's replay reversed undoes trips
+    # never computed that way (the rolled form's placement at d5e32f61)
+    "diff_fc": [
+        ("fc_inv", "reverse_after_end", lambda b: reverse_after_end(b), None),
+    ],
     "agg_region": [
         ("vec_region", "other_field", lambda b: other_field(b), None),
     ],
@@ -199,6 +205,19 @@ def prev_trip(fn_body: str):
             continue
         return fn_body.replace(f"call void @cqrt_copy_i32(i32 {x}, i32 {c})", f"call void @cqrt_copy_i32(i32 {sel.group(1)}, i32 {c})")
     return fn_body
+
+
+def reverse_after_end(fn_body: str):
+    """diff_fc's fc_inv with its one cqrt_invert_end moved before the branch that leaves the block of the last copy-out (the
+    loop's exit block) for the reverse loop."""
+    end = "  call void @cqrt_invert_end()\n"
+    if fn_body.count(end) != 1:
+        return fn_body
+    b = fn_body.replace(end, "", 1)
+    m = list(re.finditer(r"  call void @cqrt_copy_i32\(i32 %[\w.]+, i32 %[\w.]+\)\n(?=  br label %[\w.]+\n)", b))
+    if not m:
+        return fn_body
+    return b[:m[-1].end()] + end + b[m[-1].end():]
 
 
 def other_field(fn_body: str):

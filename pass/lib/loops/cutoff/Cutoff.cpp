@@ -3255,6 +3255,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // cq-9kcq S12c: the environment's pieces at X, named by eff-fenv's keys (i32 rails: FLAGS, MODE)
     for (auto &[id, o] : rFenv)
       add(fenv::pieceKey(ctx, id), o, RailType{Kind::Int, 32});
+    auto afterEnd = [&](const Value *v) { return rolled::readAfterInvertEnd(L, valueOf(v)); };
     rolled::Region::ExitWiring wiring = rreg->wireExits(
         rSeedScope, out, outW, nullptr, rKeptFinal,
         [&](const Value *v) {
@@ -3295,7 +3296,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           if (any_of(rFenv, [&](const std::pair<unsigned, Operand> &p) { return fenv::pieceKey(ctx, p.first) == v; }))
             return false;
           return rolled::cleanedAfter(L, valueOf(v));
-        });
+        },
+        // cq-037u2 (CR rule 17 with rule 14): inside an open cq_invert region, a value read after its end is a kept copy
+        ctx.unc().invertOpen() ? function_ref<bool(const Value *)>(afterEnd) : function_ref<bool(const Value *)>());
     for (auto &[o, first] : dups)
       *o = *slot.lookup(first);
     for (auto &[id, o] : rFenv)
