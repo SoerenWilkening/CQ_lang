@@ -3278,6 +3278,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
               }
             }
           }
+          // cq-shndm (CR rules 5, 14, 19): an entry's return of a continuation phi the walker joins classically with an
+          // incoming from outside the unit (joinUnitPhi: the classical skip of a K-loop behind `n == 0`, a phi over
+          // handles) returns a copy of that join (emitReturn's rule-14 copy-out): the loop's copy is no output either.
+          if (auto *P = dyn_cast<PHINode>(v);
+              P && any_of(cphis, [&](const CPhi &cp) { return cp.P == P; }) &&
+              any_of(P->users(), [](const User *u) { return isa<ReturnInst>(u); }) &&
+              any_of(P->blocks(), [&](BasicBlock *u) { return !U.contains(L, u) && A.DT.isReachableFromEntry(u); }))
+            return true;
           return !rolled::readersKeep(ctx, L, v);
         },
         [&](const Value *v, Operand op) { *slot.lookup(v) = op; },
