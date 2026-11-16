@@ -359,3 +359,68 @@ add_test(NAME loops-cutoff-nstop
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 600
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/nstop.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# nr-S25 (cq-9kcq after S14; CR rule 14 case 2): differential families of small quantum-exit K-loops crossing exit tests (f1),
+# carried-state updates (f2), readers after the loop (f3), placements (f4), trip effects (f5), K edges (f6), exit arms,
+# nesting and widths (f7), calls and flags (f8), measured arms, received K and latches (f9), floating point and fenv (fb),
+# each entry §6-checked against its C program; all passed with the K-static-copies lowering (4afda23b) as well.
+# diff_fc (cq_invert regions, cq-037u2) and diff_fa (abort behind a measured outcome, cq-njnmt) fail until their beads are fixed.
+add_test(NAME loops-cutoff-diff-f1
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f1.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f2
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f2.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f3
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f3.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f4
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f4.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f5
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f5.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f6
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f6.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f7
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f7.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f8
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f8.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-f9
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_f9.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-fb
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_fb.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-fc
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_fc.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-diff-fa
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/diff_fa.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
