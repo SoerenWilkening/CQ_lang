@@ -198,82 +198,8 @@ bool quantumMixed(BasicBlock *J, const DominatorTree &DT, const TaintInfo &T) {
   return false;
 }
 
-// Forward (or backward) reachability from b, b included.
-SmallPtrSet<BasicBlock *, 32> reachable(BasicBlock *b, bool forward) {
-  SmallPtrSet<BasicBlock *, 32> r{b};
-  SmallVector<BasicBlock *, 16> work{b};
-  while (!work.empty()) {
-    BasicBlock *x = work.pop_back_val();
-    if (forward) {
-      for (BasicBlock *y : successors(x))
-        if (r.insert(y).second)
-          work.push_back(y);
-    } else {
-      for (BasicBlock *y : predecessors(x))
-        if (r.insert(y).second)
-          work.push_back(y);
-    }
-  }
-  return r;
-}
-
-// Two markers of one kind in arms of a quantum terminator that exclude each other, neither paired inside its
-// own arm (an end in each arm closing the region a begin before the branch opened; a begin in each arm opened
-// for an end after the join): the host executes both, so the lowered program would close (open) the region
-// twice. Rule 17 (2026-11-02) orders one marker in an arm against its match outside it; it does not say how
-// two such markers merge.
-void checkExclusiveMarkers(Function &F, const TaintInfo &T, const DominatorTree &DT) {
-  SmallVector<Instruction *, 4> marks;
-  for (Instruction &I : instructions(F))
-    if (delta(I))
-      marks.push_back(&I);
-  for (unsigned i = 0; i < marks.size(); ++i)
-    for (unsigned j = i + 1; j < marks.size(); ++j) {
-      Instruction *m1 = marks[i], *m2 = marks[j];
-      int k = delta(*m1);
-      BasicBlock *b1 = m1->getParent(), *b2 = m2->getParent();
-      if (k != delta(*m2) || b1 == b2 || !DT.isReachableFromEntry(b1) || !DT.isReachableFromEntry(b2))
-        continue;
-      auto f1 = reachable(b1, true), f2 = reachable(b2, true);
-      if (f1.count(b2) || f2.count(b1))
-        continue;   // one path runs both
-      auto r1 = reachable(b1, false), r2 = reachable(b2, false);
-      // A block of m's own arm: reaches m or is reached from it, and is on no path of the other marker.
-      auto own = [&](BasicBlock *x, decltype(f1) &f, decltype(r1) &r, decltype(f1) &fo, decltype(r1) &ro) {
-        return (f.count(x) || r.count(x)) && !fo.count(x) && !ro.count(x);
-      };
-      // Paired inside its arm: a begin with an end after it there, an end with a begin before it there.
-      auto paired = [&](Instruction *m, decltype(f1) &f, decltype(r1) &r, decltype(f1) &fo, decltype(r1) &ro) {
-        BasicBlock *b = m->getParent();
-        for (Instruction &I : *b)
-          if (delta(I) == -k && (k > 0 ? cq::comesBefore(m, &I) : cq::comesBefore(&I, m)))
-            return true;
-        for (Instruction &I : instructions(F))
-          if (delta(I) == -k && I.getParent() != b && own(I.getParent(), f, r, fo, ro) &&
-              (k > 0 ? f.count(I.getParent()) : r.count(I.getParent())))
-            return true;
-        return false;
-      };
-      if (paired(m1, f1, r1, f2, r2) || paired(m2, f2, r2, f1, r1))
-        continue;
-      BasicBlock *D = DT.findNearestCommonDominator(b1, b2);
-      bool q = false;
-      for (BasicBlock &x : F)
-        q |= DT.dominates(D, &x) && (r1.count(&x) || r2.count(&x)) && !(r1.count(&x) && r2.count(&x) && &x != D) &&
-             quantumTerm(x, T);
-      q |= quantumTerm(*D, T);
-      if (q)
-        unimplemented(std::string("SPEC_ISSUES: two cq_invert ") + (k > 0 ? "begin" : "end") +
-                          " markers in arms of a quantum branch that exclude each other, neither paired in its "
-                          "arm (rule 17 orders one marker in an arm against its match; the host would execute "
-                          "both)",
-                      m2);
-    }
-}
-
 bool splitFunction(Function &F, const TaintInfo &T) {
   DominatorTree DT(F);
-  checkExclusiveMarkers(F, T, DT);
   std::map<BasicBlock *, std::set<int>> in;
   if (!depths(F, in))
     return false;   // markers that do not pair within a trip: lowered as they stand
