@@ -294,8 +294,6 @@ struct Uncompute::Impl {
   std::vector<Record> records;
   std::vector<RecInfo> info;
   std::vector<Rail> rails;
-  // cq-gujb: rails a later lowering still reads that no use records yet (pin/unpin): never resolved meanwhile.
-  DenseSet<RailId> pinned;
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
   std::vector<Deferred> defs;
@@ -825,11 +823,10 @@ struct Uncompute::Impl {
     return any_of(invertFrozen, [&](const DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s) { return s.count(g) != 0; });
   }
 
-  // g's item may be placed now: it is still to come and no construction pinned g.
-  bool resolvable(RailId g) const { return !pinned.count(g) && pending(g); }
-  // cq-sdqu (CR rule 5: an operand rail outlives every _unc that reads it): g's item is still to come, now or once
-  // it is unpinned (cq-gujb). A pinned rail is not kept: as a reader it holds back the items of the rails its item
-  // reads exactly as a resolvable one does (a clone cell's select(p, v, old) is uncomputed after the cell's last
+  // g's item may be placed now: it is still to come.
+  bool resolvable(RailId g) const { return pending(g); }
+  // cq-sdqu (CR rule 5: an operand rail outlives every _unc that reads it): g's item is still to come. As a reader
+  // it holds back the items of the rails its item reads exactly as a resolvable one does (a clone cell's select(p, v, old) is uncomputed after the cell's last
   // access, so v outlives it: musl __rem_pio2_large's y[0] = ih ? -fw : fw under a quantum predicate).
   bool pending(RailId g) const {
     const Rail &r = rails[g];
@@ -2210,11 +2207,6 @@ struct Uncompute::Impl {
       // (cleared by the item itself, so a later pass through the block before a redefinition is no
       // second free).
       BasicBlock *Bp = cyclePoint(g, as);
-      if (!Bp)
-        unimplemented("uncompute: an arm of a merged handle, " + describe(r.handle) +
-                          ", is defined on a cycle and no block after its uses lies on every path from its definition "
-                          "back to it or to a return (its instances cannot be resolved one by one)",
-                      c.point);
       placeAt(g, {Bp, Bp->getTerminator()}, true, /*exists=*/true, /*selfClear=*/true);
       return;
     }
@@ -2591,11 +2583,6 @@ struct Uncompute::Impl {
         continue;
       if (info[w].kind != RecKind::Involution)
         internalError("uncompute: an in-place write record that is not an involution", f);
-      if (reachesAgain(f->getParent(), f->getParent(), {def ? def->getParent() : &f->getFunction()->getEntryBlock()}))
-        unimplemented("uncompute: an in-place write on an operand rail of " + describe(rails[g].handle) +
-                          " may run more than once between its record and its earliest uncompute (a loop "
-                          "around the write that does not redefine the rail)",
-                      f);
       out.push_back(w);
       // A non-diagonal gate on a rail the write reads, after it: its undo cannot run there.
       for (RailId y0 : info[w].reads)
@@ -3373,7 +3360,6 @@ struct Uncompute::Impl {
       if (!is_contained(xs, std::make_pair(x, (const Value *)nullptr)))
         xs.push_back({x, nullptr});
     Instruction *barrier = nullptr;
-    RailId barrierRail = kNone;
     for (auto [x, via] : xs) {
       SmallVector<Instruction *, 8> evs(rails[x].hits.begin(), rails[x].hits.end());
       for (unsigned w : rails[x].writes)
@@ -3386,7 +3372,6 @@ struct Uncompute::Impl {
                                                  : reaches(e->getParent(), pos.bb);
         if (violated && !barrier) {
           barrier = e;
-          barrierRail = x;
         }
       }
     }
@@ -3420,9 +3405,6 @@ struct Uncompute::Impl {
         if (beforeOrIn(d, &lb) && fromRegion(&lb))
           for (const BasicBlock *s : successors(&lb))
             if (!beforeOrIn(d, s)) {
-              if (X && X != s)
-                unimplemented("uncompute: a deferred rule-14 reverse loop whose loop has more than one exit block",
-                              dyn_cast<Instruction>(at));
               X = const_cast<BasicBlock *>(s);
             }
       if (!X || !X->getTerminator())
@@ -3608,19 +3590,6 @@ struct Uncompute::Impl {
     move(rails[x].uses, rails[fid].uses);
   }
 
-  // At a return R: a deferred item already placed must lie on every path from its loop to R.
-  void checkDeferredPaths(BasicBlock *Rb) const {
-    for (const Deferred &d : defs) {
-      if (!d.placedAt)
-        continue;
-      for (const BasicBlock *rb : d.region)
-        if (reachesAgain(rb, Rb, {d.placedAt}) || rb == Rb)
-          unimplemented("uncompute: a return is reached from a classically bounded loop by a path that avoids its "
-                            "deferred reverse loop (the loop's exit values are read on another path only)",
-                        Rb->getTerminator());
-    }
-  }
-
   // ---- a computed rail measured on some paths only (cq-8lf8, cq-4lqy) -------------------------------
   //
   // CR rule 2 (ruling 2026-11-02, cq-29ej): collapse is static. A rail measured on some classical paths
@@ -3703,8 +3672,6 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
     if (i >= ops.size() || !ops[i].handle)
       internalError("uncompute: recordCore: the target operand is not a rail", fwd);
     RailId t = impl->lookup(ops[i].v, "recordCore", fwd);
-    if (impl->isMerge(t))
-      unimplemented("uncompute: recordCore: an in-place write through a merged handle (U1: copy it out first)", fwd);
     if (t != out)
       internalError("uncompute: recordCore: `out` is not the gate's target rail", fwd);
     return t;
@@ -4010,24 +3977,6 @@ void Uncompute::freezeLoadCopy(RailId r) {
 
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 
-bool Uncompute::mayHit(const Value *handle, const Instruction *gate) const {
-  auto it = impl->byHandle.find(handle);
-  if (it == impl->byHandle.end())
-    return false;
-  for (RailId g : impl->names(it->second))
-    if (is_contained(impl->rails[g].hits, gate))
-      return true;
-  for (RailId x : impl->leaves(it->second)) {
-    const Impl::Rail &r = impl->rails[x];
-    if (is_contained(r.hits, gate))
-      return true;
-    for (auto [h, n] : r.condHits)
-      if (h == gate)
-        return true;
-  }
-  return false;
-}
-
 bool Uncompute::deferredExit(RailId r) const {
   for (const Impl::Deferred &d : impl->defs)
     if (is_contained(d.exits, r))
@@ -4076,15 +4025,6 @@ bool Uncompute::railDependsOn(const Value *from, const Value *y) const {
   }
   return false;
 }
-
-void Uncompute::pin(RailId r) {
-  Impl &I = *impl;
-  if (I.rail(r, "pin").released)
-    internalError("uncompute: pin of a rail that was already uncomputed", I.rails[r].handle);
-  I.pinned.insert(r);
-}
-
-void Uncompute::unpin(RailId r) { impl->pinned.erase(r); }
 
 void Uncompute::setRole(RailId r, Role role) {
   impl->syncPhiHits();   // cq-igqp
@@ -4510,7 +4450,6 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   if (!ret || !ret->getParent())
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
-  I.pinned.clear();   // cq-gujb: nothing is lowered after the exit
   // U2: a twin zeroes every result of its call, so either every member is kept or none is. CR rule 18
   // (ruling 2026-11-02, cq-75n4): when some results of one call are measured and others are dead, each
   // measured one is copied into a fresh rail right after the call (cqrt_alloc_<W>(0), cqrt_copy_<W>), the
@@ -4574,7 +4513,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   impl->pruneCleanups();
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
-  SmallVector<RailId, 16> cands, defc;
+  SmallVector<RailId, 16> cands;
   // cq-4tkb4: nothing below changes the CFG until wrapLocal but a deferred item's placement (which suspends the cache).
   std::optional<Impl::ReachScope> reach;
   reach.emplace(*Rb->getParent());
@@ -4586,7 +4525,6 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
       // where the loop did not run).
       if (any_of(I.defs[di].region, [&](const BasicBlock *rb) { return Impl::reaches(rb, Rb); })) {
         cands.push_back(g);
-        defc.push_back(g);
       }
       continue;
     }
@@ -4619,12 +4557,6 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   I.wrapArmItems(*Rb->getParent());
   I.armLocal.clear();
   I.cycleArm.clear();
-  for (RailId g : defc)
-    if (!I.rails[g].released)
-      unimplemented("uncompute: a deferred rule-14 reverse loop could not be placed before a return its loop reaches "
-                        "(a reader of its exit values is still pending)",
-                    ret);
-  I.checkDeferredPaths(Rb);
 }
 
 bool Uncompute::recorded(const Value *handle) const { return impl->byHandle.count(handle) != 0; }
