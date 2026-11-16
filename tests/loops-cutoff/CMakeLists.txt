@@ -59,6 +59,14 @@ add_test(NAME loops-cutoff-aggregate
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/agg_region.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-n1hy7 (CR rules 6, 14): a value made in a rolled K-trip and read after the loop by a reader that may consume it by rule
+# 6 (a template, a store, a return, a rotation, a measurement of a template), one entry per reader shape; with a mutant
+# (the exit value read from the trip before the last).
+add_test(NAME loops-cutoff-trip-exit
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_exit.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-z6nkx: musl mbsrtowcs' two scan loops into one tail; strlen's tail edge excluding its unit; stpcpy's skip of a loop in a tail; its head's flag seed.
 add_test(NAME loops-cutoff-tail-phis
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

@@ -78,6 +78,12 @@ MUTANTS = {
     "agg_region": [
         ("vec_region", "other_field", lambda b: other_field(b), None),
     ],
+    # cq-n1hy7 (CR rules 6, 14): te_sub's exit value a (the last executed trip's capture rail, copied out at X) read from the
+    # trip before it: the copy and its un-copy read the capture's header phi (the previous trip's value) in place of the
+    # last trip's select, so a - b after the loop pairs one trip's a with another's b
+    "trip_exit": [
+        ("te_sub", "prev_trip", lambda b: prev_trip(b), None),
+    ],
     "me_exit": [
         ("ex_pre", "const_test", lambda b: re.sub(r"(@cq_template_and_i32_hl(?:_unc)?\((?:i32 %[\w.]+, )+i32 )4\)", r"\g<1>0)", b),
          None),
@@ -175,6 +181,19 @@ def other_site(fn_body: str):
     b = fn_body[:m.start()] + split + fn_body[m.end():]
     # the header's terminator now ends cq.j: every phi's incoming edge from the header comes from cq.j
     return re.sub(r"^(  %[\w.]+ = phi [^\n]*)$", lambda p: p.group(1).replace(f", %{hdr} ]", ", %cq.j ]"), b, flags=re.M)
+
+
+def prev_trip(fn_body: str):
+    """trip_exit's te_sub: the copy-out of the capture rail of a (cqrt_copy_i32 of the select whose third operand, the
+    accumulator, is a header phi) and its un-copy read that phi instead: the trip before the last one's value."""
+    for m in re.finditer(r"call void @cqrt_copy_i32\(i32 (%[\w.]+), i32 (%[\w.]+)\)", fn_body):
+        x, c = m.group(1), m.group(2)
+        sel = re.search(r"^  " + re.escape(x) + r" = call i32 @cq_template_select_i32\(i32 %[\w.]+, i32 %[\w.]+, i32 (%[\w.]+)\)$",
+                        fn_body, re.M)
+        if not sel or not re.search(r"^  " + re.escape(sel.group(1)) + r" = phi i32 ", fn_body, re.M):
+            continue
+        return fn_body.replace(f"call void @cqrt_copy_i32(i32 {x}, i32 {c})", f"call void @cqrt_copy_i32(i32 {sel.group(1)}, i32 {c})")
+    return fn_body
 
 
 def other_field(fn_body: str):

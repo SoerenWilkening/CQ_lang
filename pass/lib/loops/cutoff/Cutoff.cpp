@@ -3278,7 +3278,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           return !rolled::readersKeep(ctx, L, v);
         },
-        [&](const Value *v, Operand op) { *slot.lookup(v) = op; });
+        [&](const Value *v, Operand op) { *slot.lookup(v) = op; },
+        // cq-n1hy7 (CR rules 6, 14): an exit value the trip makes (a capture rail, a carried value's latch value, a region
+        // value) that the code after the loop may clean by rule 6 is copied out: the reverse undoes every trip's instance.
+        [&](const Value *v) {
+          if (any_of(rFenv, [&](const std::pair<unsigned, Operand> &p) { return fenv::pieceKey(ctx, p.first) == v; }))
+            return false;
+          return rolled::cleanedAfter(L, valueOf(v));
+        });
     for (auto &[o, first] : dups)
       *o = *slot.lookup(first);
     for (auto &[id, o] : rFenv)
