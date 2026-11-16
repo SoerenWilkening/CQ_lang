@@ -101,20 +101,6 @@ abi::CloneSpec cloneSpecOf(const Specialization &S) {
   return abi::CloneSpec{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table, S.rm};
 }
 
-bool sameFields(const abi::CloneSpec &a, const abi::CloneSpec &b) {
-  return a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-         a.unc == b.unc && a.table == b.table && a.rm == b.rm;
-}
-
-// The CR §1.4 name of cs; unimplemented when the right-to-left reading does not give cs back.
-std::string checkedName(const abi::CloneSpec &cs, const Value *at) {
-  std::string n = abi::name(cs);
-  std::optional<abi::CloneSpec> back = abi::parseClone(n);
-  if (!back || !sameFields(*back, cs))
-    unimplemented("calls: a clone whose CR §1.4 name reads back as another clone (a uniquified clone)", at);
-  return n;
-}
-
 // A scalar C type a rail can hold (CR §1.1); everything else is a field-wise ABI of another module.
 bool scalarRailType(Type *t) {
   return t->isIntegerTy() || t->isHalfTy() || t->isBFloatTy() || t->isFloatTy() || t->isDoubleTy() ||
@@ -245,9 +231,6 @@ struct ResultLayout {
   bool composite = false;
   SmallVector<Type *, 4> leaves;
   SmallVector<bool, 4> q;
-  // M2 (191): the clone's stores through Qram-pointee formals, one i32 handle each after the leaves.
-  unsigned stores = 0;
-  bool qramFormal = false;
   // cq-0umd: an integer result packed from fields (159): its field boundaries (composite = true).
   SmallVector<unsigned, 4> cuts;
   // cq-0umd (166): an aggregate result with a packed integer leaf: the fields per leaf (the leaves are
@@ -1270,7 +1253,7 @@ Function *materialize(Module &M, const Specialization &S) {
   const TaintInfo &T = taintOf(S);
   LLVMContext &C = M.getContext();
   abi::CloneSpec cs = cloneSpecOf(S);
-  std::string name = checkedName(cs, S.F);
+  std::string name = abi::name(cs);
 
   SmallVector<Type *, 8> ps;
   if (S.ctl)
@@ -1291,15 +1274,7 @@ Function *materialize(Module &M, const Specialization &S) {
     // struct's fields followed by i32 (cq-xhv4).
     ps.push_back(handleTy(C));
     ps.push_back(handleTy(C));
-    if (rl.stores) {
-      SmallVector<Type *, 4> es;
-      for (unsigned k = 0; k < rl.leaves.size(); ++k)
-        es.push_back(rl.q[k] ? handleTy(C) : rl.leaves[k]);
-      for (unsigned k = 0; k < rl.stores; ++k)
-        es.push_back(handleTy(C));
-      es.push_back(handleTy(C));
-      rt = StructType::get(C, es);
-    } else if (rt->isVoidTy()) {
+    if (rt->isVoidTy()) {
       rt = handleTy(C);
     } else if (rl.composite && rl.anyQ()) {
       SmallVector<Type *, 4> es(cast<StructType>(rt)->elements());
@@ -2521,10 +2496,6 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   Value *flag = cs->ctl ? ctlFlag(ctx, site) : nullptr;
   bool env = fenv::cloneCarriesEnv(ctx.T, *cs);
   CloneCall r = emitCloneCall(ctx, site, *cs, flag, argMap);
-  if (r.res.qramFormal)
-    unimplemented("calls: lowerLiftedVia of a clone with a formal onto a bus object (U3: mem-qram's "
-                  "store record through an argument map)",
-                  &site);
   SmallVector<Value *, 4> outs;
   // E1 (CR rule 23, 82): the start routine takes the creating thread's mode and flags (C17 §7.6: a thread's
   // environment starts as its creator's) and returns its own new flags rail as the result's last field. Its
