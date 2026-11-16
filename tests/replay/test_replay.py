@@ -102,6 +102,10 @@ def fn_edit(text, name, old, new):
     m = re.search(rf"(?ms)^define [^\n]*@{re.escape(name)}\(.*?^}}\n", text)
     assert m, f"no function {name}"
     body = m.group(0)
+    if isinstance(old, re.Pattern):   # a regex: SSA numbers vary with the pass, the property does not
+        n = len(old.findall(body))
+        assert n == 1, f"{name}: /{old.pattern}/ matches {n} times"
+        return text[:m.start()] + old.sub(new, body) + text[m.end():]
     assert body.count(old) == 1, f"{name}: {old!r} occurs {body.count(old)} times"
     return text[:m.start()] + body.replace(old, new) + text[m.end():]
 
@@ -153,14 +157,23 @@ MUTANTS = [
     ("wrong_result_select", "rp_sel", "__cq_q_pick_10", "%6 = call i32 @cq_template_select_i32(i32 %3, i32 %4, i32 %5)",
      "%6 = call i32 @cq_template_select_i32(i32 %3, i32 %5, i32 %4)", None),
     # the extensions: counters and twins inside a window (rp_rec), a store-kept argument and a pure helper (rp_arg)
+    # the recursive arm's activation-counter restore (the store after the last free, before its ret) dropped
     ("rec_counter_not_restored", "rp_rec", "__cq_q_chain_10_ctl",
-     "  store i32 %18, ptr @__cq_act_chain, align 4\n  ret i32 %16", "  ret i32 %16", None),
-    ("rec_wrong_classical_argument", "rp_rec", "__cq_q_chain_10_ctl", "%10 = add nsw i32 %2, 1", "%10 = add nsw i32 %2, 2", None),
-    ("arg_store_other_address", "rp_arg", "__cq_q_put_00_ctl", "%16 = ptrtoint ptr %11 to i64", "%16 = ptrtoint ptr %12 to i64", None),
+     re.compile(r"(  call void @cqrt_free\(i32 %\d+\)\n  %\d+ = load i32, ptr @__cq_act_chain, align 4\n"
+                r"  %\d+ = add i32 %\d+, -1\n)  store i32 %\d+, ptr @__cq_act_chain, align 4\n(  ret i32 %\d+\n)"),
+     r"\1\2", None),
+    # the recursive call's classical argument d + 1 becomes d + 2
+    ("rec_wrong_classical_argument", "rp_rec", "__cq_q_chain_10_ctl", re.compile(r"(%\d+ = add nsw i32 %2, )1\n"),
+     r"\g<1>2\n", None),
+    # the kept store goes to the address the load read (cell + d + 1) instead of its own (cell + d)
+    ("arg_store_other_address", "rp_arg", "__cq_q_put_00_ctl",
+     re.compile(r"(?s)(@cqrt_qram_load_i8_hl_controlled\(i32 %0, i32 %\d+, i64 (%\d+)\).*"
+                r"call void @cqrt_qram_store_i8_hl_controlled\(i32 %0, i32 %\d+, i64 )%\d+"),
+     lambda m: m.group(1) + m.group(2), None),
+    # the kept store under a fresh |1> control instead of the clone's control %0
     ("arg_store_wrong_control", "rp_arg", "__cq_q_put_00_ctl",
-     "  call void @cqrt_qram_store_i8_hl_controlled(i32 %0, i32 %8, i64 %16, i32 %15)\n",
-     "  %cqm = call i32 @cqrt_alloc_i1(i1 true)\n  call void @cqrt_qram_store_i8_hl_controlled(i32 %cqm, i32 %8, i64 %16, i32 %15)\n",
-     None),
+     re.compile(r"  call void @cqrt_qram_store_i8_hl_controlled\(i32 %0, "),
+     "  %cqm = call i32 @cqrt_alloc_i1(i1 true)\n  call void @cqrt_qram_store_i8_hl_controlled(i32 %cqm, ", None),
 ]
 
 
