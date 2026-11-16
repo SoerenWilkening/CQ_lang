@@ -1,32 +1,37 @@
 # CQ backend ABI: the logical circuit backend
 
 Reference for the team that implements the runtime the lowered program calls: every `cqrt_*` and
-`cq_template_*` family with its contract. CONSTRUCTION_RULES.md (CR) is normative and wins over
-this file. A point taken from an example and not from CR is tagged *(corpus)*. §5 lists the
-questions this file raised, each with its ruling.
+`cq_template_*` family with its contract and with how it is built. CONSTRUCTION_RULES.md (CR) is
+normative and wins over this file. A point taken from an example and not from CR is tagged
+*(corpus)*. §5 lists the questions this file raised, each with its ruling. §6 says which parts of
+CR this file follows and what CR leaves open.
 
 - **Ground truth.** Bennett.jl `824458d10e879c3fef673c231a02e5461dac667f` (CR §0) and BennettVM.jl
   `23d28e6471f9cf5d8a22177d08260ca86adfe841`, for the reversible circuits of the core XOR gates
   (§1.1–§1.9), the templates (§2) and their totalization only. Memory, pointers, calls and loops
   are CR's own design and have no reference implementation. A citation `path:function` is
-  relative to that repo's root; "BJ" is Bennett.jl, "BVM" BennettVM.jl.
+  relative to that repo's root and names source read at that revision; "BJ" is Bennett.jl, "BVM"
+  BennettVM.jl.
+- **Ref.** names the reference circuit or semantics. **Impl.** says how the function is built
+  under the gate-set rule (§0, obligation 8): a BJ circuit, a composition that is spelled out, or
+  "not a gate" with what the runtime does instead. Where BJ's result differs from the contract,
+  the Impl. line says what is adapted.
 - **EXTEND** marks a family with no Bennett.jl implementation. The entry states the IEEE contract
-  an extension must meet.
-- **Counts** come from the commands shown, run from the `CQ_spec/` root on 2026-11-05 over all 194
-  examples (the "ex" counts of §2 and of the template rows of §4: 2026-10-27, 192 examples). The
-  memory symbol counts predate the 2026-11-05 regeneration: this file gives no count for the bus
-  (§1.10); its witnesses are the regenerated examples and 195–213.
+  an extension must meet; §2.11 gives the route to its circuit.
+- **Counts** come from the commands shown, run from the `CQ_spec/` root over all 213 examples.
+  The 565 symbols are instances of 24 of the 25 core operations and 58 of the 66 template
+  operations (§4): the backend is those 91 operations, generic in width.
 
 ```sh
-ls -d examples/*/ | wc -l                                                            # 194 examples
-cat examples/*/*.lowered.ll | grep -ohE '@(cqrt_|cq_template_)[A-Za-z0-9_.]+' | sort -u | wc -l   # 553 symbols
-cat examples/*/*.lowered.ll | grep -ohE '@cqrt_[A-Za-z0-9_.]+' | sort -u | wc -l     # 91 cqrt_*  (so 462 cq_template_*)
+ls -d examples/*/ | wc -l                                                            # 213 examples
+cat examples/*/*.lowered.ll | grep -ohE '@(cqrt_|cq_template_)[A-Za-z0-9_.]+' | sort -u | wc -l   # 565 symbols
+cat examples/*/*.lowered.ll | grep -ohE '@cqrt_[A-Za-z0-9_.]+' | sort -u | wc -l     # 128 cqrt_*  (so 437 cq_template_*)
 # per-example symbol index used for every "examples" count below:
 for f in examples/*/*.lowered.ll; do n=$(basename $(dirname $f)); n=${n%%_*}; \
   grep -v '^declare' $f | grep -ohE '@(cqrt_|cq_template_)[A-Za-z0-9_.]+' | sort -u | sed "s/^@/$n /"; done > sym_by_ex.txt
-grep -E ' cqrt_push' sym_by_ex.txt | cut -d' ' -f1 | sort -u | wc -l                 # e.g. 38 (one family)
+grep -E ' cqrt_push' sym_by_ex.txt | cut -d' ' -f1 | sort -u | wc -l                 # e.g. 53 (one family)
 comm -23 <(grep -ohE '^declare i32 @cq_template_[A-Za-z0-9_]+' examples/*/*.lowered.ll | sed 's/.*@//' | sort -u) \
-         <(grep -ohE '@cq_template_[A-Za-z0-9_]+_unc' examples/*/*.lowered.ll | sed 's/@//;s/_unc$//' | sort -u) | wc -l   # 44
+         <(grep -ohE '@cq_template_[A-Za-z0-9_]+_unc' examples/*/*.lowered.ll | sed 's/@//;s/_unc$//' | sort -u) | wc -l   # 49
 ```
 
 Every used symbol is declared and every declared symbol is used (`comm` of the two sets is empty).
@@ -64,11 +69,11 @@ translator of the IR. A call never returns before its gates are appended in prog
   result is classical-valued), and `cqrt_measure_<W>` (the rail is classical-valued afterwards).
   The overlay (§1.10) and the tape (§1.11) are defined by it.
 - **Rail value encoding.** Integers are two's complement on W bits. `f16`/`f32`/`f64` are IEEE
-  binary16/32/64 bit patterns. `f80` is the x87 80-bit extended pattern (explicit integer bit,
-  CR rule 25). `i1` is one qubit. The qubit order inside a rail is internal to the backend, because
+  binary16/32/64 bit patterns. `bf16` is the bfloat16 pattern (8 exponent bits, 7 fraction bits,
+  CR §1.1). `f80` is the x87 80-bit extended pattern (explicit integer bit, CR rule 25). `i1` is one qubit. The qubit order inside a rail is internal to the backend, because
   only values cross the ABI (`alloc`, `measure`, literals). The quantum-angle ladder (§1.5) is the
   one place where bit weights matter.
-- Widths in the corpus: `i1 i7 i8 i16 i32 i64 i80 i100 i128 f16 f32 f64 f80`. Any `N ≥ 1` is legal
+- Widths in the corpus: `i1 i7 i8 i16 i32 i64 i100 i128 f16 f32 f64 f80`. Any `N ≥ 1` is legal
   (CR §1.1), so implement templates generically in W.
 - **Literal** means a classical value known at run time, not only a compile-time constant
   (`fshl_i32_qll(h, %2, 3)` in 134 passes a function argument). A literal has the LLVM operand
@@ -77,7 +82,7 @@ translator of the IR. A call never returns before its gates are appended in prog
   `cq_template_fshr_i32(%5, %5, %6)` (112) and `cq_template_fadd_f16(%0, %0)` (111). The target of an
   in-place core gate (`not/and/or/xor_i1` `t`, `copy` `d`, `xorc` `h`, `ry/rz` target) never equals
   any other operand of that call.
-- **Narrow scalar arguments and returns.** The corpus declares 5 symbols both with and without
+- **Narrow scalar arguments and returns.** The corpus declares 6 symbols both with and without
   `signext`/`zeroext` (allowed, CR §1.2). The backend reads only the low W bits of an
   `i1`/`i8`/`i16` argument and returns `i1` zero-extended and `i8`/`i16` sign-extended.
 
@@ -123,7 +128,8 @@ cross this ABI.
    starts in `|0⟩` and the call XORs the value into it. Handles are never reused while live.
 2. **Garbage-free templates.** A template leaves every operand and every internal ancilla exactly
    as it found it. Its net map is `|args⟩|0⟩ → |args⟩|f(args)⟩` (Bennett compute–copy–uncompute,
-   BJ `src/bennett_transform.jl:bennett_direct`).
+   BJ `src/bennett_transform.jl:_bennett_default`; `bennett_direct` there is the forward-only
+   path for a gate list that already cleans up after itself).
 3. **No inserted measurement.** The backend measures only at `cqrt_measure_<W>` and, at the end of
    the shot, the tape rails (captured output buffers among them) and abort flags (§1.11).
 4. **Live outcomes.** `cqrt_measure_<W>` is synchronous: the backend runs the circuit up to the
@@ -135,6 +141,46 @@ cross this ABI.
    classical-valued: no symbol reports it, and the lowered code is the same for classical and
    quantum data.
 7. **No fault.** No bus access faults or reads host memory that is not readable (§1.10).
+8. **Gate set.** Every gate the backend appends is X, CX or CCX, with three exceptions:
+   (a) the rotations: `cqrt_ry_*`, `cqrt_rz_i1`, `cqrt_rz_qangle` and their `_controlled` and
+   `_qangle` forms. Only the Ry and P gates themselves are meant: the reduction of an angle
+   rail (§1.5) is X/CX/CCX;
+   (b) measurement (`cqrt_measure_<W>`, the end of the shot in §1.11) and the reset inside
+   `cqrt_free`;
+   (c) bookkeeping, which emits no gate: `push`/`pop`, `invert_begin`/`end`, tape and abort
+   records, the host-boundary logic, the HOST/QUANTUM overlay, handle management.
+   An X/CX/CCX circuit returns every ancilla it takes to `|0⟩` before the call returns.
+   Bennett.jl emits exactly such gate lists (BJ `src/gates.jl:NOTGate`/`CNOTGate`/`ToffoliGate`,
+   all ancillae back at 0) and is the intended source of the reversible circuits.
+
+**Building the circuits** (how an Impl. line is read). x_i is bit i of rail x.
+- *BJ gate emitters* (`lower_add!`, `lower_mux!`, …) append NOT/CNOT/Toffoli gates on wire
+  vectors and are generic in W. They take their result wires and their ancillae from a
+  `WireAllocator` and leave the ancillae dirty. The backend wraps one as: the emitter's gates,
+  CX of its result into the result rail, the same gates in reverse order ("wrapped" below; BJ
+  `src/bennett_transform.jl:_bennett_default`). An emitter that only XORs into its result
+  wires and takes no ancilla is emitted straight onto the result rail.
+- *BJ soft kernels* (`soft_fadd`, `_soft_udiv_compile`, …) are branchless Julia functions on
+  unsigned-integer bit patterns. BJ `src/Bennett.jl:reversible_compile` turns one into a gate
+  list `(args, 0) → (args, f(args))` with every ancilla 0 ("compiled" below). That list, on the
+  operand rails and the result rail, is the template. A kernel has fixed widths: its argument
+  types are `Int8`…`UInt64`, `Bool`, `Float64` and tuples of them.
+- *The result rail in any state.* A template and a core XOR gate are `o ^= f(args)` whatever o
+  holds, not only for o = `|0⟩`: `cq_invert` replays them on a rail a rotation has acted on
+  (§1.13, CR rule 17). Both constructions above give that map. A circuit that overwrites a copy
+  of an operand in place (BJ `src/adder.jl:lower_add_cuccaro!`) may serve inside the computed
+  part, never as the write to o.
+- *A literal operand* (`_hl`, `_lh`, `_ll`, an `l` of a ternary shape; `xorc`, `alloc`) is a
+  call argument, known when the gates are appended. Either an ancilla register is set to it by X
+  on its 1-bits (BJ `src/lowering/operand.jl:resolve!`, widths up to 64 there), used as the
+  handle operand and cleared by the same X gates, or the constant is folded into the gate list:
+  a CX from a known bit is X or nothing, a CCX with one known control is CX or nothing. Both
+  are the same unitary.
+- *`_unc`* is the gate list of its forward form (the same XOR map).
+- *`_controlled`* exists for core gates only, never for a template. Each gate takes the
+  control: X → CX, CX → CCX, CCX → three CCX over one ancilla that returns to 0 (BJ
+  `src/controlled.jl:controlled`, `promote_gate!`).
+- *Classical-valued operands* (above) need no gate: the backend computes the value on bits.
 
 ---
 
@@ -151,6 +197,9 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Rails.** Fresh. A seed that is never written is freed directly (CR rule 7).
 - **§2.** None. **Ref.** BJ `src/wire_allocator.jl:allocate!` (zero wires; a nonzero seed is X on its
   1-bits). **Ex.** 01, 13, 111.
+- **Impl.** Handle management (c). The fresh rail is classical-valued and holds `lit` as bits;
+  no gate is appended. When a later gate forces qubits they start in `|0⟩` and get X on the
+  1-bits of the value.
 
 ### 1.2 `cqrt_free`
 - **Sig.** `void @cqrt_free(i32 h)`.
@@ -161,6 +210,9 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
   bus or an escaped handle. A classical-valued rail (§0) is in a known basis state whatever value
   it holds.
 - **§2.** None. **Ref.** BJ `src/wire_allocator.jl:free!`. **Ex.** 03, 04, 07.
+- **Impl.** Not a gate (b, c): the reset of the rail's qubits, where it has any, and the release
+  of the handle. BJ's `free!` puts zero wires back in the pool for reuse; the backend may reuse
+  reset qubits the same way.
 
 ### 1.3 `cqrt_measure_<W>`
 - **Sig.** `<T> @cqrt_measure_<W>(i32 h)` with `<T>` the C type (`i1`, `i8`, `i16`, `i32`, `i64`,
@@ -172,7 +224,9 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
   state (CR rule 2). The call is never conditioned (no `_controlled` form). A `measure` of an
   already-measured rail is a classical re-read, never a measurement event (CR rule 2, 136).
 - **§2.** None. **Ref.** No reference implementation (Bennett.jl and BennettVM.jl are classical
-  reversible). **Ex.** 01, 38, 155. In the corpus: 193 examples (all except 60).
+  reversible). **Ex.** 01, 38, 155. In the corpus: 212 examples (all except 60).
+- **Impl.** Not a gate (b): the measurement of the rail's qubits, run at the call (obligation
+  4). A classical-valued rail has no qubits: its bits are returned.
 
 ### 1.4 `cqrt_ry_<W>[_controlled]`
 - **Sig.** `void @cqrt_ry_<W>(i32 h, double θ)` and `void @cqrt_ry_<W>_controlled(i32 c, i32 h, double θ)`.
@@ -182,10 +236,13 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
   CR rule 10). c is unchanged. There is no `_unc`. `cq_invert` emits Ry(−θ) (rule 17).
 - **§2.** A non-finite θ is the identity. **Ref.** No reference implementation. **Ex.** 01, 39,
   125 (`_controlled`). Corpus widths: f32 f64 f80 i1 i8 i16 i32 i64 (`_controlled`: i1, i32).
+- **Impl.** Rotation (a): W single-qubit Ry(θ) gates, for `_controlled` each controlled by c. No
+  X/CX/CCX and no ancilla. A non-finite θ appends nothing. A classical-valued h gets its qubits
+  here.
 
 ### 1.5 `cqrt_ry_<W>_qangle[_controlled]`: the N-bit angle ladder
 - **Sig.** `void @cqrt_ry_<W>_qangle(i32 h, i32 A)`. The controlled form is
-  `(i32 c, i32 h, i32 A)` (CR §1.3; no corpus use).
+  `(i32 c, i32 h, i32 A)` (CR §1.3; 126).
 - **Sem.** Ry(val(A)) on every qubit of h on each basis branch of A. A is an **`f64` rail**: the
   program's IEEE double, bit-exact (79, 143). val(A) is that double.
   `Σ_a α_a|a⟩_A ⊗ |ψ⟩_h ↦ Σ_a α_a|a⟩_A ⊗ Ry(val(a))^{⊗W}|ψ⟩_h`. The backend builds the circuit
@@ -196,7 +253,35 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Rails.** A is read only and unchanged (then uncomputed by its producer's `_unc`). h is rotated
   in place and frozen.
 - **§2.** A non-finite val(A) is the identity on that branch. **Ref.** No reference implementation.
-  **Ex.** 79, 132, 142. Corpus: `cqrt_ry_i32_qangle` (6 examples), `cqrt_ry_i1_qangle` (58, 59, 115, 120, 185).
+  **Ex.** 79, 132, 142. Corpus: `cqrt_ry_i32_qangle` (79, 132, 141, 142, 143), `cqrt_ry_i1_qangle`
+  (58, 59, 115, 120, 185), `cqrt_ry_i8_qangle` (121), `cqrt_ry_i32_qangle_controlled` (126).
+- **Impl.** Two parts; only the second is a rotation.
+  - *Reduction (X/CX/CCX, no reference circuit).* A fresh N-qubit register K ^= k(a), where
+    k(a) = round(val(a)·2^N / P) mod 2^N for a finite val(a) and 0 for a non-finite one (exponent
+    field all ones). A is unchanged and every ancilla returns to `|0⟩`.
+    *Fixed:* k as a function of the 64 bits of A. The product with 2^N/P is the real-number
+    product, taken mod 2^N (two's complement for a negative val: k(−x) = −k(x) mod 2^N), then
+    rounded to nearest. P is irrational, so val·2^N/P is never half an integer for a finite
+    val ≠ 0: the tie rule never fires, and k(±0) = 0.
+    *Left to the backend:* N and the circuit. One construction from BJ parts: split A into
+    sign s, exponent e and the 53-bit significand m by CX (the implicit bit is [e ≠ 0]; a
+    subnormal has the exponent of e = 1); the bits of 2^N/P that can reach K at exponent e are
+    a window of one classical constant, the binary expansion of 1/π, selected by e (a table
+    lookup on e, BJ `src/qrom.jl:emit_qrom!`, 64 data bits per call there, or a barrel shift,
+    BJ `src/lowering/arith.jl:lower_var_shl!`); m times the window by BJ
+    `src/multiplier.jl:lower_mul_wide!`; the N bits above the binary point plus the bit below
+    it, added in as the rounding (BJ `src/adder.jl:lower_add!`); negation under s (BJ
+    `src/lowering/aggregate.jl:_cond_negate_inplace!`); 0 under e = 0x7FF. The whole is wrapped
+    (§0) with K as the result rail.
+    *The backend's proof obligation:* the window is cut to a finite width, and it must be wide
+    enough that the cut never changes k for any of the 2^64 inputs. The guard width that
+    guarantees it depends on N and is not given by CR (§6).
+  - *Rotations (a).* For each ladder bit i < N and each qubit q of h: Ry(P·2^(i−N)) on q,
+    controlled by K_i. `_controlled`: t ^= c ∧ K_i by CCX on a fresh ancilla, the controlled Ry
+    from t, the same CCX again. Then the reduction once more, which returns K to `|0⟩`, and K is
+    released.
+  - A classical-valued A needs no reduction circuit: the backend computes k on the host and
+    appends Ry(P·k/2^N).
 
 ### 1.6 `cqrt_rz_i1`
 - **Sig.** `void @cqrt_rz_i1(i32 f, double θ)`.
@@ -205,11 +290,12 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Rails.** f is unchanged in value and gets a relative phase. There is no `_unc`; the adjoint is
   P(−θ).
 - **§2.** A non-finite θ is the identity. **Ref.** No reference implementation. **Ex.** 03, 08, 41.
+- **Impl.** Rotation (a): one P(θ) on f, nothing for a non-finite θ. No X/CX/CCX.
 - **Fusion.** The bracket `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` (t |0⟩) equals CCP(θ)
   on a, b (CR §6), and `xor_i1(a, t) · rz_i1(t, θ) · xor_i1(a, t)` equals P(θ) on a. The backend
   may emit either form. Never fuse to a controlled Rz: Rz(θ) = e^{−iθ/2}·P(θ), and under a
-  control that global factor becomes a relative phase. The and-bracket occurs in 10 examples
-  (08, 23, 60, 116, 117, 118, 137, 148, 154, 185).
+  control that global factor becomes a relative phase. The and-bracket occurs in 11 examples
+  (08, 23, 60, 116, 117, 118, 137, 148, 152, 154, 185).
 
 ### 1.7 `cqrt_rz_qangle[_controlled]`
 - **Sig.** `void @cqrt_rz_qangle(i32 A)` and `void @cqrt_rz_qangle_controlled(i32 c, i32 A)`.
@@ -218,13 +304,17 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
   back onto the sources (79, 143). It uses the same ladder as §1.5 with P = 2π.
 - **Rails.** A and c are unchanged in value.
 - **§2.** A non-finite val is the identity. **Ref.** No reference implementation. **Ex.** 79, 132,
-  185 (`_controlled`: 79, 185).
+  143 (`_controlled`: 22, 79, 115, 185).
+- **Impl.** The reduction of §1.5 with P = 2π into K (X/CX/CCX), then for each ladder bit i < N
+  the rotation (a) P(2π·2^(i−N)) on K_i itself, then the reduction again and K released.
+  `_controlled`: t ^= c ∧ K_i by CCX, P on t, the same CCX again (the bracket of §1.6). The
+  phases on K's bits multiply to e^{2πi·k/2^N} on each branch.
 
 ### 1.8 `i1` logic: `cqrt_not_i1`, `cqrt_and_i1`, `cqrt_or_i1`, `cqrt_xor_i1`
 | sig | semantics | ex |
 |---|---|---|
-| `void @cqrt_not_i1(i32 h)` | X: h ^= 1 | 21, 26, 39 (33 examples) |
-| `void @cqrt_and_i1(i32 a, i32 b, i32 t)` | Toffoli: t ^= a ∧ b | 05, 08, 23 (45) |
+| `void @cqrt_not_i1(i32 h)` | X: h ^= 1 | 21, 26, 39 (45 examples) |
+| `void @cqrt_and_i1(i32 a, i32 b, i32 t)` | Toffoli: t ^= a ∧ b | 05, 08, 23 (53) |
 | `void @cqrt_or_i1(i32 a, i32 b, i32 t)` | t ^= a ∨ b | 23, 49, 69 (18) |
 | `void @cqrt_xor_i1(i32 a, i32 t)` | CNOT: t ^= a | 68 (1) |
 
@@ -234,6 +324,8 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Ref.** BJ `src/gates.jl:NOTGate`/`CNOTGate`/`ToffoliGate`. The OR is
   `src/lowering/phi.jl:_or_wire!` (CNOT, CNOT, Toffoli). These core gates differ from the templates
   `cq_template_and_i1`/`or_i1`/`xor_i1`, which write a fresh rail (§2.3).
+- **Impl.** `not_i1`: X(h). `and_i1`: CCX(a, b, t). `or_i1`: CX(a, t), CX(b, t), CCX(a, b, t).
+  `xor_i1`: CX(a, t). No ancilla.
 
 ### 1.9 `cqrt_copy_<W>[_controlled]`, `cqrt_xorc_<W>[_controlled]`
 - **Sig.** `void @cqrt_copy_<W>(i32 s, i32 d)` and `void @cqrt_copy_<W>_controlled(i32 c, i32 s, i32 d)`;
@@ -246,9 +338,12 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **§2.** None.
 - **Ref.** BJ `src/bennett_transform.jl:_emit_copy_gates!` and `src/fast_copy.jl:emit_fast_copy!`;
   controlled forms per `src/controlled.jl:controlled` (adds a control to every gate).
-- **Ex.** copy 05, 07, 120 (93 examples; widths f16 f32 f64 f80 i1 i7 i8 i32 i64; `_controlled`
-  i32: 45 only). xorc: `cqrt_xorc_i32_controlled` in 133 only. The uncontrolled `xorc` is not in
-  the corpus.
+- **Impl.** `copy`: CX(s_i, d_i) on each of the W bits. `copy_controlled`: CCX(c, s_i, d_i).
+  `xorc`: X(h_i) at the 1-bits of lit. `xorc_controlled`: CX(c, h_i) at the 1-bits of lit. No
+  ancilla.
+- **Ex.** copy 05, 07, 13 (108 examples; widths f16 f32 f64 f80 i1 i7 i8 i16 i32 i64;
+  `_controlled` i32: 45, 211). xorc: `cqrt_xorc_i32_controlled` in 133 only. The uncontrolled
+  `xorc` is not in the corpus.
 
 ### 1.10 Memory bus: `cqrt_qram_alloc_i8`, `cqrt_qram_load/store/swap`
 All memory of the program is ONE bus `m` (CR rule 20): 2^64 cells of 8 qubits, and the cell index
@@ -322,13 +417,47 @@ circuit.
   size is known at compile time: `realloc` reads the old size with a bus load at `p − 8` (CR
   rule 16). `free` emits nothing, and no memory is ever released. A size that is a rail is
   allocated at the bound **K2** bytes (CR §0), and its header holds K2.
+- **Impl.** `qram_alloc_i8`: not a gate (c): the bus object and its overlay. The accesses, with
+  cell bits written cell_i:
+  - *Classical address (`_hl`): no decoding.* A HOST cell is classical bits and takes no gate
+    as long as what meets it is classical-valued; when a store or swap makes it QUANTUM
+    (Overlay, above) it gets qubits in its byte's value (X on the 1-bits).
+    load: CX(cell_i, h_i); from a HOST cell, X(h_i) at the 1-bits of its byte.
+    `load_controlled`: CCX(c, cell_i, h_i); from a HOST cell, CX(c, h_i) at the 1-bits.
+    swap: per bit CX(h_i, cell_i), CX(cell_i, h_i), CX(h_i, cell_i), or a relabeling of the
+    qubits, which appends nothing. `swap_controlled`: per bit CX(cell_i, h_i), CCX(c, h_i,
+    cell_i), CX(cell_i, h_i).
+    store: that swap between the fresh slot t and the cells, then CX(v_i, cell_i).
+    `store_controlled`: the controlled swap, then CCX(c, v_i, cell_i).
+    The load `_unc` is the load's gates.
+  - *Address rail: X/CX/CCX the backend builds; no reference circuit for the access.* With R the
+    set of addresses the address rail can reach:
+    (1) *decoding:* for each a ∈ R a flag f_a = [⟦addr⟧ = a], ANDed with c in a `_controlled`
+    form, on an ancilla, computed from the 64 address qubits;
+    (2) *the per-cell operation:* for each a ∈ R and each of the S cells a + j mod 2^64, the
+    `_hl_controlled` access above with f_a as its control, on byte j of h (of t and v for a
+    store);
+    (3) *uncompute:* the decoding reversed, so that `addr`, c and every ancilla are as before.
+    *Fixed:* the unitary Σ_a |a⟩⟨a| ⊗ U_a, U_a being the `_hl` access at a; `addr`, c and v
+    unchanged; every ancilla `|0⟩` at return; the little-endian byte order and the wrap mod
+    2^64; under c = 0 no cell touched and no host byte read; the overlay state afterwards.
+    *Left to the backend:* the decoder, how R is found (§6), the order of the cells, whether
+    flags are shared between the S bytes of one access. One decoder is unary iteration, BJ
+    `src/qrom.jl:_qrom_tree!`: one CCX and two CX per tree node give the two child flags from the
+    parent flag and one address bit, and the same three gates take them back; a bucket brigade
+    or a select-swap network is as good. A load whose reachable cells are all HOST is a table
+    lookup of the host bytes read at the access: BJ `src/qrom.jl:emit_qrom!` where R is a
+    power-of-two block indexed by the low address bits (its table length is a power of two,
+    its data at most 64 bits wide).
 - **§2.** A load of unreadable host memory reads 0 (above). Nothing else is partial.
-- **Ref.** None (CR's design). **Ex.** 195 (`_hl` store and load, the in-place swap pair), 196
+- **Ref.** None for the bus (CR's design); the decoder and the HOST-cell lookup as cited under
+  Impl. **Ex.** 195 (`_hl` store and load, the in-place swap pair), 196
   (quantum-address store and load), 198 (a pointer cell), 199 (byte and word views of the same
   cells), 201, 208, 213 (`__cq_alloc`, `realloc`, K2), 202 (a load copy un-copied at once, a
   kept load copy, a kept store), 203 (a host-resident object next to bus loads), 204
   (addresses never reused), 205–207 (`swap_i1`, the in-place form, a rotated load copy). 30,
-  84, 160.
+  84, 160. In the corpus: 91 examples (load 89, store 76, swap 32); widths load f64 f80 i1 i8
+  i32 i64, store f64 f80 i8 i16 i32 i64, swap i1 i8 i32 i64.
 
 ### 1.11 Tape and abort: `cqrt_tape_*`, `cqrt_abort_i1`
 The deferred-measurement model (CR §1.3, rule 16). Tape rails and abort flags are never freed.
@@ -370,6 +499,43 @@ its fields; a format entry when the fields its format string consumes are writte
   `fwrite`, `write`), a callee the backend does not know, and a null `name`. For a C library
   call whose result CR rule 16 computes in the circuit the compiler emits the bare entry (no
   r): no value the lowered program reads depends on whether the backend defers a call.
+
+  The table the backend holds, for every callee the corpus and CR rule 16 name. The arguments
+  of the C signature are the fields, in order. A string is NUL-terminated and captured as the
+  Capture clause below says. The identifier matters for an INPUT call only: any other call
+  with a quantum field is deferred, whichever field it is. † marks what CR does not settle
+  (§6); the backend treats such a callee as "any other name" until it is ruled.
+
+  | callee | class | buffer or string | length | identifier |
+  |---|---|---|---|---|
+  | `fgets(s, n, f)` | INPUT (210) | s, written | n | f |
+  | `fread(p, size, nmemb, f)` | INPUT | p, written | size·nmemb | f |
+  | `read(fd, p, n)` | INPUT | p, written | n | fd |
+  | every other reading stream call (`fgetc`, `getc`, `getchar`, `ungetc`, the `scanf` family, the wide readers, …) | † CR names the class, not the callees | † | † | † |
+  | `printf(fmt, …)` | OUTPUT, the format entry (47, 138, 209) | fmt and each `%s` argument: strings | | |
+  | `fprintf(f, fmt, …)` | OUTPUT | fmt and each `%s` argument: strings | | |
+  | `vprintf(fmt, ap)`, `vfprintf(f, fmt, ap)` | OUTPUT | fmt: a string; the `va_list` block † | | |
+  | `wprintf`, `fwprintf`, `vwprintf`, `vfwprintf`, `fputws(s, f)` | OUTPUT | a wide string † | | |
+  | `puts(s)`, `fputs(s, f)` | OUTPUT (99) | s: a string | | |
+  | `putchar(c)`, `putc(c, f)`, `fputc(c, f)`, `putwchar(c)`, `putwc(c, f)`, `fputwc(c, f)` | OUTPUT (209) | none | | |
+  | `fwrite(p, size, nmemb, f)` | OUTPUT (99) | p, read | size·nmemb | |
+  | `write(fd, p, n)` | OUTPUT | p, read | n | |
+  | `fflush(f)`, `fclose(f)`, `ftell(f)`, `fileno(f)`, `fwide(f, m)`, `fseek(f, off, w)`, `fseeko(f, off, w)`, `close(fd)`, `lseek(fd, off, w)`, `tmpfile()` | OUTPUT | none | | |
+  | `remove(path)`, `rename(old, new)`, `fopen(path, mode)`, `open(path, flags, …)` | OUTPUT (102) | each pointer argument: a string | | |
+  | `fsetpos(f, pos)`, `setvbuf(f, buf, mode, size)` | OUTPUT | pos, buf † | | |
+  | `raise(sig)` | OUTPUT (102, 212) | none | | |
+  | `abort()`, `exit(code)`, `_Exit(code)`, any other `noreturn` callee | OUTPUT, followed by `abort_i1` (CR rule 16) | none known | | |
+  | `__assert_fail(expr, file, line, func)` | OUTPUT, `noreturn` | expr, file, func: strings | | |
+  | `__builtin_trap`, `setjmp`, `longjmp` | † | | | |
+  | the fenv calls of CR rule 23 | OUTPUT | the `fenv_t` or `fexcept_t` object some of them read or write † | | |
+  | a null `name` | OUTPUT; the callee is the host address in the first field (96, 97, 211) | none known | | |
+  | any other name | OUTPUT | none known | | |
+
+  Never an effect entry, so never seen by the backend under these names: `malloc`, `calloc`,
+  `aligned_alloc`, `realloc` (`__cq_alloc`, §1.10), `free` (nothing), `memcpy`, `memmove`,
+  `memset` (bus accesses, CR rule 22), `signal` (the signal table, CR rule 16), the `pthread_*`
+  calls (CR rule 24), the string formatters `sprintf`, `snprintf`, `sscanf` and their kin
+  (lifted, CR rule 16), and the `errno` accessor.
 - **Deferred.** A deferred event is one of the last two rows, an unresolved format entry or
   abort flag, or any event that is not an INPUT call behind one; its r is `|0⟩`. At the end of
   the shot (process exit: return from `main`, `exit`, or an `atexit` handler the backend registers on its first call; a
@@ -400,10 +566,24 @@ its fields; a format entry when the fields its format string consumes are writte
 | `void @cqrt_tape_write_<W>_lit(i32 t, <T> lit)` | Appends a classical field. |
 | `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and an event of the sequence. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). When f is classical-valued 1 (§0; always so for a fresh `alloc_i1(true)` seed) every branch aborted here and the call does not return: the shot ends at this point as at process exit (Deferred, above), the backend measuring the deferred events and performing the tape in order, the `noreturn` entry before the flag among it; the backend then ends the process if no performed entry did (CR rule 16, `noreturn`). |
 
+- **Impl.** Not gates (b, c), except the copies named here. `tape_alloc`, `tape_fmt`,
+  `tape_write_<W>_lit`, `tape_effect` and `abort_i1` append a record to the event sequence; the
+  host call, its time and its result are the host-boundary logic above; the end of the shot is
+  a measurement.
+  - `tape_write_<W>`: a fresh rail h′ and CX(h_i, h′_i); `_controlled`: CCX(c, h_i, h′_i). A
+    classical-valued h is recorded as bits.
+  - A captured predicate that is not classical-valued: CX(c, a fresh tape rail). A captured
+    QUANTUM cell: the `_controlled` load of §1.10 into a fresh tape rail.
+  - An INPUT row that merges under a predicate, under n = v or under id = v: the flag
+    [rail = v] is the circuit of `cq_template_icmp_eq_<W>_hl` (§2.4), ANDed with the predicate
+    by CCX; each byte is a `_controlled` bus store (§1.10) of a classical-valued byte under
+    that flag; a result is XORed into r by CX from the flag at its 1-bits; the flag is then
+    uncomputed.
 - **§2.** None. **Ref.** No reference implementation.
-- **Ex.** 47, 138 (fmt, write widths i32, f64, `_controlled`, `_lit`); abort 45. Regeneration
-  owed: 102 (effect entries), 67, 99, 108. Effect entries: 209, 210 (behind a deferred output,
-  the INPUT rows), 212 (`raise`), 211 (`cqrt_tape_effect_i32_controlled`, a null `name`).
+- **Ex.** 47, 138 (fmt, write widths i32, f64, `_controlled`, `_lit`), 67; abort 45, 108.
+  Effect entries: 99 (`fwrite`, `fputs`), 102 (`remove`, `raise`), 209, 210 (behind a deferred
+  output, the INPUT rows), 212 (`raise`), 96, 97, 211 (`cqrt_tape_effect_i32_controlled`, a
+  null `name`).
 
 ### 1.12 `cqrt_push`, `cqrt_pop`
 - **Sig.** `void @cqrt_push(i32 w)` and `i32 @cqrt_pop()`.
@@ -419,7 +599,8 @@ its fields; a format entry when the fields its format string consumes are writte
 - **Balance** is the lowered code's obligation (CR rule 14, §1.4); the backend checks nothing,
   and words nobody pops stay on the stack.
 - **Rails.** None (w can be a handle, kept as a plain integer).
-- **§2.** None. **Ref.** None (a host word stack). **Ex.** 05, 25, 62 (38 examples).
+- **§2.** None. **Ref.** None (a host word stack). **Ex.** 05, 25, 62 (53 examples).
+- **Impl.** Not a gate (c): a host array of `i32` words.
 
 ### 1.13 `cqrt_invert_begin`, `cqrt_invert_end`
 - **Sig.** `void @cqrt_invert_begin()`, `void @cqrt_invert_end()`.
@@ -437,8 +618,13 @@ its fields; a format entry when the fields its format string consumes are writte
   the program writes inside a quantum arm is a host call executed on every path, and the region
   then holds the arm's controlled gates, whose inverses are the controlled inverses (CR rule
   17).
-- **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/circuit.jl:adjoint` (reverse the gate
-  list, invert each gate). **Ex.** 44, 61, 126.
+- **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/bennett_transform.jl:_bennett_default`
+  (its uncompute is the forward gate list appended in reverse order, each NOT/CNOT/Toffoli
+  being its own inverse; BJ has no rotations and no separate adjoint function). **Ex.** 44, 61,
+  126.
+- **Impl.** Not a gate (c): the backend holds the gates of an open region back and appends them
+  at `end` in reverse order, an Ry or P with its angle negated, every X, CX and CCX as it is.
+  Nothing is added to the gate list.
 
 ### 1.14 The clone table: `__cq_clone_register`, `__cq_clone_resolve`, `__cq_clone_count`, `__cq_clone_at`
 Injection-bundle code, listed here because lowered code calls it; the backend does not implement
@@ -463,6 +649,7 @@ it.
   for each `fn = at(sig, i)`, the `_ctl` clone under `cq_template_icmp_eq_i64_hl(rail, fn)`,
   and under the complement of those flags the effect entry with a null `name`.
 - **Rails.** None. **§2.** None. **Ref.** None (a symbol table). **Ex.** 211, 212.
+- **Impl.** Not a gate (c), and not the backend's: classical host C of the injection bundle.
 
 ---
 
@@ -476,12 +663,13 @@ cq_template_<op>[_<pred>]_<W>[_to_<W2>][_<shape>][_rm|_rmq][_exc][_unc]
 |---|---|
 | forward | `i32 @cq_template_X(args…)`. Takes a fresh `\|0⟩` result rail o, sets o ^= f(args), returns o. Every operand is unchanged and no ancilla is left dirty. |
 | `_unc` | `void @cq_template_X_unc(i32 o, args…)`, with exactly the forward argument list and the same literals. o ^= f(args). Precondition: every handle in `args` holds its forward value and o holds f(args). Postcondition: o = `\|0⟩`. The caller then calls `cqrt_free(o)`; `_unc` never frees. Forward and `_unc` are the same XOR map, and implementations may share it. |
-| `_unc` coverage | The backend provides `_unc` for **every** forward template. The corpus never calls the `_unc` of 44 of its forward templates (results kept or measured), which does not make them optional. |
+| `_unc` coverage | The backend provides `_unc` for **every** forward template. The corpus never calls the `_unc` of 49 of its forward templates (results kept or measured), which does not make them optional. |
 | W | The operand width. A cast spells `<from>_to_<to>`. The result width is W, except compares, `*_overflow` and `is_fpclass` (`i1`), casts (W2) and `_exc` (`i32`). |
-| shape | One letter per **data** operand in signature order: `h`/`q` is a handle and `l` a literal. Omitted means all handles. Binary ops use `_hl`, or `_lh` for a non-commutative op only (a commutative op is swapped to `_hl`; an fp op only when the literal is not a NaN, CR §1.2). Compares never take `_lh`; the predicate is flipped instead. `select` letters cover the two **arms**, and the condition is always a handle. Ternary ops (`fma`, `fshl`, `fshr`) use `qqq` (bare), `qql`, `qlq`, `qll`, `llq`. The corpus also has `_ll` on a binary op (`fadd_f64_ll_rmq`, §5 Q6). |
+| shape | One letter per **data** operand in signature order: `h`/`q` is a handle and `l` a literal. Omitted means all handles. Binary ops use `_hl`, or `_lh` for a non-commutative op only (a commutative op is swapped to `_hl`; an fp op only when the literal is not a NaN, CR §1.2). Compares never take `_lh`; the predicate is flipped instead. `select` letters cover the two **arms**, and the condition is always a handle. Ternary ops (`fma`, `fshl`, `fshr`) take every mix of `q` and `l`, bare for `qqq`; `fma`'s product operands are commutative, so `lqq` and `lql` are spelled `qlq` and `qll` unless the literal is a NaN; `fshl` and `fshr` keep every mixed shape. `_ll` is a binary op whose only quantum operand is the `_rmq` mode (`fadd_f64_ll_rmq`). |
 | literal | Typed as the LLVM operand: `i1 true`, `i128`, `double`, `x86_fp80`, `half`. A narrow literal is read as its low W bits. |
-| `_rm` / `_rmq` | Rounding mode as the **last** argument: `_rm` an `i32` literal, `_rmq` an `i32` rail. Encoding *(corpus, 80 header)*: x86-64 `FE_*` values, `FE_TONEAREST 0`, `FE_DOWNWARD 1024`, `FE_UPWARD 2048`, `FE_TOWARDZERO 3072` (§5 Q7). |
-| `_exc` | Same operands and mode. The fresh `i32` result rail holds the operation's IEEE exception bits *(corpus, 81 header)*: `INVALID 1`, `DIVBYZERO 4`, `OVERFLOW 8`, `UNDERFLOW 16`, `INEXACT 32` (§5 Q8). |
+| `_rm` / `_rmq` | Rounding mode as the **last** argument: `_rm` an `i32` literal, `_rmq` an `i32` rail. It is the x86-64 `FE_*` value: bits 10–11 select 0 nearest-even, 1 down, 2 up, 3 toward zero (`FE_TONEAREST 0`, `FE_DOWNWARD 1024`, `FE_UPWARD 2048`, `FE_TOWARDZERO 3072`); the other bits are ignored (CR §1.2). |
+| `_exc` | Same operands and mode. The fresh `i32` result rail holds the x86 exception bits the operation raises: `INVALID 1`, `DIVBYZERO 4`, `OVERFLOW 8`, `UNDERFLOW 16`, `INEXACT 32` (no DENORMAL); tininess after rounding, UNDERFLOW only together with INEXACT; a quiet NaN operand raises INVALID only in `fcmps`, conversions to integer and invalid arithmetic (CR §1.2). |
+| Impl. | Every template is built as §0 "Building the circuits" says; the Impl. list under each table names the BJ circuit or spells the composition. A template never takes `_controlled`. |
 
 Shape → operand mapping, as declared in the corpus:
 
@@ -498,85 +686,241 @@ Shape → operand mapping, as declared in the corpus:
 | `fadd_f64_ll_rmq` | `(double x, double y, i32 m)` | o = x + y rounded under the quantum mode m (80, 100) |
 
 Below, "BJ" names the Bennett.jl circuit. Columns: **ops**, **semantics with §2 totalization**,
-**corpus widths**, **reference**, **ex**.
+**corpus widths**, **reference**, **ex**. "Wrapped" and "compiled" are the two constructions of
+§0.
 
 ### 2.2 Integer arithmetic
 | op | semantics (unsigned ⟦·⟧ mod 2^W unless s-) | widths | reference | ex |
 |---|---|---|---|---|
-| `add` | a + b | i7 i8 i16 i32 i64 i100 i128 | BJ `src/adder.jl:lower_add!` (`lower_add_cuccaro!`, `src/qcla.jl:lower_add_qcla!`) | 01, 02, 93 |
-| `sub` | a − b | i8 i32 i64 | BJ `src/adder.jl:lower_sub!` | 10, 22, 156 |
+| `add` | a + b | i7 i8 i16 i32 i64 i100 i128 | BJ `src/adder.jl:lower_add!` (`lower_add_cuccaro!`, `src/qcla.jl:lower_add_qcla!`) | 01, 02, 110 |
+| `sub` | a − b | i8 i16 i32 i64 | BJ `src/adder.jl:lower_sub!` | 10, 22, 156 |
 | `mul` | a · b mod 2^W | i32 i64 i100 i128 | BJ `src/multiplier.jl:lower_mul!` | 04, 06, 93 |
-| `udiv` | ⌊a/b⌋; **b = 0 → 2^W − 1** | i32 i128 | BJ `src/divider.jl:_soft_udiv_compile` (same b = 0 result) | 11, 37, 93 |
+| `udiv` | ⌊a/b⌋; **b = 0 → 2^W − 1** | i32 i128 | BJ `src/divider.jl:_soft_udiv_compile` (same b = 0 result; a 64-bit kernel) | 11, 37, 93 |
 | `urem` | a mod b; **b = 0 → a** | i32 | BJ `src/divider.jl:_soft_urem_compile` | 11, 62, 74 |
 | `sdiv` | signed, truncating; **b = 0 → −1 if a ≥ 0 else +1**; **INT_MIN/−1 → INT_MIN** | i32 | BJ `src/lowering/aggregate.jl:lower_divrem!` | 11, 156 |
 | `srem` | sign of a; **b = 0 → a**; **INT_MIN rem −1 → 0** | i32 | BJ `src/lowering/aggregate.jl:lower_divrem!` | 11, 156 |
 
+**Impl.**
+- `add`, `sub`, `mul`: the BJ emitter, wrapped (§0). `lower_add!` is a ripple adder: per bit three
+  CX and two CCX, W carry ancillae. `lower_sub!` is a + ¬b + 1 on a complemented copy of b.
+  `lower_mul!` is `src/multiplier.jl:lower_mul_wide!` at result width W: W rows of CCX partial
+  products, each added by `lower_add!`. `_hl`, `_lh`: the literal operand of §0.
+- `udiv`, `urem`, W ≤ 64: BJ `lower_divrem!`: both operands zero-extended to 64 bits by CX, the
+  kernel (64 restoring trips of shift, compare, subtract and select, compiled by
+  `reversible_compile`), the low W bits copied out. The b = 0 rows are the kernel's own values
+  (2^64 − 1 truncates to 2^W − 1; the remainder is a).
+- `sdiv`, `srem`, W ≤ 64: BJ `lower_divrem!`: sign-extend, negate each operand under its sign bit
+  (`src/lowering/aggregate.jl:_cond_negate_inplace!`), the unsigned kernel, then negate the result
+  under sign(a) ⊕ sign(b) (`sdiv`) or sign(a) (`srem`). Every CR §2 row is what this circuit
+  gives: b = 0 yields all ones, sign-fixed to −1 or +1 (`srem`: a); INT_MIN/−1 wraps to INT_MIN
+  with remainder 0.
+- W > 64 (`udiv_i128_lh`): the kernels are `UInt64` only. **EXTEND**, §2.11.
+
 ### 2.3 Bitwise and shifts
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `and` `or` `xor` | bitwise; the `i1` forms are the data templates of flags (CR rule 8) | and: i1 i8 i16 i32 i64 i80; or: i32 i64 i80 i128; xor: i1 i8 i32 i64 | BJ `src/lowering/arith.jl:lower_and!`/`lower_or!`/`lower_xor!` | 10, 12, 77 |
-| `shl` `lshr` `ashr` | shift by **⟦k⟧ mod W** for any amount ≥ W, literal or quantum (x86) | shl: i8 i16 i32 i64 i80; lshr: i32 i64 i80 i100 i128; ashr: i32 i64 | BJ `src/lowering/arith.jl:lower_var_shl!`/`lower_var_lshr!`/`lower_var_ashr!` (mod W for raw LLVM input); constant: `lower_shl!` etc. (BJ returns 0 at k = W; §2's mod W overrides) | 10, 18, 53 |
-| `fshl` `fshr` | LLVM funnel shifts, **amount mod W**: fshl = high W bits of (a∥b) << k; fshr = low W bits of (a∥b) >> k | i32 (`qql`, `qll`, bare) | BJ `src/extract/instructions.jl:_handle_intrinsic` (`llvm.fshl.`/`llvm.fshr.` expansion) | 56, 112, 134 |
+| `and` `or` `xor` | bitwise; the `i1` forms are the data templates of flags (CR rule 8) | and: i1 i8 i16 i32 i64; or: i32 i64 i128; xor: i1 i8 i32 i64 | BJ `src/lowering/arith.jl:lower_and!`/`lower_or!`/`lower_xor!` | 10, 12, 77 |
+| `shl` `lshr` `ashr` | shift by **⟦k⟧ mod W**, literal or quantum amount (CR §2: a totalization of LLVM's poison; x86's masking of 8- and 16-bit counts is not the reference) | shl: i8 i16 i32 i64; lshr: i32 i64 i100 i128; ashr: i32 i64 | BJ `src/lowering/arith.jl:lower_var_shl!`/`lower_var_lshr!`/`lower_var_ashr!`; constant amount: `lower_shl!`/`lower_lshr!`/`lower_ashr!` | 10, 18, 53 |
+| `fshl` `fshr` | LLVM funnel shifts, **amount mod W**: fshl = high W bits of (a∥b) << k; fshr = low W bits of (a∥b) >> k | i32 (fshl: bare, `qql`, `qll`; fshr: bare, `qql`) | BJ `src/extract/instructions.jl:_handle_intrinsic` (`llvm.fshl.`/`llvm.fshr.` expansion) | 56, 112, 134 |
+
+**Impl.**
+- `and`: CCX(a_i, b_i, o_i). `or`: CX(a_i, o_i), CX(b_i, o_i), CCX(a_i, b_i, o_i). `xor`:
+  CX(a_i, o_i), CX(b_i, o_i). Straight onto o, no ancilla. `_hl`: `and` is CX(a_i, o_i) at the
+  1-bits of the literal; `or` is X(o_i) at its 1-bits and CX(a_i, o_i) at its 0-bits; `xor` is
+  CX(a_i, o_i) everywhere and X(o_i) at its 1-bits.
+- Shift by a literal (`_hl`): k = lit mod W on the host, then CX wiring only (BJ `lower_shl!`,
+  `lower_lshr!`, `lower_ashr!`): shl o_(i+k) ^= a_i; lshr o_i ^= a_(i+k); ashr as lshr plus the
+  sign bit a_(W−1) into the top k bits. BJ takes k ∈ [0, W] and at k = W gives 0 (ashr: the
+  sign in every bit): here k = W has become 0, a copy.
+- Shift by a rail: BJ `lower_var_*!`, a barrel shifter of ⌈log2 W⌉ `lower_mux!` stages over the
+  low ⌈log2 W⌉ bits of the amount, wrapped. That is mod W only when W is a power of two. At any
+  other W (i7, i100) it must be adapted: at W = 100 BJ's `lower_var_shl!` gives 0 for an amount
+  of 100…127 and the unshifted value for 128 (`lower_var_ashr!` fills with the sign instead). Reduce first: r = k mod W (`urem` by the literal W),
+  shift by r, uncompute r. `_lh`: the shifted value is the literal operand.
+- `fshl`, `fshr`: BJ's expansion: k = s mod W; k = 0 gives a (fshl) or b (fshr); otherwise
+  (a << k) | (b >> (W − k)), for fshr (a << (W − k)) | (b >> k). With a literal amount this is
+  CX wiring (the two parts fill disjoint bits of o). With a rail amount it is the shifts above,
+  `or`, `icmp_eq` against 0 and `select`; BJ builds it for W a power of two and rejects any
+  other W: reduce the amount as for a shift.
 
 ### 2.4 Compare
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `icmp_<pred>` | `i1` result; pred ∈ eq ne ugt uge ult ule sgt sge slt sle | i1 i8 i32 i64 i128 (used: eq ne sgt slt ugt ult) | BJ `src/lowering/arith.jl:lower_icmp!` (`lower_eq!`, `lower_ult!`, `lower_slt!`) | 03, 04, 134 |
-| `fcmp_<pred>` | `i1` result; LLVM fcmp, o = ordered and u = unordered or | f32 f64 f80 (used: oeq ogt olt one ord ueq uge ult une uno) | f64: BJ `src/softfloat/fcmp.jl:soft_fcmp_olt` etc. (ogt/uge by operand swap). f32: exact via `src/softfloat/fpconv.jl:soft_fpext` + the f64 compare. f80: **EXTEND** (IEEE 754 compare of x87 extended values, NaN unordered) | 15, 48, 69 |
+| `icmp_<pred>` | `i1` result; pred ∈ eq ne ugt uge ult ule sgt sge slt sle | i8 i32 i64 i128 (used: eq ne sgt slt ugt ult) | BJ `src/lowering/arith.jl:lower_icmp!` (`lower_eq!`, `lower_ult!`, `lower_slt!`) | 03, 04, 134 |
+| `fcmp_<pred>` | `i1` result; LLVM fcmp, o = ordered and u = unordered or | f32 f64 f80 (used: oeq ogt olt one ord ueq uge ult une uno) | f64: BJ `src/softfloat/fcmp.jl:soft_fcmp_olt`, `soft_fcmp_oeq`, `soft_fcmp_ole`, `soft_fcmp_une`, `soft_fcmp_ord`, `soft_fcmp_uno`, `soft_fcmp_one`, `soft_fcmp_ueq`, `soft_fcmp_ult`, `soft_fcmp_ule`. f16, bf16, f32, f80: **EXTEND** (IEEE 754 compare, NaN unordered; f80 on x87 extended values) | 15, 48, 69 |
 | `fcmps_<pred>` | the signaling compare; value as `fcmp`. Used only as `_exc`: INVALID (1) iff either operand is NaN | f64 | **EXTEND** (exception bits) | 81, 100 |
+
+**Impl.**
+- `icmp`: BJ `lower_icmp!`, wrapped. eq: `lower_eq!` (the bitwise XOR of the operands, an OR
+  chain over it, a final X); ne: eq and one more X. ult: `lower_ult!` (the carry chain of
+  a + ¬b + 1; the result is the complemented carry-out); ugt: ult with the operands swapped; ule,
+  uge: their complements. slt: `lower_slt!` (both sign bits flipped, then ult); sgt, sle, sge
+  likewise. `_hl`: the literal operand of §0.
+- `fcmp` f64: the kernel of the predicate, compiled; bit 0 of its value is XORed into o. ogt,
+  oge, ugt, uge are olt, ole, ult, ule with the operands swapped (BJ
+  `src/extract/instructions.jl`, the fcmp dispatch). f32: `fpext` both operands to f64 (exact,
+  §2.6), the f64 kernel, uncompute. f16, bf16, f80: §2.11.
+- `fcmps`: its value is `fcmp`'s. The `_exc` word: §2.11.
 
 ### 2.5 Select
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `select` | `(i32 c, arm1, arm2)`: **o = ⟦c⟧ = 1 ? arm1 : arm2** (LLVM operand order; 04: `select_i32(f, then, else)`). Shapes `hl`, `lh`, `ll` give the arms; c is an `i1` rail. | i8 i32 i64 i128 f32 f64 f80 | BJ `src/lowering/arith.jl:lower_select!`/`lower_mux!`; BVM `src/ir/select_instruction.jl:SelectInstruction` | 04, 09, 101 |
+| `select` | `(i32 c, arm1, arm2)`: **o = ⟦c⟧ = 1 ? arm1 : arm2** (LLVM operand order; 04: `select_i32(f, then, else)`). Shapes `hl`, `lh`, `ll` give the arms; c is an `i1` rail. | i8 i32 i64 i128 f32 f64 f80 | BJ `src/lowering/arith.jl:lower_select!`/`lower_mux!`; BVM `src/ir/select_instruction.jl:SelectInstruction` (semantics) | 04, 09, 101 |
+
+**Impl.** BJ `lower_mux!` (r ^= arm2; diff = arm1 ⊕ arm2; CCX(c, diff_i, r_i)), wrapped. The same
+map with no ancilla, per bit: CX(arm2_i, o_i), CCX(c, arm1_i, o_i), CCX(c, arm2_i, o_i). `_hl`
+(arm2 literal): X(o_i) and CX(c, o_i) at the 1-bits of the literal, CCX(c, arm1_i, o_i). `_lh`
+(arm1 literal): CX(arm2_i, o_i), CCX(c, arm2_i, o_i), CX(c, o_i) at the 1-bits of the literal.
+`_ll`: X(o_i) at the 1-bits of lit2, CX(c, o_i) at the 1-bits of lit1 ⊕ lit2. An fp width is its
+bit pattern.
 
 ### 2.6 Casts
 | op | semantics | corpus pairs | reference | ex |
 |---|---|---|---|---|
-| `zext` `sext` `trunc` (int) | as LLVM | zext i1/i8/i16→i32, i8/i32→i64, i32→i80, i64→i100/i128; sext i7/i8→i32, i32→i64; trunc i32→i8/i16, i64→i7/i32, i80→i16, i100/i128→i64 | BJ `src/lowering/arith.jl:lower_cast!` | 17, 18, 46 |
-| `bitcast` | bit pattern copied (o ^= a) | f64↔i64, f80↔i80 | BJ `src/extract/instructions.jl` (bitcast is wire aliasing) | 18, 50, 63 |
-| `fpext` | exact widening | f16→f32, f32→f64, f64→f80 | f32→f64: BJ `src/softfloat/fpconv.jl:soft_fpext`. f16→f32 and f64→f80: **EXTEND** (exact; NaN stays quiet NaN with the payload left-aligned, as x86) | 17, 111, 172 |
-| `fptrunc` | IEEE RNE narrowing, overflow → ±Inf | f32→f16, f64→f32 | f64→f32: BJ `src/softfloat/fpconv.jl:soft_fptrunc`. f32→f16: **EXTEND** (binary16 RNE, subnormals, overflow to Inf) | 17, 111, 183 |
-| `sitofp` `uitofp` | correctly rounded (RNE) | sitofp i32→f64; uitofp i1→f32/f64/f80, i8/i32→f64 | →f64: BJ `src/softfloat/sitofp.jl:soft_sitofp`/`soft_uitofp`. →f32/f80: **EXTEND** (RNE to binary32 / x87 64-bit significand) | 17, 69, 157 |
-| `fptosi` `fptoui` | truncate toward 0; NaN, ±Inf, out of range: **the x86-64 LLVM 19 `-O1` result** (CR §2): with c32/c64 = cvtt to i32/i64 (indefinite = INT_MIN of that width), s8/s16 = trunc(c32), s32 = c32, s64 = c64, u8/u16 = trunc(c32), u32 = trunc(c64), u64 = `r1 \| (r2 & (r1 >>s 63))`, r1 = c64(x), r2 = c64(x − 2^63); f80 via x87 `fist` (CR §2 row) | f64→i32 | BJ `src/softfloat/fptosi.jl:soft_fptosi`, `src/softfloat/fptoui.jl:soft_fptoui` (x86-exact for f64→i32/u32; other widths **EXTEND** to the CR §2 table) | 17, 56, 169 |
+| `zext` `sext` `trunc` (int) | as LLVM | zext i1→i8/i32, i8→i32/i64, i16→i32, i32→i64, i64→i100/i128; sext i7/i8→i32, i32→i64; trunc i32→i8/i16, i64→i7/i32, i100/i128→i64 | BJ `src/lowering/arith.jl:lower_cast!` | 17, 18, 46 |
+| `bitcast` | bit pattern copied (o ^= a) | f64↔i64 | BJ `src/extract/instructions.jl` (the bitcast arm: a same-width `IRCast`) | 18, 50, 51 |
+| `fpext` | exact widening; a NaN is quieted, its payload left-aligned (x86). bf16→f32 is a bare 16-bit shift, an sNaN stays signalling (CR §2) | f16→f32, f32→f64, f64→f80 | f32→f64: BJ `src/softfloat/fpconv.jl:soft_fpext`. Every other pair: **EXTEND** | 17, 111, 172 |
+| `fptrunc` | IEEE RNE narrowing, overflow → ±Inf. To bf16: one rounding from the source width, a NaN becomes a quiet NaN carrying the high payload bits (CR §2) | f32→f16, f64→f32 | f64→f32: BJ `src/softfloat/fpconv.jl:soft_fptrunc`. Every other pair: **EXTEND** (RNE at the target, subnormals, overflow to Inf) | 17, 111, 183 |
+| `sitofp` `uitofp` | correctly rounded (RNE). From more than 64 bits and to bf16 the CR §2 rows hold: above 128 bits `ExpandLargeFpConvert`'s value, except `uitofp` to f80, which is the non-negative value rounded to nearest even at the 64-bit significand; to bf16 through f32, two roundings | sitofp i32→f64; uitofp i1→f32/f64/f80, i8/i32→f64 | to f64 from at most 64 bits: BJ `src/softfloat/sitofp.jl:soft_sitofp`/`soft_uitofp`. Every other pair: **EXTEND** (RNE at the target's significand) | 17, 69, 157 |
+| `fptosi` `fptoui` | truncate toward 0; NaN, ±Inf, out of range: **the x86-64 LLVM 19 `-O1` result** (CR §2): with c32/c64 = cvtt to i32/i64 (indefinite = INT_MIN of that width), s8/s16 = trunc(c32), s32 = c32, s64 = c64, u8/u16 = trunc(c32), u32 = trunc(c64), u64 = `r1 \| (r2 & (r1 >>s 63))`, r1 = c64(x), r2 = c64(x − 2^63); f16 via f32; f80 via x87 `fist` and wider targets by the CR §2 row | f64→i32 | from f64: BJ `src/softfloat/fptosi.jl:soft_fptosi` (= c64), `src/softfloat/fptoui.jl:soft_fptoui` (= the u64 formula), adapted below. From f80, and to more than 64 bits: **EXTEND** | 17, 56, 169 |
+
+**Impl.**
+- `zext`, `sext`, `trunc`: CX wiring straight onto o (BJ `lower_cast!`): zext CX(a_i, o_i); sext
+  also CX(a_(W−1), o_j) for every higher bit j; trunc the low W2 bits. `bitcast`: W CX.
+- `fpext` f32→f64, `fptrunc` f64→f32: the kernels (`UInt32` → `UInt64` and back), compiled.
+- `sitofp`, `uitofp` to f64: the source sign-extended (`sitofp`) or zero-extended (`uitofp`) to
+  64 bits by CX, then `soft_sitofp`; a 64-bit `uitofp` source takes `soft_uitofp` (BJ
+  `src/extract/instructions.jl`, the sitofp/uitofp dispatch).
+- `fptosi`, `fptoui` from f64. `soft_fptosi` is c64 and `soft_fptoui` is the u64 formula, exactly.
+  BJ narrows by truncating that 64-bit value, which is not the CR table: `soft_fptosi(3e9)` has
+  the low word 0xB2D05E00 where c32 is 0x80000000, and `soft_fptoui(2^63 + 2^11)` has the low
+  word 0x800 where trunc(c64) is 0. Build instead: s64 = `soft_fptosi`; u64 = `soft_fptoui`;
+  u32 = the low 32 bits of `soft_fptosi`; c32 = `soft_fptosi` with its invalid test moved to a
+  biased exponent ≥ 1054 (|x| ≥ 2^31) and the indefinite 0x80000000, low 32 bits; s32 = c32; s8,
+  s16, u8, u16 = the low bits of c32. From f16 and f32: `fpext` first.
 
 ### 2.7 Overflow, saturating, min/max, abs
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `{u,s}{add,sub,mul}_overflow` | **`i1` overflow flag only** (element 1 of `*.with.overflow`). Element 0 is the ordinary `add`/`sub`/`mul` template over the same operands (CR rule 4). u: unsigned carry/borrow/product > 2^W−1; s: signed result out of range | uadd i32, sadd i32, usub i64, umul i32 (ssub and smul not in the corpus) | sadd, uadd, smul, umul: BJ `src/extract/instructions.jl:_handle_intrinsic` + `_fuse_overflow_extractvalue`. usub (= a <ᵤ b): `src/lowering/arith.jl:lower_ult!`. ssub: no reference implementation | 92, 112 |
-| `uadd_sat` `usub_sat` | min(a + b, 2^W − 1); max(a − b, 0) | i32 | no reference implementation in BJ (`_WIDTH_DEPENDENT_INTRINSICS` lists them, but there is no expansion); build from add/sub + compare + select | 92, 109 |
-| `sadd_sat` `ssub_sat` | signed a + b / a − b clamped to [−2^(W−1), 2^(W−1) − 1] (`llvm.sadd.sat`/`llvm.ssub.sat`; total, no CR §2 row). Overflow iff sign(a) = sign(b) ≠ sign(a + b) (sub: sign(a) ≠ sign(b) and sign(a − b) ≠ sign(a)); the clamp is sign(a) in the top bit and its complement below | i32 (ssub not in the corpus) | none in BJ; build from add/sub + a three-sign overflow flag + select, O(W) Toffolis, as the unsigned pair | 194 |
-| `smax` `smin` `umax` `umin` | as LLVM | i32 | BJ `src/extract/instructions.jl:_handle_intrinsic` (compare + select) | 26, 56, 187 |
+| `{u,s}{add,sub,mul}_overflow` | **`i1` overflow flag only** (element 1 of `*.with.overflow`). Element 0 is the ordinary `add`/`sub`/`mul` template over the same operands (CR rule 4). u: unsigned carry/borrow/product > 2^W−1; s: signed result out of range | uadd i32 (`hl`), sadd i32, usub i64, umul i32 (`hl`) (ssub and smul not in the corpus) | one literal operand, sadd, uadd, smul, umul, W ≤ 64: BJ `src/extract/instructions.jl:_fuse_overflow_extractvalue` with `_ovf_admissible_range`. usub (= a <ᵤ b): `src/lowering/arith.jl:lower_ult!`. Two rails, and ssub: none (BJ fails loudly on two dynamic operands) | 92, 112 |
+| `uadd_sat` `usub_sat` | min(a + b, 2^W − 1); max(a − b, 0) | i32 (`hl`) | none in BJ (`_WIDTH_DEPENDENT_INTRINSICS` lists them, but there is no expansion) | 92, 109 |
+| `sadd_sat` `ssub_sat` | signed a + b / a − b clamped to [−2^(W−1), 2^(W−1) − 1] (`llvm.sadd.sat`/`llvm.ssub.sat`; total, no CR §2 row). Overflow iff sign(a) = sign(b) ≠ sign(a + b) (sub: sign(a) ≠ sign(b) and sign(a − b) ≠ sign(a)); the clamp is sign(a) in the top bit and its complement below | i32 (ssub not in the corpus) | none in BJ | 194 |
+| `smax` `smin` `umax` `umin` | as LLVM | smax, smin i32 (`hl`); umax i32; umin i32 (`hl`), i64 | BJ `src/extract/instructions.jl:_handle_intrinsic` (compare + select) | 26, 56, 109 |
 | `abs` | \|a\|; **abs(INT_MIN) = INT_MIN** | i32 | BJ `src/extract/instructions.jl:_handle_intrinsic` | 56 |
+
+**Impl.** Compositions of §2.2–§2.5 on ancilla rails, each undone after the write to o.
+- `uadd_overflow`: s = a + b; o ^= [s <ᵤ a] (`lower_ult!`). `usub_overflow`: o ^= [a <ᵤ b].
+- `sadd_overflow`: s = a + b; t1 = sign(a) ⊕ sign(s) and t2 = sign(b) ⊕ sign(s) by CX on two
+  ancillae; CCX(t1, t2, o). `ssub_overflow`: d = a − b; t1 = sign(a) ⊕ sign(b), t2 = sign(a) ⊕
+  sign(d); CCX(t1, t2, o).
+- `umul_overflow`: the 2W-bit product (BJ `src/multiplier.jl:lower_mul_wide!` at result width
+  2W); o ^= the OR of its high W bits (the OR chain of `lower_eq!`). `smul_overflow`: both
+  operands sign-extended to 2W bits, `lower_mul!` at 2W; o ^= the OR over i ≥ W of p_i ⊕ p_(W−1).
+- With one literal operand BJ gives the same flag as an interval test on the rail, `x < L or
+  x > U` with L and U computed from the literal (`_ovf_admissible_range`; sadd, uadd, smul,
+  umul): two `icmp_hl` and an OR. It is an alternative for the `_hl` shapes, not a requirement.
+- `uadd_sat`: s and the `uadd_overflow` flag v; o_i = s_i ∨ v: CX(s_i, o_i), CX(v, o_i),
+  CCX(s_i, v, o_i). `usub_sat`: d = a − b and v = [a <ᵤ b]; CX(d_i, o_i), CCX(v, d_i, o_i).
+- `sadd_sat`, `ssub_sat`: s (or d), the signed overflow flag v as above, and the clamp register
+  (top bit sign(a), every lower bit its complement, by CX and X); o = `select`(v, clamp, s).
+- `smax`, `smin`, `umax`, `umin`: BJ: `icmp` sge / sle / uge / ule of (a, b), then
+  `select`(flag, a, b).
+- `abs`: BJ: n = 0 − a, f = [a ≥ₛ 0], `select`(f, a, n). INT_MIN stays INT_MIN.
 
 ### 2.8 Bit counting
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `ctlz` `cttz` | the result has width W; **ctlz(0) = cttz(0) = W** | ctlz i32, cttz i64 | BJ `src/extract/instructions.jl:_handle_intrinsic` | 56, 108 |
+| `ctlz` `cttz` | the result has width W; **ctlz(0) = cttz(0) = W** | ctlz i32 i64, cttz i64 | BJ `src/extract/instructions.jl:_handle_intrinsic` | 56, 108 |
 | `ctpop` | popcount, width W | i32 | same | 56, 178 |
 | `bswap` | byte reversal (W a multiple of 16) | i32 | same | 109 |
+| `bitreverse` | bit i of a at bit W − 1 − i | none in the corpus | same | none |
+
+**Impl.**
+- `ctlz`: BJ: start from the literal W; for bit i from 0 up to W − 1 a `select` on a_i replaces
+  the running value by the literal W − 1 − i, so the highest set bit wins and 0 gives W. `cttz`:
+  the same from the top bit down, with the literal i. Wrapped.
+- `ctpop`: BJ: the W bits summed by W − 1 `add`s at width W. Wrapped.
+- `bswap`, `bitreverse`: BJ expands them into shifts, masks and ORs; what results is CX wiring
+  only. bswap: o_(8j+r) ^= a_(8(n−1−j)+r) for the n = W/8 bytes; bitreverse: o_i ^= a_(W−1−i).
 
 ### 2.9 Floating-point arithmetic
 All results are IEEE, round to nearest even unless `_rm`/`_rmq` is present. Operands and results are
 bit patterns. `llvm.fmuladd` reaches the backend as `fmul` then `fadd` (unfused, CR §2). Only
-`llvm.fma` uses `fma`. A NaN result follows x86 SSE in IR operand order: the first NaN operand, quieted; an invalid operation gives `0xFFF8000000000000` (f32 `0xFFC00000`) (CR §2).
+`llvm.fma` uses `fma`. A NaN result follows x86 SSE in IR operand order: the first NaN operand, quieted; an invalid operation gives `0xFFF8000000000000` (f32 `0xFFC00000`, f16 `0xFE00`, bf16 `0xFFC0`, f80 the real indefinite `0xFFFF_C000000000000000`) (CR §2).
+An f80 operand in a non-canonical encoding (pseudo-NaN, pseudo-Inf, unnormal) is an invalid
+operand: the result is the real indefinite, with INVALID; a pseudo-denormal reads as a denormal
+(CR §2).
 
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `fadd` `fsub` `fmul` `fdiv` | IEEE basic ops | f16 (fadd), f32, f64, f80; `_rm`/`_rmq`/`_exc` only f64 | f64: BJ `src/softfloat/fadd.jl:soft_fadd`, `fsub.jl:soft_fsub`, `fmul.jl:soft_fmul`, `fdiv.jl:soft_fdiv` (x86-exact: `INDEF` 0xFFF8… for invalid). f16/f32/f80 and any `_rm`/`_rmq`/`_exc`: **EXTEND** (IEEE 754 binary16/32 RNE with subnormals; x87 extended with 64-bit significand and PC = extended; directed modes RD/RU/RZ per the mode operand; `_exc` sets the bits of §2.1 with x86 rules: tininess after rounding, UNDERFLOW only together with INEXACT when masked) | 13, 14, 80 |
-| `fneg` | sign-bit flip (no rounding) | f32 f64 f80 | f64: BJ `src/softfloat/fneg.jl:soft_fneg`; the others are the same bit flip at bit W−1 (bit 79 for f80) | 13, 69 |
-| `sqrt` | IEEE sqrt; negative → NaN | f64 | BJ `src/softfloat/fsqrt.jl:soft_fsqrt` | 16, 172, 183 |
+| `fadd` `fsub` `fmul` `fdiv` | IEEE basic ops | fadd f16 f32 f64 f80; fsub, fmul, fdiv f32 f64 f80; `_rm`/`_rmq`/`_exc` only f64 (fadd, fmul, fdiv) | f64: BJ `src/softfloat/fadd.jl:soft_fadd`, `fsub.jl:soft_fsub`, `fmul.jl:soft_fmul`, `fdiv.jl:soft_fdiv` (x86-exact: `INDEF` 0xFFF8… for invalid). f16/bf16/f32/f80 and any `_rm`/`_rmq`/`_exc`: **EXTEND** (IEEE 754 binary16/32 RNE with subnormals; x87 extended with 64-bit significand and PC = extended; directed modes RD/RU/RZ per the mode operand; `_exc` sets the bits of §2.1) | 13, 14, 80 |
+| `fneg` | sign-bit flip (no rounding) | f32 f64 f80 | BJ `src/softfloat/fneg.jl:soft_fneg` (f64; the same XOR at bit W−1 at any width) | 13, 69 |
+| `sqrt` | IEEE sqrt; negative → NaN | f64 | BJ `src/softfloat/fsqrt.jl:soft_fsqrt`; other widths **EXTEND** | 16, 172, 183 |
 | `fma` | fused, one rounding (`llvm.fma` only) | none in corpus | f64: BJ `src/softfloat/fma.jl:soft_fma`; others **EXTEND** (one rounding; f32 cannot be emulated by f64 double rounding) | none |
 | `frem` | IEEE `fmod` (exact): sign of x; fmod(x, 0) = NaN; fmod(±Inf, y) = NaN; fmod(x, ±Inf) = x; NaN propagates | f32 (bare), f64 (`hl`, `lh`), f80 (`hl`) | **EXTEND** (no reference implementation in BJ) | 83 |
+
+**Impl.**
+- `fadd`, `fsub`, `fmul`, `fdiv`, `sqrt`, `fma` at f64: the kernel, compiled by
+  `reversible_compile` (`soft_fadd`: 62,800 gates, 12,488 of them CCX, at BJ's default options).
+  `soft_fsub` is `soft_fadd` with the sign of b flipped unless b is a NaN. The NaN row above is
+  the kernels' own (`src/softfloat/softfloat_common.jl:_sf_propagate_nan2`, `_sf_propagate_nan3`
+  for `fma`). `_hl`, `_lh`: the literal operand of §0.
+- `fneg`, any width: CX(a_i, o_i) on every bit and X on the sign bit of o (bit W − 1; f80:
+  bit 79). No kernel.
+- Every other width, `_rm`, `_rmq`, `_exc`, `frem`: §2.11.
 
 ### 2.10 Floating-point misc
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
-| `fabs` | clear the sign bit | f32 f64 f80 | BJ `src/extract/instructions.jl:_handle_intrinsic` (`llvm.fabs.`, a mask); width-generic | 16, 69, 104 |
-| `copysign` | magnitude of arg 0, sign of arg 1 (non-commutative: `hl`, `lh`) | f32 f64 f80 | BJ same (`llvm.copysign.`); width-generic | 16, 69, 169 |
-| `fmax` `fmin` | `fmax(a, b) = isnan(a) ? b : isnan(b) ? a : (b > a ? b : a)`, `fmin` with `<`: equal values (±0) give a, two NaNs give b unchanged (x86-64 `-O1`, CR §2) | fmax f64 (fmin not in the corpus) | f64: BJ `src/softfloat/fmin.jl:soft_fmax`/`soft_fmin`, adapted: BJ returns +0/−0 for ±0 where x86 returns a | 16, 169 |
-| `floor` `ceil` `trunc` `rint` `round` | IEEE roundToIntegral: floor and ceil toward −∞ and +∞; trunc toward 0; **rint ties to even** (CR §2; the dynamic mode is ignored); round = C `round`, ties away from zero | floor, trunc, rint f64 (ceil and round not in the corpus) | f64: BJ `src/softfloat/fround.jl:soft_floor`/`soft_ceil`/`soft_trunc`/`soft_round` (RNE)/`soft_round_away` | 16 |
-| `is_fpclass` | `(i32 h, i32 mask)` → `i1` = 1 iff h's class bit is set in mask. LLVM bit order: 0 sNaN, 1 qNaN, 2 −Inf, 3 −normal, 4 −subnormal, 5 −0, 6 +0, 7 +subnormal, 8 +normal, 9 +Inf (104: 264 = isnormal). A pure bit test that raises no exception | f64 `_hl` | **EXTEND** (no reference implementation) | 104 |
+| `fabs` | clear the sign bit | f32 f64 f80 | BJ `src/extract/instructions.jl:_handle_intrinsic` (`llvm.fabs.`, an AND with a 64-bit mask: W ≤ 64) | 16, 69, 104 |
+| `copysign` | magnitude of arg 0, sign of arg 1 (non-commutative: `hl`, `lh`) | f32 f64 f80 | BJ same (`llvm.copysign.`; W ≤ 64) | 16, 69, 169 |
+| `fmax` `fmin` | `fmax(a, b) = isnan(a) ? b : isnan(b) ? a : (b > a ? b : a)`, `fmin` with `<`: equal values (±0) give a, two NaNs give b unchanged (x86-64 `-O1`, CR §2) | fmax f64 (`hl`, bare) (fmin not in the corpus) | f64: BJ `src/softfloat/fmin.jl:soft_fmax`/`soft_fmin`, adapted below; other widths **EXTEND** | 16, 169 |
+| `floor` `ceil` `trunc` `rint` `round` | IEEE roundToIntegral: floor and ceil toward −∞ and +∞; trunc toward 0; **rint in the current mode**: ties to even in the plain template, the template's mode with `_rm`/`_rmq` (CR §2); round = C `round`, ties away from zero | floor, trunc, rint f64 (ceil and round not in the corpus) | f64: BJ `src/softfloat/fround.jl:soft_floor`/`soft_ceil`/`soft_trunc`/`soft_round` (RNE)/`soft_round_away`; other widths **EXTEND** | 16 |
+| `is_fpclass` | `(i32 h, i32 mask)` → `i1` = 1 iff h's class bit is set in mask. LLVM bit order: 0 sNaN, 1 qNaN, 2 −Inf, 3 −normal, 4 −subnormal, 5 −0, 6 +0, 7 +subnormal, 8 +normal, 9 +Inf (104: 264 = isnormal). A pure bit test that raises no exception; on f80 a pseudo-denormal is subnormal and a non-canonical encoding is a quiet NaN (CR §2) | f64 `_hl` | **EXTEND** (no reference implementation) | 104 |
+
+**Impl.**
+- `fabs`, any width: CX(a_i, o_i) for i < W − 1; the sign bit of o stays 0. `copysign`:
+  CX(a_i, o_i) for i < W − 1 and CX(b_(W−1), o_(W−1)); `_hl` (literal sign): X(o_(W−1)) when
+  the literal's sign bit is set; `_lh` (literal magnitude): X(o_i) at the 1-bits of the literal
+  below the sign bit, CX(b_(W−1), o_(W−1)). BJ's expansions are the same wiring for W ≤ 64.
+- `fmax`, `fmin` at f64: the kernel, adapted. BJ breaks the ±0 tie by sign (`soft_fmax(−0, +0)`
+  is +0, `soft_fmin(+0, −0)` is −0) where the contract returns a. Drop the kernel's `both_zero`
+  arm: `fmax` picks b iff `soft_fcmp_olt(a, b)`, `fmin` picks b iff `soft_fcmp_olt(b, a)`. Its
+  NaN arms are the contract's (a NaN: b; b NaN: a; both: b).
+- `floor`, `ceil`, `trunc`, `rint`, `round` at f64: the kernels, compiled: `soft_floor`,
+  `soft_ceil`, `soft_trunc`, `soft_round` (plain `rint`), `soft_round_away` (`round`). `rint`
+  with a mode: the kernel the mode names, `soft_round`, `soft_floor`, `soft_ceil` or `soft_trunc`
+  for 0, 1, 2, 3; `_rmq`: all four values and a `select` on bits 10–11 of the mode rail, or one
+  kernel with a mode operand (§2.11).
+- `is_fpclass`: §2.11.
+
+### 2.11 EXTEND: the soft functions to write
+An EXTEND family gets its circuit the way the f64 families do: a branchless function on bit
+patterns, compiled by BJ `src/Bennett.jl:reversible_compile`. Bennett.jl has none of these
+functions at the pinned revision; each has to be written. What the route needs from Bennett.jl
+was tried at that revision (Julia 1.12.1 with LLVM.jl 9.13.2; with LLVM.jl 10.4.3 the package
+fails to load on a missing `LLVM.NewPMPassBuilder`): scratch models were compiled and their
+circuits simulated against a host reference on sampled inputs. A model that compiled shows that
+the route exists. It does not show a production kernel correct: each kernel owes its own test
+against its CR §2 rows.
+
+| family | function to write | modelled on | tried |
+|---|---|---|---|
+| `fadd` `fsub` `fmul` `fdiv` `sqrt` `fma`, the rounding ops, `fmax`/`fmin`, `fcmp` at f16, bf16, f32 | the f64 body on `UInt16`/`UInt32` with the format's field widths (fraction 10, 7, 23 bits; exponent 5, 8, 8) | BJ `soft_fadd`, `soft_fmul`, `soft_fdiv`, `soft_fsqrt`, `soft_fma`, `soft_floor`…, and the shared steps `src/softfloat/softfloat_common.jl:_sf_normalize_clz`, `_sf_handle_subnormal`, `_sf_round_and_pack` | an f32 and an f16 add compiled (47,978 and 42,868 gates) and agreed with native `Float32` and `Float16` addition on 600 samples each. `Float32` and `Float16` arguments are rejected, so the functions take the unsigned integer. BJ's own f32 route (`fpext`, the f64 kernel, `fptrunc`) rounds twice and BJ does not call it bit-exact (`src/softfloat/fpconv.jl`, header) |
+| every f80 op | functions on the pair (significand `UInt64`, sign and exponent `UInt16`) with a tuple result; wider intermediates as (hi, lo) `UInt64` pairs. The explicit integer bit and the non-canonical encodings (§2.9) have no f64 counterpart | the same kernels with BJ `src/softfloat/softfloat_common.jl:_add128`, `_sub128`, `_shiftRightJam128`, `_sf_widemul_u64_to_128` (the `soft_fma` helpers) for the 64-bit steps | the plumbing only: a `(UInt64, UInt16)` operand pair, a tuple result, a 64×64→128 product and a 128-bit align-and-add through the helpers all compiled. A `UInt128` argument is rejected, and a `UInt128` intermediate failed on an `i128` constant. No f80 kernel was written |
+| `_rm`, `_rmq` | the kernel with the mode as an operand (bits 10–11): the rounding decision, the overflow result (±Inf or the largest finite) and the sign of an exact zero sum depend on it. `_rm` is the same circuit with a literal mode | BJ `_sf_round_and_pack`, `_sf_handle_subnormal` | an f64 add with a mode operand compiled (57,866 gates) and agreed with a BigFloat reference in all four modes on 400 samples |
+| `_exc` | a second function over the same operands and mode that returns the `i32` flag word | the same kernel | compiled for that add (48,192 gates); INEXACT and OVERFLOW agreed on 400 samples. INVALID, DIVBYZERO and UNDERFLOW were not checked |
+| `frem` | signs and specials by the §2.9 row, then a fixed-trip restoring loop on the significands, one trip per unit of exponent difference: 277 trips at f32, 2,098 at f64, 32,829 at f80 | BJ `src/divider.jl:_soft_urem_compile` | an f32 `frem` compiled with `max_loop_iterations = 300`: 4,283,637 gates, 1,073,504 of them CCX; its circuit agreed with `rem(::Float32, ::Float32)` on 300 samples. f64 and f80 were not tried; the gate count grows with the trip count |
+| `is_fpclass` | the ten class bits from the fields, ANDed with the mask, OR-reduced | the field tests of BJ `src/softfloat/fcmp.jl:_either_nan` | f64 with a rail mask compiled (4,602 gates), 300 samples. With the literal mask of `_hl` only the classes it names are tested |
+| `fcmps` `_exc` | INVALID iff an operand is a NaN | BJ `src/softfloat/fcmp.jl:soft_fcmp_uno` | f64 compiled (1,702 gates) |
+| `fpext`, `fptrunc` at f16, bf16, f80 | the conversions with the other field widths | BJ `soft_fpext`, `soft_fptrunc` | not tried |
+| `sitofp`, `uitofp` to f16, bf16, f32, f80, and from more than 64 bits | `soft_sitofp` with the target's fields; a wide source as (hi, lo) pairs; the CR §2 rows above 64 and 128 bits | BJ `soft_sitofp`, `soft_uitofp` | not tried |
+| `fptosi`, `fptoui` from f80, and to more than 64 bits | the x87 `fist` rows of CR §2 | BJ `soft_fptosi`, `soft_fptoui` | not tried |
+| `udiv` `urem` `sdiv` `srem` above 64 bits | the restoring loop with W trips on (hi, lo) pairs | BJ `_soft_udiv_compile`, `_soft_urem_compile` | a 128-bit `udiv` on pairs compiled with `max_loop_iterations = 130` (2,139,127 gates) and agreed with `UInt128` division, b = 0 included, on 30 samples |
+| a shift or funnel shift by a rail at a W that is no power of two | `urem` of the amount by the literal W, then the BJ barrel shifter | BJ `lower_var_shl!` | the deviation was measured at W = 100 (§2.3); the adapted circuit was not built |
+
+The BJ gate emitters need no such function at any width: `lower_add!`, `lower_sub!`, `lower_mul!`
+and `lower_ult!` were run at W = 100 and 128 against big-integer arithmetic (20 samples each).
 
 ---
 
@@ -619,29 +963,78 @@ Rule 27 is the only part that touches the link step:
 
 ## 4. Coverage table
 
-The number of examples that call each family (from `sym_by_ex.txt`, header). Widths and the
-source of each reversible circuit are in §1 and §2.
+**The operations.** The backend is 25 core operations and 66 template operations; the 565
+corpus symbols are their expansions by width, shape and suffix. `<W>` is `i<N>` for any N ≥ 1,
+`f16`, `bf16`, `f32`, `f64` or `f80`.
 
-- **Core.** `alloc` 194, `free` 185, `measure` 193, `ry` 194 (`_controlled` 16), `ry_qangle` 5,
-  `rz_i1` 32, `rz_qangle` 5 (`_controlled` 3), `not_i1` 33, `and_i1` 45, `or_i1` 18, `xor_i1` 1,
-  `copy` 93 (`_controlled` 1), `xorc` 1, `tape_*` 5, `abort_i1` 3, `push`/`pop` 38. The bus: 195–213 only.
-- **Integer.** `add` 96, `sub` 30, `mul` 51, `udiv` 5, `urem` 7, `sdiv` 2, `srem` 2, `and` 54,
-  `or` 24, `xor` 14, `shl` 29, `lshr` 29, `ashr` 9, `fshl` 2, `fshr` 1, `icmp` 106, `select` 82,
-  `zext` 33, `sext` 6, `trunc` 18, `bitcast` 9, `*_overflow` 2, `uadd_sat` 1, `usub_sat` 1,
-  `sadd_sat` 1, `ssub_sat` 0, `smax` 3, `smin` 3, `umax` 2, `umin` 1, `abs` 1, `ctlz` 1,
-  `cttz` 1, `ctpop` 2, `bswap` 1.
-- **Floating point.** `fcmp` 17, `fcmps` 2, `fpext` 5, `fptrunc` 4, `sitofp` 6, `uitofp` 9,
-  `fptosi` 2, `fptoui` 1, `fadd` 29, `fsub` 16, `fmul` 32, `fdiv` 11, the `_rm`/`_rmq`/`_exc`
-  forms 4 (80, 81, 82, 100), `fneg` 10, `fabs` 13, `copysign` 10, `sqrt` 3, `fma` 0, `frem` 1,
+| core operation (`cqrt_…`) | expands as | § |
+|---|---|---|
+| `alloc`, `measure` | `_<W>` | 1.1, 1.3 |
+| `free` | none | 1.2 |
+| `ry` | `_<W>[_qangle][_controlled]` | 1.4, 1.5 |
+| `rz_i1`; `rz_qangle` | none; `[_controlled]` | 1.6, 1.7 |
+| `not_i1`, `and_i1`, `or_i1`, `xor_i1` | none | 1.8 |
+| `copy`, `xorc` | `_<W>[_controlled]` | 1.9 |
+| `qram_alloc` | `_i8` | 1.10 |
+| `qram_load` | `_<W>[_hl][_controlled][_unc]` | 1.10 |
+| `qram_store`, `qram_swap` | `_<W>[_hl][_controlled]` | 1.10 |
+| `tape_alloc`; `tape_fmt` | none; `[_controlled]` | 1.11 |
+| `tape_effect` | `[_<W>]_controlled` | 1.11 |
+| `tape_write` | `_<W>[_controlled]`, `_<W>_lit` | 1.11 |
+| `abort_i1` | none | 1.11 |
+| `push`, `pop` | none | 1.12 |
+| `invert_begin`, `invert_end` | none | 1.13 |
+
+The 66 template operations, each expanded by the grammar of §2.1
+(`cq_template_<op>[_<pred>]_<W>[_to_<W2>][_<shape>][_rm|_rmq][_exc][_unc]`):
+- integer arithmetic (7): `add sub mul udiv sdiv urem srem`;
+- bitwise and shifts (8): `and or xor shl lshr ashr fshl fshr`;
+- compare and select (4): `icmp fcmp fcmps select`;
+- casts (10): `zext sext trunc fpext fptrunc sitofp uitofp fptosi fptoui bitcast`;
+- overflow, saturating, min/max, abs (15): `uadd_overflow usub_overflow umul_overflow
+  sadd_overflow ssub_overflow smul_overflow uadd_sat usub_sat sadd_sat ssub_sat smax smin umax
+  umin abs`;
+- bit counting (5): `ctlz cttz ctpop bswap bitreverse`;
+- floating-point arithmetic (8): `fadd fsub fmul fdiv frem fneg sqrt fma`;
+- floating-point misc (9, `trunc` being the cast's token again): `fabs copysign fmax fmin floor
+  ceil trunc rint round is_fpclass`.
+
+The corpus declares 24 of the core operations (`qram_alloc_i8` is called by the bundle's
+`__cq_mem` only) and 58 of the template operations.
+
+**Examples per family** (from `sym_by_ex.txt`, header). Widths and the source of each reversible
+circuit are in §1 and §2.
+
+- **Core.** `alloc` 212, `free` 203, `measure` 212, `ry` 211 (`_controlled` 16), `ry_qangle` 12
+  (`_controlled` 1), `rz_i1` 33, `rz_qangle` 6 (`_controlled` 4), `not_i1` 45, `and_i1` 53,
+  `or_i1` 18, `xor_i1` 1, `copy` 108 (`_controlled` 2), `xorc` 1, `qram_load` 89, `qram_store`
+  76, `qram_swap` 32 (any bus access 91; at an address rail 44; `_controlled` 35), `tape_*` 11
+  (`tape_fmt` 5, `tape_effect` 8), `abort_i1` 2, `invert_begin`/`end` 3, `push`/`pop` 53.
+- **Integer.** `add` 124, `sub` 62, `mul` 82, `udiv` 5, `urem` 7, `sdiv` 2, `srem` 2, `and` 66,
+  `or` 26, `xor` 15, `shl` 29, `lshr` 30, `ashr` 9, `fshl` 3, `fshr` 1, `icmp` 117, `select` 88,
+  `zext` 64, `sext` 8, `trunc` 15, `bitcast` 9, `*_overflow` 2, `uadd_sat` 1, `usub_sat` 1,
+  `sadd_sat` 1, `ssub_sat` 0, `smax` 4, `smin` 3, `umax` 2, `umin` 6, `abs` 1, `ctlz` 2,
+  `cttz` 1, `ctpop` 2, `bswap` 1, `bitreverse` 0.
+- **Floating point.** `fcmp` 18, `fcmps` 2, `fpext` 5, `fptrunc` 4, `sitofp` 7, `uitofp` 10,
+  `fptosi` 3, `fptoui` 1, `fadd` 30, `fsub` 17, `fmul` 34, `fdiv` 12, the `_rm`/`_rmq`/`_exc`
+  forms 4 (80, 81, 82, 100), `fneg` 12, `fabs` 14, `copysign` 11, `sqrt` 3, `fma` 0, `frem` 1,
   `fmax` 2, `fmin` 0, `floor` 1, `trunc` 1, `rint` 1, `ceil` 0, `round` 0, `is_fpclass` 1.
-- **EXTEND** (no Bennett.jl circuit): `fcmp` f80, `fcmps`, `fpext`/`fptrunc` with f16 or f80,
-  `sitofp`/`uitofp` to f32 or f80, `fptosi`/`fptoui` beyond f64→i32/u32, the basic fp ops on
-  f16, f32, f80, every `_rm`/`_rmq`/`_exc` form, `fma` beyond f64, `frem`, `is_fpclass`. No
-  reference at all: `ssub_overflow`, the four `*_sat`.
+- **EXTEND** (no Bennett.jl circuit; route in §2.11): every fp op at f16, bf16, f32 or f80 other
+  than `fneg`, `fabs`, `copysign`, `select`, `bitcast`, `fcmp` at f32, `fpext` f32→f64 and
+  `fptrunc` f64→f32;
+  every `_rm`/`_rmq`/`_exc` form; `fcmps`; `frem`; `is_fpclass`; `sitofp`/`uitofp` to a width
+  other than f64 or from more than 64 bits; `fptosi`/`fptoui` from f80 or to more than 64 bits;
+  the four divisions above 64 bits; a shift or funnel shift by a rail at a W that is no power
+  of two.
+- **Adapted** (a BJ circuit whose result differs from the contract): `fptosi`/`fptoui` to less
+  than 64 bits (§2.6), `fmax`/`fmin` on ±0 (§2.10), a shift by a literal k ≥ W (§2.3).
+- **Composed, no BJ circuit**: the six `*_overflow` flags on two rails, the four `*_sat`
+  (§2.7); every bus access at an address rail (§1.10); the reduction of an angle rail (§1.5).
 
-Without any witness: `fma`, `fmin`, `ceil`, `round`, `ssub_overflow`, `smul_overflow`, the shapes
-`qlq`/`llq`, `cqrt_xorc_<W>` (uncontrolled) and `cqrt_ry_<W>_qangle_controlled`. Witnessed only
-by 195–213, which the counts above exclude: every bus form of §1.10, the effect entries of §1.11.
+Without any witness: `fma`, `fmin`, `ceil`, `round`, `bitreverse`, `ssub_overflow`,
+`smul_overflow`, `ssub_sat`, every `bf16` form, the ternary shapes with a literal in the first
+or second slot (`qlq`, `lqq`, `lql`, `llq`), `cqrt_xorc_<W>` (uncontrolled), `cqrt_qram_swap` at
+an address rail under a control, `cqrt_tape_effect_<W>_controlled` at a width other than i32.
 
 **Basis-sample checker** (`_tools/sample_check.py`, tooling, not spec). Its evaluator agrees
 with §2.2–§2.10 on every totalization. It differs or is silent on:
@@ -658,3 +1051,54 @@ Every question this file raised is ruled in CR; the contract is stated once, at 
 Q1: §0 obligation 4. Q2, Q3: §1.4–§1.7. Q4, Q12, Q21: §0. Q5, Q14, Q18, Q22–Q24: §1.10. Q6–Q9,
 Q15: §2.1, §2.9. Q10: §2.10. Q11: §2.6. Q13: withdrawn, no store is popped (§1.10). Q16, Q19:
 §1.11. Q17: §1.12. Q20: CR §2.
+
+---
+
+## 6. Keeping this file in step with CR
+
+CR is normative; this file restates the part of it a backend implements. On a CR change, these
+parts of CR can alter a contract stated here, and the sections named are re-read against them:
+- any `cqrt_*` or `cq_template_*` name, signature or grammar element (CR §1.2, §1.3, the
+  retired list of CR §0): §0, §1, §2.1, §4;
+- the totalization table (CR §2), every row of which is the value some template or bus access
+  returns: §1.10, §2.2–§2.11;
+- rule 5 (what is un-copied and what is kept, the `_controlled` bus forms, the in-place form):
+  §1.10;
+- rule 16 (effect entries, the callees recognised by name, their results, allocation, K2):
+  §1.11 and its callee table, §0;
+- rule 17 (`cq_invert`: what is reversed, the flush points): §1.13 and the result-rail clause
+  of §0;
+- rules 20 to 22 (the bus, access widths and address forms, pointers as integers, the byte
+  accesses of the memory intrinsics and their use of `push`/`pop`): §1.10, §1.12.
+
+The other rules decide which calls the lowered program makes, not what a call does.
+
+**Conformance.** The test of a backend is the corpus run against it. Each example's lowered
+program, linked against the backend and executed on basis inputs (every `cq_theta` input
+replaced by a chosen bit pattern), must give the named outputs, the clean rails and the kept
+rails that CR §6 item 1 asks for, with the rotation list of item 2 read off the gates the
+backend appended. This file adds no acceptance criterion. When `examples/` changes, the counts
+of the header and of §4 are recomputed with the header's commands.
+
+**Open in CR.** CR is silent on the points below and this file fixes nothing for them. A
+backend that needs one asks for a ruling; the ruling goes into CR first.
+1. *The cells an address rail can reach* (CR §1.3 "makes every cell it can reach QUANTUM"; CR §2
+   "decided per cell"; §1.10): the exact support of the address rail's state, or any superset
+   the backend can bound it by. The unitary is the same either way. What differs is which HOST
+   cells a store or swap turns QUANTUM, whose bytes host code then reads as unspecified, and
+   which host bytes a load reads.
+2. *"Reduced exactly mod P"* (CR §1.3; §1.5): P is irrational, so a fixed circuit rounds
+   correctly for every f64 only with a proven guard width. CR gives no bound and no tolerance:
+   whether a result one grid step off at such an input conforms is not said.
+3. *INPUT calls* (CR rule 16 names the stream functions as a class and uses "input call" without
+   a list): which callees besides `fgets`, `fread` and `read` are INPUT calls, and which of
+   their arguments are buffer, length and identifier (§1.11, the rows marked †).
+4. *Extents the capture of §1.11 does not define*: a wide string (`fputws`, the wide formats), a
+   `va_list` block (`vprintf`, `vfprintf`), a buffer the host library retains (`setvbuf`), and
+   objects of the host library's own types (`fpos_t`, `fenv_t`, `fexcept_t`, `jmp_buf`).
+5. *An effect entry the backend cannot perform as a call*: `__builtin_trap` has no host symbol
+   (`llvm.trap`), and `setjmp`/`longjmp` performed from inside the backend are not the caller's
+   (CR rules 16, 24).
+6. *A compare of an f80 operand in a non-canonical encoding*: CR §2 gives the result of a
+   value-returning op (the real indefinite) and of `is_fpclass` (a quiet NaN), not of `fcmp` and
+   `fcmps`.
