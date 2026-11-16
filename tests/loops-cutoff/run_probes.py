@@ -78,8 +78,12 @@ MUTANTS = {
     # cq-037u2 (CR rule 17 with rule 14): fc_inv's cqrt_invert_end moved up to the end of the loop's exit block, before the reverse
     # loop: the region holds the trips and the copy-out but not their reverse, so the backend's replay reversed undoes trips
     # never computed that way (the rolled form's placement at d5e32f61)
+    # cq-8zz4v (CR rules 6, 14, 17): fc_inv_r6cls's accumulator, copied out and undone by the reverse loop since it is no longer
+    # cleaned per trip in the region; the same move of cqrt_invert_end before that reverse loop leaves the replay reversed
+    # recomputing the chain the region's trips made
     "diff_fc": [
         ("fc_inv", "reverse_after_end", lambda b: reverse_after_end(b), None),
+        ("fc_inv_r6cls", "r6_reverse_after_end", lambda b: reverse_after_end(b), None),
     ],
     "agg_region": [
         ("vec_region", "other_field", lambda b: other_field(b), None),

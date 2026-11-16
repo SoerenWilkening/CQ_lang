@@ -32,7 +32,9 @@
 //  seed minted for the loop, this function's own rail when nothing reads it once the loop is entered
 //  (lcw-h2 c2: the register before the loop), or else a copy of it. Case 3 cleans through the advancing
 //  select (125). An unrotated chain is a register only when its final value is live after the loop as something
-//  never uncomputed (owner 2026-11-11 Q4, liveAfterLoop); else it is garbage, undone by the reverse loop.
+//  never uncomputed (owner 2026-11-11 Q4, liveAfterLoop); else it is garbage, undone by the reverse loop. A final value
+//  an outermost loop in an open cq_invert region copies out because it is read after the region's end is no such register
+//  (cq-8zz4v, copiedAtEnd).
 //  An update chain may sit past a quantum arm's merge, and a merge of an arm's update with the carried value
 //  itself is cleaned with the composite inverse, under the same Q4 condition; a bus load copy as
 //  the initial rail is excepted on trip 0 under a classical branch (planRuleSixMerges, 109).
@@ -359,6 +361,12 @@ private:
   void planRuleSix(Loop &L, Case c);
   void planRuleSixMerges(Loop &L);
   bool liveAfterLoop(Loop &L, const Value *fin);
+  // cq-8zz4v (CR rules 6, 14, 17): inside an open cq_invert region the outermost loop copies out a final value read after
+  // the region's end (wireExits' afterEnd, cq-037u2), so that final rail is undone by the reverse loop inside the region:
+  // it is no register kept past the loop, and its chain is not cleaned per trip.
+  bool copiedAtEnd(const Value *fin) {
+    return !nested && !inTrip && U.invertOpen() && rolled::readAfterInvertEnd(top, fin);
+  }
   void cleanInvariantOnExit(Loop &L, BasicBlock *T);
   BasicBlock *unitExit = nullptr;   // the outermost loop's T
   bool initDead(Loop &L, const Value *init, const PHINode *p);
@@ -486,7 +494,7 @@ void Unit::planRuleSix(Loop &L, Case c) {
       }
     // Owner 2026-11-11 Q4 (cq-padp): an unrotated chain is cleaned per trip only when its final value is live after the
     // loop as something never uncomputed; else it is garbage, undone by the reverse loop after its last reader.
-    if (!ok || (!rotated && !liveAfterLoop(L, U)))
+    if (!ok || (!rotated && (!liveAfterLoop(L, U) || copiedAtEnd(U))))
       continue;
     plan6.push_back({&p, ups, rotated, initDead(L, p.getIncomingValueForBlock(pre), &p)});
   }
@@ -556,7 +564,7 @@ void Unit::planRuleSixMerges(Loop &L) {
     }
     // Owner 2026-11-11 Q4: only a final value live after the loop as something never uncomputed (95, 109's
     // overflow_arg_area is not: its chain is garbage, undone by the reverse loop).
-    if (!ok || !liveAfterLoop(L, M))
+    if (!ok || !liveAfterLoop(L, M) || copiedAtEnd(M))
       continue;
     const Value *init = p.getIncomingValueForBlock(pre);
     R6 r{&p, {Up}, false, initDead(L, init, &p)};
