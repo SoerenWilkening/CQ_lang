@@ -421,8 +421,6 @@ void cqe_fail(const char *fmt, ...) {
   cqe__violation("fail", -1, "%s", msg);
 }
 
-unsigned long cqe__violations(void) { return nviolations; }
-
 /* ---- rails ------------------------------------------------------------------------------- */
 
 /* What few rails need (cq-9hzgh): kept out of rail_t, made at the first use. */
@@ -1452,10 +1450,6 @@ uint64_t cqe__last_nd(int32_t h) {
 int cqe__measured(int32_t h) {
   LOOK(h);
   return r ? (int)r->measured : (int)(DEAD_F(dv) >> TF_MEASURED & 1);
-}
-int cqe__frozen(int32_t h) {
-  LOOK(h);
-  return r ? (int)r->frozen : (int)(DEAD_F(dv) >> TF_FROZEN & 1);
 }
 int cqe__role(int32_t h) {
   LOOK(h);

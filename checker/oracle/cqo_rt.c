@@ -660,7 +660,6 @@ uint32_t __cqo_sh_nz(uint32_t s, uint32_t inc) {
 uint32_t __cqo_sh_slot(uint32_t v) { return v ? v - 1 : SH_OPAQUE; }
 uint32_t __cqo_sh_slot0(uint32_t v) { return v ? v - 1 : 0; }
 uint32_t __cqo_sh_leaf(void) { return sh_new(0, 0, SH_LEAF); }
-uint32_t __cqo_sh_opaque(void) { return SH_OPAQUE; }
 
 static int sh_classical(uint32_t n) {
     if (n == 0 || n >= sh_nn) return n == 0;
