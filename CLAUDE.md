@@ -14,7 +14,8 @@ This file is how to work.
 - **Toolchain.** LLVM 19.1.7 from brew `llvm@19`: `/usr/local/opt/llvm@19/bin` (`clang`, `opt`,
   `llvm-link`, `llvm-as`, `llvm-config`). Never Apple clang. Triple `x86_64-apple-macosx`, `-O1`.
   C++17 for the pass.
-- **Ground truth beyond the spec.** Bennett.jl `824458d10e879c3fef673c231a02e5461dac667f` and
+- **Ground truth beyond the spec, for templates and totalization only** (not for memory or
+  pointers, owner 2026-11-05: Bennett.jl's static pointer provenance is retired). Bennett.jl `824458d10e879c3fef673c231a02e5461dac667f` and
   BennettVM.jl `23d28e6471f9cf5d8a22177d08260ca86adfe841`, the revisions CQ_spec names, checked out
   read-only at `../refs/Bennett.jl` and `../refs/BennettVM.jl`. Consult them at those revisions only,
   cite `path:function`, never vendor or link them. A mechanism cited without reading it is an
@@ -37,8 +38,9 @@ This file is how to work.
 (`opt -load-pass-plugin=… -passes=cq-lower`: taint, then `fix-irreducible` on the tainted functions
 only, then taint afresh if any function changed, then the constructions; taint is computed once over
 the final CFG and nothing mutates the CFG after it) → the structural verifier (inside the pass) → the
-lowered module. A function with no taint is never rewritten; a module with no taint is the pass's
-identity (principle 1, kernel tier 1). The pass is the identity when `opt -passes=cq-lower` and `opt`
+lowered module. A module with no `cq_*` call, no root list and no reference to a declared clone is
+the pass's identity, and a call into it is a host call (rule 16). Inside a lowered module a function is
+left as it is only if it has no memory access, no `cq_*` call and no call (principle 1, kernel tier 1). The pass is the identity when `opt -passes=cq-lower` and `opt`
 with no passes produce byte-identical output on the same input. The `cqcc` driver runs this chain. The corpus feeds each
 `name.O1.ll` straight in; `clang-19 -O1` reproduces those files apart from comments and
 `source_filename`.
@@ -53,8 +55,10 @@ with no body goes through rule 27 declared clones. Build the bundle with the cor
 
 ## Internal errors, never declines
 
-- An unhandled shape is `report_fatal_error("cq: unimplemented: …")` with the offending
-  instruction printed, a bead, and a fix. Nothing is emitted.
+- An unhandled shape does not stop the pass (owner 2026-11-03, 2026-11-05): no fatal error, guard or
+  decline for a shape that is not built yet. The code behind the site runs on, at most with a
+  non-fatal one-line note naming the site. The structural verifier, a crash or the §6 checker judges
+  the result, never the pass refusing. A bead and a fix follow.
 - Never write an "unsupported" diagnostic, an `isSupported()` predicate, a skip list, or a fallback
   that emits something the constructions did not produce.
 - Never make a test pass by narrowing it: no skipped example, input class or check.
@@ -107,11 +111,13 @@ Built first (step 0 below). Requirements:
 1. Straight-line code: taint, templates, the uncompute spine, the structural verifier.
 2. Acyclic control flow: path predicates, flags, phases, value arms, `switch`, measurement.
 3. Calls: clones, twins, `_ctl`, declared clones. Inline `asm` with a quantum operand (rule 27)
-   joins this step once CQ_spec has its example (CR §8 lists it to write). Until then it is an
-   internal compiler error like any unbuilt construction.
-4. Memory: slots, QROM, QRAM, fat pointers, memory intrinsics, aggregates.
-5. Loops: the three rule-14 cases, recursion depth, K resolution. (After memory: the
-   classical-bound case writes slot arrays and QRAM, 187 and 188.)
+   joins this step once CQ_spec has its example (CR §8 lists it to write). Until then it runs on
+   like any unbuilt construction.
+4. Memory: the one bus (rules 5, 20 to 22): bus accesses at integer addresses, the in-place form,
+   load un-copy, `__cq_alloc` and K2, memory intrinsics, aggregates. No slots, per-object buses,
+   QROM, fat pointers or pointer provenance: that code is removed, not adapted.
+5. Loops: the three rule-14 cases, recursion as one clone with an activation counter, K
+   resolution. (After memory: the classical-bound case accesses the bus, 187 and 188.)
 6. The rest: tape, abort, `cq_invert`, fenv, `setjmp`/`longjmp`, varargs, atomics.
 7. The version 1 injection bundle.
 
@@ -121,12 +127,13 @@ CQ_spec `LIBC_COVERAGE.md`), the rule-27 library-build mode, then kernel tiers 2
 
 ## Review
 
-Every milestone gets two rounds of independent adversarial review.
+Every milestone gets ONE round of independent review (owner, 2026-11-05).
 
-- **Wide.** Two or three reviewers, each with a disjoint hypothesis (for example: wrong predicate
-  on some branch; a rail freed dirty or kept wrongly; a taint path missed through memory or calls),
-  over the whole change.
-- **Narrow.** One reviewer over the fix delta only, repeated until a round finds nothing.
+- Two or three reviewers, each with a disjoint hypothesis (for example: wrong predicate on some
+  branch; a rail freed dirty or kept wrongly; a taint path missed through memory or calls), over
+  the whole change, asking only whether the lowered program computes what the C program computes.
+- A fix is verified by the §6 checker and targeted tests. There is no review of a fix and no
+  wording or style finding.
 
 Reviewers get the code and the spec, not the implementer's conclusions. They reason analytically and
 run their own probes, never the implementer's tests. A finding becomes a bead.

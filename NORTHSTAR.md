@@ -16,7 +16,10 @@ resolution is not obvious, ask the owner.
 CQ_spec (`CONSTRUCTION_RULES.md`, `CQ.h`, `examples/`, with `BACKEND_ABI.md` as the runtime
 contract) is the specification. It is read-only from here and pinned by `spec.lock`; drift fails
 loudly. Where CQ_spec leaves a question open, Bennett.jl and BennettVM.jl at the revisions CQ_spec
-names are the ground truth. Where an example contradicts the rules, the rules win: the contradiction
+names are the ground truth for templates and the §2 totalization only. For memory and pointers they
+are not (owner, 2026-11-05): CQ_spec's one-bus model needs no compile-time knowledge of what a
+pointer points to, and an open question there is decided for the easiest construction with full C
+coverage. Where an example contradicts the rules, the rules win: the contradiction
 goes into `SPEC_ISSUES.md` and the fix lands in CQ_spec, never as a workaround here.
 
 ## Goals
@@ -74,15 +77,15 @@ or circuit replacements in a bundle, the way musl's asm was replaced.
 
 **1. Taint is the only quantum/classical boundary.** A value is quantum iff it derives from a
 `cq_theta` result by LLVM data flow, through memory, calls and pointers as the rules say. A module
-with nothing quantum in it comes out of the pass byte-identical, and a function with nothing quantum
-in it is never rewritten, not even to make its loops reducible.
+with nothing quantum is byte-identical; inside a lowered module a function is left as it is only if
+it has no memory access, no `cq_*` call and no call, not even to make its loops reducible.
 
 **2. General construction first.** One construction per IR concept, total over its inputs: a path
 predicate per block, a `select` chain per merge, a K-trip predicate chain per loop with a quantum
-exit, the rule-20 table per memory object, the rule-16/18/19/27 classification per call. The
+exit, one bus access per load and store (rules 20 to 22), the rule-16/18/19/27 classification per call. The
 examples are what these constructions produce. There is no path gated by a pattern matcher and no
-ad-hoc lowering. Each construction is argued once against Bennett.jl/BennettVM.jl and witnessed by
-the examples its rule names. Where the spec fixes an outcome §6 can see, the construction reproduces
+ad-hoc lowering. Each construction is argued once (against Bennett.jl/BennettVM.jl where it is a template or a
+totalization) and witnessed by the examples its rule names. Where the spec fixes an outcome §6 can see, the construction reproduces
 it:
 
 - A purely classical condition stays a real classical branch, also inside a clone. A classical `i1`
@@ -131,10 +134,12 @@ to users as `--cq-check`, with their own C program as the oracle.
 A textual diff against the reference is reported per example as a quality signal. It never fails a
 test, and byte identity is never a gate.
 
-**6. Evidence is review, not green.** Every milestone gets independent adversarial review in two
-rounds: wide (two or three reviewers with disjoint hypotheses over the whole change), then narrow
-(one reviewer over the fix delta only, repeated until clean). Reviewers reason analytically and run
-their own probes, never the implementer's tests.
+**6. Evidence is the checker and one review, not green.** Every milestone gets ONE round of
+independent review (two or three reviewers with disjoint hypotheses over the whole change), scoped
+to one question: does the lowered program compute what the C program computes. A fix is verified by
+the §6 checker and targeted tests, not by another review round, and wording or style findings are
+not raised (owner, 2026-11-05). Reviewers reason analytically and run their own probes, never the
+implementer's tests.
 
 **7. Progress is measured per rule.** Each construction rule names its witnesses, so progress is the
 table rule → witnesses → passing. A rule unimplemented across many examples shows there; the bare
