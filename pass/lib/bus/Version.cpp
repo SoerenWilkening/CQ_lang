@@ -4,6 +4,7 @@
 
 #include "cq/Calls.h"
 #include "cq/Common.h"
+#include "cq/Effects.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/IR/InstIterator.h"
@@ -93,6 +94,8 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
         w |= intrinsicWrites(*II);
         continue;
       }
+      if (invert::isMarkerFence(*CB))
+        continue;   // rule 17: consumed beside its marker (cq-h0cmk)
       const Function *G = calleeOf(*CB);
       if (!G) {
         w |= !CB->isInlineAsm() || hostCallWrites(*CB);   // a table clone's call (rule 19), or an asm
@@ -188,6 +191,10 @@ bool versionChange(const TaintInfo &T, const Specialization &S, const Instructio
     return false;
   if (auto *II = dyn_cast<IntrinsicInst>(CB))
     return intrinsicWrites(*II);
+  // Rule 17 (cq-h0cmk): CQ.h's asm fence beside a cq_invert marker is consumed (Dispatch emits nothing for it), so it is
+  // no memory version change; a region is lowered exactly as anywhere else.
+  if (invert::isMarkerFence(*CB))
+    return false;
   const Function *G = calleeOf(*CB);
   if (!G)
     return !CB->isInlineAsm() || hostCallWrites(*CB);

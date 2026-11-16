@@ -268,8 +268,8 @@ bool Repeater::repeatRegion(RegionCut &r) {
   bool versionChangeInRegion = false;
   for (BasicBlock *b : r.blocks)
     for (Instruction &I : *b) {
-      // CQ.h's fence beside a marker is the marker's: the walker consumes it and emits nothing (Dispatch: no change noted).
-      if (versionChangeInRegion || !made(&I) || isMarkerFence(I))
+      // CQ.h's fence beside a marker is no change (bus::versionChange, cq-h0cmk).
+      if (versionChangeInRegion || !made(&I))
         continue;
       auto *CB = dyn_cast<CallBase>(&I);
       for (const Specialization &S : T.specializations())
