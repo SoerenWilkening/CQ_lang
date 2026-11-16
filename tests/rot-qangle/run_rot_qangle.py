@@ -6,8 +6,7 @@ Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run 79
 
   - probes/*.ll: synthetic modules. Each `; CHECK <fn>: <text>` must occur in <fn>'s lowered body
     (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times; the output
-    must pass plain cq-verify. A probe with `; EXPECT-ERROR: <text>` must instead make cq-lower exit
-    non-zero with <text> on stderr (an internal error, never a lowering).
+    must pass plain cq-verify.
   - the owned examples: cq-lower (with its built-in verifier) exits 0, cq-verify accepts the output, no
     CQ.h surface call is left. The normalized textual diff against the reference is printed as a quality
     signal that never fails.
@@ -58,13 +57,7 @@ def probes(a) -> int:
         src = p.read_text()
         r = lower(a, p, dest)
         reasons = []
-        expect = re.search(r"^; EXPECT-ERROR: (.*)$", src, re.M)
-        if expect:
-            if r.returncode == 0:
-                reasons.append("cq-lower succeeded; expected: " + expect.group(1))
-            elif expect.group(1) not in r.stderr:
-                reasons.append("cq-lower: " + (r.stderr.strip().splitlines() or ["?"])[0])
-        elif r.returncode != 0:
+        if r.returncode != 0:
             reasons.append("cq-lower: " + (r.stderr.strip().splitlines() or ["?"])[0])
         else:
             module = dest.read_text()

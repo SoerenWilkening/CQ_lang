@@ -6,7 +6,6 @@ what it must give:
   - "pass": cq-lower exits 0, plain cq-verify accepts the output, every regex in `match` occurs in the
     lowered module, and the entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle);
   - "lower": as "pass" without the §6 run (the case says why the checker cannot run it);
-  - "fatal: <text>": cq-lower stops with that error (an unimplemented shape, never a silent output);
   - "reject: <regex>": the lowered module with every line matching the regex deleted is a wrong program, and the §6 run
     must say so (exit 1): the checker's model of what those lines do, kept honest;
   - "wrong: <file>": probes/<file> is a frozen wrong lowering of the probe, and the §6 run must say so (exit 1);
@@ -23,10 +22,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 
-QRAM_LOOP = "fatal: cq: unimplemented: loops-classical: a store into QRAM memory in a classically bounded loop"
-TWIN_STORE = "_unc would replay a store to memory outside the clone's frame"
-TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object a clone call's pointer argument "
-                "points to")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
 SAMPLES = {"mp1": 64, "mp2": 64, "mst": 64, "mp4": 64, "mp5": 64, "chk1": 64, "chk3": 64, "chk4": 64, "at1": 64, "at2": 64,
            "vaC": 64, "vaD": 64, "vaF": 64, "hc1": 64, "hc3": 64, "fe2": 64, "fe3": 64, "fe6": 64, "trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
@@ -556,12 +551,7 @@ def main() -> int:
         r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", *flags, "-S", str(src),
                             "-o", str(lowered)], capture_output=True, text=True)
         why = []
-        if expect.startswith("fatal: "):
-            if r.returncode == 0:
-                why.append("cq-lower succeeded, expected " + expect)
-            elif expect[len("fatal: "):] not in r.stderr:
-                why.append("cq-lower: " + r.stderr.strip()[:400])
-        elif r.returncode != 0:
+        if r.returncode != 0:
             why.append("cq-lower: " + r.stderr.strip()[:400])
         elif expect.startswith("frozen: "):
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered",

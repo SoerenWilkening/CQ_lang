@@ -5,7 +5,6 @@ Each case names a probe (probes/<name>.O1.ll, clang -O1 of probes/<name>.c), its
 what it must give:
   - "pass": cq-lower exits 0, plain cq-verify accepts the output, every regex in `match` occurs in the
     lowered module, and the entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle);
-  - "fatal: <text>": cq-lower stops with that error.
 Outputs go to build/tests/uncompute/out/.
 """
 import argparse
@@ -102,12 +101,7 @@ def main() -> int:
         r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", *flags, "-S", str(src),
                             "-o", str(lowered)], capture_output=True, text=True)
         why = []
-        if expect.startswith("fatal: "):
-            if r.returncode == 0:
-                why.append("cq-lower succeeded, expected " + expect)
-            elif expect[len("fatal: "):] not in r.stderr:
-                why.append("cq-lower: " + r.stderr.strip()[:400])
-        elif r.returncode != 0:
+        if r.returncode != 0:
             why.append("cq-lower: " + r.stderr.strip()[:400])
         else:
             v = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-verify", "-disable-output",
