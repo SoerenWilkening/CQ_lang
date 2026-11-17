@@ -1,0 +1,28 @@
+# driver: printf_quantum(0,.5);printf_under_quantum_if(0,.5,1);printf_mixed(0,.5,3)
+# call: printf_quantum(0,.5)
+cqrt_tape_alloc() -> t0
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x1p-1)
+cqrt_tape_fmt(t0, "%d\n")
+cqrt_tape_write_i32(t0, h1) -> h2
+cqrt_measure_i32(h1) -> 0
+# call: printf_under_quantum_if(0,.5,1)
+cqrt_tape_alloc() -> t3
+cqrt_alloc_i32(0) -> h4
+cqrt_ry_i32(h4, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h4, 1) -> h5
+cqrt_tape_fmt_controlled(h5, t3, "big %d\n")
+cqrt_tape_write_i32_controlled(h5, t3, h4) -> h6
+cq_template_icmp_sgt_i32_hl_unc(h5, h4, 1)
+cqrt_free(h5)
+cqrt_measure_i32(h4) -> 0
+# call: printf_mixed(0,.5,3)
+cqrt_tape_alloc() -> t7
+cqrt_alloc_i32(0) -> h8
+cqrt_ry_i32(h8, 0x1p-1)
+cq_template_add_i32_hl(h8, 3) -> h9
+cqrt_tape_fmt(t7, "%d %d %d\n")
+cqrt_tape_write_i32(t7, h8) -> h10
+cqrt_tape_write_i32_lit(t7, 3)
+cqrt_tape_write_i32(t7, h9) -> h11
+cqrt_measure_i32(h9) -> 0

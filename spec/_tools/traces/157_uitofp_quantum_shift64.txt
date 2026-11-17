@@ -1,0 +1,21 @@
+# driver: uitofp_q(0,.5);shl_amount_q_i64(3,0,.5);lshr_qq_i64(8,0,.5,.25)
+# call: uitofp_q(0,.5)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_uitofp_i32_to_f64(h0) -> h1
+cqrt_measure_f64(h1) -> 0x0p+0
+# call: shl_amount_q_i64(3,0,.5)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_zext_i32_to_i64(h2) -> h3
+cq_template_shl_i64_lh(3, h3) -> h4
+cq_template_zext_i32_to_i64_unc(h3, h2)
+cqrt_free(h3)
+cqrt_measure_i64(h4) -> 0
+# call: lshr_qq_i64(8,0,.5,.25)
+cqrt_alloc_i64(8) -> h5
+cqrt_ry_i64(h5, 0x1p-1)
+cqrt_alloc_i64(0) -> h6
+cqrt_ry_i64(h6, 0x1p-2)
+cq_template_lshr_i64(h5, h6) -> h7
+cqrt_measure_i64(h7) -> 0

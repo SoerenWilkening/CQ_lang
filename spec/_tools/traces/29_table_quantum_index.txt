@@ -1,0 +1,19 @@
+# driver: table_quantum_index(0,.5)
+# call: table_quantum_index(0,.5)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_and_i32_hl(h2, 7) -> h3
+cq_template_zext_i32_to_i64(h3) -> h4
+cq_template_mul_i64_hl(h4, 4) -> h5
+cq_template_add_i64_hl(h5, P0) -> h6
+cqrt_qram_load_i32(m1, h6) -> h7
+cq_template_add_i64_hl_unc(h6, h5, P0)
+cqrt_free(h6)
+cq_template_mul_i64_hl_unc(h5, h4, 4)
+cqrt_free(h5)
+cq_template_zext_i32_to_i64_unc(h4, h3)
+cqrt_free(h4)
+cq_template_and_i32_hl_unc(h3, h2, 7)
+cqrt_free(h3)
+cqrt_measure_i32(h7) -> 0

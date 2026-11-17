@@ -1,0 +1,32 @@
+# driver: mul_i128(0,.5,3);div_i128(0,.5,1,2)
+# call: mul_i128(0,.5,3)
+cqrt_alloc_i64(0) -> h0
+cqrt_ry_i64(h0, 0x1p-1)
+cq_template_zext_i64_to_i128(h0) -> h1
+cq_template_or_i128_hl(h1, 0x00000000000000010000000000000000) -> h2
+cq_template_mul_i128_hl(h2, 0x00000000000000000000000000000003) -> h3
+cq_template_lshr_i128_hl(h3, 0x00000000000000000000000000000040) -> h4
+cq_template_trunc_i128_to_i64(h4) -> h5
+cq_template_lshr_i128_hl_unc(h4, h3, 0x00000000000000000000000000000040)
+cqrt_free(h4)
+cq_template_mul_i128_hl_unc(h3, h2, 0x00000000000000000000000000000003)
+cqrt_free(h3)
+cq_template_or_i128_hl_unc(h2, h1, 0x00000000000000010000000000000000)
+cqrt_free(h2)
+cq_template_zext_i64_to_i128_unc(h1, h0)
+cqrt_free(h1)
+cqrt_measure_i64(h5) -> 0
+# call: div_i128(0,.5,1,2)
+cqrt_alloc_i64(0) -> h6
+cqrt_ry_i64(h6, 0x1p-1)
+cq_template_zext_i64_to_i128(h6) -> h7
+cq_template_or_i128_hl(h7, 0x00000000000000010000000000000000) -> h8
+cq_template_udiv_i128_lh(0x00000000000000010000000000000002, h8) -> h9
+cq_template_trunc_i128_to_i64(h9) -> h10
+cq_template_udiv_i128_lh_unc(h9, 0x00000000000000010000000000000002, h8)
+cqrt_free(h9)
+cq_template_or_i128_hl_unc(h8, h7, 0x00000000000000010000000000000000)
+cqrt_free(h8)
+cq_template_zext_i64_to_i128_unc(h7, h6)
+cqrt_free(h7)
+cqrt_measure_i64(h10) -> 0

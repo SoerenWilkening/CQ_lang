@@ -1,0 +1,32 @@
+# driver: i128_compare_merge(0,.5,3,1);fshl_mixed(0,.5,7)
+# call: i128_compare_merge(0,.5,3,1)
+cqrt_alloc_i64(0) -> h0
+cqrt_ry_i64(h0, 0x1p-1)
+cq_template_zext_i64_to_i128(h0) -> h1
+cq_template_mul_i128_hl(h1, 0x00000000000000000000000000000003) -> h2
+cq_template_icmp_ugt_i128_hl(h2, 0x1:0) -> h100000
+cq_template_lshr_i128_hl(h2, 0x00000000000000000000000000000041) -> h3
+cq_template_add_i128_hl(h2, 0x00000000000000000000000000000001) -> h4
+cq_template_lshr_i128_hl(h4, 0x00000000000000000000000000000040) -> h5
+cq_template_select_i128(h100000, h3, h5) -> h100001
+cq_template_trunc_i128_to_i64(h100001) -> h6
+cq_template_select_i128_unc(h100001, h100000, h3, h5)
+cqrt_free(h100001)
+cq_template_lshr_i128_hl_unc(h5, h4, 0x00000000000000000000000000000040)
+cqrt_free(h5)
+cq_template_add_i128_hl_unc(h4, h2, 0x00000000000000000000000000000001)
+cqrt_free(h4)
+cq_template_lshr_i128_hl_unc(h3, h2, 0x00000000000000000000000000000041)
+cqrt_free(h3)
+cq_template_icmp_ugt_i128_hl_unc(h100000, h2, 0x1:0)
+cqrt_free(h100000)
+cq_template_mul_i128_hl_unc(h2, h1, 0x00000000000000000000000000000003)
+cqrt_free(h2)
+cq_template_zext_i64_to_i128_unc(h1, h0)
+cqrt_free(h1)
+cqrt_measure_i64(h6) -> 0
+# call: fshl_mixed(0,.5,7)
+cqrt_alloc_i32(0) -> h7
+cqrt_ry_i32(h7, 0x1p-1)
+cq_template_fshl_i32_qll(h7, 7, 3) -> h100002
+cqrt_measure_i32(h100002) -> 0

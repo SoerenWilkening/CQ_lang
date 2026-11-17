@@ -1,0 +1,35 @@
+# driver: fadd_qc(0,.5,3);fsub_qq(0,1,.5,.25);fmul_qq(0,1,.5,.25);fdiv_cq(0,.5,3);fneg_q(0,.5)
+# call: fadd_qc(0,.5,3)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fadd_f64_hl(h0, 0x1.8p+1) -> h1
+cqrt_measure_f64(h1) -> 0x0p+0
+# call: fsub_qq(0,1,.5,.25)
+cqrt_alloc_f64(0x0p+0) -> h2
+cqrt_ry_f64(h2, 0x1p-1)
+cqrt_alloc_f64(0x1p+0) -> h3
+cqrt_ry_f64(h3, 0x1p-2)
+cq_template_fsub_f64(h2, h3) -> h4
+cqrt_measure_f64(h4) -> 0x0p+0
+# call: fmul_qq(0,1,.5,.25)
+cqrt_alloc_f64(0x0p+0) -> h5
+cqrt_ry_f64(h5, 0x1p-1)
+cqrt_alloc_f64(0x1p+0) -> h6
+cqrt_ry_f64(h6, 0x1p-2)
+cq_template_fmul_f64(h5, h6) -> h7
+cqrt_measure_f64(h7) -> 0x0p+0
+# call: fdiv_cq(0,.5,3)
+cqrt_alloc_f64(0x0p+0) -> h8
+cqrt_ry_f64(h8, 0x1p-1)
+cq_template_fdiv_f64_lh(0x1.8p+1, h8) -> h9
+cqrt_measure_f64(h9) -> 0x0p+0
+# call: fneg_q(0,.5)
+cqrt_alloc_f64(0x0p+0) -> h10
+cqrt_ry_f64(h10, 0x1p-1)
+cq_template_fneg_f64(h10) -> h11
+cq_template_fneg_f64(h11) -> h12
+cqrt_copy_f64(h12, h10)
+cq_template_fneg_f64_unc(h12, h11)
+cqrt_free(h12)
+cqrt_free(h10)
+cqrt_measure_f64(h11) -> 0x0p+0

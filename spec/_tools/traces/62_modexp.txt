@@ -1,0 +1,55 @@
+# driver: modexp(0,.5,3,7,3)
+# call: modexp(0,.5,3,7,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cq_template_and_i32_hl(h0, 1) -> h2
+cq_template_icmp_eq_i32_hl(h2, 0) -> h3
+cq_template_mul_i32_hl(h1, 3) -> h4
+cq_template_urem_i32_hl(h4, 7) -> h5
+cq_template_select_i32(h3, h1, h5) -> h100000
+cq_template_and_i32_hl(h0, 2) -> h6
+cq_template_icmp_eq_i32_hl(h6, 0) -> h7
+cq_template_mul_i32_hl(h100000, 2) -> h8
+cq_template_urem_i32_hl(h8, 7) -> h9
+cq_template_select_i32(h7, h100000, h9) -> h100001
+cq_template_and_i32_hl(h0, 4) -> h10
+cq_template_icmp_eq_i32_hl(h10, 0) -> h11
+cq_template_mul_i32_hl(h100001, 4) -> h12
+cq_template_urem_i32_hl(h12, 7) -> h13
+cq_template_select_i32(h11, h100001, h13) -> h100002
+cqrt_alloc_i32(0) -> h14
+cqrt_copy_i32(h100002, h14)
+cq_template_select_i32_unc(h100002, h11, h100001, h13)
+cqrt_free(h100002)
+cq_template_urem_i32_hl_unc(h13, h12, 7)
+cqrt_free(h13)
+cq_template_mul_i32_hl_unc(h12, h100001, 4)
+cqrt_free(h12)
+cq_template_icmp_eq_i32_hl_unc(h11, h10, 0)
+cqrt_free(h11)
+cq_template_and_i32_hl_unc(h10, h0, 4)
+cqrt_free(h10)
+cq_template_select_i32_unc(h100001, h7, h100000, h9)
+cqrt_free(h100001)
+cq_template_urem_i32_hl_unc(h9, h8, 7)
+cqrt_free(h9)
+cq_template_mul_i32_hl_unc(h8, h100000, 2)
+cqrt_free(h8)
+cq_template_icmp_eq_i32_hl_unc(h7, h6, 0)
+cqrt_free(h7)
+cq_template_and_i32_hl_unc(h6, h0, 2)
+cqrt_free(h6)
+cq_template_select_i32_unc(h100000, h3, h1, h5)
+cqrt_free(h100000)
+cq_template_urem_i32_hl_unc(h5, h4, 7)
+cqrt_free(h5)
+cq_template_mul_i32_hl_unc(h4, h1, 3)
+cqrt_free(h4)
+cq_template_icmp_eq_i32_hl_unc(h3, h2, 0)
+cqrt_free(h3)
+cq_template_and_i32_hl_unc(h2, h0, 1)
+cqrt_free(h2)
+cqrt_free(h1)
+cqrt_measure_i32(h14) -> 0
+cqrt_measure_i32(h0) -> 0

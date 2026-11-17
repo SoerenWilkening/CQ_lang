@@ -1,0 +1,11 @@
+# driver: add_classical(0,0.5,3)
+# call: add_classical(0,0.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_add_i32_hl(h0, 3) -> h1
+cq_template_sub_i32_hl(h1, 3) -> h2
+cqrt_copy_i32(h2, h0)
+cq_template_sub_i32_hl_unc(h2, h1, 3)
+cqrt_free(h2)
+cqrt_free(h0)
+cqrt_measure_i32(h1) -> 0

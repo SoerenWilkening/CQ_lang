@@ -1,0 +1,41 @@
+# driver: mutual_recursion(0,.5,2,1)
+# call: mutual_recursion(0,.5,2,1)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_add_i32_hl(h0, 3) -> h1
+cq_template_icmp_sgt_i32_hl(h1, 1) -> h2
+cqrt_rz_i1(h2, 0x1p-2)
+cq_template_icmp_sgt_i32_hl_unc(h2, h1, 1)
+cqrt_free(h2)
+cq_template_add_i32_hl(h1, -1) -> h3
+cqrt_alloc_i32(0) -> h4
+cqrt_copy_i32(h3, h4)
+cq_template_add_i32_hl(h4, 1) -> h5
+cqrt_alloc_i32(0) -> h6
+cqrt_copy_i32(h5, h6)
+cq_template_add_i32_hl_unc(h5, h4, 1)
+cqrt_free(h5)
+cqrt_copy_i32(h3, h4)
+cqrt_free(h4)
+cq_template_add_i32_hl_unc(h3, h1, -1)
+cqrt_free(h3)
+cq_template_sub_i32_hl(h6, 1) -> h7
+cqrt_alloc_i32(0) -> h8
+cqrt_copy_i32(h7, h8)
+cq_template_sub_i32_hl_unc(h7, h6, 1)
+cqrt_free(h7)
+cq_template_add_i32_hl(h1, -1) -> h9
+cqrt_alloc_i32(0) -> h10
+cqrt_copy_i32(h9, h10)
+cq_template_add_i32_hl(h10, 1) -> h11
+cqrt_copy_i32(h11, h6)
+cq_template_add_i32_hl_unc(h11, h10, 1)
+cqrt_free(h11)
+cqrt_copy_i32(h9, h10)
+cqrt_free(h10)
+cq_template_add_i32_hl_unc(h9, h1, -1)
+cqrt_free(h9)
+cqrt_free(h6)
+cq_template_add_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h8) -> 0

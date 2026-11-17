@@ -1,0 +1,12 @@
+# driver: measure_one_of_two(0,1,.5,.25,3)
+# call: measure_one_of_two(0,1,.5,.25,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_add_i32(h0, h1) -> h2
+cqrt_measure_i32(h0) -> 0
+cq_template_mul_i32_hl(h2, 3) -> h3
+cq_template_add_i32_unc(h2, h0, h1)
+cqrt_free(h2)
+cqrt_measure_i32(h3) -> 0

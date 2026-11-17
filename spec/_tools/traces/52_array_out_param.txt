@@ -1,0 +1,70 @@
+# driver: array_out_param(0,.5,2,3,3);array_out_param(0,.5,2,3,0)
+# call: array_out_param(0,.5,2,3,3)
+cqrt_qram_alloc_i8(0) -> m1
+# __cq_alloc(24, 16) -> P0
+# __cq_alloc(16, 16) -> P0+32
+cqrt_alloc_f64(0x0p+0) -> h2
+cqrt_ry_f64(h2, 0x1p-1)
+cqrt_qram_store_f64_hl(m1, P0, h2)
+cq_template_fmul_f64_hl(h2, 0x1p+1) -> h3
+cqrt_qram_store_f64_hl(m1, P0+8, h3)
+cq_template_fadd_f64_hl(h2, 0x1p+1) -> h4
+cqrt_qram_store_f64_hl(m1, P0+16, h4)
+cqrt_alloc_f64(0x0p+0) -> h5
+cqrt_qram_load_f64_hl(m1, P0) -> h6
+cq_template_fmul_f64_hl(h6, 0x1.8p+1) -> h7
+cq_template_fadd_f64(h7, h5) -> h8
+cqrt_qram_load_f64_hl(m1, P0+8) -> h9
+cq_template_fmul_f64_hl(h9, 0x1.8p+1) -> h10
+cq_template_fadd_f64(h10, h8) -> h11
+cqrt_qram_load_f64_hl(m1, P0+16) -> h12
+cq_template_fmul_f64_hl(h12, 0x1.8p+1) -> h13
+cq_template_fadd_f64(h13, h11) -> h14
+cqrt_alloc_f64(0x0p+0) -> h15
+cqrt_copy_f64(h14, h15)
+cq_template_fadd_f64_unc(h14, h13, h11)
+cqrt_free(h14)
+cq_template_fmul_f64_hl_unc(h13, h12, 0x1.8p+1)
+cqrt_free(h13)
+cqrt_qram_load_f64_hl_unc(h12, m1, P0+16)
+cqrt_free(h12)
+cq_template_fadd_f64_unc(h11, h10, h8)
+cqrt_free(h11)
+cq_template_fmul_f64_hl_unc(h10, h9, 0x1.8p+1)
+cqrt_free(h10)
+cqrt_qram_load_f64_hl_unc(h9, m1, P0+8)
+cqrt_free(h9)
+cq_template_fadd_f64_unc(h8, h7, h5)
+cqrt_free(h8)
+cq_template_fmul_f64_hl_unc(h7, h6, 0x1.8p+1)
+cqrt_free(h7)
+cqrt_qram_load_f64_hl_unc(h6, m1, P0)
+cqrt_free(h6)
+cqrt_free(h5)
+cqrt_qram_store_f64_hl(m1, P0+32, h15)
+cqrt_qram_load_f64_hl(m1, P0) -> h16
+cq_template_fsub_f64(h15, h16) -> h17
+cqrt_qram_load_f64_hl_unc(h16, m1, P0)
+cqrt_free(h16)
+cqrt_qram_store_f64_hl(m1, P0+40, h17)
+cqrt_qram_load_f64_hl(m1, P0+32) -> h18
+cqrt_measure_f64(h18) -> 0x0p+0
+# call: array_out_param(0,.5,2,3,0)
+# __cq_alloc(24, 16) -> P0
+# __cq_alloc(16, 16) -> P0+32
+cqrt_alloc_f64(0x0p+0) -> h19
+cqrt_ry_f64(h19, 0x1p-1)
+cqrt_qram_store_f64_hl(m1, P0, h19)
+cq_template_fmul_f64_hl(h19, 0x1p+1) -> h20
+cqrt_qram_store_f64_hl(m1, P0+8, h20)
+cq_template_fadd_f64_hl(h19, 0x1p+1) -> h21
+cqrt_qram_store_f64_hl(m1, P0+16, h21)
+cqrt_alloc_f64(0x0p+0) -> h22
+cqrt_qram_store_f64_hl(m1, P0+32, h22)
+cqrt_qram_load_f64_hl(m1, P0) -> h23
+cq_template_fsub_f64(h22, h23) -> h24
+cqrt_qram_load_f64_hl_unc(h23, m1, P0)
+cqrt_free(h23)
+cqrt_qram_store_f64_hl(m1, P0+40, h24)
+cqrt_qram_load_f64_hl(m1, P0+40) -> h25
+cqrt_measure_f64(h25) -> 0x0p+0

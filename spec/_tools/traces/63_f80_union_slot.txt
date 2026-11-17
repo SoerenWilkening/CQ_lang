@@ -1,0 +1,23 @@
+# driver: f80_union_slot(0,.5,1)
+# call: f80_union_slot(0,.5,1)
+cqrt_qram_alloc_i8(0) -> m1
+# __cq_alloc(12, 16) -> P0
+cqrt_alloc_f80(0x0p+0) -> h2
+cqrt_ry_f80(h2, 0x1p-1)
+cqrt_qram_store_f80_hl(m1, P0, h2)
+cqrt_qram_load_i32_hl(m1, P0+8) -> h3
+cq_template_sub_i32_hl(h3, 1) -> h4
+cq_template_and_i32_hl(h4, 32767) -> h5
+cq_template_and_i32_hl(h3, -32768) -> h6
+cq_template_or_i32(h5, h6) -> h7
+cq_template_and_i32_hl_unc(h6, h3, -32768)
+cqrt_free(h6)
+cq_template_and_i32_hl_unc(h5, h4, 32767)
+cqrt_free(h5)
+cq_template_sub_i32_hl_unc(h4, h3, 1)
+cqrt_free(h4)
+cqrt_qram_load_i32_hl_unc(h3, m1, P0+8)
+cqrt_free(h3)
+cqrt_qram_store_i32_hl(m1, P0+8, h7)
+cqrt_qram_load_f80_hl(m1, P0) -> h8
+cqrt_measure_f80(h8) -> 0x0p+0

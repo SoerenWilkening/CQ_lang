@@ -1,0 +1,25 @@
+# driver: complex_float(0,.5,1,2)
+# call: complex_float(0,.5,1,2)
+cqrt_alloc_f32(0x0p+0) -> h0
+cqrt_ry_f32(h0, 0x1p-1)
+cq_template_fadd_f32_hl(h0, 0x0p+0) -> h1
+cq_template_fmul_f32_hl(h1, 0x1p+1) -> h2
+cq_template_fadd_f32(h1, h2) -> h3
+cq_template_fadd_f32(h3, h3) -> h4
+cqrt_alloc_f32(0x0p+0) -> h5
+cqrt_copy_f32(h4, h5)
+cq_template_fadd_f32_unc(h4, h3, h3)
+cqrt_free(h4)
+cq_template_fadd_f32_hl(h5, 0x1.8p+2) -> h6
+cq_template_fadd_f32(h3, h3) -> h7
+cqrt_copy_f32(h7, h5)
+cq_template_fadd_f32_unc(h7, h3, h3)
+cqrt_free(h7)
+cqrt_free(h5)
+cq_template_fadd_f32_unc(h3, h1, h2)
+cqrt_free(h3)
+cq_template_fmul_f32_hl_unc(h2, h1, 0x1p+1)
+cqrt_free(h2)
+cq_template_fadd_f32_hl_unc(h1, h0, 0x0p+0)
+cqrt_free(h1)
+cqrt_measure_f32(h6) -> 0x0p+0

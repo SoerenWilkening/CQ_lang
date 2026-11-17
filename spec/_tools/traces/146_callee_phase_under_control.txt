@@ -1,0 +1,20 @@
+# driver: callee_phase_under_control(0,0.5,2,0.3,1);callee_phase_under_control(0,0.5,2,0.3,0)
+# call: callee_phase_under_control(0,0.5,2,0.3,1)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h0, 2) -> h1
+cqrt_rz_i1(h1, 0x1.3333333333333p-2)
+cqrt_rz_i1(h1, 0x1.3333333333333p-2)
+cq_template_icmp_sgt_i32_hl_unc(h1, h0, 2)
+cqrt_free(h1)
+cqrt_ry_i32(h0, -0x1p-1)
+cqrt_measure_i32(h0) -> 0
+# call: callee_phase_under_control(0,0.5,2,0.3,0)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h2, 2) -> h3
+cqrt_rz_i1(h3, 0x1.3333333333333p-2)
+cq_template_icmp_sgt_i32_hl_unc(h3, h2, 2)
+cqrt_free(h3)
+cqrt_ry_i32(h2, -0x1p-1)
+cqrt_measure_i32(h2) -> 0

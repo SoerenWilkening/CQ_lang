@@ -1,0 +1,23 @@
+# driver: sdiv_qc(0,.5,3);udiv_qc(0,.5,3);srem_qc(0,.5,3);urem_qq(0,1,.5,.25)
+# call: sdiv_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_sdiv_i32_hl(h0, 3) -> h1
+cqrt_measure_i32(h1) -> 0
+# call: udiv_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_udiv_i32_hl(h2, 3) -> h3
+cqrt_measure_i32(h3) -> 0
+# call: srem_qc(0,.5,3)
+cqrt_alloc_i32(0) -> h4
+cqrt_ry_i32(h4, 0x1p-1)
+cq_template_srem_i32_hl(h4, 3) -> h5
+cqrt_measure_i32(h5) -> 0
+# call: urem_qq(0,1,.5,.25)
+cqrt_alloc_i32(0) -> h6
+cqrt_ry_i32(h6, 0x1p-1)
+cqrt_alloc_i32(1) -> h7
+cqrt_ry_i32(h7, 0x1p-2)
+cq_template_urem_i32(h6, h7) -> h8
+cqrt_measure_i32(h8) -> 0

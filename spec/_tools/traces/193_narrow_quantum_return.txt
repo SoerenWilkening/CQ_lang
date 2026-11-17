@@ -1,0 +1,33 @@
+# driver: narrow_bool_consumer(0,.5,1);narrow_short_consumer(0,.5,3);wide_long_consumer(0,.5,5)
+# call: narrow_bool_consumer(0,.5,1)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
+cq_template_select_i32_ll(h1, 5, 2) -> h100000
+cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+cqrt_free(h1)
+cqrt_measure_i32(h100000) -> 0
+# call: narrow_short_consumer(0,.5,3)
+cqrt_alloc_i16(0) -> h2
+cqrt_ry_i16(h2, 0x1p-1)
+cq_template_add_i16_hl(h2, 3) -> h3
+cq_template_shl_i16_hl(h3, 1) -> h4
+cq_template_add_i16_hl_unc(h3, h2, 3)
+cqrt_free(h3)
+cqrt_measure_i16(h4) -> 0
+# call: wide_long_consumer(0,.5,5)
+cqrt_alloc_i64(0) -> h5
+cqrt_ry_i64(h5, 0x1p-1)
+cq_template_xor_i64_hl(h5, 5) -> h6
+cq_template_xor_i64_hl(h6, 5) -> h7
+cqrt_copy_i64(h7, h5)
+cq_template_xor_i64_hl_unc(h7, h6, 5)
+cqrt_free(h7)
+cqrt_free(h5)
+cq_template_add_i64_hl(h6, 1) -> h8
+cq_template_sub_i64_hl(h8, 1) -> h9
+cqrt_copy_i64(h9, h6)
+cq_template_sub_i64_hl_unc(h9, h8, 1)
+cqrt_free(h9)
+cqrt_free(h6)
+cqrt_measure_i64(h8) -> 0

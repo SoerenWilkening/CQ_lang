@@ -1,0 +1,5 @@
+# driver: computed_angle(0,3,1,.5)
+# call: computed_angle(0,3,1,.5)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1.c90fdaa22168cp-1)
+cqrt_measure_i32(h0) -> 0

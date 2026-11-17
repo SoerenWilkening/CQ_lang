@@ -1,0 +1,46 @@
+# driver: nested_switch(0,0.5,0,0.25,4,0.3)
+# call: nested_switch(0,0.5,0,0.25,4,0.3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_and_i32_hl(h0, 3) -> h2
+cq_template_icmp_eq_i32_hl(h2, 0) -> h3
+cq_template_icmp_eq_i32_hl(h2, 1) -> h4
+cq_template_and_i32_hl(h1, 3) -> h5
+cq_template_icmp_eq_i32_hl(h5, 0) -> h6
+cq_template_icmp_eq_i32_hl(h5, 2) -> h7
+cqrt_alloc_i1(0) -> h8
+cqrt_and_i1(h4, h7, h8)
+cqrt_rz_i1(h8, 0x1.3333333333333p-2)
+cqrt_and_i1(h4, h7, h8)
+cqrt_free(h8)
+cq_template_add_i32_hl(h1, 4) -> h9
+cq_template_add_i32_hl(h0, 4) -> h10
+cq_template_select_i32_lh(h7, 4, h9) -> h100000
+cq_template_select_i32_lh(h6, 6, h100000) -> h100001
+cq_template_select_i32(h4, h100001, h10) -> h100002
+cq_template_select_i32_lh(h3, 5, h100002) -> h100003
+cq_template_select_i32_unc(h100002, h4, h100001, h10)
+cqrt_free(h100002)
+cq_template_select_i32_lh_unc(h100001, h6, 6, h100000)
+cqrt_free(h100001)
+cq_template_select_i32_lh_unc(h100000, h7, 4, h9)
+cqrt_free(h100000)
+cq_template_add_i32_hl_unc(h10, h0, 4)
+cqrt_free(h10)
+cq_template_add_i32_hl_unc(h9, h1, 4)
+cqrt_free(h9)
+cq_template_icmp_eq_i32_hl_unc(h7, h5, 2)
+cqrt_free(h7)
+cq_template_icmp_eq_i32_hl_unc(h6, h5, 0)
+cqrt_free(h6)
+cq_template_and_i32_hl_unc(h5, h1, 3)
+cqrt_free(h5)
+cq_template_icmp_eq_i32_hl_unc(h4, h2, 1)
+cqrt_free(h4)
+cq_template_icmp_eq_i32_hl_unc(h3, h2, 0)
+cqrt_free(h3)
+cq_template_and_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cqrt_measure_i32(h100003) -> 0

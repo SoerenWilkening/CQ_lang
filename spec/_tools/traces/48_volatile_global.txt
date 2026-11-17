@@ -1,0 +1,15 @@
+# driver: volatile_global(0,.5,1)
+# call: volatile_global(0,.5,1)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fcmp_olt_f64_hl(h0, 0x1p+0) -> h1
+cq_template_fmul_f64_hl(h0, 0x1.56e1fc2f8f359p-997) -> h2
+cq_template_fsub_f64_hl(h0, 0x1.56e1fc2f8f359p-997) -> h3
+cq_template_select_f64(h1, h2, h3) -> h100000
+cq_template_fsub_f64_hl_unc(h3, h0, 0x1.56e1fc2f8f359p-997)
+cqrt_free(h3)
+cq_template_fmul_f64_hl_unc(h2, h0, 0x1.56e1fc2f8f359p-997)
+cqrt_free(h2)
+cq_template_fcmp_olt_f64_hl_unc(h1, h0, 0x1p+0)
+cqrt_free(h1)
+cqrt_measure_f64(h100000) -> 0x0p+0

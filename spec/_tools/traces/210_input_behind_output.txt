@@ -1,0 +1,24 @@
+# driver: input_behind_output(3,.5,4,.25,stdin)
+# call: input_behind_output(3,.5,4,.25,stdin)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_tape_alloc() -> t2
+# __cq_alloc(8, 8) -> P0
+cqrt_alloc_i32(3) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cqrt_alloc_i32(4) -> h4
+cqrt_ry_i32(h4, 0x1p-2)
+cqrt_alloc_i64(0) -> h5
+cqrt_qram_store_i64_hl(m1, P0, h5)
+cqrt_tape_fmt(t2, "%d\n")
+cqrt_tape_write_i32(t2, h4) -> h6
+cq_template_and_i32_hl(h3, 7) -> h7
+cqrt_alloc_i1(1) -> h8
+cqrt_tape_write_i64_lit(t2, P0)
+cqrt_tape_write_i32(t2, h7) -> h9
+cqrt_tape_write_i64_lit(t2, P1)
+cqrt_tape_effect_controlled(h8, t2, "fgets", 3)
+cqrt_free(h8)
+cq_template_and_i32_hl_unc(h7, h3, 7)
+cqrt_free(h7)
+cqrt_qram_load_i8_hl(m1, P0) -> h10
+cqrt_measure_i8(h10) -> 0

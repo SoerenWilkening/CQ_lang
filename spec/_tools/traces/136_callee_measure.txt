@@ -1,0 +1,9 @@
+# driver: callee_measure(0,.5,1,3)
+# call: callee_measure(0,.5,1,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_add_i32_hl(h0, 3) -> h1
+cqrt_measure_i32(h0) -> 0
+cqrt_measure_i32(h0) -> 0
+cq_template_add_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)

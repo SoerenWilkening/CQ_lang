@@ -1,0 +1,36 @@
+# driver: struct_i64_i32_one(5,0,.5,3);struct_i64_i32_both(0,.5,0,.25,3)
+# call: struct_i64_i32_one(5,0,.5,3)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_sub_i32_hl(h0, 3) -> h1
+cqrt_alloc_i32(0) -> h2
+cqrt_copy_i32(h1, h2)
+cq_template_sub_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cq_template_sext_i32_to_i64(h2) -> h3
+cq_template_add_i64_hl(h3, 8) -> h4
+cq_template_sext_i32_to_i64_unc(h3, h2)
+cqrt_free(h3)
+cq_template_sub_i32_hl(h0, 3) -> h5
+cqrt_copy_i32(h5, h2)
+cq_template_sub_i32_hl_unc(h5, h0, 3)
+cqrt_free(h5)
+cqrt_free(h2)
+cqrt_measure_i64(h4) -> 0
+# call: struct_i64_i32_both(0,.5,0,.25,3)
+cqrt_alloc_i64(0) -> h6
+cqrt_ry_i64(h6, 0x1p-1)
+cqrt_alloc_i32(0) -> h7
+cqrt_ry_i32(h7, 0x1p-2)
+cq_template_add_i64_hl(h6, 3) -> h8
+cq_template_sub_i32_hl(h7, 3) -> h9
+cqrt_alloc_i64(0) -> h10
+cqrt_copy_i64(h8, h10)
+cqrt_alloc_i32(0) -> h11
+cqrt_copy_i32(h9, h11)
+cq_template_sub_i32_hl_unc(h9, h7, 3)
+cqrt_free(h9)
+cq_template_add_i64_hl_unc(h8, h6, 3)
+cqrt_free(h8)
+cqrt_measure_i64(h10) -> 0
+cqrt_measure_i32(h11) -> 0

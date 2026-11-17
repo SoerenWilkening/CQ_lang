@@ -1,0 +1,16 @@
+# driver: extern_global_output(0,.5,3)
+# call: extern_global_output(0,.5,3)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x1p-1)
+cqrt_qram_alloc_i8(0) -> m2
+cq_template_icmp_slt_i32_hl(h1, 3) -> h3
+cq_template_select_i32_ll(h3, -1, 1) -> h100000
+cqrt_qram_store_i32_hl(m2, P0, h100000)
+cq_template_icmp_slt_i32_hl_unc(h3, h1, 3)
+cqrt_free(h3)
+cq_template_mul_i32(h1, h1) -> h4
+cqrt_alloc_i32(0) -> h5
+cqrt_copy_i32(h4, h5)
+cq_template_mul_i32_unc(h4, h1, h1)
+cqrt_free(h4)
+cqrt_measure_i32(h5) -> 0

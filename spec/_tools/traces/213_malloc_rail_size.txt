@@ -1,0 +1,22 @@
+# driver: malloc_rail_size(8,.5,9,.25,1);malloc_rail_size(8,.5,9,.25,0)
+# call: malloc_rail_size(8,.5,9,.25,1)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i64(8) -> h2
+cqrt_ry_i64(h2, 0x1p-1)
+cqrt_alloc_i32(9) -> h3
+cqrt_ry_i32(h3, 0x1p-2)
+cq_template_icmp_ugt_i64_hl(h2, 4096) -> h4
+# __cq_alloc(4096, 16) -> P0
+cqrt_qram_store_i32_hl(m1, P0, h3)
+cqrt_qram_load_i32_hl(m1, P0+4) -> h5
+cqrt_measure_i32(h5) -> 0
+# call: malloc_rail_size(8,.5,9,.25,0)
+cqrt_alloc_i64(8) -> h6
+cqrt_ry_i64(h6, 0x1p-1)
+cqrt_alloc_i32(9) -> h7
+cqrt_ry_i32(h7, 0x1p-2)
+cq_template_icmp_ugt_i64_hl(h6, 4096) -> h8
+# __cq_alloc(4096, 16) -> P0
+cqrt_qram_store_i32_hl(m1, P0, h7)
+cqrt_qram_load_i32_hl(m1, P0) -> h9
+cqrt_measure_i32(h9) -> 0

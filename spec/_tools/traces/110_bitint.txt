@@ -1,0 +1,39 @@
+# driver: bitint_u100(0,.5,3);bitint_s7(0,.5,5)
+# call: bitint_u100(0,.5,3)
+cqrt_alloc_i64(0) -> h0
+cqrt_ry_i64(h0, 0x1p-1)
+cq_template_zext_i64_to_i100(h0) -> h100000
+cq_template_mul_i100_hl(h100000, 0x0:3) -> h100001
+cq_template_lshr_i100_hl(h100000, 0x0:7) -> h100002
+cq_template_add_i100(h100001, h100002) -> h100003
+cq_template_lshr_i100_hl(h100003, 0x0:24) -> h100004
+cq_template_trunc_i100_to_i64(h100004) -> h100005
+cq_template_lshr_i100_hl_unc(h100004, h100003, 0x0:24)
+cqrt_free(h100004)
+cq_template_add_i100_unc(h100003, h100001, h100002)
+cqrt_free(h100003)
+cq_template_lshr_i100_hl_unc(h100002, h100000, 0x0:7)
+cqrt_free(h100002)
+cq_template_mul_i100_hl_unc(h100001, h100000, 0x0:3)
+cqrt_free(h100001)
+cq_template_zext_i64_to_i100_unc(h100000, h0)
+cqrt_free(h100000)
+cqrt_measure_i64(h100005) -> 0
+# call: bitint_s7(0,.5,5)
+cqrt_alloc_i64(0) -> h1
+cqrt_ry_i64(h1, 0x1p-1)
+cq_template_trunc_i64_to_i7(h1) -> h100006
+cq_template_add_i7_hl(h100006, 5) -> h100007
+cqrt_alloc_i7(0) -> h100008
+cqrt_copy_i7(h100007, h100008)
+cq_template_add_i7_hl_unc(h100007, h100006, 5)
+cqrt_free(h100007)
+cq_template_sext_i7_to_i32(h100008) -> h100009
+cq_template_add_i7_hl(h100006, 5) -> h100010
+cqrt_copy_i7(h100010, h100008)
+cq_template_add_i7_hl_unc(h100010, h100006, 5)
+cqrt_free(h100010)
+cqrt_free(h100008)
+cq_template_trunc_i64_to_i7_unc(h100006, h1)
+cqrt_free(h100006)
+cqrt_measure_i32(h100009) -> 0

@@ -1,0 +1,24 @@
+# driver: swap_test(0,0.5,1,0.5)
+# call: swap_test(0,0.5,1,0.5)
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_alloc_i32(1) -> h1
+cqrt_ry_i32(h1, 0x1p-1)
+cqrt_alloc_i1(0) -> h2
+cqrt_ry_i1(h2, 0x1.921fb54442d18p+0)
+cq_template_select_i32(h2, h0, h1) -> h100000
+cq_template_select_i32(h2, h1, h0) -> h100001
+cq_template_select_i32(h2, h100000, h100001) -> h100002
+cqrt_copy_i32(h100002, h0)
+cq_template_select_i32(h2, h100001, h100000) -> h100003
+cqrt_copy_i32(h100003, h1)
+cq_template_select_i32_unc(h100003, h2, h100001, h100000)
+cqrt_free(h100003)
+cq_template_select_i32_unc(h100002, h2, h100000, h100001)
+cqrt_free(h100002)
+cqrt_free(h0)
+cqrt_free(h1)
+cqrt_ry_i1(h2, -0x1.921fb54442d18p+0)
+cqrt_measure_i1(h2) -> 0
+cqrt_measure_i32(h100001) -> 0
+cqrt_measure_i32(h100000) -> 0

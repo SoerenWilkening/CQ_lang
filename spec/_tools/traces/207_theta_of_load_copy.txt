@@ -1,0 +1,8 @@
+# driver: theta_of_load_copy(.5)
+# call: theta_of_load_copy(.5)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_qram_load_i32_hl(m1, P0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cqrt_qram_store_i32_hl(m1, P0+552, h2)
+cqrt_qram_load_i32_hl(m1, P0) -> h3
+cqrt_measure_i32(h3) -> 0

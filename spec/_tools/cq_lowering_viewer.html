@@ -1,0 +1,545 @@
+<title>CQ Lowering Viewer</title>
+<meta charset="utf-8">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* layout: a slim toolbar, then three equal editor columns (stacked on phones); each editor is one scroller holding range layer + highlighted pre + transparent textarea */
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --fg: #1d1f24; --muted: #6b6e78; --line: #d9d7cf;
+  --accent: #0f6e8c; --fn: rgba(15,110,140,.11); --fnline: rgba(15,110,140,.45);
+  --twin: rgba(176,96,20,.14); --twinline: rgba(176,96,20,.55); --row: rgba(214,152,0,.28);
+  --k: #8a3fa6; --t: #0f6e8c; --v: #1d1f24; --g: #1f7a3a; --n: #b05a00; --c: #8b8e98; --s: #a0341f; --cq: #c21f3a; --meta: #6f7bb3;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171c; --panel: #1c1f26; --fg: #e4e6ec; --muted: #8e93a1; --line: #2d313b;
+  --accent: #5cc3df; --fn: rgba(92,195,223,.13); --fnline: rgba(92,195,223,.6);
+  --twin: rgba(240,160,80,.14); --twinline: rgba(240,160,80,.65); --row: rgba(255,205,70,.26);
+  --k: #c792ea; --t: #5cc3df; --v: #e4e6ec; --g: #7ad58f; --n: #f0a050; --c: #7b8090; --s: #f28b7d; --cq: #ff6b81; --meta: #9aa5e0;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #15171c; --panel: #1c1f26; --fg: #e4e6ec; --muted: #8e93a1; --line: #2d313b;
+  --accent: #5cc3df; --fn: rgba(92,195,223,.13); --fnline: rgba(92,195,223,.6);
+  --twin: rgba(240,160,80,.14); --twinline: rgba(240,160,80,.65); --row: rgba(255,205,70,.26);
+  --k: #c792ea; --t: #5cc3df; --v: #e4e6ec; --g: #7ad58f; --n: #f0a050; --c: #7b8090; --s: #f28b7d; --cq: #ff6b81; --meta: #9aa5e0;
+  color-scheme: dark; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; display: flex; flex-direction: column;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px; box-sizing: border-box; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-bottom: 10px; }
+header h1 { font-size: 15px; font-weight: 600; margin: 0 8px 0 0; letter-spacing: .01em; }
+header label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+select, button { font: inherit; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; }
+button { cursor: pointer; } button:hover { border-color: var(--accent); }
+button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+.legend { display: inline-flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border-left: 3px solid; }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) minmax(0, var(--circ, 42%)); gap: 10px; }
+.pane.circuit { grid-column: 1 / -1; }
+.pane.circuit .scroller { font-family: var(--sans); }
+.circ-wrap { padding: 6px 8px; transform-origin: 0 0; }
+.pane.circuit[data-hidden="1"] { display: none; }
+main[data-nocirc="1"] { grid-template-rows: minmax(0, 1fr); }
+.trace-text { display: none; flex: 0 0 160px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11.5px; padding: 6px 10px; margin: 0; background: transparent; color: var(--fg); resize: vertical; }
+.pane.circuit[data-trace="1"] .trace-text { display: block; }
+svg.circ text { font-family: var(--mono); font-size: 10.5px; fill: var(--fg); }
+svg.circ .wire { stroke: var(--fg); stroke-width: 1; opacity: .75; }
+svg.circ .wire.user { stroke-width: 2.2; opacity: 1; }
+svg.circ .wire.classical { stroke-dasharray: 2 3; }
+svg.circ .wire.bus { stroke-width: 3.5; opacity: .55; }
+svg.circ .wlabel { fill: var(--muted); font-size: 9.5px; }
+svg.circ .box { fill: var(--panel); stroke: var(--accent); stroke-width: 1.2; }
+svg.circ .box.unc { fill: url(#hatch); stroke: var(--twinline); }
+svg.circ .box.rot { stroke: var(--cq); }
+svg.circ .box.copyout { stroke: var(--n); stroke-width: 2; }
+svg.circ .box.measure { stroke: var(--g); }
+svg.circ .ctl { fill: var(--fg); }
+svg.circ .vline { stroke: var(--fg); stroke-width: 1; }
+svg.circ .xor { fill: var(--panel); stroke: var(--fg); stroke-width: 1.2; }
+svg.circ .freebar { stroke: var(--muted); stroke-width: 2; }
+svg.circ .sep { stroke: var(--line); stroke-dasharray: 4 4; }
+svg.circ .seplabel { fill: var(--muted); font-size: 10px; }
+svg.circ g.gate { cursor: pointer; }
+svg.circ g.gate.hit .box, svg.circ g.gate.hit .xor { stroke-width: 3; stroke: var(--n); }
+svg.circ g.gate.hit .ctl { fill: var(--n); }
+svg.circ g.gate.twin .box, svg.circ g.gate.twin .xor { stroke-width: 3; stroke: var(--twinline); }
+svg.circ g.gate.twin .ctl { fill: var(--twinline); }
+svg.circ g.gate.same .box, svg.circ g.gate.same .xor { stroke-width: 2.5; stroke: var(--n); stroke-dasharray: 3 2; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; grid-auto-rows: minmax(260px, 1fr); } }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.pane-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.pane-head b { font-weight: 600; } .pane-head .name { color: var(--muted); font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.pane-head button { padding: 2px 7px; font-size: 11px; }
+.pane-head input[type=file] { display: none; }
+.scroller { flex: 1; min-height: 0; overflow: auto; position: relative; font-family: var(--mono); font-size: 12.5px; line-height: 20px; tab-size: 4; }
+.content { position: relative; min-width: 100%; width: max-content; }
+.ranges, .rows { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; }
+.ranges div { position: absolute; left: 0; right: 0; background: var(--fn); border-left: 3px solid var(--fnline); }
+.ranges div.twin { background: var(--twin); border-left-color: var(--twinline); }
+.rows div { position: absolute; left: 0; right: 0; height: 20px; background: var(--row); }
+pre.code { margin: 0; padding: 8px 12px 8px 0; white-space: pre; position: relative; color: var(--v); }
+pre.code .ln { display: inline-block; width: 3.5ch; margin-right: 12px; padding-left: 8px; text-align: right; color: var(--muted); opacity: .7; user-select: none; }
+textarea.input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 8px 12px 8px calc(3.5ch + 20px); border: 0; resize: none; overflow: hidden; background: transparent; color: transparent; caret-color: var(--fg);
+  font: inherit; line-height: inherit; tab-size: inherit; white-space: pre; outline: none; box-sizing: border-box; }
+textarea.input::selection { background: rgba(120,140,255,.3); }
+.k { color: var(--k); } .t { color: var(--t); } .g { color: var(--g); } .n { color: var(--n); } .c { color: var(--c); font-style: italic; } .s { color: var(--s); } .cq { color: var(--cq); font-weight: 600; } .meta { color: var(--meta); } .fnname { font-weight: 600; }
+.status { font-size: 12px; color: var(--muted); padding-top: 8px; min-height: 18px; font-family: var(--mono); }
+@media (prefers-reduced-motion: no-preference) { .scroller { scroll-behavior: smooth; } }
+</style>
+
+<header>
+  <h1>CQ Lowering Viewer</h1>
+  <label for="ex">Example</label>
+  <select id="ex"></select>
+  <button id="loaddir" type="button" title="Pick an example folder containing the .c, .O1.ll and .lowered.ll files">Open folder...</button>
+  <input id="dirpick" type="file" webkitdirectory multiple hidden>
+  <span class="legend"><span><i style="background:var(--fn);border-color:var(--fnline)"></i>selected function</span><span><i style="background:var(--twin);border-color:var(--twinline)"></i>quantum clone / its _unc twin</span><span><i style="background:var(--row);border-color:transparent"></i>matching line</span></span>
+  <button id="togglecirc" type="button">Hide circuit</button>
+  <span class="hint">Click or move the caret in any pane. Everything is editable.</span>
+</header>
+
+<main>
+  <section class="pane" data-pane="c">
+    <div class="pane-head"><b>C</b><span class="name" id="name-c"></span><button type="button" data-load="c">Load</button><button type="button" data-copy="c">Copy</button><input type="file" accept=".c,.h,text/plain" data-file="c"></div>
+    <div class="scroller"><div class="content"><div class="ranges"></div><div class="rows"></div><pre class="code"></pre><textarea class="input" id="ta-c" spellcheck="false" aria-label="C source"></textarea></div></div>
+  </section>
+  <section class="pane" data-pane="ir">
+    <div class="pane-head"><b>LLVM IR (clang -O1)</b><span class="name" id="name-ir"></span><button type="button" data-load="ir">Load</button><button type="button" data-copy="ir">Copy</button><input type="file" accept=".ll,text/plain" data-file="ir"></div>
+    <div class="scroller"><div class="content"><div class="ranges"></div><div class="rows"></div><pre class="code"></pre><textarea class="input" id="ta-ir" spellcheck="false" aria-label="LLVM IR"></textarea></div></div>
+  </section>
+  <section class="pane" data-pane="low">
+    <div class="pane-head"><b>Lowered IR</b><span class="name" id="name-low"></span><button type="button" data-load="low">Load</button><button type="button" data-copy="low">Copy</button><input type="file" accept=".ll,text/plain" data-file="low"></div>
+    <div class="scroller"><div class="content"><div class="ranges"></div><div class="rows"></div><pre class="code"></pre><textarea class="input" id="ta-low" spellcheck="false" aria-label="Lowered IR"></textarea></div></div>
+  </section>
+  <section class="pane circuit" data-pane="circ">
+    <div class="pane-head"><b>Circuit</b><span class="name" id="name-circ">register-level, one wire per rail, from the reference trace</span>
+      <label style="text-transform:none;letter-spacing:0">zoom <input id="zoom" type="range" min="50" max="150" value="100" style="vertical-align:middle;width:90px"></label>
+      <button type="button" id="tracetoggle">Trace text</button><button type="button" data-load="trace">Load trace</button><input type="file" accept=".txt,text/plain" data-file="trace"></div>
+    <div class="scroller" id="circ-scroller"><div class="circ-wrap" id="circ"></div></div>
+    <textarea class="trace-text" id="ta-trace" spellcheck="false" aria-label="Trace text"></textarea>
+  </section>
+</main>
+<div class="status" id="status">Loading corpus…</div>
+
+<script>
+(function () {
+  'use strict';
+  const LH = 20;
+  const esc = s => s.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+
+  // ---------- tokenizers ----------
+  const C_KW = /\b(?:if|else|for|while|do|return|break|continue|switch|case|default|goto|sizeof|typedef|struct|union|enum|static|extern|inline|const|volatile|register|restrict|_Generic|_Bool|_Float16)\b/;
+  const C_TY = /\b(?:int|unsigned|signed|char|short|long|float|double|void|bool|uint8_t|uint16_t|uint32_t|uint64_t|int8_t|int16_t|int32_t|int64_t|size_t)\b/;
+  const C_RULES = [
+    [/\/\/[^\n]*|\/\*[\s\S]*?\*\//, 'c'], [/"(?:\\.|[^"\\])*"/, 's'], [/'(?:\\.|[^'\\])*'/, 's'],
+    [/#[^\n]*/, 'meta'], [/\b(?:cq_theta|cq_measure|cq_phi|cq_invert_begin|cq_invert_end)\b/, 'cq'],
+    [C_KW, 'k'], [C_TY, 't'], [/\b(?:0x[0-9a-fA-F]+|\d+\.?\d*(?:[eE][+-]?\d+)?[fFuUlL]*)\b/, 'n'],
+    [/\b[A-Za-z_]\w*(?=\s*\()/, 'fnname'],
+  ];
+  const IR_RULES = [
+    [/;[^\n]*/, 'c'], [/"(?:\\.|[^"\\])*"/, 's'],
+    [/@(?:cq_theta|cq_measure|cq_phi|__cq_invert_begin|__cq_invert_end)\w*|@cqrt_\w+|@cq_template_\w+|@__cq_q_\w+/, 'cq'],
+    [/![\w.]+|!\{|\bnomerge\b|\bnoundef\b|\bsignext\b|\bzeroext\b|\bfastcc\b|\binternal\b|\bunnamed_addr\b|\blocal_unnamed_addr\b|#\d+/, 'meta'],
+    [/\b(?:define|declare|ret|br|switch|phi|select|call|tail|alloca|load|store|getelementptr|icmp|fcmp|add|sub|mul|sdiv|udiv|srem|urem|fadd|fsub|fmul|fdiv|frem|fneg|shl|lshr|ashr|and|or|xor|trunc|zext|sext|fptrunc|fpext|fptosi|fptoui|sitofp|uitofp|bitcast|unreachable|label|to|nsw|nuw|disjoint|exact|eq|ne|ugt|uge|ult|ule|sgt|sge|slt|sle|oeq|one|olt|ole|ogt|oge|ord|uno|ueq|une|true|false|null|undef|poison|preds)\b/, 'k'],
+    [/\b(?:i1|i8|i16|i32|i64|i128|half|float|double|x86_fp80|fp128|void|ptr)\b/, 't'],
+    [/%[\w.$]+|@[\w.$]+/, 'v'], [/\b(?:0x[0-9a-fA-F]+|-?\d+\.?\d*(?:e[+-]?\d+)?)\b/, 'n'],
+  ];
+  function highlight(src, rules) {
+    const big = new RegExp(rules.map(r => '(' + r[0].source + ')').join('|'), 'g');
+    let out = '', last = 0, m;
+    while ((m = big.exec(src))) {
+      if (m.index > last) out += esc(src.slice(last, m.index));
+      let cls = '';
+      for (let i = 0; i < rules.length; i++) if (m[i + 1] !== undefined) { cls = rules[i][1]; break; }
+      out += cls && cls !== 'v' ? `<span class="${cls}">${esc(m[0])}</span>` : esc(m[0]);
+      last = m.index + m[0].length;
+    }
+    return out + esc(src.slice(last));
+  }
+
+  // ---------- function parsing ----------
+  function parseIR(text) {
+    const lines = text.split('\n'), fns = [];
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^define\b.*@([\w.$]+)\(/.exec(lines[i]);
+      if (!m) continue;
+      let j = i; while (j < lines.length && !/^\}/.test(lines[j])) j++;
+      fns.push({ name: m[1], start: i, end: j, ...classify(m[1]) });
+      i = j;
+    }
+    return fns;
+  }
+  const C_NOTFN = /^(?:if|else|for|while|do|switch|return|sizeof|case)$/;
+  function parseC(text) {
+    const lines = text.split('\n'), fns = [];
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      const m = /^[A-Za-z_][\w\s\*\(\)]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(\{)?\s*$/.exec(l) || /^[A-Za-z_][\w\s\*\(\)]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(\{)/.exec(l);
+      if (!m || C_NOTFN.test(m[1]) || /^\s*(?:#|\/\/)/.test(l) || /;\s*$/.test(l) && !m[2]) continue;
+      // find the opening brace (same line or next lines) then match braces
+      let depth = 0, started = false, j = i;
+      for (; j < lines.length; j++) {
+        for (const ch of lines[j]) { if (ch === '{') { depth++; started = true; } else if (ch === '}') depth--; }
+        if (started && depth === 0) break;
+        if (!started && j > i + 1) break;
+      }
+      if (!started) continue;
+      fns.push({ name: m[1], base: m[1], start: i, end: j, kind: 'orig' });
+      i = j;
+    }
+    return fns;
+  }
+  function classify(name) {
+    const m = /^__cq_q_(.+?)_([01]+)(_unc)?$/.exec(name);
+    if (m) return { base: m[1], kind: m[3] ? 'unc' : 'clone', mask: m[2] };
+    return { base: name, kind: 'orig' };
+  }
+
+  // ---------- editor panes ----------
+  const panes = {};
+  function makePane(key, rules, parser) {
+    const root = document.querySelector(`.pane[data-pane="${key}"]`);
+    const p = { key, rules, parser, root, scroller: root.querySelector('.scroller'), content: root.querySelector('.content'),
+      ranges: root.querySelector('.ranges'), rows: root.querySelector('.rows'), pre: root.querySelector('pre.code'),
+      ta: root.querySelector('textarea.input'), nameEl: document.getElementById('name-' + key), text: '', fns: [], lines: [] };
+    p.render = function () {
+      const lines = p.text.split('\n'); p.lines = lines;
+      const html = highlight(p.text, rules).split('\n').map((h, i) => `<span class="ln">${i + 1}</span>${h}`).join('\n');
+      p.pre.innerHTML = html + '\n';
+      p.fns = parser(p.text);
+      p.content.style.height = p.pre.offsetHeight + 'px';
+      p.ta.style.height = p.pre.offsetHeight + 'px';
+      p.ta.style.width = Math.max(p.pre.scrollWidth, p.scroller.clientWidth) + 'px';
+    };
+    p.set = function (text, name) { p.text = text.replace(/\r\n?/g, '\n'); p.ta.value = p.text; p.nameEl.textContent = name || ''; p.render(); };
+    p.ta.addEventListener('input', () => { p.text = p.ta.value; p.render(); link(p); });
+    const onCaret = () => link(p);
+    p.ta.addEventListener('click', onCaret); p.ta.addEventListener('keyup', onCaret); p.ta.addEventListener('select', onCaret);
+    p.ta.addEventListener('keydown', e => {  // keep tab inside the editor
+      if (e.key === 'Tab') { e.preventDefault(); const s = p.ta.selectionStart, t = p.ta.selectionEnd; p.ta.setRangeText('    ', s, t, 'end'); p.ta.dispatchEvent(new Event('input')); }
+    });
+    p.caretLine = () => p.ta.value.slice(0, p.ta.selectionStart).split('\n').length - 1;
+    p.fnAt = line => p.fns.find(f => line >= f.start && line <= f.end) || null;
+    p.paint = function (rangeFns, rowLines, scrollTo) {
+      p.ranges.innerHTML = rangeFns.map(f => `<div class="${f.kind === 'orig' ? '' : 'twin'}" style="top:${f.start * LH + 8}px;height:${(f.end - f.start + 1) * LH}px"></div>`).join('');
+      p.rows.innerHTML = rowLines.map(l => `<div style="top:${l * LH + 8}px"></div>`).join('');
+      if (scrollTo != null) {
+        const top = scrollTo * LH, vis = p.scroller.scrollTop, h = p.scroller.clientHeight;
+        if (top < vis + 20 || top > vis + h - 40) p.scroller.scrollTop = Math.max(0, top - h / 3);
+      }
+    };
+    panes[key] = p; return p;
+  }
+  makePane('c', C_RULES, parseC); makePane('ir', IR_RULES, parseIR); makePane('low', IR_RULES, parseIR);
+
+  // ---------- cross-linking ----------
+  const valsIn = s => Array.from(new Set((s.match(/%[\w.$]+/g) || [])));
+  const irComment = line => { const m = /;\s*IR:\s*(.*)$/.exec(line); return m ? m[1] : null; };
+  const cComment = line => { const m = /;\s*C:\s*(.*)$/.exec(line); return m ? m[1].trim() : null; };
+  const defOf = line => { const m = /^\s*(%[\w.$]+)\s*=/.exec(line); return m ? m[1] : null; };
+  const stripCm = line => line.replace(/\s*;\s*(?:IR|C):.*$/, '');
+
+  function link(src) {
+    const line = src.caretLine(), fn = src.fnAt(line);
+    const base = fn ? fn.base : null;
+    const status = [];
+    // function-level ranges in each pane
+    const sel = {};
+    for (const k in panes) sel[k] = base ? panes[k].fns.filter(f => f.base === base) : [];
+    // line-level rows
+    const rows = { c: [], ir: [], low: [] };
+    const curLine = src.lines[line] || '';
+    const inFn = (p, l) => !base || p.fns.some(f => f.base === base && l >= f.start && l <= f.end);
+    const irLinesFor = vals => panes.ir.lines.map((l, i) => (vals.includes(defOf(l)) || (!defOf(l) && vals.some(v => new RegExp('(^|[^\\w.$])' + v.replace(/[$.]/g, '\\$&') + '(?![\\w.$])').test(stripCm(l)) && /^\s*(?:br|ret|tail call void|call void)/.test(l)))) && inFn(panes.ir, i) ? i : -1).filter(i => i >= 0);
+    const lowLinesFor = vals => panes.low.lines.map((l, i) => { const c = irComment(l); return c && vals.some(v => c.includes(v)) && inFn(panes.low, i) ? i : -1; }).filter(i => i >= 0);
+    const cLinesFor = texts => { const out = []; for (const t of texts) { if (!t) continue; const key = t.replace(/\s*\(.*\)\s*$/, '').trim(); if (key.length < 2) continue; panes.c.lines.forEach((l, i) => { if (l.includes(key) && inFn(panes.c, i) && !out.includes(i)) out.push(i); }); } return out; };
+    if (src.key === 'low') {
+      const c = irComment(curLine); const vals = c ? valsIn(c) : [];
+      if (vals.length) { rows.ir = irLinesFor(vals); rows.c = cLinesFor(rows.ir.map(i => cComment(panes.ir.lines[i]))); rows.low = [line]; status.push('IR values ' + vals.join(' ')); }
+    } else if (src.key === 'ir') {
+      const d = defOf(curLine); const vals = d ? [d] : valsIn(stripCm(curLine)).filter(v => /^\s*(?:br|ret)/.test(curLine));
+      if (vals.length) { rows.low = lowLinesFor(vals); rows.ir = [line]; rows.c = cLinesFor([cComment(curLine)]); status.push('IR value ' + vals.join(' ')); }
+    } else if (src.key === 'c') {
+      const t = curLine.trim().replace(/\s+/g, ' ');
+      if (t.length > 2 && !/^[{}]$/.test(t)) {
+        const stmt = t.replace(/^(?:return\s+)/, '').replace(/;$/, '');
+        const frag = stmt.split(/[;{]/)[0].trim();
+        if (frag.length > 1) {
+          rows.ir = panes.ir.lines.map((l, i) => { const c = cComment(l); return c && (c.includes(frag) || frag.includes(c.replace(/\s*\(.*\)\s*$/, '').replace(/;$/, '')) && c.length > 3) && inFn(panes.ir, i) ? i : -1; }).filter(i => i >= 0);
+          const vals = rows.ir.map(i => defOf(panes.ir.lines[i])).filter(Boolean);
+          rows.low = vals.length ? lowLinesFor(vals) : [];
+          rows.c = [line];
+        }
+      }
+    }
+    for (const k in panes) {
+      const p = panes[k];
+      const first = rows[k].length ? rows[k][0] : (k !== src.key && sel[k].length ? sel[k][0].start : null);
+      p.paint(sel[k], rows[k], k === src.key ? null : first);
+    }
+    if (!suppressCirc) {
+      const want = new Set(rows.low.length ? rows.low : (src.key === 'low' ? [line] : []));
+      let firstG = null;
+      circEl.querySelectorAll('g.gate').forEach(o => { o.classList.remove('hit', 'twin', 'same'); if (want.has(evLine[+o.dataset.ev])) { o.classList.add('hit'); if (!firstG) firstG = o; } });
+      if (firstG) { const sc = document.getElementById('circ-scroller'), bb = firstG.getBBox(), z = (+document.getElementById('zoom').value) / 100; const x = bb.x * z; if (x < sc.scrollLeft + 40 || x > sc.scrollLeft + sc.clientWidth - 80) sc.scrollLeft = Math.max(0, x - sc.clientWidth / 3); }
+    }
+    const twins = sel.low.filter(f => f.kind !== 'orig').map(f => f.name);
+    document.getElementById('status').textContent = base ? `function ${base}` + (twins.length ? '   ·   lowered twins: ' + twins.join(', ') : '') + (status.length ? '   ·   ' + status.join(' ') : '') : (src.text ? 'caret outside a function' : '');
+  }
+
+  // ---------- corpus loading ----------
+  const sel = document.getElementById('ex');
+  let manifest = [];
+  function loadExample(ex) {
+    panes.c.set(ex.c, ex.cname); panes.ir.set(ex.ir, ex.irname);
+    panes.low.set(ex.low || '; (no lowered file for this example yet)', ex.lowname);
+    setTrace(ex.trace || '');
+    document.getElementById('status').textContent = `${ex.name}: click into a function.`;
+    try { localStorage.setItem('cq-viewer-example', ex.name); } catch (e) {}
+  }
+  fetch('corpus.json').then(r => r.json()).then(list => {
+    manifest = list;
+    sel.innerHTML = list.map((e, i) => `<option value="${i}">${e.name}</option>`).join('');
+    let pick = 0; try { const last = localStorage.getItem('cq-viewer-example'); const i = list.findIndex(e => e.name === last); if (i >= 0) pick = i; } catch (e) {}
+    sel.value = pick; loadExample(list[pick]);
+  }).catch(() => { document.getElementById('status').textContent = 'No bundled corpus found. Use Load on each pane or Open folder.'; });
+  sel.addEventListener('change', () => loadExample(manifest[+sel.value]));
+
+  // per-pane file load, folder load, copy
+  document.querySelectorAll('button[data-load]').forEach(b => b.addEventListener('click', () => document.querySelector(`input[data-file="${b.dataset.load}"]`).click()));
+  document.querySelectorAll('input[data-file]').forEach(inp => inp.addEventListener('change', async () => { const f = inp.files[0]; if (f) { if (inp.dataset.file === 'trace') setTrace(await f.text()); else panes[inp.dataset.file].set(await f.text(), f.name); } inp.value = ''; }));
+  document.getElementById('loaddir').addEventListener('click', () => document.getElementById('dirpick').click());
+  document.getElementById('dirpick').addEventListener('change', async e => {
+    const files = Array.from(e.target.files);
+    const pick = re => files.find(f => re.test(f.name));
+    const c = pick(/\.c$/), ir = pick(/\.O1\.ll$/), low = pick(/\.lowered\.ll$/);
+    if (c) panes.c.set(await c.text(), c.name); if (ir) panes.ir.set(await ir.text(), ir.name); if (low) panes.low.set(await low.text(), low.name);
+    document.getElementById('status').textContent = `loaded ${[c, ir, low].filter(Boolean).length} file(s) from folder`;
+    e.target.value = '';
+  });
+  document.querySelectorAll('button[data-copy]').forEach(b => b.addEventListener('click', async () => {
+    const p = panes[b.dataset.copy];
+    try { await navigator.clipboard.writeText(p.text); b.textContent = 'Copied'; } catch (e) { p.ta.focus(); p.ta.select(); b.textContent = 'Selected'; }
+    setTimeout(() => b.textContent = 'Copy', 1200);
+  }));
+  // drag & drop onto a pane
+  for (const k in panes) {
+    const p = panes[k];
+    p.root.addEventListener('dragover', e => { e.preventDefault(); });
+    p.root.addEventListener('drop', async e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) p.set(await f.text(), f.name); });
+  }
+  window.addEventListener('resize', () => { for (const k in panes) panes[k].render(); });
+
+  // ---------- trace <-> lowered IR mapping: a small interpreter of the lowered IR that consumes the trace ----------
+  let lastEvents = [], evLine = [], suppressCirc = false;
+  function parseLowered(text) {
+    const lines = text.split('\n'), fns = {}; let cur = null, blk = null;
+    const strip = l => l.replace(/\s*;.*$/, '').trim();
+    for (let i = 0; i < lines.length; i++) {
+      const l = strip(lines[i]); if (!l) continue;
+      let m = /^define\b.*@([\w.$]+)\((.*)\)/.exec(l);
+      if (m) { cur = { name: m[1], params: (m[2].match(/%[\w.$]+/g) || []), blocks: {}, order: [] }; fns[m[1]] = cur; blk = { label: 'entry0', ins: [] }; cur.blocks[blk.label] = blk; cur.order.push(blk.label); continue; }
+      if (!cur) continue;
+      if (l === '}') { cur = null; continue; }
+      m = /^([\w.$]+):/.exec(l); if (m) { blk = { label: '%' + m[1], ins: [] }; cur.blocks[blk.label] = blk; cur.order.push(blk.label); continue; }
+      blk.ins.push({ line: i, text: l });
+    }
+    for (const f of Object.values(fns)) { const first = f.order[0]; if (first === 'entry0' && f.blocks[first].ins.length === 0) { delete f.blocks[first]; f.order.shift(); } }
+    return fns;
+  }
+  const splitArgs = str => { const out = []; let d = 0, cur = ''; for (const ch of str) { if (ch === '[' || ch === '(' || ch === '<') d++; if (ch === ']' || ch === ')' || ch === '>') d--; if (ch === ',' && d === 0) { out.push(cur.trim()); cur = ''; } else cur += ch; } if (cur.trim()) out.push(cur.trim()); return out; };
+  const hexDouble = h => { const b = BigInt(h); const dv = new DataView(new ArrayBuffer(8)); dv.setBigUint64(0, b); return dv.getFloat64(0); };
+  function parseLit(tok) { // "i32 3" / "double 5.0e-01" / "i1 true" / "%x" / "i32 %x"
+    const v = tok.split(/\s+/).pop();
+    if (v.startsWith('%')) return { ref: v };
+    if (v === 'true') return { val: 1 }; if (v === 'false') return { val: 0 };
+    if (/^0x[0-9a-fA-F]{16}$/.test(v)) return { val: hexDouble(v) };
+    if (/^-?\d/.test(v)) return { val: parseFloat(v) };
+    return { val: undefined };
+  }
+  function mapTraceToIR() {
+    evLine = []; const ev = lastEvents; if (!ev.length) return;
+    let fns; try { fns = parseLowered(panes.low.text); } catch (e) { return; }
+    let pc = 0, steps = 0; const stack = [];
+    const nextOp = () => { while (pc < ev.length && ev[pc].kind !== 'op') pc++; return pc < ev.length ? ev[pc] : null; };
+    const get = (env, t) => { const p = parseLit(t); return p.ref !== undefined ? env[p.ref] : p.val; };
+    const binop = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, and: (a, b) => a & b, or: (a, b) => a | b, xor: (a, b) => a ^ b, shl: (a, b) => a << b, lshr: (a, b) => a >>> b, ashr: (a, b) => a >> b, sdiv: (a, b) => Math.trunc(a / b), udiv: (a, b) => Math.trunc(a / b), srem: (a, b) => a % b, urem: (a, b) => a % b, fadd: (a, b) => a + b, fsub: (a, b) => a - b, fmul: (a, b) => a * b, fdiv: (a, b) => a / b };
+    const cmp = { eq: (a, b) => a === b, ne: (a, b) => a !== b, sgt: (a, b) => a > b, sge: (a, b) => a >= b, slt: (a, b) => a < b, sle: (a, b) => a <= b, ugt: (a, b) => a > b, uge: (a, b) => a >= b, ult: (a, b) => a < b, ule: (a, b) => a <= b };
+    function run(fn, args) {
+      const env = {}; fn.params.forEach((p, i) => env[p] = args[i]);
+      let cur = fn.order[0], prev = null;
+      while (cur && steps++ < 200000) {
+        const blk = fn.blocks[cur]; let next = null;
+        for (const ins of blk.ins) {
+          const t = ins.text; let m;
+          if ((m = /^(%[\w.$]+) = phi \S+ (.*)$/.exec(t))) { const arms = m[2].match(/\[\s*([^,\]]+),\s*(%[\w.$]+)\s*\]/g) || []; let v; for (const a of arms) { const am = /\[\s*([^,\]]+),\s*(%[\w.$]+)\s*\]/.exec(a); if (am[2] === prev) { const pl = parseLit(am[1]); v = pl.ref !== undefined ? env[pl.ref] : pl.val; } } env[m[1]] = v; continue; }
+          if ((m = /^(%[\w.$]+) = icmp (\w+) \S+ (.*)$/.exec(t))) { const [a, b] = splitArgs(m[3]).map(x => get(env, x)); env[m[1]] = (a === undefined || b === undefined) ? undefined : (cmp[m[2]] ? (cmp[m[2]](a, b) ? 1 : 0) : undefined); continue; }
+          if ((m = /^(%[\w.$]+) = (add|sub|mul|and|or|xor|shl|lshr|ashr|sdiv|udiv|srem|urem|fadd|fsub|fmul|fdiv)\b[^%\d-]*(.*)$/.exec(t))) { const [a, b] = splitArgs(m[3]).map(x => get(env, x)); env[m[1]] = (a === undefined || b === undefined) ? undefined : binop[m[2]](a, b); continue; }
+          if ((m = /^(%[\w.$]+) = (zext|sext|trunc|fpext|fptrunc|sitofp|uitofp|fptosi|bitcast)\b.*?\s(\S+) to /.exec(t))) { env[m[1]] = get(env, m[3]); continue; }
+          if ((m = /^(%[\w.$]+) = select i1 (\S+), (.*)$/.exec(t))) { const c = get(env, m[2]); const [a, b] = splitArgs(m[3]).map(x => get(env, x)); env[m[1]] = c === undefined ? undefined : (c ? a : b); continue; }
+          let cm = /^(%[\w.$]+) = (?:tail |musttail )?call .*?@([\w.$]+)\((.*)\)/.exec(t);
+          if (cm) m = [cm[0], cm[1], cm[2], cm[3]]; else { cm = /^(?:tail )?call .*?@([\w.$]+)\((.*)\)/.exec(t); m = cm ? [cm[0], null, cm[1], cm[2]] : null; }
+          if (m) {
+            const dst = m[1], callee = m[2], cargs = m[3] ? splitArgs(m[3]).map(x => get(env, x)) : [];
+            if (callee === 'cqrt_push') { stack.push(cargs[0]); continue; }
+            if (callee === 'cqrt_pop') { env[dst] = stack.pop(); continue; }
+            if (fns[callee]) { const r = run(fns[callee], cargs); if (dst) env[dst] = r; continue; }
+            if (/^(cqrt_|cq_template_)/.test(callee)) {
+              const e = nextOp(); if (!e) return undefined;
+              if (e.name !== callee) { // resync: look ahead a little for the same callee
+                let k = pc; while (k < ev.length && k < pc + 6 && !(ev[k].kind === 'op' && ev[k].name === callee)) k++;
+                if (k < ev.length && ev[k].kind === 'op' && ev[k].name === callee) pc = k; else { if (dst) env[dst] = undefined; continue; }
+              }
+              evLine[pc] = ins.line;
+              // bind literals the IR did not know (loads) from the trace, and the result handle
+              const ea = ev[pc].args; if (m[3]) splitArgs(m[3]).forEach((tok, i) => { const pl = parseLit(tok); if (pl.ref !== undefined && env[pl.ref] === undefined && ea[i] && ea[i].lit !== undefined) env[pl.ref] = parseFloat(ea[i].lit); });
+              if (dst) env[dst] = ev[pc].out || (ev[pc].ret != null ? parseFloat(ev[pc].ret) : undefined);
+              pc++; continue;
+            }
+            if (dst) env[dst] = undefined; continue;
+          }
+          if ((m = /^br label (%[\w.$]+)/.exec(t))) { next = m[1]; break; }
+          if ((m = /^br i1 (\S+), label (%[\w.$]+), label (%[\w.$]+)/.exec(t))) {
+            let c = get(env, m[1]);
+            if (c === undefined) { // unknown classical condition: take the arm whose first gate matches the trace
+              const e = nextOp(); const firstCall = b => { for (const x of (fn.blocks[b] || { ins: [] }).ins) { const cm = /@([\w.$]+)\(/.exec(x.text); if (cm && /^(cqrt_|cq_template_)/.test(cm[1]) && cm[1] !== 'cqrt_push' && cm[1] !== 'cqrt_pop') return cm[1]; } return null; };
+              const ft = firstCall(m[2]), ff = firstCall(m[3]); c = e && ff && e.name === ff && e.name !== ft ? 0 : 1;
+            }
+            next = c ? m[2] : m[3]; break;
+          }
+          if ((m = /^ret \S+ (\S+)/.exec(t))) return get(env, m[1]);
+          if (/^ret void/.test(t)) return undefined;
+          if (/^unreachable/.test(t)) return undefined;
+          if ((m = /^(%[\w.$]+) = /.exec(t))) { env[m[1]] = undefined; continue; } // load, getelementptr, alloca...
+        }
+        prev = cur; cur = next;
+      }
+      return undefined;
+    }
+    // drive: each "# call: fn(args)" segment runs fn with numeric args (non-numeric -> unknown)
+    const callIdx = ev.map((e, i) => e.kind === 'call' ? i : -1).filter(i => i >= 0);
+    if (!callIdx.length) { const names = Object.keys(fns).filter(n => !/^__cq_q_/.test(n)); if (names.length) { pc = 0; run(fns[names[0]], []); } return; }
+    for (const ci of callIdx) {
+      const m = /^([\w.$]+)\((.*)\)$/.exec(ev[ci].label); if (!m || !fns[m[1]]) continue;
+      pc = ci + 1; const args = m[2] ? splitArgs(m[2]).map(a => /^-?\d/.test(a) ? parseFloat(a) : undefined) : [];
+      run(fns[m[1]], args);
+    }
+  }
+  panes.low.ta.addEventListener('input', () => { try { mapTraceToIR(); } catch (err) { evLine = []; } });
+
+  // ---------- circuit renderer (register level) ----------
+  const CW = 46, RH = 30, GUT = 78, TOP = 34;
+  const traceTA = document.getElementById('ta-trace'), circEl = document.getElementById('circ');
+  function setTrace(t) { traceTA.value = t; renderCircuit(t); }
+  traceTA.addEventListener('input', () => renderCircuit(traceTA.value));
+  document.getElementById('tracetoggle').addEventListener('click', () => { const p = document.querySelector('.pane.circuit'); p.dataset.trace = p.dataset.trace === '1' ? '0' : '1'; });
+  document.getElementById('togglecirc').addEventListener('click', e => { const m = document.querySelector('main'), p = document.querySelector('.pane.circuit'); const hide = p.dataset.hidden !== '1'; p.dataset.hidden = hide ? '1' : '0'; m.dataset.nocirc = hide ? '1' : '0'; e.target.textContent = hide ? 'Show circuit' : 'Hide circuit'; for (const k in panes) panes[k].render(); });
+  document.getElementById('zoom').addEventListener('input', e => { circEl.style.transform = `scale(${e.target.value / 100})`; });
+  const fmtNum = v => { const m = /^(-?)0x([0-9a-f]+)(?:\.([0-9a-f]*))?p([+-]?\d+)$/i.exec(v); if (!m) return v;
+    let f = parseInt(m[2], 16); const frac = m[3] || ''; for (let i = 0; i < frac.length; i++) f += parseInt(frac[i], 16) / Math.pow(16, i + 1);
+    f *= Math.pow(2, +m[4]); if (m[1]) f = -f; return (+f.toPrecision(4)).toString(); };
+  function parseTrace(text) {
+    const ev = [];
+    for (const raw of text.split('\n')) {
+      const l = raw.trim(); if (!l) continue;
+      if (l.startsWith('#')) { const m = /^# call:\s*(.*)$/.exec(l); if (m) ev.push({ kind: 'call', label: m[1], raw: l }); continue; }
+      const m = /^([\w.]+)\((.*)\)(?:\s*->\s*(\S+))?$/.exec(l); if (!m) continue;
+      const args = m[2] ? m[2].split(/,\s*/).map(a => /^[ha]\d+$/.test(a) ? { h: a } : { lit: fmtNum(a) }) : [];   // a<N>: a QRAM array bus
+      ev.push({ kind: 'op', name: m[1], args, out: m[3] && /^[ha]\d+$/.test(m[3]) ? m[3] : null, ret: m[3] || null, raw: l });
+    }
+    return ev;
+  }
+  function renderCircuit(text) {
+    const ev = parseTrace(text);
+    const wires = new Map(); // h -> {row, start, end, user, classicalFrom, label}
+    const slots = []; // row -> busy until col
+    let col = 0; const items = []; const seps = [];
+    const H = a => a.filter(x => x.h).map(x => x.h), Lits = a => a.filter(x => x.lit).map(x => x.lit);
+    const wire = h => wires.get(h);
+    function alloc(h, label) { let row = slots.findIndex(busy => busy < col - 1); if (row < 0) { row = slots.length; slots.push(0); } slots[row] = Infinity; wires.set(h, { row, start: col, end: null, user: false, meas: null, label }); }
+    for (let i = 0; i < ev.length; i++) {
+      const e = ev[i];
+      if (e.kind === 'call') { seps.push({ col, label: e.label }); continue; }
+      const evi = i;
+      const n = e.name, hs = H(e.args), lits = Lits(e.args);
+      if (/^cqrt_alloc_/.test(n)) { if (e.out) { alloc(e.out, `${e.out}:${n.replace('cqrt_alloc_', '')}=${lits[0] ?? ''}`); const nx = ev[i + 1]; if (nx && nx.kind === 'op' && /^cqrt_ry_/.test(nx.name) && H(nx.args)[0] === e.out) wire(e.out).user = true; } continue; }
+      if (/^cqrt_qram_alloc_/.test(n)) { if (e.out) { alloc(e.out, `${e.out}:qram_${n.replace('cqrt_qram_alloc_', '')}[${lits[0] ?? ''}]`); wire(e.out).bus = true; } continue; }
+      if (/^cqrt_qram_(load|store)/.test(n)) {   // a QRAM access: the box sits on the fresh result rail (load) or on the array bus (store); every other handle is a control
+        let tgt; if (e.out) { alloc(e.out, `${e.out}`); tgt = e.out; } else if (/^cqrt_qram_load_/.test(n)) tgt = hs[0]; else tgt = hs.find(h => /^a/.test(h));
+        const w = wire(tgt); if (!w) { col++; continue; }
+        items.push({ ev: evi, type: 'box', cls: /_unc$/.test(n) ? 'unc' : '', col, row: w.row, ctls: hs.filter(h => h !== tgt).map(h => wire(h)?.row).filter(r => r != null), label: n.replace(/^cqrt_qram_/, 'qram ') + (lits.length ? ' ' + lits.join(',') : ''), raw: e.raw }); col++; continue; }
+      if (n === 'cqrt_free' || n === 'cqrt_qram_free') { const w = wire(hs[0]); if (w) { w.end = col; slots[w.row] = col; items.push({ ev: evi, type: 'free', col, rows: [w.row], raw: e.raw }); col++; } continue; }
+      if (/^cqrt_measure_/.test(n)) { const w = wire(hs[0]); if (w) { w.meas = col; items.push({ ev: evi, type: 'measure', col, row: w.row, label: 'M' + (e.ret != null ? '=' + fmtNum(e.ret) : ''), raw: e.raw }); col++; } continue; }
+      if (/^cqrt_(ry|rz)_/.test(n)) {   // ry_<W>(h,θ) · ry_<W>_controlled(c,h,θ) · ry_<W>_qangle[_controlled]([c,]h,A) · rz_i1(f,θ) · rz_qangle[_controlled]([c,]A)
+        const rest = hs.slice(), ctlH = /_controlled$/.test(n) ? [rest.shift()] : [], qang = /_qangle/.test(n);
+        const tgt = rest[0], angH = qang && !/^cqrt_rz_qangle/.test(n) ? rest[1] : null;
+        const w = wire(tgt); if (w) {
+          const ctls = [...ctlH, ...(angH ? [angH] : [])].map(h => wire(h)?.row).filter(r => r != null);
+          const label = (n.startsWith('cqrt_ry') ? 'Ry ' : 'Rz ') + (qang ? (angH ? 'val(' + angH + ')' : 'val') : (lits[0] ?? ''));
+          items.push({ ev: evi, type: 'box', cls: 'rot', col, row: w.row, ctls, label, raw: e.raw }); col++; }
+        continue; }
+      if (n === 'cqrt_not_i1' || /^cqrt_xorc_/.test(n)) {
+        const ctl = n.endsWith('_controlled') ? [hs[0]] : [], tgt = n.endsWith('_controlled') ? hs[1] : hs[0];
+        items.push({ ev: evi, type: 'xor', col, ctls: ctl.map(h => wire(h)?.row).filter(r => r != null), row: wire(tgt)?.row, label: lits.length ? '⊕' + lits[0] : '', raw: e.raw }); col++; continue; }
+      if (/^cqrt_(and_i1|or_i1|xor_|copy_)/.test(n)) {
+        const tgt = hs[hs.length - 1], ctls = hs.slice(0, -1);
+        items.push({ ev: evi, type: 'xor', col, ctls: ctls.map(h => wire(h)?.row).filter(r => r != null), row: wire(tgt)?.row, copyout: /^cqrt_copy_(i|f)\d+$/.test(n), raw: e.raw }); col++; continue; }
+      if (/^cq_template_/.test(n)) {
+        const unc = /_unc$/.test(n); const base = n.replace(/^cq_template_/, '').replace(/_unc$/, '');
+        let outH, ins;
+        if (unc) { outH = hs[0]; ins = hs.slice(1); } else { outH = e.out; ins = hs; if (outH) alloc(outH, `${outH}`); }
+        const w = wire(outH); if (!w) { col++; continue; }
+        items.push({ ev: evi, type: 'box', cls: unc ? 'unc' : '', col, row: w.row, ctls: ins.map(h => wire(h)?.row).filter(r => r != null), label: base + (lits.length ? ' ' + lits.join(',') : '') + (unc ? ' †' : ''), raw: e.raw, key: base + '|' + [outH, ...ins].join(',') + '|' + lits.join(',') });
+        col++; continue; }
+      // generic cqrt_* op: box on the last handle, controls on the others
+      if (hs.length) { const tgt = hs[hs.length - 1]; items.push({ ev: evi, type: 'box', cls: '', col, row: wire(tgt)?.row, ctls: hs.slice(0, -1).map(h => wire(h)?.row).filter(r => r != null), label: n.replace(/^cqrt_/, '') + (lits.length ? ' ' + lits.join(',') : ''), raw: e.raw }); col++; }
+    }
+    const boxW = it => it.type === 'box' ? Math.max(30, it.label.length * 6.6 + 8) : it.type === 'measure' ? 28 : 14;
+    const colW = new Array(col + 1).fill(CW);
+    for (const it of items) if (it.type !== 'free') colW[it.col] = Math.max(colW[it.col], boxW(it) + 12);
+    const colX = [0]; for (let c = 0; c < colW.length; c++) colX.push(colX[c] + colW[c]);
+    const rows = slots.length, W = GUT + colX[col + 1] + 20, Hh = TOP + rows * RH + 20;
+    const X = c => GUT + colX[Math.min(c, col)] + colW[Math.min(c, col)] / 2, Y = r => TOP + r * RH + RH / 2;
+    let svg = `<svg class="circ" width="${W}" height="${Hh}" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="register-level circuit"><defs><pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--twinline)" stroke-width="1.2"/></pattern></defs>`;
+    for (const sp of seps) { const sx = X(sp.col) - colW[Math.min(sp.col, col)] / 2; svg += `<line class="sep" x1="${sx}" y1="8" x2="${sx}" y2="${Hh - 8}"/><text class="seplabel" x="${sx + 4}" y="14">${esc(sp.label)}</text>`; }
+    for (const [h, w] of wires) {
+      const x1 = X(w.start) - colW[w.start] / 2 + 4, x2 = w.end != null ? X(w.end) : X(col); const y = Y(w.row);
+      if (w.meas != null && w.meas < (w.end ?? Infinity)) { svg += `<line class="wire${w.user ? ' user' : ''}" x1="${x1}" y1="${y}" x2="${X(w.meas)}" y2="${y}"/><line class="wire classical" x1="${X(w.meas)}" y1="${y}" x2="${x2}" y2="${y}"/>`; }
+      else svg += `<line class="wire${w.user ? ' user' : ''}${w.bus ? ' bus' : ''}" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>`;
+      svg += w.start === 0 ? `<text class="wlabel" x="${x1 - 4}" y="${y + 3.5}" text-anchor="end">${esc(w.label)}</text>` : `<text class="wlabel" x="${X(w.start) - 10}" y="${y - 12.5}" text-anchor="end">${esc(w.label)}</text>`;
+    }
+    items.forEach((it, idx) => {
+      const x = X(it.col);
+      if (it.type === 'free') { const y = Y(it.rows[0]); svg += `<g class="gate" data-i="${idx}" data-ev="${it.ev}"><title>${esc(it.raw)}</title><line class="freebar" x1="${x}" y1="${y - 7}" x2="${x}" y2="${y + 7}"/></g>`; return; }
+      const allRows = [it.row, ...(it.ctls || [])].filter(r => r != null); if (!allRows.length) return;
+      const yT = Y(it.row), yMin = Y(Math.min(...allRows)), yMax = Y(Math.max(...allRows));
+      svg += `<g class="gate" data-i="${idx}" data-ev="${it.ev}" data-key="${esc(it.key || it.raw)}"><title>${esc(it.raw)}</title>`;
+      if (allRows.length > 1) svg += `<line class="vline" x1="${x}" y1="${yMin}" x2="${x}" y2="${yMax}"/>`;
+      for (const r of (it.ctls || [])) svg += `<circle class="ctl" cx="${x}" cy="${Y(r)}" r="3.2"/>`;
+      if (it.type === 'xor') { svg += `<circle class="xor${it.copyout ? ' box copyout' : ''}" cx="${x}" cy="${yT}" r="7"/><line class="vline" x1="${x - 7}" y1="${yT}" x2="${x + 7}" y2="${yT}"/><line class="vline" x1="${x}" y1="${yT - 7}" x2="${x}" y2="${yT + 7}"/>`; if (it.label) svg += `<text x="${x}" y="${yT - 10}" text-anchor="middle">${esc(it.label)}</text>`; }
+      else if (it.type === 'measure') { svg += `<rect class="box measure" x="${x - 14}" y="${yT - 10}" width="28" height="20" rx="3"/><text x="${x}" y="${yT + 3.5}" text-anchor="middle">${esc(it.label)}</text>`; }
+      else { const w = boxW(it); svg += `<rect class="box ${it.cls}" x="${x - w / 2}" y="${yT - 10}" width="${w}" height="20" rx="3"/><text x="${x}" y="${yT + 3.5}" text-anchor="middle">${esc(it.label)}</text>`; }
+      svg += `</g>`;
+    });
+    svg += `</svg>`;
+    circEl.innerHTML = svg;
+    lastEvents = ev; try { mapTraceToIR(); } catch (err) { console.warn('trace mapping failed', err); evLine = []; }
+    circEl.querySelectorAll('g.gate').forEach(g => g.addEventListener('click', () => {
+      circEl.querySelectorAll('g.gate').forEach(o => o.classList.remove('hit', 'twin', 'same'));
+      g.classList.add('hit'); const key = g.dataset.key, raw = g.querySelector('title').textContent;
+      circEl.querySelectorAll('g.gate').forEach(o => { if (o !== g && ((key && o.dataset.key === key) || o.querySelector('title').textContent === raw)) o.classList.add('twin'); });
+      const line = evLine[+g.dataset.ev];
+      if (line != null) {
+        const p = panes.low, pos = p.lines.slice(0, line).reduce((a, l) => a + l.length + 1, 0);
+        p.ta.setSelectionRange(pos, pos); suppressCirc = true; link(p); suppressCirc = false;
+        circEl.querySelectorAll('g.gate').forEach(o => { if (o !== g && evLine[+o.dataset.ev] === line) o.classList.add('same'); });
+      }
+      document.getElementById('status').textContent = raw + (line != null ? `   ·   lowered line ${line + 1}` : '');
+    }));
+    const mapped = items.filter(it => evLine[it.ev] != null).length;
+    document.getElementById('name-circ').textContent = `${wires.size} rails, ${col} gates${seps.length ? ', ' + seps.length + ' call(s)' : ''}, ${mapped}/${items.length} linked to lowered IR lines; click a gate`;
+  }
+})();
+</script>

@@ -1,0 +1,25 @@
+# driver: static_global_slot(0,.5,3)
+# call: static_global_slot(0,.5,3)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_mul_i32_hl(h2, 3) -> h3
+cqrt_qram_store_i32_hl(m1, P0, h3)
+cqrt_tape_alloc() -> t4
+cqrt_tape_fmt(t4, "%d\n")
+cqrt_tape_write_i32(t4, h3) -> h5
+cq_template_add_i32_hl(h3, 1) -> h6
+cqrt_alloc_i32(0) -> h7
+cqrt_copy_i32(h6, h7)
+cq_template_add_i32_hl_unc(h6, h3, 1)
+cqrt_free(h6)
+cqrt_qram_load_i32_hl(m1, P0) -> h8
+cq_template_add_i32(h8, h7) -> h9
+cqrt_qram_load_i32_hl_unc(h8, m1, P0)
+cqrt_free(h8)
+cq_template_add_i32_hl(h3, 1) -> h10
+cqrt_copy_i32(h10, h7)
+cq_template_add_i32_hl_unc(h10, h3, 1)
+cqrt_free(h10)
+cqrt_free(h7)
+cqrt_measure_i32(h9) -> 0

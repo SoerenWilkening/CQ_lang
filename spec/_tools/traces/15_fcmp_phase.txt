@@ -1,0 +1,27 @@
+# driver: fcmp_olt(0,.5,1,.1);fcmp_unordered(0,.5,1,.1);fcmp_qq(0,1,.5,.25,.1)
+# call: fcmp_olt(0,.5,1,.1)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fcmp_olt_f64_hl(h0, 0x1p+0) -> h1
+cqrt_rz_i1(h1, 0x1.999999999999ap-4)
+cq_template_fcmp_olt_f64_hl_unc(h1, h0, 0x1p+0)
+cqrt_free(h1)
+cqrt_measure_f64(h0) -> 0x0p+0
+# call: fcmp_unordered(0,.5,1,.1)
+cqrt_alloc_f64(0x0p+0) -> h2
+cqrt_ry_f64(h2, 0x1p-1)
+cq_template_fcmp_ult_f64_hl(h2, 0x1p+0) -> h3
+cqrt_rz_i1(h3, 0x1.999999999999ap-4)
+cq_template_fcmp_ult_f64_hl_unc(h3, h2, 0x1p+0)
+cqrt_free(h3)
+cqrt_measure_f64(h2) -> 0x0p+0
+# call: fcmp_qq(0,1,.5,.25,.1)
+cqrt_alloc_f64(0x0p+0) -> h4
+cqrt_ry_f64(h4, 0x1p-1)
+cqrt_alloc_f64(0x1p+0) -> h5
+cqrt_ry_f64(h5, 0x1p-2)
+cq_template_fcmp_oeq_f64(h4, h5) -> h6
+cqrt_rz_i1(h6, 0x1.999999999999ap-4)
+cq_template_fcmp_oeq_f64_unc(h6, h4, h5)
+cqrt_free(h6)
+cqrt_measure_f64(h4) -> 0x0p+0

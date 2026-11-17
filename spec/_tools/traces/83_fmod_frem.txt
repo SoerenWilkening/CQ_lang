@@ -1,0 +1,23 @@
+# driver: fmod_qc(0,.5,3);fmod_cq(1,.5,3);fmodf_qq(0,1,.5,.25);fmodl_qc(0,.5,3)
+# call: fmod_qc(0,.5,3)
+cqrt_alloc_f64(0x0p+0) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_frem_f64_hl(h0, 0x1.8p+1) -> h100000
+cqrt_measure_f64(h100000) -> 0x0p+0
+# call: fmod_cq(1,.5,3)
+cqrt_alloc_f64(0x1p+0) -> h1
+cqrt_ry_f64(h1, 0x1p-1)
+cq_template_frem_f64_lh(0x1.8p+1, h1) -> h100001
+cqrt_measure_f64(h100001) -> 0x0p+0
+# call: fmodf_qq(0,1,.5,.25)
+cqrt_alloc_f32(0x0p+0) -> h2
+cqrt_ry_f32(h2, 0x1p-1)
+cqrt_alloc_f32(0x1p+0) -> h3
+cqrt_ry_f32(h3, 0x1p-2)
+cq_template_frem_f32(h2, h3) -> h100002
+cqrt_measure_f32(h100002) -> 0x0p+0
+# call: fmodl_qc(0,.5,3)
+cqrt_alloc_f80(0x0p+0) -> h4
+cqrt_ry_f80(h4, 0x1p-1)
+cq_template_frem_f80_hl(h4, 0xcp-2) -> h100003
+cqrt_measure_f80(h100003) -> 0x0p+0

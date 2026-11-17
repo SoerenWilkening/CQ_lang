@@ -1,0 +1,34 @@
+# driver: tab_set(1,9);bus_mutable_table(1,.5)
+# call: tab_set(1,9)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i32(9) -> h2
+cqrt_qram_store_i32_hl(m1, P0, h2)
+# call: bus_mutable_table(1,.5)
+cqrt_alloc_i32(1) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cq_template_and_i32_hl(h3, 3) -> h4
+cq_template_zext_i32_to_i64(h4) -> h5
+cq_template_mul_i64_hl(h5, 4) -> h6
+cq_template_add_i64_hl(h6, P0) -> h7
+cqrt_qram_load_i32(m1, h7) -> h8
+cq_template_mul_i64_hl(h5, 4) -> h9
+cq_template_add_i64_hl(h9, P1) -> h10
+cqrt_qram_load_i32(m1, h10) -> h11
+cq_template_add_i32(h11, h8) -> h12
+cqrt_qram_load_i32_unc(h11, m1, h10)
+cqrt_free(h11)
+cq_template_add_i64_hl_unc(h10, h9, P1)
+cqrt_free(h10)
+cq_template_mul_i64_hl_unc(h9, h5, 4)
+cqrt_free(h9)
+cqrt_qram_load_i32_unc(h8, m1, h7)
+cqrt_free(h8)
+cq_template_add_i64_hl_unc(h7, h6, P0)
+cqrt_free(h7)
+cq_template_mul_i64_hl_unc(h6, h5, 4)
+cqrt_free(h6)
+cq_template_zext_i32_to_i64_unc(h5, h4)
+cqrt_free(h5)
+cq_template_and_i32_hl_unc(h4, h3, 3)
+cqrt_free(h4)
+cqrt_measure_i32(h12) -> 0
