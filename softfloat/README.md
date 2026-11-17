@@ -67,9 +67,11 @@ even), `_m` (the x86 `FE_*` mode as an `i32` rail: `_rm`, `_rmq`), `_x` (the x86
 **K.** Only the frem roots have loops (SoftFloat's remainder loop, 29 quotient bits per trip, and a
 short do/while). The shims pass K = 8 (f16), 16 (f32), 80 (f64), 1200 (f80); every other root gets
 K = 1 (no loop). `test/run_ktest.sh` lowers fmod(largest finite, smallest subnormal) and its
-neighbours at every K: the smallest K that is right is 1, 9 and 72 for f16, f32, f64. f80: the
-largest exponent difference is 32,828, so 1,131 trips (from the code; not run at the extreme, the f80
-link test runs an fmod with an exponent difference near 26,600 at K = 1200).
+neighbours at every K from the shims' K down to the first wrong one: the smallest K that is right is
+1, 9, 72 and 1,131 for f16, f32, f64, f80 (`run_ktest.sh f80`, 14 s). f80: the largest exponent
+difference is 32,828, 1,131 trips of the 29-bit loop, as the code says. Below that the result is not
+monotone in K: with y of 3 or 5 ulps the cut remainder is periodic in the trip count, and K = 50, 200,
+410, 500 and 800 happen to be right; the scan stops at the first wrong K (1,130).
 
 ## What it provides
 
