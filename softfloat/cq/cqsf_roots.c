@@ -175,6 +175,15 @@ bool cqsf_fcmp_uno_f16(_Float16 a0, _Float16 a1) { return cqsfi_fcmp_uno_f16(CQS
 bool cqsfi_is_fpclass_f16(uint16_t, uint32_t);
 bool cqsf_is_fpclass_f16(_Float16 a0, uint32_t a1) { return cqsfi_is_fpclass_f16(CQSF_BITS_f16(a0), a1); }
 
+uint16_t cqsfi_fneg_f16(uint16_t);
+_Float16 cqsf_fneg_f16(_Float16 a0) { return CQSF_FROM_f16(cqsfi_fneg_f16(CQSF_BITS_f16(a0))); }
+
+uint16_t cqsfi_fabs_f16(uint16_t);
+_Float16 cqsf_fabs_f16(_Float16 a0) { return CQSF_FROM_f16(cqsfi_fabs_f16(CQSF_BITS_f16(a0))); }
+
+uint16_t cqsfi_copysign_f16(uint16_t, uint16_t);
+_Float16 cqsf_copysign_f16(_Float16 a0, _Float16 a1) { return CQSF_FROM_f16(cqsfi_copysign_f16(CQSF_BITS_f16(a0), CQSF_BITS_f16(a1))); }
+
 uint16_t cqsfi_fadd_bf16(uint16_t, uint16_t);
 __bf16 cqsf_fadd_bf16(__bf16 a0, __bf16 a1) { return CQSF_FROM_bf16(cqsfi_fadd_bf16(CQSF_BITS_bf16(a0), CQSF_BITS_bf16(a1))); }
 
@@ -327,6 +336,15 @@ bool cqsf_fcmp_uno_bf16(__bf16 a0, __bf16 a1) { return cqsfi_fcmp_uno_bf16(CQSF_
 
 bool cqsfi_is_fpclass_bf16(uint16_t, uint32_t);
 bool cqsf_is_fpclass_bf16(__bf16 a0, uint32_t a1) { return cqsfi_is_fpclass_bf16(CQSF_BITS_bf16(a0), a1); }
+
+uint16_t cqsfi_fneg_bf16(uint16_t);
+__bf16 cqsf_fneg_bf16(__bf16 a0) { return CQSF_FROM_bf16(cqsfi_fneg_bf16(CQSF_BITS_bf16(a0))); }
+
+uint16_t cqsfi_fabs_bf16(uint16_t);
+__bf16 cqsf_fabs_bf16(__bf16 a0) { return CQSF_FROM_bf16(cqsfi_fabs_bf16(CQSF_BITS_bf16(a0))); }
+
+uint16_t cqsfi_copysign_bf16(uint16_t, uint16_t);
+__bf16 cqsf_copysign_bf16(__bf16 a0, __bf16 a1) { return CQSF_FROM_bf16(cqsfi_copysign_bf16(CQSF_BITS_bf16(a0), CQSF_BITS_bf16(a1))); }
 
 uint32_t cqsfi_fadd_f32(uint32_t, uint32_t);
 float cqsf_fadd_f32(float a0, float a1) { return CQSF_FROM_f32(cqsfi_fadd_f32(CQSF_BITS_f32(a0), CQSF_BITS_f32(a1))); }
@@ -481,6 +499,15 @@ bool cqsf_fcmp_uno_f32(float a0, float a1) { return cqsfi_fcmp_uno_f32(CQSF_BITS
 bool cqsfi_is_fpclass_f32(uint32_t, uint32_t);
 bool cqsf_is_fpclass_f32(float a0, uint32_t a1) { return cqsfi_is_fpclass_f32(CQSF_BITS_f32(a0), a1); }
 
+uint32_t cqsfi_fneg_f32(uint32_t);
+float cqsf_fneg_f32(float a0) { return CQSF_FROM_f32(cqsfi_fneg_f32(CQSF_BITS_f32(a0))); }
+
+uint32_t cqsfi_fabs_f32(uint32_t);
+float cqsf_fabs_f32(float a0) { return CQSF_FROM_f32(cqsfi_fabs_f32(CQSF_BITS_f32(a0))); }
+
+uint32_t cqsfi_copysign_f32(uint32_t, uint32_t);
+float cqsf_copysign_f32(float a0, float a1) { return CQSF_FROM_f32(cqsfi_copysign_f32(CQSF_BITS_f32(a0), CQSF_BITS_f32(a1))); }
+
 uint64_t cqsfi_fadd_f64(uint64_t, uint64_t);
 double cqsf_fadd_f64(double a0, double a1) { return CQSF_FROM_f64(cqsfi_fadd_f64(CQSF_BITS_f64(a0), CQSF_BITS_f64(a1))); }
 
@@ -633,6 +660,15 @@ bool cqsf_fcmp_uno_f64(double a0, double a1) { return cqsfi_fcmp_uno_f64(CQSF_BI
 
 bool cqsfi_is_fpclass_f64(uint64_t, uint32_t);
 bool cqsf_is_fpclass_f64(double a0, uint32_t a1) { return cqsfi_is_fpclass_f64(CQSF_BITS_f64(a0), a1); }
+
+uint64_t cqsfi_fneg_f64(uint64_t);
+double cqsf_fneg_f64(double a0) { return CQSF_FROM_f64(cqsfi_fneg_f64(CQSF_BITS_f64(a0))); }
+
+uint64_t cqsfi_fabs_f64(uint64_t);
+double cqsf_fabs_f64(double a0) { return CQSF_FROM_f64(cqsfi_fabs_f64(CQSF_BITS_f64(a0))); }
+
+uint64_t cqsfi_copysign_f64(uint64_t, uint64_t);
+double cqsf_copysign_f64(double a0, double a1) { return CQSF_FROM_f64(cqsfi_copysign_f64(CQSF_BITS_f64(a0), CQSF_BITS_f64(a1))); }
 
 uint32_t cqsfi_fpext_f16_to_f32(uint16_t);
 float cqsf_fpext_f16_to_f32(_Float16 a0) { return CQSF_FROM_f32(cqsfi_fpext_f16_to_f32(CQSF_BITS_f16(a0))); }
@@ -1438,6 +1474,15 @@ bool cqsf_fcmp_uno_f80(long double a0, long double a1) { return cqsfi_fcmp_uno_f
 bool cqsfi_is_fpclass_f80(struct extFloat80M, uint32_t);
 bool cqsf_is_fpclass_f80(long double a0, uint32_t a1) { return cqsfi_is_fpclass_f80(CQSF_BITS_f80(a0), a1); }
 
+struct extFloat80M cqsfi_fneg_f80(struct extFloat80M);
+long double cqsf_fneg_f80(long double a0) { return CQSF_FROM_f80(cqsfi_fneg_f80(CQSF_BITS_f80(a0))); }
+
+struct extFloat80M cqsfi_fabs_f80(struct extFloat80M);
+long double cqsf_fabs_f80(long double a0) { return CQSF_FROM_f80(cqsfi_fabs_f80(CQSF_BITS_f80(a0))); }
+
+struct extFloat80M cqsfi_copysign_f80(struct extFloat80M, struct extFloat80M);
+long double cqsf_copysign_f80(long double a0, long double a1) { return CQSF_FROM_f80(cqsfi_copysign_f80(CQSF_BITS_f80(a0), CQSF_BITS_f80(a1))); }
+
 struct extFloat80M cqsfi_fpext_f16_to_f80(uint16_t);
 long double cqsf_fpext_f16_to_f80(_Float16 a0) { return CQSF_FROM_f80(cqsfi_fpext_f16_to_f80(CQSF_BITS_f16(a0))); }
 
@@ -1452,6 +1497,21 @@ _Float16 cqsf_fptrunc_f80_to_f16_m(long double a0, uint32_t a1) { return CQSF_FR
 
 uint32_t cqsfi_fptrunc_f80_to_f16_x(struct extFloat80M, uint32_t);
 uint32_t cqsf_fptrunc_f80_to_f16_x(long double a0, uint32_t a1) { return cqsfi_fptrunc_f80_to_f16_x(CQSF_BITS_f80(a0), a1); }
+
+struct extFloat80M cqsfi_fpext_bf16_to_f80(uint16_t);
+long double cqsf_fpext_bf16_to_f80(__bf16 a0) { return CQSF_FROM_f80(cqsfi_fpext_bf16_to_f80(CQSF_BITS_bf16(a0))); }
+
+uint32_t cqsfi_fpext_bf16_to_f80_x(uint16_t);
+uint32_t cqsf_fpext_bf16_to_f80_x(__bf16 a0) { return cqsfi_fpext_bf16_to_f80_x(CQSF_BITS_bf16(a0)); }
+
+uint16_t cqsfi_fptrunc_f80_to_bf16(struct extFloat80M);
+__bf16 cqsf_fptrunc_f80_to_bf16(long double a0) { return CQSF_FROM_bf16(cqsfi_fptrunc_f80_to_bf16(CQSF_BITS_f80(a0))); }
+
+uint16_t cqsfi_fptrunc_f80_to_bf16_m(struct extFloat80M, uint32_t);
+__bf16 cqsf_fptrunc_f80_to_bf16_m(long double a0, uint32_t a1) { return CQSF_FROM_bf16(cqsfi_fptrunc_f80_to_bf16_m(CQSF_BITS_f80(a0), a1)); }
+
+uint32_t cqsfi_fptrunc_f80_to_bf16_x(struct extFloat80M, uint32_t);
+uint32_t cqsf_fptrunc_f80_to_bf16_x(long double a0, uint32_t a1) { return cqsfi_fptrunc_f80_to_bf16_x(CQSF_BITS_f80(a0), a1); }
 
 struct extFloat80M cqsfi_fpext_f32_to_f80(uint32_t);
 long double cqsf_fpext_f32_to_f80(float a0) { return CQSF_FROM_f80(cqsfi_fpext_f32_to_f80(CQSF_BITS_f32(a0))); }

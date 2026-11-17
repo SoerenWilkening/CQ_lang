@@ -113,6 +113,10 @@ static u256 intin(int n) {
     for sym, m in sorted(man.items()):
         if group != "all" and m["group"] != group:
             continue
+        if m.get("kind"):
+            c.append(ftest(len(tests), sym, m, samples))
+            tests.append(sym)
+            continue
         if m.get("x"):
             c.append(xtest(len(tests), sym, m, samples))
             tests.append(sym)
@@ -265,6 +269,61 @@ def xtest(idx, sym, m, samples):
         f.append(f"        cqrt_free({h});")
     f.append("    }\n}")
     return "\n".join(f)
+
+
+def ftest(idx, sym, m, samples):
+    """select/bitcast at a float width (a forwarding shim, no root): select is c ? a : b on the bit
+    patterns, bitcast the same bits."""
+    f, proto, args, frees = [], [], [], []
+    body = [f"static void t_{idx}(void) {{", f"    cur = \"{sym}\";", f"    for (int s = 0; s < {samples}; s++) {{"]
+
+    def operand(i, k, lit_):
+        if k[0] == "int":
+            n = k[1]
+            if n == 1:
+                body.append(f"        u256 v{i} = rnd() & 1; int32_t h{i} = cqrt_alloc_i1((bool)v{i});")
+            else:
+                body.append(f"        u256 v{i} = intin({n}); int32_t h{i} = cqrt_alloc_i{n}(({int_ct(n, True)})v{i});")
+                f.append(f"int32_t cqrt_alloc_i{n}({int_ct(n, True)});")
+            proto.append("int32_t"); args.append(f"h{i}"); frees.append(f"h{i}")
+            return
+        w = k[1]
+        if w == "f80":
+            body.append(f"        u256 v{i} = fpin80();")
+        else:
+            eb = {"f16": 5, "bf16": 8, "f32": 8, "f64": 11}[w]
+            body.append(f"        u256 v{i} = fpin({BITS[w]}, {eb});")
+        body.append(f"        {LIT[w]} x{i} = 0; memcpy(&x{i}, &v{i}, {10 if w == 'f80' else BITS[w] // 8});")
+        if lit_:
+            proto.append(LIT[w]); args.append(f"x{i}")
+        else:
+            body.append(f"        int32_t h{i} = cqrt_alloc_{w}(x{i});")
+            proto.append("int32_t"); args.append(f"h{i}"); frees.append(f"h{i}")
+
+    ins = [tuple(k) for k in m["ins"]]
+    if m["kind"] == "select":
+        letters = m["shape"] or "hh"
+        operand(0, ins[0], False)
+        operand(1, ins[1], letters[0] == "l")
+        operand(2, ins[2], letters[1] == "l")
+        want = "(v0 ? v1 : v2)"
+    else:
+        operand(0, ins[0], False)
+        want = "v0"
+    out = tuple(m["out"])
+    rw = BITS[out[1]] if out[0] == "fp" else out[1]
+    body.append(f"        u256 want = {want} & (((u256)1 << {rw}) - 1);")
+    body.append(f"        int32_t o = {sym}({', '.join(args)});")
+    body.append("        ncalls++;")
+    body.append("        if (toy_val256(o) != want) bad(\"value\", toy_val256(o), want);")
+    body.append(f"        {sym}_unc({', '.join(['o'] + args)});")
+    body.append("        if (toy_val256(o) != 0) { nunc++; bad(\"_unc\", toy_val256(o), 0); }")
+    body.append("        cqrt_free(o);")
+    for h in reversed(frees):
+        body.append(f"        cqrt_free({h});")
+    body.append("    }\n}")
+    f.append(f"int32_t {sym}({', '.join(proto)});\nvoid {sym}_unc(int32_t, {', '.join(proto)});")
+    return "\n".join(f + body)
 
 
 _INNER = None

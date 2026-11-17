@@ -576,6 +576,28 @@ static void run_fptoint_bf16(void) {
 
 /* fptoint from f16 via host F16C: (float)x is exact; the strict conversion of _Float16 is codegen's. */
 
+/* fneg, fabs, copysign: the host's -x, fabs, copysign (CR §2: the sign bit alone, a NaN keeps its payload
+ * and stays signalling, no flag). The host's flags must be 0 too. */
+u64 hh_neg(u64 a);
+#define SIGNOPS(FT, T, FMT, FROMB, TOB, FABS, CPS, NEGREF)                                                       \
+static void run_signops_##FT(void) {                                                                     \
+    u64 sp[64]; int ns = specials(&FMT, sp);                                                              \
+    for (long t = 0; t < (long)ns * ns + 20000; t++) {                                                   \
+        u64 in[2];                                                                                       \
+        if (t < (long)ns * ns) { in[0] = sp[t / ns]; in[1] = sp[t % ns]; } else { in[0] = rndval(&FMT); in[1] = rndval(&FMT); } \
+        volatile T x = FROMB(in[0]), y = FROMB(in[1]); R ref, lib;                                       \
+        hbegin(FE_TONEAREST); T r = -x; ref.f = hend(); ref.v = TOB(r); NEGREF;                          \
+        lib.v = TOB(cqsf_fneg_##FT(x)); lib.f = 0; check("fneg_" #FT, 0, in, 1, lib, ref, 1);            \
+        hbegin(FE_TONEAREST); r = FABS(x); ref.f = hend(); ref.v = TOB(r);                               \
+        lib.v = TOB(cqsf_fabs_##FT(x)); check("fabs_" #FT, 0, in, 1, lib, ref, 1);                       \
+        hbegin(FE_TONEAREST); r = CPS(x, y); ref.f = hend(); ref.v = TOB(r);                             \
+        lib.v = TOB(cqsf_copysign_##FT(x, y)); check("copysign_" #FT, 0, in, 2, lib, ref, 1);            \
+    }                                                                                                    \
+}
+SIGNOPS(f32, float, FS, S, Sb, __builtin_fabsf, __builtin_copysignf, (void)0)
+SIGNOPS(f64, double, FD, D, Db, __builtin_fabs, __builtin_copysign, (void)0)
+SIGNOPS(f16, _Float16, FH, H, Hb, __builtin_fabsf16, __builtin_copysignf16, (ref.v = hh_neg(in[0]), ref.f = 0))
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     ArOp ops[] = {
@@ -610,6 +632,7 @@ int main(int argc, char **argv) {
     run_fpconv();
     run_itofp_1(); run_itofp_8(); run_itofp_16(); run_itofp_32(); run_itofp_64();
     run_fptoint_f64(); run_fptoint_f32(); run_fptoint_f16(); run_fptoint_bf16();
+    run_signops_f32(); run_signops_f64(); run_signops_f16();
 
     long n = 0, bv = 0, bf = 0;
     printf("\n%-28s %9s %8s %8s  %s\n", "operation", "cases", "badval", "badflag", "note");

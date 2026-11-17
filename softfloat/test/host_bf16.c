@@ -58,6 +58,14 @@ u64 hb_ceil(u64 a) { return Bb(__builtin_ceilf(Bf(a))); }
 u64 hb_trunc(u64 a) { return Bb(__builtin_truncf(Bf(a))); }
 u64 hb_rint(u64 a) { return Bb(__builtin_rintf(Bf(a))); }
 u64 hb_lt(u64 a, u64 b) { return Bf(a) < Bf(b); }
+u64 hb_neg(u64 a) { return Bb(-Bf(a)); }
+/* the -O1 code of -x on _Float16 (no FENV_ACCESS: strict code computes it through float, quieting an sNaN) */
+u64 hh_neg(u64 a) { uint16_t u = (uint16_t)a; _Float16 x; memcpy(&x, &u, 2); x = -x; memcpy(&u, &x, 2); return u; }
+u64 hb_fabs(u64 a) { return Bb(__builtin_fabsf(Bf(a))); }
+u64 hb_copysign(u64 a, u64 b) { return Bb(__builtin_copysignf(Bf(a), Bf(b))); }
+u64 lb_neg(u64 a) { return Bb(cqsf_fneg_bf16(Bf(a))); }
+u64 lb_fabs(u64 a) { return Bb(cqsf_fabs_bf16(Bf(a))); }
+u64 lb_copysign(u64 a, u64 b) { return Bb(cqsf_copysign_bf16(Bf(a), Bf(b))); }
 u64 lbc(void *f, int ar, int hm, u64 a, u64 b, u64 c, uint32_t m) {
     if (ar == 1) return hm ? Bb(((__bf16 (*)(__bf16, uint32_t))f)(Bf(a), m)) : Bb(((__bf16 (*)(__bf16))f)(Bf(a)));
     if (ar == 2) return hm ? Bb(((__bf16 (*)(__bf16, __bf16, uint32_t))f)(Bf(a), Bf(b), m)) : Bb(((__bf16 (*)(__bf16, __bf16))f)(Bf(a), Bf(b)));

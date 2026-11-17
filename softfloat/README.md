@@ -1,10 +1,10 @@
 # libqsoftfloat: the CQ float templates from Berkeley SoftFloat
 
-A lowered library (README "Lowered libraries") that defines the floating-point templates of
-`BACKEND_ABI.md` §2.6–§2.10 for f16, bf16, f32, f64 and, in a second archive, f80.
-SoftFloat computes IEEE arithmetic with integer operations only; `cqcc --cq-lib` lowers it into
-integer templates. A backend that implements integer circuits only (and the bit operations `fneg`,
-`fabs`, `copysign`, `select`, `bitcast`) runs float programs by linking this library:
+A lowered library (README "Lowered libraries") that defines every floating-point template of
+`BACKEND_ABI.md` §2.6–§2.11 for f16, bf16, f32, f64 and, in a second archive, f80: no
+`cq_template_*` symbol with a float width is left to the backend. SoftFloat computes IEEE arithmetic
+with integer operations only; `cqcc --cq-lib` lowers it into integer templates. A backend that
+implements integer circuits only runs float programs by linking this library:
 
 ```sh
 cqcc prog.c -Lsoftfloat/build -lqsoftfloat -lmybackend
@@ -39,7 +39,8 @@ cqcc prog.c -Lsoftfloat/build -lqsoftfloat -lmybackend
 | `cq/cqsf_int.h` | the conversions from and to the other integer widths (`INT_X`), CR §2 rows |
 | `cq/cqsf_roots_x.ll` | (generated) the `INT_X` roots as LLVM IR, with native test entries `cqsft_*` |
 | `cq/cqsf_shims.c`, `cq/cqsf_shims_f80.c` | (generated) one `cq_template_*` and `_unc` per symbol |
-| `cqsf.roots`, `cqsf_f80.roots` | the root lists (661 and 174 roots) |
+| `cqsf.roots`, `cqsf_f80.roots` | the root lists (673 and 182 roots) |
+| `tools/backend_needs.py` | what the built archives leave undefined (llvm-nm), grouped by operation and width |
 | `build.sh` | `gen`, `native`, `ir`, `lib [LIST]`, `probe [LIST]` |
 | `test/` | the self-tests below |
 
@@ -81,7 +82,7 @@ Generated from the CR §1.2 grammar, restricted to what CQ's pass can emit (`pas
 a mode only on operations whose constrained intrinsic has one, `_exc` on every operation with a
 constrained form, every binary op `_hl` and `_lh` (`_lh` is the NaN-literal spelling of a commutative
 op), compares `_hl` only, `_ll` / `_l` / `lll` only with `_rmq`. 2,086 forward symbols (each with its
-`_unc`) for the default archive, 539 for f80. All 82 float templates the CQ_spec corpus declares
+`_unc`) for the default archive, 560 for f80. All 82 float templates the CQ_spec corpus declares
 are among them (`gen_cqsf.py --check-corpus`).
 
 | operations | widths | forms |
@@ -93,17 +94,31 @@ are among them (`gen_cqsf.py --check-corpus`).
 | `fmax fmin` | f16 bf16 f32 f64 (f80) | bare `hl` `lh`, `_exc` |
 | `fcmp_<pred>` `fcmps_<pred>` (14 predicates: o/u eq gt ge lt le, one, ord, une, uno) | f16 bf16 f32 f64 (f80) | bare `hl`, `_exc` |
 | `is_fpclass` | f16 bf16 f32 f64 (f80) | `hl` |
-| `fpext` | f16→f32, f16→f64, f32→f64, bf16→f32, bf16→f64 (f16/f32/f64→f80) | bare, `_exc` |
-| `fptrunc` | f32→f16, f64→f16, f64→f32, f32→bf16, f64→bf16 (f80→f16/f32/f64) | bare, `l`(rmq) × plain `_rm` `_rmq` × `_exc` |
+| `fpext` | f16→f32, f16→f64, f32→f64, bf16→f32, bf16→f64 (f16/bf16/f32/f64→f80) | bare, `_exc` |
+| `fptrunc` | f32→f16, f64→f16, f64→f32, f32→bf16, f64→bf16 (f80→f16/bf16/f32/f64) | bare, `l`(rmq) × plain `_rm` `_rmq` × `_exc` |
 | `sitofp uitofp` | i1 i8 i16 i32 i64, i7 i24 i48 i100 i128 i200 → f16 bf16 f32 f64 (f80) | as fptrunc |
 | `fptosi fptoui` | f16 bf16 f32 f64 (f80) → i8 i16 i32 i64, i7 i24 i48 i100 i128 i200 | bare, `_exc` |
+| `fneg fabs` | f16 bf16 f32 f64 (f80) | bare (no mode, no flags: no `_exc` form) |
+| `copysign` | f16 bf16 f32 f64 (f80) | bare `hl` `lh` |
+| `select` | f16 bf16 f32 f64 (f80) | bare `hl` `lh` `ll`: a shim onto `select_i16/i32/i64/i80` (a float literal arm as its bit pattern), no root |
+| `bitcast` | f16↔i16, bf16↔i16, f16↔bf16, f32↔i32, f64↔i64, (f80↔i80) | bare: `cqrt_alloc_iN(0)` and `cqrt_copy_iN`, no root |
 
 Not provided:
 - `fcmp_false`, `fcmp_true` (folded by LLVM, never emitted).
 - `sitofp`/`uitofp`/`fptosi`/`fptoui` at integer widths not in the table. `INT_X` in the generator
   lists one width of each CR §2 class (7, 24 at most 32 bits; 48 up to 64; 100, 128 up to 128; 200
   above); another width is one more entry there (up to 256 bits, the four limbs of `cq/cqsf_int.h`).
-- `fneg`, `fabs`, `copysign`, `select`, `bitcast`: bit operations, the backend's integer side.
+
+What a backend still provides (`python3 tools/backend_needs.py` over both archives: 497 symbols,
+`_unc` forms included). At a float width only the core calls `cqrt_alloc_<W>` and `cqrt_copy_<W>`
+for f16, bf16, f32, f64, f80 (the shims' seeds and results); the backend treats them as the
+same-width bit registers (a rail is untyped). A program's own `cq_theta`/`cq_measure` on a float
+still reach the backend as `cqrt_ry_<W>`/`cqrt_measure_<W>` (§1), not through this library.
+Everything else is integer: `add sub mul udiv and or xor shl lshr ashr icmp select zext sext trunc
+abs smax umax umin usub_sat ctlz fshl bitreverse` at widths i1 to i200 (i6, i7, i17, i24, i31, i48,
+i80, i100 and i200 among them; the list per width is the tool's output), and `cqrt_free`,
+`cqrt_not/and/or/xor_i1`, `cqrt_xorc_i32`, `cqrt_push`, `cqrt_pop`, `cqrt_qram_alloc_i8` (the bundle
+host's `__cq_mem`; no lowered root touches the bus), `cqrt_alloc_<iN>`, `cqrt_copy_<iN>`.
 
 ## Semantics and the classical self-test
 
@@ -111,8 +126,8 @@ Not provided:
 floats (clang 19 -O1 with FENV_ACCESS: SSE, F16C, FMA instructions, x87 for f80), bit for bit, in all
 four rounding modes, with the exception word: specials (±0, subnormals, extremes, ±Inf, quiet and
 signalling NaNs with payloads, and for f80 the non-canonical encodings) and random operands.
-Default: 2,222,732 cases over 227 operations, 0 mismatches. f80 (`run_selftest.sh f80`): 2,209,144
-cases over 56 operations, 0 mismatches. Where CR §2 fixes what the host leaves to a library, the
+Default: 2,420,156 cases over 236 operations, 0 mismatches. f80 (`run_selftest.sh f80`): 2,841,832
+cases over 62 operations, 0 mismatches. Where CR §2 fixes what the host leaves to a library, the
 reference is the CR row (the report names each):
 
 - `frem` is C `fmod`, computed from SoftFloat's IEEE remainder r: when r ≠ 0 has the other sign than
@@ -124,6 +139,15 @@ reference is the CR row (the report names each):
   `fptoui` to i64 is that of LLVM's strict code (one cvtt of x − (x ≥ 2^63 ? 2^63 : 0)), not of the
   −O1 formula's two conversions.
 - `fmax`/`fmin`: the CR row; INVALID for an sNaN (IEEE). `is_fpclass`: a field test, no flag.
+- `fneg`, `fabs`, `copysign`: the sign bit alone, as integer bit operations on the pattern (f80: bit 79),
+  also of a NaN: no quieting, no flag; against the host's `-x`, `fabs*`, `copysign*` on specials with
+  signalling NaNs and payloads (f16, f32, f64, f80) and all 65,536 bf16 patterns, 0 mismatches. The
+  reference for `-x` on `_Float16` is the host's -O1 code: its strict code (FENV_ACCESS) negates through
+  `float` and quiets an sNaN with INVALID, which CR §2 does not.
+- bf16 ↔ f80 (clang emits `fpext bfloat to x86_fp80` and back): to f80 the shift and the exact f32 → f80;
+  to bf16 one rounding through f32 rounded to odd (IEEE: compiler-rt's `__truncxfbf2`, which LLVM 19's
+  compiler-rt for x86 macOS lacks, so the test's reference is the x87 conversion to f32 rounded to odd
+  and the bf16 rounding in the test).
 - `fma` at f80: SoftFloat has no `extF80_mulAdd`, so `cqsf_f80.h` has one, `cqsf_extF80_mulAdd`: the
   128-bit product of the significands, c aligned in a 192-bit frame with a sticky jam (exact under
   any cancellation), one `softfloat_roundPackToExtF80` at precision 80 in the mode; NaN and
@@ -139,8 +163,8 @@ reference is the CR row (the report names each):
   two roundings) are compiler-rt calls on the host, which ignore the mode and raise no flags: they
   are compared in round-to-nearest, values only. Their `_rm` forms round in the mode and their
   `_exc` forms give IEEE flags (not compared with hardware).
-- bf16 arithmetic, compares and rounding ops (`run_selftest.sh bf16`: 3,953,776 cases over 38
-  operations, 0 mismatches). CR §1.1 gives bf16 the rounding and NaN rules of the IEEE widths, so each
+- bf16 arithmetic, compares and rounding ops (`run_selftest.sh bf16`: 4,150,384 cases over 41
+  operations with the sign ops, 0 mismatches). CR §1.1 gives bf16 the rounding and NaN rules of the IEEE widths, so each
   operation is one correct rounding in the mode. `cqsf.h` computes + − × ÷ √ fma in f32 rounded to odd
   (toward zero, the last bit set when inexact), then rounds to bf16 in the mode: exact, as 24 ≥ 8 + 2;
   upstream's `bf16_add` (f32 in the mode, then f32 → bf16) gets the UNDERFLOW flag wrong near 2^-126.
@@ -177,9 +201,9 @@ reference is the CR row (the report names each):
 
 ## Evidence that it lowers and links
 
-- `build.sh lib`: the 661 default roots lower with no pass error in 17 groups, 1 min 37 s in all
+- `build.sh lib`: the 673 default roots lower with no pass error in 17 groups, 1 min 40 s in all
   (a 15.2 MB archive); `build.sh lib cqsf_f80.roots`: 171 roots in 5 groups,
-  38 s (5.1 MB; `fma` included).
+  182 roots, 36 s (5.2 MB).
   The lowered modules call no float template (only `bitcast` between fN and iN) and no `cqrt_qram_*`;
   the mode and the flags never touch memory. Their templates: integer add, sub, mul, udiv, and, or,
   xor, shl, lshr, ashr, icmp, select, zext, sext, trunc, abs, smax, umax, usub_sat, ctlz, fshl,
@@ -195,7 +219,8 @@ reference is the CR row (the report names each):
   test/prog_f80.c` matches the native program.
 - `test/run_shimtest.sh [N [default|f80|all]]`: every template symbol of both archives through its
   shim, the lowered library and the toy backend against the native root; each `_unc` must return its
-  rail to 0 and the backend counts dirty frees. 2,625 symbols (2,086 default: 33,376 calls; 539 f80:
-  8,624 calls) × 16 samples: 0 mismatches, 0 dirty frees. The toy backend holds 256-bit rails and takes an
+  rail to 0 and the backend counts dirty frees. 2,692 symbols (2,132 default, 560 f80) × 16 samples:
+  43,072 calls, 0 mismatches, 0 dirty frees. `select` and `bitcast` at float widths (no root) are
+  checked against c ? a : b and the same bits. The toy backend defines no float-width template. The toy backend holds 256-bit rails and takes an
   iN literal above 128 bits as LLVM passes it: N/64 integer registers when all fit, else all on the
   stack with the remaining integer registers skipped (measured; `select_i200_ll` has two).

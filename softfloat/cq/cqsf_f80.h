@@ -62,6 +62,13 @@ static inline cqsf_x80 sfx_sqrt_f80(struct sf_ctx *sf_ctx, cqsf_x80 a) {
     return extF80_sqrt(sf_ctx, cqsf_canon_f80(a));
 }
 
+/* fneg, fabs, copysign (CR §2): bit 79 alone, whatever the encoding (no quieting, no flag). */
+static inline cqsf_x80 sfx_fneg_f80(struct sf_ctx *sf_ctx, cqsf_x80 a) { (void)sf_ctx; a.signExp ^= 0x8000; return a; }
+static inline cqsf_x80 sfx_fabs_f80(struct sf_ctx *sf_ctx, cqsf_x80 a) { (void)sf_ctx; a.signExp &= 0x7FFF; return a; }
+static inline cqsf_x80 sfx_copysign_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b) {
+    (void)sf_ctx; a.signExp = (uint16_t)((a.signExp & 0x7FFF) | (b.signExp & 0x8000)); return a;
+}
+
 /* frem = C fmod, as in cqsf.h: the IEEE remainder corrected by an exact addition of copysign(|b|, a). */
 static inline cqsf_x80 sfx_frem_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b) {
     cqsf_x80 r;
@@ -269,6 +276,18 @@ static inline uint64_t sfx_fptrunc_f80_to_f64(struct sf_ctx *sf_ctx, cqsf_x80 a)
     if (cqsf_noncanon_f80(a)) { softfloat_raiseFlags(softfloat_flag_invalid); return UINT64_C(0xFFF8000000000000); }
     return extF80_to_f64(sf_ctx, cqsf_canon_f80(a)).v;
 }
+/* bf16 <-> f80 (clang emits fpext bfloat to x86_fp80 and the fptrunc back). To f80: the shift to f32, then
+ * the exact f32 -> f80. To bf16 (CR §2 bf16 row; compiler-rt __truncxfbf2 on the host, so IEEE): one
+ * rounding, through f32 rounded to odd and then f32 -> bf16 in the mode (24 >= 8 + 2, the same exponent
+ * range); f32's UNDERFLOW is dropped, tininess is decided at bf16. A NaN keeps its high payload. */
+static inline cqsf_x80 sfx_fpext_bf16_to_f80(struct sf_ctx *sf_ctx, uint16_t a) { return f32_to_extF80(sf_ctx, (float32_t){(uint32_t)a << 16}); }
+static inline uint16_t sfx_fptrunc_f80_to_bf16(struct sf_ctx *sf_ctx, cqsf_x80 a) {
+    if (cqsf_noncanon_f80(a)) { softfloat_raiseFlags(softfloat_flag_invalid); return 0xFFC0; }
+    struct sf_ctx t = {softfloat_round_minMag, 0};
+    uint32_t r = extF80_to_f32(&t, cqsf_canon_f80(a)).v;
+    return cqsf_bf16_odd(sf_ctx, &t, r);
+}
+
 static inline cqsf_x80 sfx_si_to_f80(struct sf_ctx *sf_ctx, int64_t x) { return i64_to_extF80(sf_ctx, x); }
 static inline cqsf_x80 sfx_ui_to_f80(struct sf_ctx *sf_ctx, uint64_t x) { return ui64_to_extF80(sf_ctx, x); }
 

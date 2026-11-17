@@ -9,9 +9,8 @@ programs rotate by 0). An iN argument with N > 128 is taken as N/64 uint64_t par
 stack with the remaining integer registers skipped (measured, LLVM 19 x86-64), which C spells as one dummy
 uint64_t per skipped register and a struct of the parts by value. A freed handle is reused only after 2^20 later frees, so a use of
 a recently freed rail is still caught. Every cqrt_* and integer cq_template_* that the given lowered modules declare is
-generated from its declaration. fneg, fabs and copysign are bit
-operations on fp widths and are generated as such. Every other floating-point template is NOT generated: it must come from the
-lowered SoftFloat library (libqsoftfloat.a); one the library does not provide stops the generator.
+generated from its declaration. No floating-point template is generated (fneg, fabs, copysign,
+select and bitcast at a float width included): each must come from the lowered SoftFloat library (libqsoftfloat.a); one the library does not provide stops the generator.
 The backend also checks what it can see: a rail freed while not 0 that is no untouched seed (a dirty
 free), a pop of an empty stack, a use of a freed rail. It prints the counts at exit and exits 3 on any.
 """
@@ -24,7 +23,6 @@ INT_OPS = {"add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and", "or", "xo
            "icmp", "select", "zext", "sext", "trunc", "bitcast", "abs", "smax", "smin", "umax", "umin",
            "usub_sat", "uadd_sat", "ssub_sat", "sadd_sat", "ctlz", "cttz", "ctpop", "bswap", "bitreverse",
            "fshl", "fshr", "fneg", "fabs", "copysign"}
-BITOPS = {"fneg", "fabs", "copysign", "bitcast", "select"}   # on fp widths too: bit wiring, no float circuit
 PREDS = "eq|ne|ugt|uge|ult|ule|sgt|sge|slt|sle"
 W_RE = r"i\d+|f16|bf16|f32|f64|f80"
 TMPL = re.compile(rf"^cq_template_(?P<op>[a-z_]+?)(?:_(?P<pred>{PREDS}|o[a-z]+|u[a-z]+|ord|uno))?_(?P<w>{W_RE})"
@@ -259,7 +257,8 @@ def template(name, ret, ps):
     if not m:
         raise SystemExit(f"gen_toy_backend: cannot parse {name}")
     op, pred, w, w2, shape, rm, exc, unc = m.group("op", "pred", "w", "w2", "shape", "rm", "exc", "unc")
-    if op not in INT_OPS or rm or exc or (op not in BITOPS and (w[0] != "i" or (w2 and w2[0] != "i"))):
+    # every template with a float width is the library's (fneg, fabs, copysign, select, bitcast included)
+    if op not in INT_OPS or rm or exc or w[0] != "i" or (w2 and w2[0] != "i"):
         return "fp"
     n, n2 = bits(w), bits(w2) if w2 else None
     args = ps[1:] if unc else ps
@@ -313,6 +312,9 @@ def main():
                  ("bf16", "bfloat"), ("f32", "float"), ("f64", "double"), ("f80", "x86_fp80")]:
         decls.setdefault(f"cqrt_alloc_{w}", ("i32", [t]))
         decls.setdefault(f"cqrt_copy_{w}", ("void", ["i32", "i32"]))
+    for m in (man or {}).values():   # the integer templates and core calls the forwarding shims call
+        for name, ret, ps in m.get("calls", []):
+            decls.setdefault(name, (ret, ps))
     for m in (man or {}).values():   # the integer widths of the library's templates (the INT_X conversions)
         for k in m["ins"] + [m["out"]]:
             if k[0] == "int":

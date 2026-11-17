@@ -49,6 +49,9 @@ cqsf_fcmp_ule_f16
 cqsf_fcmp_une_f16
 cqsf_fcmp_uno_f16
 cqsf_is_fpclass_f16
+cqsf_fneg_f16
+cqsf_fabs_f16
+cqsf_copysign_f16
 cqsf_fadd_bf16
 cqsf_fadd_bf16_m
 cqsf_fadd_bf16_x
@@ -100,6 +103,9 @@ cqsf_fcmp_ule_bf16
 cqsf_fcmp_une_bf16
 cqsf_fcmp_uno_bf16
 cqsf_is_fpclass_bf16
+cqsf_fneg_bf16
+cqsf_fabs_bf16
+cqsf_copysign_bf16
 cqsf_fadd_f32
 cqsf_fadd_f32_m
 cqsf_fadd_f32_x
@@ -151,6 +157,9 @@ cqsf_fcmp_ule_f32
 cqsf_fcmp_une_f32
 cqsf_fcmp_uno_f32
 cqsf_is_fpclass_f32
+cqsf_fneg_f32
+cqsf_fabs_f32
+cqsf_copysign_f32
 cqsf_fadd_f64
 cqsf_fadd_f64_m
 cqsf_fadd_f64_x
@@ -202,6 +211,9 @@ cqsf_fcmp_ule_f64
 cqsf_fcmp_une_f64
 cqsf_fcmp_uno_f64
 cqsf_is_fpclass_f64
+cqsf_fneg_f64
+cqsf_fabs_f64
+cqsf_copysign_f64
 cqsf_fpext_f16_to_f32
 cqsf_fpext_f16_to_f32_x
 cqsf_fpext_f16_to_f64

@@ -109,6 +109,59 @@ def table(widths, int_from=INT_FROM, int_to=INT_TO):
                             ["", "hl"], xroot=f"fcmps_{W}", plainroot=f"fcmp_{p}_{W}"))
         out.append(Inst(f"is_fpclass_{W}", f"sfx_is_fpclass_{W}", [fw, ("int", 32, False)], ("int", 1, False),
                         False, False, ["hl"]))
+        # the sign-bit operations: no mode, no flags (no constrained form), integer bit operations
+        out.append(Inst(f"fneg_{W}", f"sfx_fneg_{W}", [fw], fw, False, False, [""]))
+        out.append(Inst(f"fabs_{W}", f"sfx_fabs_{W}", [fw], fw, False, False, [""]))
+        out.append(Inst(f"copysign_{W}", f"sfx_copysign_{W}", [fw, fw], fw, False, False, ["", "hl", "lh"]))
+    return out
+
+
+# select and bitcast at a float width move bits only: a rail is untyped, so each is a shim onto the integer
+# template or core call of the same bit width (no root). A float literal arm goes as its bit pattern.
+IW = {"f16": 16, "bf16": 16, "f32": 32, "f64": 64, "f80": 80}
+
+
+def int_lit_ct(n):
+    return f"int{n}_t" if n in (8, 16, 32, 64) else f"_BitInt({n})"
+
+
+def forwards(widths):
+    """[(symbol, code, manifest entry, [(integer symbol, IR return, [IR params])])] for one group."""
+    out = []
+    for W in widths:
+        n = IW[W]
+        it, lt = f"i{n}", FP[W][0]
+        nb = 10 if W == "f80" else n // 8
+        for shape in ["", "hl", "lh", "ll"]:
+            sh = f"_{shape}" if shape else ""
+            letters = shape or "hh"
+            params, args, conv, irp = ["int32_t c"], ["c"], [], ["i32"]
+            for k, l in enumerate(letters, 1):
+                if l == "h":
+                    params.append(f"int32_t a{k}"); args.append(f"a{k}"); irp.append("i32")
+                else:
+                    params.append(f"{lt} l{k}"); args.append(f"b{k}"); irp.append(it)
+                    conv.append(f"    {int_lit_ct(n)} b{k} = 0; __builtin_memcpy(&b{k}, &l{k}, {nb});")
+            tgt = f"cq_template_select_{it}{sh}"
+            name = f"cq_template_select_{W}{sh}"
+            code = (f"int32_t {name}({', '.join(params)}) {{\n" + "\n".join(conv + [f"    return {tgt}({', '.join(args)});"]) + "\n}\n"
+                    f"void {name}_unc({', '.join(['int32_t o'] + params)}) {{\n"
+                    + "\n".join(conv + [f"    {tgt}_unc({', '.join(['o'] + args)});"]) + "\n}\n")
+            decl = (f"int32_t {tgt}({', '.join(['int32_t' if x == 'i32' else int_lit_ct(n) for x in irp])});\n"
+                    f"void {tgt}_unc({', '.join(['int32_t'] + ['int32_t' if x == 'i32' else int_lit_ct(n) for x in irp])});\n")
+            out.append((name, decl + code, {"kind": "select", "shape": shape, "ins": [("int", 1, False), ("fp", W), ("fp", W)],
+                                             "out": ("fp", W), "stem": f"select_{W}", "rm": "", "exc": False, "root": None, "k": 0},
+                        [(tgt, "i32", irp), (tgt + "_unc", "void", ["i32"] + irp)]))
+        pairs = [(W, it), (it, W)] + ([("f16", "bf16"), ("bf16", "f16")] if W == "f16" else [])
+        for a, b in pairs:
+            name = f"cq_template_bitcast_{a}_to_{b}"
+            code = (f"int32_t {name}(int32_t a) {{\n    int32_t o = cqrt_alloc_{it}(0);\n    cqrt_copy_{it}(a, o);\n    return o;\n}}\n"
+                    f"void {name}_unc(int32_t o, int32_t a) {{\n    cqrt_copy_{it}(a, o);\n}}\n")
+            decl = f"int32_t cqrt_alloc_{it}({int_lit_ct(n)});\nvoid cqrt_copy_{it}(int32_t, int32_t);\n"
+            kind = lambda x: ("fp", x) if x in IW else ("int", n, False)
+            out.append((name, decl + code, {"kind": "bitcast", "shape": "", "ins": [kind(a)], "out": kind(b),
+                                             "stem": f"bitcast_{a}_to_{b}", "rm": "", "exc": False, "root": None, "k": 0},
+                        [(f"cqrt_alloc_{it}", "i32", [it]), (f"cqrt_copy_{it}", "void", ["i32", "i32"])]))
     return out
 
 
@@ -130,7 +183,7 @@ def casts(widths):
                 out.append(Inst(f"fptoui_{a}_to_i{n}", f"sfx_fptoui_{a}_to_i{n}", [("fp", a)], ("int", n, False),
                                 False, True, [""]))
     else:
-        for a in ["f16", "f32", "f64"]:
+        for a in ["f16", "bf16", "f32", "f64"]:
             out.append(Inst(f"fpext_{a}_to_f80", f"sfx_fpext_{a}_to_f80", [("fp", a)], ("fp", "f80"), False, True, [""]))
             out.append(Inst(f"fptrunc_f80_to_{a}", f"sfx_fptrunc_f80_to_{a}", [("fp", "f80")], ("fp", a), True, True, [""]))
         for n in INT_FROM:
@@ -614,6 +667,14 @@ def main():
                                   "stem": sym.inst.stem, "x": bool(sym.inst.xw)}
     xdecl = "".join(f"int32_t cqrt_alloc_i{n}({', '.join(['uint64_t'] * ((n + 63) // 64)) if n > 128 else int_ctype(n, True)});\n"
                     f"void cqrt_copy_i{n}(int32_t s, int32_t d);\n" for n in INT_X if n not in (1, 8, 16, 32, 64))
+    for g, ws in [("default", ARITH_W), ("f80", F80_W)]:
+        for name, code, m, calls in forwards(ws):
+            if name in seen:
+                raise SystemExit(f"gen_cqsf: duplicate symbol {name}")
+            seen.add(name)
+            shims.append((g, code))
+            m = dict(m, group=g, calls=calls)
+            manifest[name] = m
     for g in groups:
         text = SHIM_PRE + xdecl + "".join(decls[g].values()) + "\n" + "\n".join(code for gg, code in shims if gg == g)
         (SF / "cq" / ("cqsf_shims.c" if g == "default" else "cqsf_shims_f80.c")).write_text(text)

@@ -257,6 +257,16 @@ int main(void) {
     for (unsigned i = 0; i < sizeof ops / sizeof ops[0]; i++) run_ar(&ops[i]);
     so("fma_bf16")->note = "vs host: clang's f32 fma then __truncsfbf2 rounds twice; CR §1.1 asks for one rounding";
     run_frem(); run_rnd(); run_cmp();
+    {   /* fneg, fabs, copysign: the sign bit alone (CR §2), exhaustive; against the host's own code */
+        u64 hb_neg(u64), hb_fabs(u64), hb_copysign(u64, u64), lb_neg(u64), lb_fabs(u64), lb_copysign(u64, u64);
+        for (u64 a = 0; a < 65536; a++) {
+            u64 in[2] = {a, rndv()};
+            chk("fneg_bf16", 0, in, 1, lb_neg(a), a ^ 0x8000, 0, 0, 0); hostchk("fneg_bf16", in, 1, a ^ 0x8000, hb_neg(a));
+            chk("fabs_bf16", 0, in, 1, lb_fabs(a), a & 0x7FFF, 0, 0, 0); hostchk("fabs_bf16", in, 1, a & 0x7FFF, hb_fabs(a));
+            u64 w = (a & 0x7FFF) | (in[1] & 0x8000);
+            chk("copysign_bf16", 0, in, 2, lb_copysign(a, in[1]), w, 0, 0, 0); hostchk("copysign_bf16", in, 2, w, hb_copysign(a, in[1]));
+        }
+    }
     long n = 0, bv = 0, bf = 0, nh = 0, bh = 0, bhf = 0;
     printf("\n%-22s %8s %7s %7s %8s %7s  %s\n", "operation", "cases", "badval", "badflag", "vs host", "differ", "note");
     for (int i = 0; i < nst; i++) {

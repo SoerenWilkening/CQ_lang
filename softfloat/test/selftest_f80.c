@@ -399,6 +399,76 @@ static void run_fma(void) {
            hfma_cls[0], hfma_cls[1], hfma_cls[2], hfma_cls[3], hfma_fcls[0], hfma_fcls[1]);
 }
 
+/* f32 bits -> bf16 in a mode, IEEE flags (tininess after rounding); a NaN quieted with its high payload
+ * (as selftest_bf16.c's) */
+static uint16_t ref_bf16(uint32_t b, int m, unsigned *fl) {
+    unsigned sg = b >> 31, e = (b >> 23) & 0xFF; uint32_t f = b & 0x7FFFFF, mag = b & 0x7FFFFFFF;
+    if (e == 0xFF) { if (f && !(f & 0x400000)) *fl |= FE_INVALID; return (uint16_t)((b >> 16) | (f ? 0x40 : 0)); }
+    uint32_t q = mag >> 16, rem = mag & 0xFFFF; int up = 0;
+    if (rem) {
+        *fl |= FE_INEXACT;
+        if (m == FE_TONEAREST) up = rem > 0x8000 || (rem == 0x8000 && (q & 1));
+        else if (m == FE_UPWARD) up = !sg; else if (m == FE_DOWNWARD) up = sg;
+        if (e == 0) {
+            int tiny = 1;
+            if (f >> 22) {
+                uint32_t q2 = f >> 15, r2 = f & 0x7FFF; int u2 = 0;
+                if (m == FE_TONEAREST) u2 = r2 > 0x4000 || (r2 == 0x4000 && (q2 & 1));
+                else if (m == FE_UPWARD) u2 = !sg && r2; else if (m == FE_DOWNWARD) u2 = sg && r2;
+                tiny = q2 + (uint32_t)u2 < 0x100;
+            }
+            if (tiny) *fl |= FE_UNDERFLOW;
+        }
+    }
+    q += (uint32_t)up;
+    if (q >= 0x7F80) {
+        *fl |= FE_OVERFLOW | FE_INEXACT;
+        int inf = m == FE_TONEAREST || (m == FE_UPWARD && !sg) || (m == FE_DOWNWARD && sg);
+        q = inf ? 0x7F80 : 0x7F7F;
+    }
+    return (uint16_t)((sg << 15) | q);
+}
+long double hv_ext_bf16(uint16_t); long double lb80_ext_bf16(uint16_t); uint32_t lb80_ext_bf16_x(uint16_t);
+uint16_t lb80_trunc_bf16(long double); uint16_t lb80_trunc_bf16_m(long double, uint32_t); uint32_t lb80_trunc_bf16_x(long double, uint32_t);
+/* bf16 <-> f80. To f80: the host's own conversion (no FENV), INVALID for an sNaN (IEEE). To bf16 (no host:
+ * LLVM 19's compiler-rt for x86 macOS has no __truncxfbf2): the x87 conversion to f32 toward zero with the
+ * last bit set when inexact (odd at 24 bits), then ref_bf16 in the mode; a NaN quieted with its high payload,
+ * a non-canonical operand the default NaN with INVALID. */
+static void run_bf16conv(void) {
+    for (uint32_t b = 0; b < 65536; b++) {
+        X a = {b, 0}; R ref, lib;
+        int nan = (b & 0x7F80) == 0x7F80 && (b & 0x7F);
+        ref.v = Xb(hv_ext_bf16((uint16_t)b)); ref.f = (nan && !(b & 0x40)) ? FE_INVALID : 0;
+        lib.v = Xb(lb80_ext_bf16((uint16_t)b)); lib.f = lb80_ext_bf16_x((uint16_t)b);
+        chkx("fpext_bf16_to_f80", 0, a, a, lib, ref, 1);
+    }
+    X sp[64]; int ns = specials(sp), z = 0; (void)z;
+    for (long t = 0; t < ns + 100000; t++) {
+        X a = t < ns ? sp[t] : rndx();
+        if (t >= ns && t % 4 == 1) a.e = (unsigned)(0x3FFF - 126 - (int)(rnd() % 12)) | (a.e & 0x8000), a.m |= 0x8000000000000000u;
+        if (t >= ns && t % 4 == 2) a.e = (unsigned)(0x3FFF + 127 - (int)(rnd() % 2)) | (a.e & 0x8000), a.m |= 0x8000000000000000u;
+        for (int mi = 0; mi < 4; mi++) {
+            int m = MODES[mi]; R ref = {{0, 0}, 0}, lib;
+            if (noncanon(a)) { ref.v.m = 0xFFC0; ref.f = FE_INVALID; }
+            else if (isnanx(a)) { ref.v.m = ((a.e & 0x8000u)) | 0x7FC0u | (unsigned)((a.m >> 56) & 0x7F); ref.f = issnanx(a) ? FE_INVALID : 0; }
+            else {
+                X c = a; if (!(c.e & 0x7FFF) && (c.m >> 63)) c.e |= 1;   /* a pseudo-denormal reads as a denormal */
+                volatile long double x = L(c);
+                hbegin(FE_TOWARDZERO); volatile float f = (float)x; unsigned f2 = hend() & ~2u;
+                uint32_t fb; float ff = f; memcpy(&fb, &ff, 4);
+                if ((f2 & FE_INEXACT) && (fb & 0x7F800000) != 0x7F800000) fb |= 1;
+                unsigned f3 = 0; ref.v.m = ref_bf16(fb, m, &f3);
+                ref.f = (f2 & (FE_INEXACT | FE_OVERFLOW)) | f3;
+            }
+            long double la = L(a);
+            if (mi == 0) { lib.v = (X){lb80_trunc_bf16(la), 0}; lib.f = lb80_trunc_bf16_x(la, 0); chkx("fptrunc_f80_to_bf16", m, a, a, lib, ref, 1); }
+            lib.v = (X){lb80_trunc_bf16_m(la, (uint32_t)m), 0}; lib.f = lb80_trunc_bf16_x(la, (uint32_t)m);
+            chkx("fptrunc_f80_to_bf16_rm", m, a, a, lib, ref, 1);
+        }
+    }
+    so("fptrunc_f80_to_bf16")->note = so("fptrunc_f80_to_bf16_rm")->note = "reference: x87 to f32 rounded to odd, then bf16 here (no __truncxfbf2 on the host)";
+}
+
 int main(void) {
     Op ops[] = {OP2(fadd, h_add, 1), OP2(fsub, h_sub, 1), OP2(fmul, h_mul, 1), OP2(fdiv, h_div, 1), OP2(frem, h_rem, 1),
                 OP1M(sqrt, h_sqrt), OP1M(rint, h_rint), OP1(floor, h_floor), OP1(ceil, h_ceil), OP1(trunc, h_trunc), OP1(round, h_round)};
@@ -408,6 +478,20 @@ int main(void) {
     run_misc();
     run_conv();
     run_fma();
+    run_bf16conv();
+    {   /* fneg, fabs, copysign: the host's -x (fchs), fabsl, copysignl; bit 79 alone, no flag */
+        X sp[64]; int ns = specials(sp);
+        for (long t = 0; t < (long)ns * ns + 20000; t++) {
+            X a = t < (long)ns * ns ? sp[t / ns] : rndx(), b = t < (long)ns * ns ? sp[t % ns] : rndx();
+            volatile long double x = L(a), y = L(b); R ref, lib;
+            hbegin(FE_TONEAREST); long double r = -x; ref.f = hend() & ~2u; ref.v = Xb(r);
+            lib.v = Xb(cqsf_fneg_f80(x)); lib.f = 0; chkx("fneg_f80", 0, a, b, lib, ref, 1);
+            hbegin(FE_TONEAREST); r = fabsl(x); ref.f = hend() & ~2u; ref.v = Xb(r);
+            lib.v = Xb(cqsf_fabs_f80(x)); chkx("fabs_f80", 0, a, b, lib, ref, 1);
+            hbegin(FE_TONEAREST); r = copysignl(x, y); ref.f = hend() & ~2u; ref.v = Xb(r);
+            lib.v = Xb(cqsf_copysign_f80(x, y)); chkx("copysign_f80", 0, a, b, lib, ref, 1);
+        }
+    }
     so("fptrunc_f80_to_f16_rm")->note = "reference: the exact value rounded here (no x87 f16 instruction)";
     long n = 0, bv = 0, bf = 0;
     printf("\n%-28s %9s %8s %8s  %s\n", "operation", "cases", "badval", "badflag", "note");

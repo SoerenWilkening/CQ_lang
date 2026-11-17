@@ -151,6 +151,14 @@ CQSF_CLASS(bf16, uint16_t, 0x7F80, 0x007F, 0x0040, 0x8000)
 CQSF_CLASS(f32, uint32_t, 0x7F800000, 0x007FFFFF, 0x00400000, 0x80000000)
 CQSF_CLASS(f64, uint64_t, UINT64_C(0x7FF0000000000000), UINT64_C(0x000FFFFFFFFFFFFF), UINT64_C(0x0008000000000000), UINT64_C(0x8000000000000000))
 
+/* fneg, fabs, copysign (CR §2): the sign bit alone, also of a NaN (no quieting, no flag). */
+#define CQSF_SIGNOPS(W, U, SIGN)                                                                         \
+static inline U sfx_fneg_##W(struct sf_ctx *sf_ctx, U a) { (void)sf_ctx; return a ^ (U)SIGN; }            \
+static inline U sfx_fabs_##W(struct sf_ctx *sf_ctx, U a) { (void)sf_ctx; return a & (U)~(U)SIGN; }        \
+static inline U sfx_copysign_##W(struct sf_ctx *sf_ctx, U a, U b) { (void)sf_ctx; return (a & (U)~(U)SIGN) | (b & (U)SIGN); }
+CQSF_SIGNOPS(f16, uint16_t, CQSF_SIGN16) CQSF_SIGNOPS(bf16, uint16_t, CQSF_SIGN16)
+CQSF_SIGNOPS(f32, uint32_t, CQSF_SIGN32) CQSF_SIGNOPS(f64, uint64_t, CQSF_SIGN64)
+
 /* ---- bf16 arithmetic, compares and rounding ops -------------------------------------------------
  * CR §1.1: bf16 has the rounding and NaN rules of the IEEE widths, so an operation is one correct rounding
  * in the mode. An operand extends to f32 exactly (a shift). + - * / sqrt fma are computed in f32 rounded
