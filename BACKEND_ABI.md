@@ -93,7 +93,8 @@ translator of the IR. A call never returns before its gates are appended in prog
 |---|---|---|
 | `cq_*`, `__cq_*` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`) | `CQ.h`, consumed by the compiler | **no**: never reaches the backend |
 | `cqrt_*` | backend: core gates, memory bus, tape, abort, push/pop (§1) | **yes** |
-| `cq_template_*` | backend: out-of-place reversible ops and their `_unc` twins (§2) | **yes** |
+| `cq_template_*`, integer (§2.2–§2.7) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
+| `cq_template_*`, floating point (§2.8–§2.11) | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
 | `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
@@ -928,7 +929,7 @@ pseudo-denormal reads as a denormal (CR §2).
 - `is_fpclass`: §2.11.
 
 ### 2.11 EXTEND: the kernels the backend writes
-(A backend that takes its float templates from a lowered library, §2.12, writes none of these.)
+(The compiler's float library, §2.12, provides these; a backend writes none of them.)
 An EXTEND family gets its circuit the way the f64 families do: a branchless integer kernel on
 bit patterns, built from the integer circuits of §2.2–§2.5 (§0). Bennett.jl has no kernel for
 these families; the backend writes each one, with BJ's f64 kernel as the model for the
@@ -960,7 +961,8 @@ and `lower_ult!` were run at W = 100 and 128 against big-integer arithmetic (20 
 ---
 
 ### 2.12 Float templates from a lowered library
-A backend need not write any float kernel. Every float template of §2.8–§2.11 is an ordinary
+The float templates are the compiler's, not the backend's. The backend's concern is §1 (core
+gates, memory bus, tape, abort, push/pop) and the integer templates of §2.2–§2.7. Every float template of §2.8–§2.11 is an ordinary
 function of register handles, so it can be lowered code: a C implementation of IEEE arithmetic
 in integer operations (Berkeley SoftFloat 3e, 8086-SSE specialization), compiled by the CQ
 compiler itself as a lowered library (§3, CR rule 27), with one shim per template:
@@ -968,8 +970,9 @@ compiler itself as a lowered library (§3, CR rule 27), with one shim per templa
     i32  cq_template_fadd_f64(i32 a, i32 b)            = __cq_q_f64_add_11_t(a, b, K)
     void cq_template_fadd_f64_unc(i32 r, i32 a, i32 b) = __cq_q_f64_add_11_t_unc(r, a, b, K)
 
-The library is linked before the backend. What the backend must then provide is §1 and the
-integer templates of §2.2–§2.7 only: the lowered library calls nothing else.
+The compiler ships this library and its driver links it before the backend, so no program
+build names it. The lowered library calls §1 and the integer templates of §2.2–§2.7 and nothing
+else.
 - The C source carries no state: the rounding mode is a parameter and the exception flags a
   result (the `_rm`/`_rmq`/`_exc` forms), never a global, so a float template stays a function
   of its operands and touches the bus only for constant tables.
@@ -979,8 +982,8 @@ integer templates of §2.2–§2.7 only: the lowered library calls nothing else.
   encodings, bf16) the library's own C is corrected, not the contract.
 - K in a shim is fixed per function: a bound on its data-dependent loop (`frem`), any value
   for a loop-free one.
-- A backend may still define any float template itself; a symbol it defines is not taken from
-  the library.
+- §2.8–§2.11 stay as the contracts the library is built and tested against. A backend may
+  still define a float template itself; a symbol it defines is not taken from the library.
 
 ---
 
