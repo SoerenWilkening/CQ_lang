@@ -42,6 +42,8 @@ Options:
                        the library exports its four clones only, and the C name stays the host library's
                        (-cq-host-roots to cq-lower); a root an input defines also exports its own symbol.
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
+  --no-softfloat       do not link the compiler's float templates (softfloat/build/libqsoftfloat*.a, linked after
+                       the backend when built): the backend then defines every cq_template_f* itself
   --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
   --cq-entry FN        the entry function for --cq-check (default main)
   --cq-samples N       passed to cqcheck user as --samples
@@ -108,6 +110,8 @@ C_SUFFIXES = {".c", ".i"}
 IR_SUFFIXES = {".ll", ".bc"}
 LINK_SUFFIXES = {".o", ".a", ".dylib", ".so", ".tbd"}
 HOST_SOURCE = ROOT / "bundle" / "host" / "cq_host.c"
+# The compiler's float templates (BACKEND_ABI §2.12): softfloat/build.sh lib [softfloat/cqsf_f80.roots] makes them.
+FLOAT_LIBS = [ROOT / "softfloat" / "build" / n for n in ("libqsoftfloat.a", "libqsoftfloat_f80.a")]
 HOST_SYMBOLS = {"__cq_mem", "__cq_alloc", "__cq_sig", "__cq_clone_register", "__cq_clone_resolve", "__cq_clone_count",
                 "__cq_clone_at"}
 
@@ -144,7 +148,7 @@ def parse_args(argv):
     o = {
         "inputs": [], "out": None, "mode": "exe", "emit_llvm": False, "kflags": [], "backend": [],
         "check": False, "entry": "main", "samples": None, "save_temps": None, "cflags": [],
-        "roots": None, "lib": False, "mode_given": False,
+        "roots": None, "lib": False, "mode_given": False, "softfloat": True,
     }
     it = iter(argv)
 
@@ -166,6 +170,8 @@ def parse_args(argv):
             o["mode"], o["mode_given"] = "c", True
         elif a == "--cq-lib":
             o["lib"] = True
+        elif a == "--no-softfloat":
+            o["softfloat"] = False
         elif a == "-emit-llvm":
             o["emit_llvm"] = True
         elif a == "-v":
@@ -588,8 +594,11 @@ def main(argv) -> int:
                 host_obj = tmp / "cq_host.o"
                 run([tool("clang"), "-O1", "-c", HOST_SOURCE, "-o", host_obj], "clang -c of bundle/host/cq_host.c")
                 objs.insert(0, host_obj)
+            # The float templates are the compiler's: its lowered SoftFloat archives go last, so a template the
+            # backend defines itself is the backend's and the library supplies the rest.
+            floats = [p for p in FLOAT_LIBS if p.exists()] if o["softfloat"] else []
             run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-x", "ir", lowered, "-x", "none",
-                 *objs, *o["backend"], "-o", staged], "link of the lowered program")
+                 *objs, *o["backend"], *floats, "-o", staged], "link of the lowered program")
 
         # 5. --cq-check: the C-oracle check of cq-w1-usercheck on this program.
         status = 0

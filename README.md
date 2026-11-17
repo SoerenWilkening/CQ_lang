@@ -92,7 +92,9 @@ and by `CQ_LLVM_BIN=<prefix>/bin` when running `cqcc`. A `CQ_spec` elsewhere is 
 `CQ_SPEC_DIR`. `cqcc --help` lists every option.
 
 An executable needs a backend: a library that implements `BACKEND_ABI.md`. This repository
-contains none. `cqcc -S`, `cqcc -c` and `--cq-check` work without one.
+contains none. `cqcc -S`, `cqcc -c` and `--cq-check` work without one. A backend has to implement
+the core gates, the memory bus, the tape and the integer operations. Floating point is optional
+for it: see "Floating point from SoftFloat" below.
 
 A backend is linked like any library: `-lmybackend` (with `-L<dir>` if it is not on the linker's
 search path) or a path given to `--backend`. Built as a shared library, it is bound when the
@@ -237,6 +239,39 @@ libtool -static -o libqc.a libq_*.a              # 52 MB, one archive
 cat bundle/roots/*.roots > libc.roots
 cqcc prog.c --cq-roots libc.roots -L. -lqc -lmybackend
 ```
+
+## Floating point from SoftFloat
+
+A lowered program calls one backend operation per floating-point instruction (`fadd`, `fmul`,
+`sqrt`, a compare, a conversion). A backend does not have to implement any of them. `softfloat/`
+holds Berkeley SoftFloat 3e, which computes IEEE arithmetic with integer operations only, and the
+compiler lowers it into a library that defines every floating-point operation in terms of the
+integer ones.
+
+```sh
+softfloat/build.sh gen
+softfloat/build.sh lib                             # softfloat/build/libqsoftfloat.a
+softfloat/build.sh lib softfloat/cqsf_f80.roots    # softfloat/build/libqsoftfloat_f80.a (long double)
+cqcc prog.c -lmybackend -o prog                    # cqcc links both archives when they exist
+```
+
+- The library covers `float`, `double`, `_Float16` and `long double`: arithmetic, `sqrt`, `fma`
+  (not for `long double`), compares, rounding, and the conversions between floating-point widths
+  and to and from 8, 16, 32 and 64-bit integers, with every rounding mode and the exception flags.
+- It is optional. `cqcc --no-softfloat`, or simply not building it, leaves the floating-point
+  operations to the backend, which must then implement them itself. A backend may also implement
+  only some: an operation the backend defines is the backend's, the library supplies the rest.
+- Results match x86 hardware bit for bit, as the C standard library coverage above assumes.
+
+## Lowering times
+
+Time spent in the lowering, on one x86-64 Mac:
+
+| What | Functions | Time | Result |
+|---|---|---|---|
+| The C standard library, all nine root lists | 387 | 29 min | `libqc.a`, 52 MB |
+| SoftFloat, `float`, `double`, `_Float16` | 369 | 1 min 10 s | `libqsoftfloat.a`, 8.6 MB |
+| SoftFloat, `long double` | 111 | 36 s | `libqsoftfloat_f80.a`, 4.1 MB |
 
 ## How the lowering works
 
