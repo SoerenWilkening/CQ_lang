@@ -37,7 +37,7 @@ define i32 @f(i32 %x) {
   ret i32 %y
 }
 LL
-q=$(cd "$PASSTHROUGH/../.." && pwd)/../CQ_spec/examples/01_add_classical_const/add_classical_const.O1.ll
+q=$(cd "$PASSTHROUGH/../.." && pwd)/spec/examples/01_add_classical_const/add_classical_const.O1.ll
 [ -f "$q" ] || q=$WT/CQ_spec/examples/01_add_classical_const/add_classical_const.O1.ll
 
 tree "$t/empty"

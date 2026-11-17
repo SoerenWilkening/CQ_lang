@@ -126,7 +126,7 @@ def run(dump, ex):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dump', required=True)
-    ap.add_argument('--spec', default=str(ROOT.parent / 'CQ_spec'))
+    ap.add_argument('--spec', default=str(ROOT / 'spec'))
     ap.add_argument('-v', action='store_true')
     ap.add_argument('examples', nargs='*')
     a = ap.parse_args()

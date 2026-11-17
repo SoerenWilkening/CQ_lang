@@ -3,7 +3,7 @@
 
     python3 tests/chk-report/test_report.py        (from the repository root, or via ctest)
 
-Uses the pinned CQ_spec (CQ_SPEC_DIR or ../CQ_spec) read-only and LLVM 19. Writes only to a
+Uses the pinned CQ_spec (CQ_SPEC_DIR or spec/) read-only and LLVM 19. Writes only to a
 temporary directory (CQ_BUILD_DIR is redirected there).
 """
 import importlib

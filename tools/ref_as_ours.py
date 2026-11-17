@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> int:
-    spec = Path(os.environ.get("CQ_SPEC_DIR", ROOT.parent / "CQ_spec")).resolve()
+    spec = Path(os.environ.get("CQ_SPEC_DIR", ROOT / "spec")).resolve()
     dest = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build" / "ref_as_ours"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "REFERENCE").write_text(str(spec) + "\n")

@@ -16,7 +16,7 @@ Launcher (cq-8m6v): <build>/cqcheck-tools/cqcheck <args> is `python3 -m cqcheck 
 shim's start and without site-packages (checker/native/cqcheck_launch.c; built by the cqcheck_tools
 target). Run it through heavy.sh like any checker run: it is an ordinary process, no daemon.
 
-Environment: CQ_SPEC_DIR (default ../CQ_spec), CQ_BUILD_DIR (default build/), CQ_PLUGIN (default
+Environment: CQ_SPEC_DIR (default spec/), CQ_BUILD_DIR (default build/), CQ_PLUGIN (default
 $CQ_BUILD_DIR/pass/libCQLower.so), CQ_LLVM_BIN (default /usr/local/opt/llvm@19/bin).
 """
 from __future__ import annotations
@@ -67,7 +67,7 @@ def stores_progress(ours_dir: Optional[Path], oracle: str) -> bool:
     if budget and int(budget, 0) != DEFAULT_COST_BUDGET:
         return False
     return (ours_dir is None and oracle == "both" and "CQ_PLUGIN" not in os.environ
-            and report.spec_dir() == (report.ROOT.parent / "CQ_spec").resolve()
+            and report.spec_dir() == (report.ROOT / "spec").resolve()
             and all(p.resolve() == report.DEFAULT_LLVM_BIN.resolve()
                     for p in (report.LLVM_BIN, Path(os.environ.get("CQ_LLVM_BIN", str(report.DEFAULT_LLVM_BIN))))))
 

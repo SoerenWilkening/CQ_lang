@@ -111,7 +111,7 @@ def _stamp_dir() -> Path:
 
 def check() -> int:
     """tools/spec_lock.py's exit status (its output on stderr when it fails)."""
-    spec = ROOT.parent / "CQ_spec"
+    spec = ROOT / "spec"
     try:
         key = state_key(spec)
     except OSError:

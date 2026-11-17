@@ -519,7 +519,7 @@ def main():
     ap.add_argument("--musl-stdout", action="store_true", help="only the src/muslstdout test")
     ap.add_argument("--dbtpi", action="store_true", help="only the src/dbtpi tests (ruling cq-dbtpi)")
     ap.add_argument("--fenvq2", action="store_true", help="only the src/fenvq2 tests (rulings Q2, rule 23's objects)")
-    ap.add_argument("--spec", type=Path, default=ROOT.parent / "CQ_spec")
+    ap.add_argument("--spec", type=Path, default=ROOT / "spec")
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
     spec = a.spec.resolve()

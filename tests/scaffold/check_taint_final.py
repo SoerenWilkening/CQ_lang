@@ -99,7 +99,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", default=str(LLVM / "opt"))
-    ap.add_argument("--spec", default=str(HERE.parents[1] / ".." / "CQ_spec"))
+    ap.add_argument("--spec", default=str(HERE.parents[1] / "spec"))
     a = ap.parse_args()
 
     irr = HERE / "irreducible" / "irreducible_tainted.ll"

@@ -35,7 +35,7 @@ def to_json(r):
 
 import stubgen  # noqa: E402
 
-SPEC = Path(os.environ.get("CQ_SPEC_DIR", REPO.parent / "CQ_spec"))
+SPEC = Path(os.environ.get("CQ_SPEC_DIR", REPO / "spec"))
 # core.c reaches the bus (rt_bus.c, cqe__bus_load_of; it needs rt_tape.c) and clone replay (rt_replay.c, cqe__rp_put) since cq-kcn5i
 RT = [REPO / "checker" / "rt" / f for f in ("core.c", "dispatch.c", "rt_bus.c", "rt_tape.c", "rt_replay.c")]
 FAM = [HERE / "testfam.c"]

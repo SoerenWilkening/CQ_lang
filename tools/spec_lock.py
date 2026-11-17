@@ -28,13 +28,14 @@ def locked_paths(spec):
 
 
 def state(spec):
-    head = subprocess.run(['git', '-C', str(spec), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
     hashes = {str(p.relative_to(spec)): hashlib.sha256(p.read_bytes()).hexdigest() for p in locked_paths(spec)}
+    # The spec lives in this repository (spec/): its pin is the digest of the locked files, not a commit of its own.
+    head = hashlib.sha256(''.join(f'{h}  {p}\n' for p, h in sorted(hashes.items())).encode()).hexdigest()[:40]
     return head, hashes
 
 
 def main(argv):
-    spec = ROOT.parent / 'CQ_spec'
+    spec = ROOT / 'spec'
     if '--spec' in argv:
         spec = pathlib.Path(argv[argv.index('--spec') + 1])
     head, hashes = state(spec)
@@ -47,7 +48,7 @@ def main(argv):
     want = dict(reversed(l.split('  ', 1)) for l in lines[1:])
     errors = []
     if head != want_head:
-        errors.append(f'CQ_spec HEAD is {head}, spec.lock pins {want_head}')
+        errors.append(f'the spec digest is {head}, spec.lock pins {want_head}')
     for p in sorted(set(want) | set(hashes)):
         if p not in hashes:
             errors.append(f'missing: {p}')

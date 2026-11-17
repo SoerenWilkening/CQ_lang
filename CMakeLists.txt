@@ -33,7 +33,7 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(CQ_OPT "${CQ_LLVM_PREFIX}/bin/opt")
 set(CQ_CLANG "${CQ_LLVM_PREFIX}/bin/clang")
-set(CQ_SPEC_DIR "${CMAKE_SOURCE_DIR}/../CQ_spec" CACHE PATH "pinned CQ_spec checkout (read-only)")
+set(CQ_SPEC_DIR "${CMAKE_SOURCE_DIR}/spec" CACHE PATH "pinned CQ_spec checkout (read-only)")
 
 enable_testing()
 

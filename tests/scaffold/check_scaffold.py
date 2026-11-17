@@ -313,7 +313,7 @@ def main():
     ap.add_argument("--plugin", default=str(ROOT / "build/pass/libCQLower.so"))
     ap.add_argument("--opt", default=str(LLVM / "opt"))
     ap.add_argument("--clang", default=str(LLVM / "clang"))
-    ap.add_argument("--spec", default=str(ROOT / "../CQ_spec"))
+    ap.add_argument("--spec", default=str(ROOT / "spec"))
     ap.add_argument("--arch-json")
     a = ap.parse_args()
 

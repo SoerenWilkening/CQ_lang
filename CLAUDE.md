@@ -8,7 +8,8 @@ This file is how to work.
 
 ## Pins
 
-- **Spec.** CQ_spec at `../CQ_spec`, read-only. `spec.lock` pins its commit and a sha256 of every
+- **Spec.** CQ_spec is `spec/` in this repository (a subtree; it was a sibling checkout until 2026-11-17, and
+  "CQ_spec" in older text means it). `spec.lock` pins a digest and a sha256 of every
   file under `examples/` plus `CONSTRUCTION_RULES.md`, `CQ.h`, `BACKEND_ABI.md` and
   `_tools/drivers.txt`. Run `python3 tools/spec_lock.py` before any test run; drift exits 1. Re-pin
   with `--write` only on a deliberate spec bump, in a commit of its own. `BACKEND_ABI.md` is

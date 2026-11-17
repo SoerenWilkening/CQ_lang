@@ -59,7 +59,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def spec_dir() -> Path:
-    return Path(os.environ.get("CQ_SPEC_DIR", REPO.parent / "CQ_spec")).resolve()
+    return Path(os.environ.get("CQ_SPEC_DIR", REPO / "spec")).resolve()
 
 
 def unimplemented(what: str) -> NoReturn:

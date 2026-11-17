@@ -579,7 +579,7 @@ def test_host_link(tmp):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", default=str(ROOT / "build" / "pass" / "libCQLower.so"))
-    ap.add_argument("--spec", default=str(ROOT.parent / "CQ_spec"))
+    ap.add_argument("--spec", default=str(ROOT / "spec"))
     ap.add_argument("--examples", nargs="*")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--manifest", help="bundle manifest (default: CQ_BUNDLE_MANIFEST or bundle/manifest.json)")

@@ -6,7 +6,7 @@
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/env.sh"
-ex=$(cd "$PASSTHROUGH/../.." && pwd)/../CQ_spec/examples/01_add_classical_const/add_classical_const.O1.ll
+ex=$(cd "$PASSTHROUGH/../.." && pwd)/spec/examples/01_add_classical_const/add_classical_const.O1.ll
 [ -f "$ex" ] || ex=$WT/CQ_spec/examples/01_add_classical_const/add_classical_const.O1.ll
 t=$(mktemp -d "${TMPDIR:-/tmp}/cqkc.XXXXXX"); trap 'rm -rf "$t"' EXIT
 "$LLVM_BIN/llvm-as" "$ex" -o "$t/in.bc" || exit 1

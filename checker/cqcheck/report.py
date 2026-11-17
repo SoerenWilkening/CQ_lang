@@ -74,7 +74,7 @@ K_CHECK = 4  # CLAUDE.md: both sides run at K = 4.
 
 
 def spec_dir() -> Path:
-    return Path(os.environ.get("CQ_SPEC_DIR", str(ROOT.parent / "CQ_spec"))).resolve()
+    return Path(os.environ.get("CQ_SPEC_DIR", str(ROOT / "spec"))).resolve()
 
 
 def build_dir() -> Path:

@@ -52,7 +52,7 @@ Options:
   -I.. -D.. -U.. -include FILE -isystem DIR -std=.. -W.. -w -f..   passed to the C compile
   -Xclang-cc ARG       one more argument for the C compile
 
-Environment: CQ_SPEC_DIR (default ../CQ_spec; CQ.h is read from it), CQ_BUILD_DIR (default build/),
+Environment: CQ_SPEC_DIR (default spec/; CQ.h is read from it), CQ_BUILD_DIR (default build/),
 CQ_PLUGIN (default $CQ_BUILD_DIR/pass/libCQLower.so), CQ_LLVM_BIN (default /usr/local/opt/llvm@19/bin),
 CQ_BUNDLE_MANIFEST (default bundle/manifest.json; its entries are relative to its own directory).
 
@@ -101,7 +101,7 @@ import cq_entries  # noqa: E402  (driver/cq_entries.py: the result entries a pro
 
 ROOT = Path(__file__).resolve().parents[1]
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
-SPEC_DIR = Path(os.environ.get("CQ_SPEC_DIR", str(ROOT.parent / "CQ_spec")))
+SPEC_DIR = Path(os.environ.get("CQ_SPEC_DIR", str(ROOT / "spec")))
 BUILD_DIR = Path(os.environ.get("CQ_BUILD_DIR", str(ROOT / "build")))
 PLUGIN = Path(os.environ.get("CQ_PLUGIN", str(BUILD_DIR / "pass" / "libCQLower.so")))
 MANIFEST = Path(os.environ.get("CQ_BUNDLE_MANIFEST", str(ROOT / "bundle" / "manifest.json"))).resolve()

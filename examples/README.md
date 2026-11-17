@@ -1,6 +1,6 @@
 # Examples: quantum algorithms in plain C
 
-Two textbook algorithms written against `CQ.h` (`../CQ_spec/CQ.h`), with the problem size as an
+Two textbook algorithms written against `CQ.h` (`spec/CQ.h`), with the problem size as an
 ordinary run-time argument.
 
 | Program | Function | What it does |
@@ -47,7 +47,7 @@ With `cqcc` (from the repository root; the plugin defaults to `build/pass/libCQL
 `--save-temps` keeps `linked.ll` (the `-O1` module the pass reads). By hand:
 
     LLVM=/usr/local/opt/llvm@19/bin
-    $LLVM/clang -O1 -S -emit-llvm -target x86_64-apple-macosx -include ../CQ_spec/CQ.h \
+    $LLVM/clang -O1 -S -emit-llvm -target x86_64-apple-macosx -include spec/CQ.h \
         examples/grover/grover.c -o grover.O1.ll
     $LLVM/opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-lower -cq-k-default=4 \
         -S grover.O1.ll -o grover.lowered.ll

@@ -66,9 +66,9 @@ PINS = HERE / "pins.json"
 RECIPE = HERE / "recipe.json"
 FORMATTERS = ROOT / "tools" / "cq_formatters.py"
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
-SPEC_DIR = Path(os.environ.get("CQ_SPEC_DIR", ROOT.parent / "CQ_spec"))
+SPEC_DIR = Path(os.environ.get("CQ_SPEC_DIR", ROOT / "spec"))
 if not SPEC_DIR.exists():  # a worktree under wt/ sits one level deeper than the main checkout
-    SPEC_DIR = ROOT.parent.parent / "CQ_spec"
+    SPEC_DIR = ROOT / "spec"
 # musl's weak_alias is an ELF alias that clang's Darwin front end refuses: such a unit is compiled for musl's own
 # ELF target and its IR carried over to the corpus triple (x86_64 SysV either way; libc_sweep2.py's method)
 ELF_TRIPLE = "x86_64-unknown-linux-musl"

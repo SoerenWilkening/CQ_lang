@@ -9,7 +9,7 @@
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$HERE/../.." && pwd)
 PLUGIN=${1:-${CQ_PLUGIN:-$ROOT/build/pass/libCQLower.so}}
-SPEC=${CQ_SPEC_DIR:-$(cd "$ROOT/.." && pwd)/CQ_spec}
+SPEC=${CQ_SPEC_DIR:-$ROOT/spec}
 OUT=${CQ_BUILD_DIR:-$ROOT/build}/tests/eff-tape/percent_n
 rm -rf "$OUT"; mkdir -p "$OUT/ok" "$OUT/mut"
 CQ_PLUGIN="$PLUGIN" CQ_SPEC_DIR="$SPEC" python3 "$ROOT/driver/cqcc" -S "$HERE/percent_n_check.c" -o "$OUT/ok/lowered.ll" \

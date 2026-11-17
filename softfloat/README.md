@@ -42,7 +42,7 @@ cqcc prog.c -Lsoftfloat/build -lqsoftfloat -lmybackend
 | `test/` | the self-tests below |
 
 ```sh
-export CQ_PLUGIN=…/build/pass/libCQLower.so CQ_BUILD_DIR=…/build CQ_SPEC_DIR=…/CQ_spec
+# CQ_PLUGIN, CQ_BUILD_DIR and CQ_SPEC_DIR default to this repository's build/ and spec/
 softfloat/build.sh gen                       # after editing the table or cq/*.h
 softfloat/build.sh lib                       # build/libqsoftfloat.a      (about 1 minute)
 softfloat/build.sh lib softfloat/cqsf_f80.roots   # build/libqsoftfloat_f80.a

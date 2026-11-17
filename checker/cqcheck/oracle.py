@@ -134,7 +134,7 @@ from .contracts import DriverSpec, RunResult
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "checker" / "oracle"
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
-SPEC = Path(os.environ.get("CQ_SPEC_DIR", ROOT.parent / "CQ_spec"))
+SPEC = Path(os.environ.get("CQ_SPEC_DIR", ROOT / "spec"))
 DEFAULT_TIMEOUT_MS = 2000
 DEFAULT_TRIPCAP = 10_000_000
 

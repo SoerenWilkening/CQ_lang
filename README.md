@@ -76,11 +76,12 @@ Requirements:
 
 - x86-64 macOS. The compiler targets x86-64 only.
 - LLVM and clang 19.1.7 (`brew install llvm@19`), CMake 3.20 or newer, Ninja, Python 3.
-- The specification repository `CQ_spec`, checked out next to this one. It holds `CQ.h` and the
-  backend interface, `BACKEND_ABI.md`.
+
+The specification is in `spec/`: `CQ.h`, the rules (`CONSTRUCTION_RULES.md`), the backend
+interface (`BACKEND_ABI.md`) and the examples.
 
 ```sh
-git clone https://github.com/SoerenWilkening/CQ_lang.git   # with CQ_spec as its sibling directory
+git clone https://github.com/SoerenWilkening/CQ_lang.git
 cd CQ_lang
 cmake -S . -B build -G Ninja
 cmake --build build
@@ -88,10 +89,9 @@ ln -s "$PWD/driver/cqcc" /usr/local/bin/cqcc               # optional: cqcc on t
 ```
 
 An LLVM outside `/usr/local/opt/llvm@19` is named by `-DCQ_LLVM_PREFIX=<prefix>` at configure time
-and by `CQ_LLVM_BIN=<prefix>/bin` when running `cqcc`. A `CQ_spec` elsewhere is named by
-`CQ_SPEC_DIR`. `cqcc --help` lists every option.
+and by `CQ_LLVM_BIN=<prefix>/bin` when running `cqcc`. `cqcc --help` lists every option.
 
-An executable needs a backend: a library that implements `BACKEND_ABI.md`. This repository
+An executable needs a backend: a library that implements `spec/BACKEND_ABI.md`. This repository
 contains none. `cqcc -S`, `cqcc -c` and `--cq-check` work without one. A backend has to implement
 the core gates, the memory bus, the tape and the integer operations. Floating point is optional
 for it: see "Floating point from SoftFloat" below.
@@ -309,4 +309,4 @@ Time spent in the lowering, on one x86-64 Mac:
    is uncomputed before it is freed, no quantum value reaches a classical instruction, and no
    measurement appears that the program did not write.
 
-The rules are specified in `CONSTRUCTION_RULES.md` of `CQ_spec`.
+The rules are specified in `spec/CONSTRUCTION_RULES.md`.

@@ -83,7 +83,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", default="/usr/local/opt/llvm@19/bin/opt")
-    ap.add_argument("--spec", default=str(ROOT.parent / "CQ_spec"))
+    ap.add_argument("--spec", default=str(ROOT / "spec"))
     args = ap.parse_args()
 
     lock = subprocess.run([sys.executable, str(ROOT / "tools" / "spec_lock.py")], cwd=ROOT,
