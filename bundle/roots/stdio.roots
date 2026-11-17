@@ -1,0 +1,13 @@
+remove
+rename
+snprintf
+sprintf
+sscanf
+swprintf
+swscanf
+tmpnam
+vsnprintf
+vsprintf
+vsscanf
+vswprintf
+vswscanf

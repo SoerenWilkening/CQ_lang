@@ -186,6 +186,7 @@ cqcc prog.c --cq-roots libm.roots -L. -lqm -lmybackend     # prog's calls go to 
 ```
 
 - The root list is one C function name per line. The same file is given to both commands.
+  `bundle/roots/` has ready lists per header.
 - `--cq-lib` takes the bodies of the roots from its input files, or from the bundle when no input
   defines them. Your own library works the same way: `cqcc --cq-lib --cq-roots my.roots my.c -o
   libmy.a`.
@@ -197,6 +198,33 @@ cqcc prog.c --cq-roots libm.roots -L. -lqm -lmybackend     # prog's calls go to 
 - A call into a lowered library passes every argument as a quantum register, classical ones
   included. That costs more per call than a copy specialised to the call, in exchange for not
   lowering the library again.
+
+To lower standard library functions, `cqcc` needs their bodies: build the whole-library bundle
+first (the five commands above, about 3 minutes) and keep `CQ_BUNDLE_MANIFEST` set. Then, for
+example, all of `math.h`:
+
+```sh
+cqcc --cq-lib --cq-roots bundle/roots/math.roots -o libqm.a
+cqcc prog.c --cq-roots bundle/roots/math.roots -L. -lqm -lmybackend
+```
+
+Lowering time and archive size per list, measured on one x86-64 Mac:
+
+| Root list | Functions | Time | Archive |
+|---|---|---|---|
+| `math.roots` | 171 | 5 min 30 s | 5.1 MB |
+| `time.roots` | 11 | 1 min 40 s | 8.1 MB |
+| `stdlib.roots` | 32 | 1 min 30 s | 3.6 MB |
+| `multibyte.roots` | 17 | 30 s | 2.4 MB |
+| `string.roots` | 39 | 15 s | 1.2 MB |
+| `ctype.roots` | 32 | 10 s | 0.4 MB |
+| `locale.roots` | 6 | 7 s | 0.3 MB |
+| `complex.roots` | 66 | more than 10 min | |
+| `stdio.roots` (the `sprintf` and `sscanf` families) | 13 | more than 10 min | |
+
+Each list is lowered as one library, and the libraries link together. A program names one root list,
+so concatenate the lists of the libraries it links. For a few functions a library takes seconds:
+`cos`, `sin`, `exp` and `cbrt` together lower in 14 s into 0.3 MB.
 
 ## How the lowering works
 

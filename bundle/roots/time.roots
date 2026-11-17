@@ -1,0 +1,11 @@
+asctime
+clock
+ctime
+difftime
+gmtime
+localtime
+mktime
+strftime
+time
+timespec_get
+wcsftime

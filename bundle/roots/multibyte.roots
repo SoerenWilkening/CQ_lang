@@ -1,0 +1,17 @@
+btowc
+c16rtomb
+c32rtomb
+mblen
+mbrlen
+mbrtoc16
+mbrtoc32
+mbrtowc
+mbsinit
+mbsrtowcs
+mbstowcs
+mbtowc
+wcrtomb
+wcsrtombs
+wcstombs
+wctob
+wctomb

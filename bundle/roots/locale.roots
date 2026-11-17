@@ -1,0 +1,6 @@
+localeconv
+setlocale
+strcoll
+strxfrm
+wcscoll
+wcsxfrm
