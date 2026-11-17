@@ -102,6 +102,21 @@ translator of the IR. A call never returns before its gates are appended in prog
 `main.o  [lowered libraries (rule 27)]  libcq_templates.a  libcq_runtime.a` (template circuits
 are built from core primitives).
 
+**Static or shared.** The backend is a link-time dependency of the lowered program, named to
+the linker like any library: by path, or by `-l<name>` with `-L<dir>`. The lowered program
+refers to it only by the symbol names of §1 and §2, so both kinds satisfy this ABI.
+- An archive (`.a`): the backend's code is copied into the executable. Nothing is needed at
+  run time; another backend needs a relink. The link order above applies.
+- A shared library (`.dylib`, `.so`): the symbols are bound when the program starts, so one
+  executable runs against any backend installed under that name (a simulator, a resource
+  counter, hardware) with no relink, and the executable does not carry the circuits. Archive
+  order is not needed. The cost is one indirection per call.
+
+`-l<name>` selects by name, not by kind: the linker takes the shared library when it finds one
+and the archive otherwise. Either way a process holds ONE copy of the backend: handles, the bus
+(§1.10), the tape (§1.11) and the clone registry (§1.14) are per process, so a lowered library
+(rule 27) that is itself shared never carries an archive copy of its own.
+
 **No build-flag marker.** A declared clone (CR rule 27) takes the loop cutoff K as a trailing
 classical `i32`, so nothing can mismatch at link time. The angle precision N (§1.5) and the
 input-length bound K2 (§1.11; default 4096 bytes) are the backend's own configuration. The
