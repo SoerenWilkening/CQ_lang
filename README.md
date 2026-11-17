@@ -173,6 +173,29 @@ echo '["libc.ll"]' > libc/manifest.json
 export CQ_BUNDLE_MANIFEST="$PWD/libc/manifest.json"       # cqcc now links from the whole library
 ```
 
+### Lowered libraries
+
+By default a library function is lowered again in every program that calls it. A lowered library
+is compiled once: its functions become an ordinary object or archive, and a program lowers only
+its calls of them and links the library.
+
+```sh
+printf 'cos\nsin\nexp\n' > libm.roots                     # the functions the library exports
+cqcc --cq-lib --cq-roots libm.roots -o libqm.a             # lower them once
+cqcc prog.c --cq-roots libm.roots libqm.a -lmybackend      # prog's calls go to libqm.a
+```
+
+- The root list is one C function name per line. The same file is given to both commands.
+- `--cq-lib` takes the bodies of the roots from its input files, or from the bundle when no input
+  defines them. Your own library works the same way: `cqcc --cq-lib --cq-roots my.roots my.c -o
+  libmy.a`.
+- In the program, a listed function is never lowered from source. A function that is not on the
+  list is handled as before.
+- The loop cutoff K is passed at every call, so one compiled library serves every K.
+- A call into a lowered library passes every argument as a quantum register, classical ones
+  included. That costs more per call than a copy specialised to the call, in exchange for not
+  lowering the library again.
+
 ## How the lowering works
 
 1. **One module.** `clang -O1` compiles each translation unit. The units and the library bodies

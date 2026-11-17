@@ -5,6 +5,8 @@
 //       [-cq-dump-taint]
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-verify            (our output)
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes='cq-verify<reference>' (a reference)
+//   opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-drop-bodies -cq-drop-bodies=<fn>,...
+//       (the driver's: the named functions of an injection bundle file become declarations, rule 27)
 //
 // cq-lower: a preliminary taint, used only for isTainted(F) and by eff-conc's pre-taint rewrites (rule 24:
 // the thread calls collapsed, setjmp/longjmp made explicit control flow, Setjmp.h); FixIrreduciblePass on those
@@ -78,7 +80,11 @@ cl::list<std::string> K2PerFunction("cq-k2", cl::CommaSeparated, cl::value_desc(
 cl::opt<unsigned> K2Default("cq-k2-default", cl::value_desc("k"),
                             cl::desc("cq: global allocation bound K2 (built-in default 4096)"));
 cl::opt<std::string> RootsFile("cq-roots", cl::value_desc("file"),
-                               cl::desc("cq: library-build roots, one clone name (CR §1.4) per line"));
+                               cl::desc("cq: a rule 27 root list, one C function name per line: a listed function with "
+                                        "no body is its declared clone, one with a body exports its table clone. A "
+                                        "clone name (CR §1.4) is lowered at that mask"));
+cl::list<std::string> DropBodies("cq-drop-bodies", cl::CommaSeparated, cl::value_desc("fn"),
+                                 cl::desc("cq-drop-bodies: the functions whose bodies are removed"));
 cl::opt<bool> DumpTaint("cq-dump-taint", cl::desc("cq: print the taint result to stderr"));
 // Private to scaffold (Plugin.cpp and tests/scaffold): one stderr line per pipeline step, so a test
 // can see that the taint the constructions read is the one computed over the final CFG.
@@ -1644,6 +1650,23 @@ struct CQVerifyPass : PassInfoMixin<CQVerifyPass> {
   static bool isRequired() { return true; }
 };
 
+// The driver's tool for rule 27 ("a bodiless callee on a root list is lowered code of a linked library"): the listed
+// functions of an injection bundle file become declarations, so the bundle never supplies a body the library has.
+// Only an externally visible function is one a root list can name. Nothing else in the module changes.
+struct CQDropBodiesPass : PassInfoMixin<CQDropBodiesPass> {
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    bool any = false;
+    for (const std::string &n : DropBodies)
+      if (Function *F = M.getFunction(n); F && !F->isDeclaration() && !F->hasLocalLinkage()) {
+        F->deleteBody();
+        F->setComdat(nullptr);
+        any = true;
+      }
+    return any ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  }
+  static bool isRequired() { return true; }
+};
+
 } // namespace
 
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
@@ -1652,6 +1675,10 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                 [](StringRef name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
                   if (name == "cq-lower") {
                     MPM.addPass(CQLowerPass());
+                    return true;
+                  }
+                  if (name == "cq-drop-bodies") {
+                    MPM.addPass(CQDropBodiesPass());
                     return true;
                   }
                   if (name == "cq-verify") {

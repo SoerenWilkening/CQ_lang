@@ -24,6 +24,12 @@ Fails on any of:
               the entry and sample count, or cqcc's status differs from cqcheck user's own
   link        -c does not give an object, or an executable built with a --backend object prints a
               wrong value
+  library     rule 27 (cq-ywi8o): --cq-lib does not export exactly the root's own symbol and its table clone, _ctl
+              form and twins (a function off the list keeps its clones internal); a program naming the list does
+              not call the declared clone, or still has an effect entry; program and library do not link, or the
+              executable prints a wrong value; the program lowered against the library is not §6-equal to the C
+              program of both sources; a listed name is injected from the bundle; a library of a bundle function
+              exports more than its root
 
 Default corpus examples: a handful (the bead iterates on few); --examples NN_name... or --all for more.
 --manifest FILE (or CQ_BUNDLE_MANIFEST) tests against another bundle manifest than bundle/manifest.json.
@@ -467,6 +473,84 @@ def test_link(tmp):
         ok("executable linked with --backend prints add_q(5, 0, 3) = 8")
 
 
+def test_library(tmp):
+    """Rule 27, BACKEND_ABI §3 (cq-ywi8o): a lowered library and a program that names its root list."""
+    nm_x = lambda f: {t for t in run([LLVM / "llvm-nm", "--defined-only", "--extern-only", "--format=just-symbols", f],
+                                     text=True).stdout.split() if not t.endswith(":")}   # an archive member's name
+    roots = tmp / "lib.roots"
+    roots.write_text("triple\n")
+    lib, lib_ll, lt = tmp / "libq.a", tmp / "libq.ll", tmp / "libq.tmp"
+    r = cqcc("--cq-lib", "--cq-roots", roots, SRC / "qlib.c", "-o", lib)
+    r2 = cqcc("--cq-lib", "-S", "--cq-roots", roots, SRC / "qlib.c", "-o", lib_ll, "--save-temps", lt)
+    clones = {"___cq_q_triple_1_t", "___cq_q_triple_1_t_ctl", "___cq_q_triple_1_t_unc", "___cq_q_triple_1_t_ctl_unc"}
+    got = nm_x(lib) if lib.exists() else set()
+    if r.returncode or r2.returncode or got != clones | {"_triple", "_bump"}:
+        fail("--cq-lib exports", r.stderr + r2.stderr + f" defined: {sorted(got)}")
+    else:
+        ok("--cq-lib: the root's own symbol and its four table clones are exported, bump's clones are not")
+
+    prog_ll, pt = tmp / "quser.ll", tmp / "quser.tmp"
+    r = cqcc("-S", "--cq-roots", roots, SRC / "qlib_user.c", "-o", prog_ll, "--save-temps", pt)
+    text = prog_ll.read_text() if prog_ll.exists() else ""
+    if r.returncode or "call i32 @__cq_q_triple_1_t(" not in text or "call void @__cq_q_triple_1_t_unc(" not in text \
+            or "cqrt_tape_effect" in text or re.search(r"(?m)^define[^@]*@triple\(", text):
+        fail("program on a root list", r.stderr + text[-400:])
+    else:
+        ok("a listed bodiless callee is a call of its declared clone and twin, no effect entry")
+    r = cqcc("-S", SRC / "qlib_user.c", "-o", tmp / "quser_nolist.ll")
+    if r.returncode or "cqrt_tape_effect" not in (tmp / "quser_nolist.ll").read_text():
+        fail("program off the root list", "expected rule 16's effect entry without the list: " + r.stderr)
+    else:
+        ok("without the list the same call is rule 16's effect entry")
+
+    backend, exe = tmp / "toy_lib_backend.o", tmp / "qlib.exe"
+    run([LLVM / "clang", "-c", SRC / "toy_lib_backend.c", "-o", backend])
+    r = cqcc(SRC / "qlib_main.c", SRC / "qlib_user.c", "--cq-roots", roots, lib, "--backend", backend, "-o", exe)
+    code = subprocess.run([str(exe)]).returncode if exe.exists() else None
+    if r.returncode or code != 16:
+        fail("executable with a lowered library", r.stderr + str(code))
+    else:
+        ok("program, lowered library and backend link and run: exit status use(5, 0) = triple(5) + 1 = 16")
+
+    # §6 against the C program of both sources: the lowered program and the lowered library as one module.
+    c_ll, ct = tmp / "qboth.ll", tmp / "qboth.tmp"
+    r = cqcc("-S", SRC / "qlib_user.c", SRC / "qlib.c", "-o", c_ll, "--save-temps", ct)
+    merged = tmp / "qmerged.ll"
+    r2 = run([LLVM / "llvm-link", "-S", prog_ll, lib_ll, "-o", merged])
+    chk = run([sys.executable, "-m", "cqcheck", "user", "--o1", ct / "linked.ll", "--lowered", merged, "--entry", "use",
+               "--light", "--samples", "16"], text=True, cwd=ROOT / "checker", env=ENV)
+    if r.returncode or r2.returncode or chk.returncode:
+        fail("lowered library under cqcheck", r.stderr + str(r2.stderr) + (chk.stdout + chk.stderr)[-600:])
+    else:
+        ok("the program lowered against the library is §6-equal to the C program of both sources")
+
+    # A listed name is the library's: the bundle never supplies its body, and a library made of a bundle body
+    # exports its root alone.
+    if not os.environ.get("CQ_BUNDLE_MANIFEST") and not ENV.get("CQ_BUNDLE_MANIFEST"):
+        sin_roots, sin_c, st = tmp / "sin.roots", tmp / "sin_user.c", tmp / "sin.tmp"
+        sin_roots.write_text("sin\n")
+        sin_c.write_text("#include <math.h>\ndouble s(double x, double th) { cq_theta(&x, th); return cq_measure(sin(x)); }\n")
+        r = cqcc("-S", "--cq-roots", sin_roots, sin_c, "-o", tmp / "sin_user.ll", "--save-temps", st)
+        linked = (st / "linked.ll").read_text() if (st / "linked.ll").exists() else ""
+        low = (tmp / "sin_user.ll").read_text() if (tmp / "sin_user.ll").exists() else ""
+        if r.returncode or re.search(r"(?m)^define[^@]*@sin\(", linked) or "@__cq_q_sin_1_t(" not in low:
+            fail("listed name and the bundle", r.stderr + low[-300:])
+        else:
+            ok("a listed sin is not injected from the bundle: its call is the declared clone")
+        r = cqcc("-S", sin_c, "-o", tmp / "sin_inj.ll", "--save-temps", tmp / "sin_inj.tmp")
+        if r.returncode or not re.search(r"(?m)^define[^@]*@sin\(", (tmp / "sin_inj.tmp" / "linked.ll").read_text()):
+            fail("unlisted name and the bundle", "expected the bundle's sin body without the list: " + r.stderr)
+        else:
+            ok("without the list sin is injected from the bundle (rule 18)")
+        r = cqcc("--cq-lib", "--cq-roots", sin_roots, "-o", tmp / "libqsin.a")
+        got = nm_x(tmp / "libqsin.a") if (tmp / "libqsin.a").exists() else set()
+        want = {"_sin", "___cq_q_sin_1_t", "___cq_q_sin_1_t_ctl", "___cq_q_sin_1_t_unc", "___cq_q_sin_1_t_ctl_unc"}
+        if r.returncode or got != want:
+            fail("--cq-lib from the bundle", r.stderr + f" defined: {sorted(got)}")
+        else:
+            ok("--cq-lib with no input takes sin from the bundle and exports the root alone")
+
+
 def test_host_link(tmp):
     """Rulings Q7, Q6: cq_host.c is linked after the pass when the lowered module asks for a host symbol."""
     main_c = tmp / "hostmain.c"
@@ -516,6 +600,7 @@ def main():
         test_check(tmp)
         test_plain(tmp)
         test_link(tmp)
+        test_library(tmp)
         test_host_link(tmp)
     print(f"\n{len(failures)} failure(s)")
     return 1 if failures else 0

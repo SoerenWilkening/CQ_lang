@@ -114,6 +114,9 @@ public:
   bool isEffectEntry(const llvm::CallBase &, const Specialization &) const;
   // Rule 27: F has no body and a root list names it (its calls are its declared clone, whatever their arguments).
   bool listedRoot(const llvm::Function &) const;
+  // Rule 27, library build: F has a body, is externally visible and a root list names it: its table clone, the _ctl
+  // form and their twins are exported, so a module that only declares F reaches them by name.
+  bool exportedRoot(const llvm::Function &) const;
   // Rule 18: the clone of S loads from the bus, itself or through a callee (its call is a load for rule 5).
   bool loadsBus(const Specialization &) const;
   // Rule 23 (cq-ndwfr): the environment facts that may be quantum at S's entry, joined over its callers: bit 0 the

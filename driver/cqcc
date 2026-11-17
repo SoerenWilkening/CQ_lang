@@ -28,7 +28,17 @@ Options:
   -cq-k=<fn>=<k>,...   per-function loop cutoff, passed through to cq-lower (repeatable)
   -cq-k-default=<k>    global loop cutoff, passed through to cq-lower
   -cq-k2=<fn>=<k>,...  -cq-k2-default=<k>   the K2 byte bound (CR §0), passed through to cq-lower
-  --cq-roots FILE      library-build roots, one clone name per line, passed through to cq-lower (rule 27)
+  --cq-roots FILE      a root list (rule 27), one C function name per line, passed through to cq-lower; one list per
+                       run. In a program, a listed function with no body in
+                       the inputs is lowered code of a linked library: only its call is lowered, to the declared clone
+                       __cq_q_<fn>_<1..1>_t, and the bundle never supplies its body. A line that is a clone name
+                       (CR §1.4) asks cq-lower for that clone as well.
+  --cq-lib             build a lowered library: with --cq-roots, every listed function is a root. Its body comes from
+                       the inputs or, when they have none, from the bundle; its table clone, the _ctl form and their
+                       twins are exported. Output is an object (-c, the default), an archive when -o ends in .a, or
+                       IR (-S). Inputs are optional. A program names the same list and links the library. What the
+                       bundle supplies beside the roots (helpers, tables) is internal to the library; every external
+                       definition of the inputs stays external.
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
   --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
   --cq-entry FN        the entry function for --cq-check (default main)
@@ -57,6 +67,18 @@ Before the bundle rule, the result entries (owner ruling 2026-11-12; bundle/reci
 C library output function whose result the pass computes by a bundle entry (driver/cq_entries.py), the entry's
 declaration is linked into U from a unit that also lists it in @llvm.compiler.used (as for the libm names), so U
 declares a bundle symbol, the entry's body is linked and kept. U is unchanged otherwise.
+
+Lowered libraries (rule 27, BACKEND_ABI §3; cq-ywi8o). One root list serves both sides:
+
+    cqcc --cq-lib --cq-roots libm.roots -o libqm.a         # lower cos, sin, ... once (bodies from the bundle)
+    cqcc prog.c --cq-roots libm.roots libqm.a -lbackend    # prog's calls of them are calls of the library's clones
+
+In the program build the listed names are removed from the bundle first (opt -passes=cq-drop-bodies on a scratch
+copy of each bundle file that defines one), so neither the bundle rule nor the libm declarations nor a body another
+injected function pulls in can bring a listed body back: the library's is the only one. bundle/host/cq_host.c is
+linked whenever a root list is given, since the library asks for the host symbols even when the program does not.
+--cq-check of such a program names the listed functions to the checker (CQ_ROOTS_EXTRA): they are its stand-ins on
+both sides, so the program's own lowering is checked, not the library's.
 
 A failing step exits with that step's status and writes no output. A failing --cq-check still writes
 the output and exits with cqcheck user's status.
@@ -120,6 +142,7 @@ def parse_args(argv):
     o = {
         "inputs": [], "out": None, "mode": "exe", "emit_llvm": False, "kflags": [], "backend": [],
         "check": False, "entry": "main", "samples": None, "save_temps": None, "cflags": [],
+        "roots": None, "lib": False, "mode_given": False,
     }
     it = iter(argv)
 
@@ -136,9 +159,11 @@ def parse_args(argv):
         elif a == "-o":
             o["out"] = value(a)
         elif a == "-S":
-            o["mode"] = "S"
+            o["mode"], o["mode_given"] = "S", True
         elif a == "-c":
-            o["mode"] = "c"
+            o["mode"], o["mode_given"] = "c", True
+        elif a == "--cq-lib":
+            o["lib"] = True
         elif a == "-emit-llvm":
             o["emit_llvm"] = True
         elif a == "-v":
@@ -154,10 +179,11 @@ def parse_args(argv):
             o["kflags"].append("-cq-k-default=" + a.split("=", 1)[1])
         elif a in ("-cq-k", "--cq-k", "-cq-k-default", "--cq-k-default"):
             o["kflags"].append(f"-{a.lstrip('-')}={value(a)}")
-        elif a == "--cq-roots":
-            o["kflags"].append("-cq-roots=" + str(Path(value(a)).resolve()))
-        elif a.startswith("--cq-roots="):
-            o["kflags"].append("-cq-roots=" + str(Path(a.split("=", 1)[1]).resolve()))
+        elif a == "--cq-roots" or a.startswith("--cq-roots="):
+            if o["roots"] is not None:
+                raise usage("--cq-roots given twice (one root list per run)")
+            o["roots"] = Path(a.split("=", 1)[1] if "=" in a else value(a)).resolve()
+            o["kflags"].append(f"-cq-roots={o['roots']}")
         elif a == "--backend":
             o["backend"].append(value(a))
         elif a.startswith("--backend="):
@@ -188,8 +214,15 @@ def parse_args(argv):
             raise usage(f"unknown option {a}")
         else:
             o["inputs"].append(Path(a))
-    if not o["inputs"]:
+    if o["lib"]:
+        if o["roots"] is None:
+            raise usage("--cq-lib needs --cq-roots (the functions the library exports)")
+        if not o["mode_given"]:
+            o["mode"] = "c"
+    if not o["inputs"] and not o["lib"]:
         raise usage("no input files")
+    if o["roots"] is not None and not o["roots"].exists():
+        raise usage(f"--cq-roots {o['roots']}: no such file")
     if o["samples"] is not None and not str(o["samples"]).isdigit():
         raise usage("--cq-samples expects a count")
     for p in o["inputs"]:
@@ -206,7 +239,38 @@ def parse_args(argv):
         raise usage("-emit-llvm goes with -c (bitcode); -S already emits textual IR")
     if o["out"] is None:
         o["out"] = {"S": "a.lowered.ll", "c": "a.bc" if o["emit_llvm"] else "a.o", "exe": "a.out"}[o["mode"]]
+    if Path(o["out"]).suffix == ".a" and (not o["lib"] or o["mode"] != "c" or o["emit_llvm"]):
+        raise usage("an archive output (-o x.a) is a --cq-lib object build")
     return o
+
+
+def root_names(roots) -> list:
+    """The C names of a root list (rule 27): every line that is not a clone name, in file order, once each."""
+    if roots is None:
+        return []
+    out = []
+    for line in roots.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("__cq_q_") and line not in out:
+            out.append(line)
+    return out
+
+
+def bundle_without(bundle, names, work: Path):
+    """The bundle with the listed functions as declarations (module docstring, "Lowered libraries"): a scratch copy of
+    every file that defines one, the file itself otherwise."""
+    out = []
+    for i, f in enumerate(bundle):
+        defined = {n.removeprefix("_") for n in nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)}
+        drop = [n for n in names if n in defined]
+        if not drop:
+            out.append(f)
+            continue
+        g = work / f"bundle{i}.nolisted.ll"
+        run([tool("opt"), f"-load-pass-plugin={PLUGIN}", "-passes=cq-drop-bodies", "-cq-drop-bodies=" + ",".join(drop),
+             "-S", f, "-o", g], f"opt -passes=cq-drop-bodies on {f.name}")
+        out.append(g)
+    return out
 
 
 def target_flags():
@@ -414,6 +478,14 @@ def main(argv) -> int:
             elif src.suffix in IR_SUFFIXES:
                 units.append(src)
                 unit_names.append(src.name)
+        listed = root_names(o["roots"])
+        if not units and o["lib"] and listed:
+            # A library made of bundle bodies alone: an empty unit carries the target lines the root stub copies.
+            empty_c, empty = work / "empty.c", work / "unit0.empty.ll"
+            empty_c.write_text("")
+            run([tool("clang"), "-O1", *tflags, "-S", "-emit-llvm", empty_c, "-o", empty], "clang -O1 of an empty unit")
+            units.append(empty)
+            unit_names.append(empty_c.name)
         if not units:
             raise usage("no C or IR input to lower")
 
@@ -429,6 +501,22 @@ def main(argv) -> int:
             units = bind_k_per_unit(units, work, unit_names)   # CQ_K / CQ_K2 by C scope, before the link (cq-z9vt)
             run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
         bundle = bundle_files()
+        root_stub = []
+        own = nm(linked, ["--defined-only"], "llvm-nm of the linked user module", tmp) if o["lib"] else set()
+        if o["lib"]:
+            # Rule 27, library build: a root the inputs do not define comes from the bundle. Its declaration, named in
+            # @llvm.compiler.used, makes the bundle needed and --only-needed pulls the body and what it calls.
+            have = _unit_defs(linked.read_text())
+            text = linked.read_text()
+            for n in listed:
+                if not have.get(n, True):
+                    continue   # an externally visible body in the inputs
+                # The inputs' own declaration when they have one (the stub and the inputs must agree on the type).
+                m = re.search(rf'(?m)^declare\b[^@\n]*@{re.escape(n)}\([^\n]*\)', text)
+                decl = re.sub(r'\s+#\d+\b', '', m.group(0)) if m else f"declare void @{n}()"
+                root_stub.append((n, decl + "\n"))
+        elif listed and bundle:
+            bundle = bundle_without(bundle, listed, tmp)
         # The result entries (owner ruling 2026-11-12, cq-cdf9z, cq-m7ftq; driver/cq_entries.py): a deferred output
         # call's result is a call the pass inserts after this link, to a bundle entry. A unit declaring the entries
         # the program's output calls may need, with an @llvm.compiler.used naming them (llvm-link drops an unused
@@ -436,13 +524,14 @@ def main(argv) -> int:
         # as it was.
         entries = cq_entries.decls(linked.read_text()) if bundle else []
         libm = libm_decls(linked, bundle, tmp) if bundle else {}
-        if bundle and (libm or entries or bundle_needed(linked, bundle, tmp)):
+        if bundle and (libm or entries or root_stub or bundle_needed(linked, bundle, tmp)):
             # Rule 18: a math intrinsic is lifted from the libm body the bundle has; its declaration makes it needed.
             extra = []
             text = Path(linked).read_text()
             head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
             for stem, decl_lines, names in (("libm", list(libm.values()), list(libm)),
-                                            ("entries", [d + "\n" for d in entries], cq_entries.names(entries))):
+                                            ("entries", [d + "\n" for d in entries], cq_entries.names(entries)),
+                                            ("roots", [d for _, d in root_stub], [n for n, _ in root_stub])):
                 if not names:
                     continue
                 used = ", ".join(f"ptr @{n}" for n in names)
@@ -452,6 +541,18 @@ def main(argv) -> int:
                 extra.append(unit)
             run([tool("llvm-link"), "-S", linked, *extra, "--only-needed", *bundle, "-o", linked],
                 "llvm-link with the injection bundle")
+        if o["lib"]:
+            have = _unit_defs(linked.read_text())
+            missing = [n for n in listed if have.get(n, True)]
+            if missing:
+                raise DriverError("cqcc: --cq-lib: no externally visible body in the inputs or the bundle for: "
+                                  + ", ".join(missing))
+            # What the bundle supplied beside the roots is private to the library: a program that injects the same
+            # helper, or a second library, defines its own copy and the link sees one symbol each.
+            keep = work / "lib.exports.txt"
+            keep.write_text("".join(n + "\n" for n in sorted({x.removeprefix("_") for x in own} | set(listed))))
+            run([tool("opt"), "-S", "-passes=internalize", f"-internalize-public-api-file={keep}", linked, "-o", linked],
+                "opt -passes=internalize of the bundle's helpers")
 
         # 3. The pass, reading the module from stdin so the output does not name a temporary path.
         lowered = work / ("lowered.bc" if o["mode"] == "c" and o["emit_llvm"] else "lowered.ll")
@@ -466,14 +567,18 @@ def main(argv) -> int:
         if o["mode"] == "S" or (o["mode"] == "c" and o["emit_llvm"]):
             shutil.copyfile(lowered, staged)
         elif o["mode"] == "c":
+            obj = tmp / (out.stem + ".o") if out.suffix == ".a" else staged
             run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-c", "-x", "ir", lowered,
-                 "-o", staged], "clang -c of the lowered module")
+                 "-o", obj], "clang -c of the lowered module")
+            if out.suffix == ".a":
+                run([tool("llvm-ar"), "rcs", staged, obj], "llvm-ar of the lowered library")
         else:
             objs = [p for p in o["inputs"] if p.suffix in LINK_SUFFIXES]
             # Rulings Q7: the host symbols are one runtime object linked after the pass, never lowered; only when the
             # lowered module asks for one (a module the pass left as it was needs no bus and no backend).
             undefined = nm(lowered, ["--undefined-only"], "llvm-nm of the lowered module", tmp)
-            if {n.removeprefix("_") for n in undefined} & HOST_SYMBOLS:   # Mach-O spells C names with a leading _
+            # A root list means a lowered library is linked: it asks for them whatever the program does.
+            if listed or {n.removeprefix("_") for n in undefined} & HOST_SYMBOLS:   # Mach-O spells C names with a leading _
                 host_obj = tmp / "cq_host.o"
                 run([tool("clang"), "-O1", "-c", HOST_SOURCE, "-o", host_obj], "clang -c of bundle/host/cq_host.c")
                 objs.insert(0, host_obj)
@@ -494,7 +599,10 @@ def main(argv) -> int:
                 cmd += ["--samples", o["samples"]]
             if VERBOSE:
                 print(" ".join(map(str, cmd)), file=sys.stderr, flush=True)
-            status = subprocess.run([str(c) for c in cmd], cwd=ROOT / "checker").returncode
+            env = dict(os.environ)
+            if listed and not o["lib"]:
+                env["CQ_ROOTS_EXTRA"] = ",".join(filter(None, [env.get("CQ_ROOTS_EXTRA", ""), *listed]))
+            status = subprocess.run([str(c) for c in cmd], cwd=ROOT / "checker", env=env).returncode
             if status != 0:
                 print(f"cqcc: --cq-check: cqcheck user exited {status}", file=sys.stderr)
 

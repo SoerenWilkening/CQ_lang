@@ -620,6 +620,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
 
 // The table twins of the module that leave the results allocated, by symbol (defineTableClones).
 std::set<std::string> keepsResults, popsMints;
+// Rule 27, library build: the table clones and twins of the roots this module defines (exportRootClones).
+std::vector<std::string> exportedClones;
 
 // §1.4: a table twin. For a function rule 18 gives no twin it does nothing but count its activation and pop; otherwise it
 // is rule 18's twin that frees the results it zeroes.
@@ -684,6 +686,7 @@ void defineTableClones(Module &M) {
   std::vector<TableRow> rows = takeTableRows(M);
   keepsResults.clear();
   popsMints.clear();
+  exportedClones.clear();
   if (rows.empty())
     return;
   LLVMContext &C = M.getContext();
@@ -720,9 +723,26 @@ void defineTableClones(Module &M) {
     if (r.ctlPopsMints)
       popsMints.insert(tcu->getName().str());
     B.CreateCall(add, {fn, sigString(M, r.type), t, tc, tu, tcu});
+    if (r.exported)
+      for (Function *f : {t, tc, tu, tcu})
+        exportedClones.push_back(f->getName().str());
   }
   B.CreateRetVoid();
   appendToGlobalCtors(M, reg, 65535);
+}
+
+// Rule 27, "Library build" (BACKEND_ABI §3): a root this module defines exports its table clone, the _ctl form and
+// their twins, the four symbols a declared clone's caller names. Every other table clone stays module-internal, reached
+// through its row. Runs after defineTwins: a twin is created internal and defined there.
+void exportRootClones(Module &M) {
+  for (const std::string &name : exportedClones) {
+    Function *F = M.getFunction(name);
+    if (!F || F->isDeclaration())
+      internalError("calls: calls::finalize: a root's table clone without a body: @" + name);
+    F->setLinkage(GlobalValue::ExternalLinkage);
+    F->setDSOLocal(false);
+  }
+  exportedClones.clear();
 }
 
 // Defines every called, undefined twin whose forward clone has a body (see the header).
@@ -852,6 +872,7 @@ void finalize(Module &M) {
       settleRegisters(*F, std::optional<abi::CloneSpec>(abi::parseClone(F->getName()))->table ? 0 : mintCount(*F));
   defineTableClones(M);
   defineTwins(M);
+  exportRootClones(M);
   storeReceivedK(M);
   for (Function &F : M)
     for (Instruction &I : instructions(F)) {
