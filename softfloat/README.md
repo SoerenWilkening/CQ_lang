@@ -146,7 +146,8 @@ reference is the CR row (the report names each):
   pass): with the plugin of 2026-11-17 all 111 roots lower one by one (`build.sh probe`, at most 3 s
   each) and as `build.sh lib cqsf_f80.roots` (2 groups, 26 s, 4.1 MB), again with no float
   template and no bus access; `CQSF_EXTRA_LIBS=-lqsoftfloat_f80 test/run_link_test.sh
-  test/prog_f80.c` matches the native program. The f80 shims are not in `run_shimtest.sh`.
-- `test/run_shimtest.sh [N]`: every template symbol through its shim, the lowered library and the toy
-  backend against the native root; each `_unc` must return its rail to 0 and the backend counts dirty
-  frees. 1,314 symbols × 16 samples: 0 mismatches, 0 dirty frees.
+  test/prog_f80.c` matches the native program.
+- `test/run_shimtest.sh [N [default|f80|all]]`: every template symbol of both archives through its
+  shim, the lowered library and the toy backend against the native root; each `_unc` must return its
+  rail to 0 and the backend counts dirty frees. 1,689 symbols (1,314 default, 375 f80) × 16 samples:
+  27,024 calls, 0 mismatches, 0 dirty frees (50 s).

@@ -248,7 +248,7 @@ def main():
     decls = parse_decls(files)
     # what the shims call (cq/cqsf_shims.c declares them in C, not in IR)
     for w, t in [("i1", "i1"), ("i8", "i8"), ("i16", "i16"), ("i32", "i32"), ("i64", "i64"), ("f16", "half"),
-                 ("bf16", "bfloat"), ("f32", "float"), ("f64", "double")]:
+                 ("bf16", "bfloat"), ("f32", "float"), ("f64", "double"), ("f80", "x86_fp80")]:
         decls.setdefault(f"cqrt_alloc_{w}", ("i32", [t]))
         decls.setdefault(f"cqrt_copy_{w}", ("void", ["i32", "i32"]))
     body, fp, nint = [PRE], [], 0
