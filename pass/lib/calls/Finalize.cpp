@@ -622,6 +622,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
 std::set<std::string> keepsResults, popsMints;
 // Rule 27, library build: the table clones and twins of the roots this module defines (exportRootClones).
 std::vector<std::string> exportedClones;
+// ... and the roots among them whose C function is the host library's (-cq-host-roots).
+std::set<std::string> hostRootNames;
 
 // §1.4: a table twin. For a function rule 18 gives no twin it does nothing but count its activation and pop; otherwise it
 // is rule 18's twin that frees the results it zeroes.
@@ -687,6 +689,7 @@ void defineTableClones(Module &M) {
   keepsResults.clear();
   popsMints.clear();
   exportedClones.clear();
+  hostRootNames.clear();
   if (rows.empty())
     return;
   LLVMContext &C = M.getContext();
@@ -724,12 +727,18 @@ void defineTableClones(Module &M) {
       popsMints.insert(tcu->getName().str());
     Constant *key = fn;
     if (r.exported && r.hostOwn) {
-      // The C function is the host library's: this body goes under a module-internal name (it stays for the calls
-      // this module makes to it), and the row is keyed by the host's address, the one a program's &fn denotes.
-      std::string name = fn->getName().str();
-      fn->setName("__cq_own_" + name);
-      fn->setLinkage(GlobalValue::InternalLinkage);
-      Function *host = Function::Create(r.type, GlobalValue::ExternalLinkage, name, &M);
+      // The C function is the host library's. This body keeps its name (every clone name reads back to it) but no
+      // symbol: private, so it stays only while this module calls it. The row is keyed by the host's address, the
+      // one a program's &fn denotes: an external declaration of the same object symbol under an unmangled name.
+      fn->setLinkage(GlobalValue::PrivateLinkage);
+      hostRootNames.insert(r.fn);
+      std::string sym = "\x01";
+      if (char prefix = M.getDataLayout().getGlobalPrefix())
+        sym += prefix;
+      sym += fn->getName();
+      Function *host = M.getFunction(sym);
+      if (!host)
+        host = Function::Create(r.type, GlobalValue::ExternalLinkage, sym, &M);
       // Uses that are not calls denote the function's address (llvm.compiler.used, a pointer table): the host's.
       SmallVector<Use *, 8> addr;
       for (Use &U : fn->uses())
@@ -742,8 +751,6 @@ void defineTableClones(Module &M) {
           U->set(host);
       }
       key = host;
-      if (fn->use_empty())
-        fn->eraseFromParent();   // no call of this module reaches the lowered body
     }
     B.CreateCall(add, {key, sigString(M, r.type), t, tc, tu, tcu});
     if (r.exported)
@@ -766,6 +773,17 @@ void exportRootClones(Module &M) {
     F->setDSOLocal(false);
   }
   exportedClones.clear();
+  // A host root's clones by name followed its linkage when they were made; with its symbol gone they are this
+  // module's alone. Only the table clones above are what a program names.
+  if (!hostRootNames.empty())
+    for (Function &F : M) {
+      if (!isClone(F) || F.isDeclaration() || F.hasLocalLinkage())
+        continue;
+      std::optional<abi::CloneSpec> s = abi::parseClone(F.getName());
+      if (s && !s->table && hostRootNames.count(s->fn))
+        F.setLinkage(GlobalValue::InternalLinkage);
+    }
+  hostRootNames.clear();
 }
 
 // Defines every called, undefined twin whose forward clone has a body (see the header).
