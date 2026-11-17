@@ -38,7 +38,9 @@ Options:
                        twins are exported. Output is an object (-c, the default), an archive when -o ends in .a, or
                        IR (-S). Inputs are optional. A program names the same list and links the library. What the
                        bundle supplies beside the roots (helpers, tables) is internal to the library; every external
-                       definition of the inputs stays external.
+                       definition of the inputs stays external. A root the bundle supplies is a C library function:
+                       the library exports its four clones only, and the C name stays the host library's
+                       (-cq-host-roots to cq-lower); a root an input defines also exports its own symbol.
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
   --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
   --cq-entry FN        the entry function for --cq-check (default main)
@@ -71,7 +73,7 @@ declares a bundle symbol, the entry's body is linked and kept. U is unchanged ot
 Lowered libraries (rule 27, BACKEND_ABI §3; cq-ywi8o). One root list serves both sides:
 
     cqcc --cq-lib --cq-roots libm.roots -o libqm.a         # lower cos, sin, ... once (bodies from the bundle)
-    cqcc prog.c --cq-roots libm.roots libqm.a -lbackend    # prog's calls of them are calls of the library's clones
+    cqcc prog.c --cq-roots libm.roots -L. -lqm -lbackend   # prog's calls of them are calls of the library's clones
 
 In the program build the listed names are removed from the bundle first (opt -passes=cq-drop-bodies on a scratch
 copy of each bundle file that defines one), so neither the bundle rule nor the libm declarations nor a body another
@@ -549,6 +551,10 @@ def main(argv) -> int:
                                   + ", ".join(missing))
             # What the bundle supplied beside the roots is private to the library: a program that injects the same
             # helper, or a second library, defines its own copy and the link sees one symbol each.
+            # A root the bundle supplied is a C library function: the host library provides the C function itself,
+            # the lowered library only its clones (cq-lower keeps the lowered body under a module-internal name).
+            if root_stub:
+                o["kflags"].append("-cq-host-roots=" + ",".join(n for n, _ in root_stub))
             keep = work / "lib.exports.txt"
             keep.write_text("".join(n + "\n" for n in sorted({x.removeprefix("_") for x in own} | set(listed))))
             run([tool("opt"), "-S", "-passes=internalize", f"-internalize-public-api-file={keep}", linked, "-o", linked],

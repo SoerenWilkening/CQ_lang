@@ -182,13 +182,15 @@ its calls of them and links the library.
 ```sh
 printf 'cos\nsin\nexp\n' > libm.roots                     # the functions the library exports
 cqcc --cq-lib --cq-roots libm.roots -o libqm.a             # lower them once
-cqcc prog.c --cq-roots libm.roots libqm.a -lmybackend      # prog's calls go to libqm.a
+cqcc prog.c --cq-roots libm.roots -L. -lqm -lmybackend     # prog's calls go to libqm.a
 ```
 
 - The root list is one C function name per line. The same file is given to both commands.
 - `--cq-lib` takes the bodies of the roots from its input files, or from the bundle when no input
   defines them. Your own library works the same way: `cqcc --cq-lib --cq-roots my.roots my.c -o
   libmy.a`.
+- A library of standard C functions holds only their quantum versions. The classical `cos` stays
+  the host C library's.
 - In the program, a listed function is never lowered from source. A function that is not on the
   list is handled as before.
 - The loop cutoff K is passed at every call, so one compiled library serves every K.

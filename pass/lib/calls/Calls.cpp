@@ -949,6 +949,7 @@ void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, cons
   (S.ctl ? it->ctlKeepsResults : it->forwardKeepsResults) = tableKeepsResults(T, S);
   (S.ctl ? it->ctlPopsMints : it->forwardPopsMints) = tablePopsMints(T, S);
   it->exported = T.exportedRoot(*S.F);
+  it->hostOwn = T.hostRoot(*S.F);
 }
 } // namespace
 

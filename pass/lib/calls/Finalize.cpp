@@ -722,7 +722,30 @@ void defineTableClones(Module &M) {
       popsMints.insert(tu->getName().str());
     if (r.ctlPopsMints)
       popsMints.insert(tcu->getName().str());
-    B.CreateCall(add, {fn, sigString(M, r.type), t, tc, tu, tcu});
+    Constant *key = fn;
+    if (r.exported && r.hostOwn) {
+      // The C function is the host library's: this body goes under a module-internal name (it stays for the calls
+      // this module makes to it), and the row is keyed by the host's address, the one a program's &fn denotes.
+      std::string name = fn->getName().str();
+      fn->setName("__cq_own_" + name);
+      fn->setLinkage(GlobalValue::InternalLinkage);
+      Function *host = Function::Create(r.type, GlobalValue::ExternalLinkage, name, &M);
+      // Uses that are not calls denote the function's address (llvm.compiler.used, a pointer table): the host's.
+      SmallVector<Use *, 8> addr;
+      for (Use &U : fn->uses())
+        if (auto *CB = dyn_cast<CallBase>(U.getUser()); !CB || !CB->isCallee(&U))
+          addr.push_back(&U);
+      for (Use *U : addr) {
+        if (auto *C2 = dyn_cast<Constant>(U->getUser()); C2 && !isa<GlobalValue>(C2))
+          C2->handleOperandChange(fn, host);
+        else
+          U->set(host);
+      }
+      key = host;
+      if (fn->use_empty())
+        fn->eraseFromParent();   // no call of this module reaches the lowered body
+    }
+    B.CreateCall(add, {key, sigString(M, r.type), t, tc, tu, tcu});
     if (r.exported)
       for (Function *f : {t, tc, tu, tcu})
         exportedClones.push_back(f->getName().str());

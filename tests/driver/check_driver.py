@@ -29,7 +29,7 @@ Fails on any of:
               not call the declared clone, or still has an effect entry; program and library do not link, or the
               executable prints a wrong value; the program lowered against the library is not §6-equal to the C
               program of both sources; a listed name is injected from the bundle; a library of a bundle function
-              exports more than its root
+              exports anything but its root's four clones, or does not key the row by the host's sin
 
 Default corpus examples: a handful (the bead iterates on few); --examples NN_name... or --all for more.
 --manifest FILE (or CQ_BUNDLE_MANIFEST) tests against another bundle manifest than bundle/manifest.json.
@@ -544,11 +544,12 @@ def test_library(tmp):
             ok("without the list sin is injected from the bundle (rule 18)")
         r = cqcc("--cq-lib", "--cq-roots", sin_roots, "-o", tmp / "libqsin.a")
         got = nm_x(tmp / "libqsin.a") if (tmp / "libqsin.a").exists() else set()
-        want = {"_sin", "___cq_q_sin_1_t", "___cq_q_sin_1_t_ctl", "___cq_q_sin_1_t_unc", "___cq_q_sin_1_t_ctl_unc"}
-        if r.returncode or got != want:
-            fail("--cq-lib from the bundle", r.stderr + f" defined: {sorted(got)}")
+        want = {"___cq_q_sin_1_t", "___cq_q_sin_1_t_ctl", "___cq_q_sin_1_t_unc", "___cq_q_sin_1_t_ctl_unc"}
+        und = set(run([LLVM / "llvm-nm", "--undefined-only", "--format=just-symbols", tmp / "libqsin.a"], text=True).stdout.split())
+        if r.returncode or got != want or "_sin" not in und:
+            fail("--cq-lib from the bundle", r.stderr + f" defined: {sorted(got)}; _sin undefined: {'_sin' in und}")
         else:
-            ok("--cq-lib with no input takes sin from the bundle and exports the root alone")
+            ok("--cq-lib with no input takes sin from the bundle: its four clones exported, sin itself left to the host library")
 
 
 def test_host_link(tmp):

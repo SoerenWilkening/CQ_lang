@@ -83,6 +83,9 @@ cl::opt<std::string> RootsFile("cq-roots", cl::value_desc("file"),
                                cl::desc("cq: a rule 27 root list, one C function name per line: a listed function with "
                                         "no body is its declared clone, one with a body exports its table clone. A "
                                         "clone name (CR §1.4) is lowered at that mask"));
+cl::list<std::string> HostRoots("cq-host-roots", cl::CommaSeparated, cl::value_desc("fn"),
+                                cl::desc("cq: library build: the listed roots that are C library functions. The "
+                                         "library exports their clones and leaves the C name to the host library"));
 cl::list<std::string> DropBodies("cq-drop-bodies", cl::CommaSeparated, cl::value_desc("fn"),
                                  cl::desc("cq-drop-bodies: the functions whose bodies are removed"));
 cl::opt<bool> DumpTaint("cq-dump-taint", cl::desc("cq: print the taint result to stderr"));
@@ -130,6 +133,7 @@ cq::loops::KOptions readKOptions() {
 
 cq::TaintOptions readTaintOptions() {
   cq::TaintOptions TO;
+  TO.hostRoots.assign(HostRoots.begin(), HostRoots.end());
   if (RootsFile.empty())
     return TO;
   auto buf = MemoryBuffer::getFile(RootsFile);

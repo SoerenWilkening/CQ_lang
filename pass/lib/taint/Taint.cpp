@@ -4220,6 +4220,13 @@ bool TaintInfo::exportedRoot(const llvm::Function &F) const {
   return llvm::is_contained(needImpl(impl).opts.listed, n);
 }
 
+bool TaintInfo::hostRoot(const llvm::Function &F) const {
+  llvm::StringRef n = F.getName();
+  if (n.starts_with("\x01_"))
+    n = n.drop_front(2);
+  return exportedRoot(F) && llvm::is_contained(needImpl(impl).opts.hostRoots, n);
+}
+
 bool TaintInfo::loadsBus(const Specialization &S) const { return stateOf(needImpl(impl), S)->busLoadT; }
 
 uint8_t TaintInfo::fenvAtEntry(const Specialization &S) const { return stateOf(needImpl(impl), S)->fenvIn & 3; }
