@@ -219,12 +219,24 @@ Lowering time and archive size per list, measured on one x86-64 Mac:
 | `string.roots` | 39 | 15 s | 1.2 MB |
 | `ctype.roots` | 32 | 10 s | 0.4 MB |
 | `locale.roots` | 6 | 7 s | 0.3 MB |
-| `complex.roots` | 66 | more than 10 min | |
-| `stdio.roots` (the `sprintf` and `sscanf` families) | 13 | more than 10 min | |
+| `complex.roots` | 66 | 9 min 40 s | 1.6 MB |
+| `stdio.roots` (the `sprintf` and `sscanf` families) | 13 | 9 min | 29.7 MB |
 
-Each list is lowered as one library, and the libraries link together. A program names one root list,
-so concatenate the lists of the libraries it links. For a few functions a library takes seconds:
-`cos`, `sin`, `exp` and `cbrt` together lower in 14 s into 0.3 MB.
+For a few functions a library takes seconds: `cos`, `sin`, `exp` and `cbrt` together lower in 14 s
+into 0.3 MB.
+
+All nine lists together are the standard library as one archive, linked with one `-l`. Lower each
+list on its own (one module per list; all 387 functions in a single module do not finish in an
+hour) and combine the results, about 29 minutes in total:
+
+```sh
+for g in math complex string stdlib stdio ctype multibyte time locale; do
+    cqcc --cq-lib --cq-roots bundle/roots/$g.roots -o libq_$g.a
+done
+libtool -static -o libqc.a libq_*.a              # 52 MB, one archive
+cat bundle/roots/*.roots > libc.roots
+cqcc prog.c --cq-roots libc.roots -L. -lqc -lmybackend
+```
 
 ## How the lowering works
 
