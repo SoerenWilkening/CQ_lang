@@ -928,6 +928,7 @@ pseudo-denormal reads as a denormal (CR §2).
 - `is_fpclass`: §2.11.
 
 ### 2.11 EXTEND: the kernels the backend writes
+(A backend that takes its float templates from a lowered library, §2.12, writes none of these.)
 An EXTEND family gets its circuit the way the f64 families do: a branchless integer kernel on
 bit patterns, built from the integer circuits of §2.2–§2.5 (§0). Bennett.jl has no kernel for
 these families; the backend writes each one, with BJ's f64 kernel as the model for the
@@ -955,6 +956,31 @@ a production kernel correct: each kernel owes its own test against its CR §2 ro
 
 The BJ gate emitters need no such function at any width: `lower_add!`, `lower_sub!`, `lower_mul!`
 and `lower_ult!` were run at W = 100 and 128 against big-integer arithmetic (20 samples each).
+
+---
+
+### 2.12 Float templates from a lowered library
+A backend need not write any float kernel. Every float template of §2.8–§2.11 is an ordinary
+function of register handles, so it can be lowered code: a C implementation of IEEE arithmetic
+in integer operations (Berkeley SoftFloat 3e, 8086-SSE specialization), compiled by the CQ
+compiler itself as a lowered library (§3, CR rule 27), with one shim per template:
+
+    i32  cq_template_fadd_f64(i32 a, i32 b)            = __cq_q_f64_add_11_t(a, b, K)
+    void cq_template_fadd_f64_unc(i32 r, i32 a, i32 b) = __cq_q_f64_add_11_t_unc(r, a, b, K)
+
+The library is linked before the backend. What the backend must then provide is §1 and the
+integer templates of §2.2–§2.7 only: the lowered library calls nothing else.
+- The C source carries no state: the rounding mode is a parameter and the exception flags a
+  result (the `_rm`/`_rmq`/`_exc` forms), never a global, so a float template stays a function
+  of its operands and touches the bus only for constant tables.
+- The contract is unchanged: each shim must meet the CR §2 rows of its template bit for bit,
+  and `_unc` returns the result rail to zero. Where the C source differs from CR §2 (`frem` is
+  `fmod`, the x86 `fptoui` formula, `fmax`/`fmin`, the f80 NaN rule and non-canonical
+  encodings, bf16) the library's own C is corrected, not the contract.
+- K in a shim is fixed per function: a bound on its data-dependent loop (`frem`), any value
+  for a loop-free one.
+- A backend may still define any float template itself; a symbol it defines is not taken from
+  the library.
 
 ---
 
