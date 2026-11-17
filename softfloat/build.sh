@@ -62,8 +62,12 @@ lib)
     done
     shim=cqsf_shims; [ "$stem" = cqsf_f80 ] && shim=cqsf_shims_f80
     "$LLVM/clang" -O1 -c "$SF/cq/$shim.c" -o "$B/$shim.o"
+    # The lowered modules register their table clones (__cq_clone_register, CR §1.3), a bundle host symbol.
+    # cqcc links bundle/host/cq_host.c into a program only when the program's own module asks for a host
+    # symbol or a root list is given; as an archive member it is pulled exactly when nothing else defined it.
+    "$LLVM/clang" -O1 -c "$SF/../bundle/host/cq_host.c" -o "$B/cq_host.o"
     rm -f "$B/$out.a"
-    "$LLVM/llvm-ar" rcs "$B/$out.a" "$B/$shim.o" $objs
+    "$LLVM/llvm-ar" rcs "$B/$out.a" "$B/$shim.o" $objs "$B/cq_host.o"
     echo "$B/$out.a"
     ;;
 *)
