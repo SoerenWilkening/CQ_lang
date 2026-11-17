@@ -63,7 +63,7 @@ int main(void) {
 ```sh
 cqcc -S grover.c -o grover.lowered.ll             # the lowered LLVM IR
 cqcc -S --cq-check grover.c                       # also compare the lowering with the C program
-cqcc grover.c --backend libmybackend.a -o grover  # an executable, linked with a backend
+cqcc grover.c -lmybackend -o grover               # an executable, linked with a backend
 ```
 
 `CQ.h` is included automatically. `--cq-check` runs the lowered program and the C program on sampled
@@ -93,6 +93,12 @@ and by `CQ_LLVM_BIN=<prefix>/bin` when running `cqcc`. A `CQ_spec` elsewhere is 
 
 An executable needs a backend: a library that implements `BACKEND_ABI.md`. This repository
 contains none. `cqcc -S`, `cqcc -c` and `--cq-check` work without one.
+
+A backend is linked like any library: `-lmybackend` (with `-L<dir>` if it is not on the linker's
+search path) or a path given to `--backend`. Built as a shared library, it is bound when the
+program starts, so one executable runs against any backend installed under that name, such as a
+simulator, a resource counter or hardware, with no relink. Built as an archive (`.a`), it is copied
+into the executable.
 
 ## C coverage
 
