@@ -17,6 +17,9 @@ cqsf_fmax_f80
 cqsf_fmax_f80_x
 cqsf_fmin_f80
 cqsf_fmin_f80_x
+cqsf_fma_f80
+cqsf_fma_f80_m
+cqsf_fma_f80_x
 cqsf_sqrt_f80
 cqsf_sqrt_f80_m
 cqsf_sqrt_f80_x

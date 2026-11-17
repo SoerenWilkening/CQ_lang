@@ -1342,6 +1342,15 @@ long double cqsf_fmin_f80(long double a0, long double a1) { return CQSF_FROM_f80
 uint32_t cqsfi_fmin_f80_x(struct extFloat80M, struct extFloat80M);
 uint32_t cqsf_fmin_f80_x(long double a0, long double a1) { return cqsfi_fmin_f80_x(CQSF_BITS_f80(a0), CQSF_BITS_f80(a1)); }
 
+struct extFloat80M cqsfi_fma_f80(struct extFloat80M, struct extFloat80M, struct extFloat80M);
+long double cqsf_fma_f80(long double a0, long double a1, long double a2) { return CQSF_FROM_f80(cqsfi_fma_f80(CQSF_BITS_f80(a0), CQSF_BITS_f80(a1), CQSF_BITS_f80(a2))); }
+
+struct extFloat80M cqsfi_fma_f80_m(struct extFloat80M, struct extFloat80M, struct extFloat80M, uint32_t);
+long double cqsf_fma_f80_m(long double a0, long double a1, long double a2, uint32_t a3) { return CQSF_FROM_f80(cqsfi_fma_f80_m(CQSF_BITS_f80(a0), CQSF_BITS_f80(a1), CQSF_BITS_f80(a2), a3)); }
+
+uint32_t cqsfi_fma_f80_x(struct extFloat80M, struct extFloat80M, struct extFloat80M, uint32_t);
+uint32_t cqsf_fma_f80_x(long double a0, long double a1, long double a2, uint32_t a3) { return cqsfi_fma_f80_x(CQSF_BITS_f80(a0), CQSF_BITS_f80(a1), CQSF_BITS_f80(a2), a3); }
+
 struct extFloat80M cqsfi_sqrt_f80(struct extFloat80M);
 long double cqsf_sqrt_f80(long double a0) { return CQSF_FROM_f80(cqsfi_sqrt_f80(CQSF_BITS_f80(a0))); }
 

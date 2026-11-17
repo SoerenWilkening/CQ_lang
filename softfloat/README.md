@@ -39,7 +39,7 @@ cqcc prog.c -Lsoftfloat/build -lqsoftfloat -lmybackend
 | `cq/cqsf_int.h` | the conversions from and to the other integer widths (`INT_X`), CR §2 rows |
 | `cq/cqsf_roots_x.ll` | (generated) the `INT_X` roots as LLVM IR, with native test entries `cqsft_*` |
 | `cq/cqsf_shims.c`, `cq/cqsf_shims_f80.c` | (generated) one `cq_template_*` and `_unc` per symbol |
-| `cqsf.roots`, `cqsf_f80.roots` | the root lists (661 and 171 roots) |
+| `cqsf.roots`, `cqsf_f80.roots` | the root lists (661 and 174 roots) |
 | `build.sh` | `gen`, `native`, `ir`, `lib [LIST]`, `probe [LIST]` |
 | `test/` | the self-tests below |
 
@@ -81,13 +81,13 @@ Generated from the CR §1.2 grammar, restricted to what CQ's pass can emit (`pas
 a mode only on operations whose constrained intrinsic has one, `_exc` on every operation with a
 constrained form, every binary op `_hl` and `_lh` (`_lh` is the NaN-literal spelling of a commutative
 op), compares `_hl` only, `_ll` / `_l` / `lll` only with `_rmq`. 2,086 forward symbols (each with its
-`_unc`) for the default archive, 495 for f80. All 82 float templates the CQ_spec corpus declares
+`_unc`) for the default archive, 539 for f80. All 82 float templates the CQ_spec corpus declares
 are among them (`gen_cqsf.py --check-corpus`).
 
 | operations | widths | forms |
 |---|---|---|
 | `fadd fsub fmul fdiv frem` | f16 bf16 f32 f64 (f80) | bare `hl` `lh` `ll`(rmq) × plain `_rm` `_rmq` × `_exc` |
-| `fma` | f16 bf16 f32 f64 | bare and the 6 mixed shapes, `lll`(rmq) × plain `_rm` `_rmq` × `_exc` |
+| `fma` | f16 bf16 f32 f64 (f80) | bare and the 6 mixed shapes, `lll`(rmq) × plain `_rm` `_rmq` × `_exc` |
 | `sqrt rint` | f16 bf16 f32 f64 (f80) | bare, `l`(rmq) × plain `_rm` `_rmq` × `_exc` |
 | `floor ceil trunc round` | f16 bf16 f32 f64 (f80) | bare, `_exc` |
 | `fmax fmin` | f16 bf16 f32 f64 (f80) | bare `hl` `lh`, `_exc` |
@@ -99,7 +99,6 @@ are among them (`gen_cqsf.py --check-corpus`).
 | `fptosi fptoui` | f16 bf16 f32 f64 (f80) → i8 i16 i32 i64, i7 i24 i48 i100 i128 i200 | bare, `_exc` |
 
 Not provided:
-- `fma` at f80 (SoftFloat has no `extF80_mulAdd`).
 - `fcmp_false`, `fcmp_true` (folded by LLVM, never emitted).
 - `sitofp`/`uitofp`/`fptosi`/`fptoui` at integer widths not in the table. `INT_X` in the generator
   lists one width of each CR §2 class (7, 24 at most 32 bits; 48 up to 64; 100, 128 up to 128; 200
@@ -112,8 +111,8 @@ Not provided:
 floats (clang 19 -O1 with FENV_ACCESS: SSE, F16C, FMA instructions, x87 for f80), bit for bit, in all
 four rounding modes, with the exception word: specials (±0, subnormals, extremes, ±Inf, quiet and
 signalling NaNs with payloads, and for f80 the non-canonical encodings) and random operands.
-Default: 2,222,732 cases over 227 operations, 0 mismatches. f80 (`run_selftest.sh f80`): 406,184
-cases over 54 operations, 0 mismatches. Where CR §2 fixes what the host leaves to a library, the
+Default: 2,222,732 cases over 227 operations, 0 mismatches. f80 (`run_selftest.sh f80`): 2,209,144
+cases over 56 operations, 0 mismatches. Where CR §2 fixes what the host leaves to a library, the
 reference is the CR row (the report names each):
 
 - `frem` is C `fmod`, computed from SoftFloat's IEEE remainder r: when r ≠ 0 has the other sign than
@@ -125,6 +124,17 @@ reference is the CR row (the report names each):
   `fptoui` to i64 is that of LLVM's strict code (one cvtt of x − (x ≥ 2^63 ? 2^63 : 0)), not of the
   −O1 formula's two conversions.
 - `fmax`/`fmin`: the CR row; INVALID for an sNaN (IEEE). `is_fpclass`: a field test, no flag.
+- `fma` at f80: SoftFloat has no `extF80_mulAdd`, so `cqsf_f80.h` has one, `cqsf_extF80_mulAdd`: the
+  128-bit product of the significands, c aligned in a 192-bit frame with a sticky jam (exact under
+  any cancellation), one `softfloat_roundPackToExtF80` at precision 80 in the mode; NaN and
+  non-canonical operands by the CR rows. Reference: a*b + c computed exactly with `_BitInt(1024)` in
+  the test and rounded there (subnormals, overflow, tininess after rounding): 110,592 special triples
+  and 250,000 random and hard ones (cancellation, the subnormal boundary, ties, overflow), × 4 modes,
+  0 mismatches. The host's `fmal` (macOS libm) is not that reference: against it, 109,582 of 1,157,208
+  values differ (1,447 the sign of an exact zero, e.g. +0·+0 + +0 in round-down gives −0; 28,497
+  subnormal or zero results; 71,153 in the directed modes; 8,485 ties in nearest-even near 2^-16382:
+  min subnormal × 1.5 + (2^63 − 1)·2^-16445 is the tie (2^63 + ½)·2^-16445, even is
+  `0x8000000000000000:0001`, `fmal` gives `…0001:0001`) and 333,576 flag words; CR §2 (IEEE) decides.
 - bf16: `fpext` from bf16 is the bare shift; `fptrunc` to bf16 and `sitofp`/`uitofp` to bf16 (via f32,
   two roundings) are compiler-rt calls on the host, which ignore the mode and raise no flags: they
   are compared in round-to-nearest, values only. Their `_rm` forms round in the mode and their
@@ -169,7 +179,7 @@ reference is the CR row (the report names each):
 
 - `build.sh lib`: the 661 default roots lower with no pass error in 17 groups, 1 min 37 s in all
   (a 15.2 MB archive); `build.sh lib cqsf_f80.roots`: 171 roots in 5 groups,
-  44 s (10 MB, 4.8 MB).
+  38 s (5.1 MB; `fma` included).
   The lowered modules call no float template (only `bitcast` between fN and iN) and no `cqrt_qram_*`;
   the mode and the flags never touch memory. Their templates: integer add, sub, mul, udiv, and, or,
   xor, shl, lshr, ashr, icmp, select, zext, sext, trunc, abs, smax, umax, usub_sat, ctlz, fshl,
@@ -185,7 +195,7 @@ reference is the CR row (the report names each):
   test/prog_f80.c` matches the native program.
 - `test/run_shimtest.sh [N [default|f80|all]]`: every template symbol of both archives through its
   shim, the lowered library and the toy backend against the native root; each `_unc` must return its
-  rail to 0 and the backend counts dirty frees. 2,581 symbols (2,086 default, 495 f80) × 16 samples:
-  0 mismatches, 0 dirty frees (the default group with bf16: 33,376 calls, 0 mismatches). The toy backend holds 256-bit rails and takes an
+  rail to 0 and the backend counts dirty frees. 2,625 symbols (2,086 default: 33,376 calls; 539 f80:
+  8,624 calls) × 16 samples: 0 mismatches, 0 dirty frees. The toy backend holds 256-bit rails and takes an
   iN literal above 128 bits as LLVM passes it: N/64 integer registers when all fit, else all on the
   stack with the remaining integer registers skipped (measured; `select_i200_ll` has two).

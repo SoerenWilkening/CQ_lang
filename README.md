@@ -255,9 +255,10 @@ softfloat/build.sh lib softfloat/cqsf_f80.roots    # softfloat/build/libqsoftflo
 cqcc prog.c -lmybackend -o prog                    # cqcc links both archives when they exist
 ```
 
-- The library covers `float`, `double`, `_Float16` and `long double`: arithmetic, `sqrt`, `fma`
-  (not for `long double`), compares, rounding, and the conversions between floating-point widths
-  and to and from 8, 16, 32 and 64-bit integers, with every rounding mode and the exception flags.
+- The library covers `float`, `double`, `_Float16`, `__bf16` and `long double`: arithmetic, `sqrt`,
+  `fma`, compares, rounding, and the conversions between floating-point widths and to and from
+  integers (8 to 64 bits, `__int128` and `_BitInt` widths; the generator lists which), with every
+  rounding mode and the exception flags.
 - It is optional. `cqcc --no-softfloat`, or simply not building it, leaves the floating-point
   operations to the backend, which must then implement them itself. A backend may also implement
   only some: an operation the backend defines is the backend's, the library supplies the rest.

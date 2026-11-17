@@ -3655,6 +3655,22 @@ uint32_t cqsfi_fmin_f80_x(struct extFloat80M a0, struct extFloat80M a1) {
     return cqsf_x86flags(c.exceptionFlags);
 }
 
+struct extFloat80M cqsfi_fma_f80(struct extFloat80M a0, struct extFloat80M a1, struct extFloat80M a2) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fma_f80(&c, a0, a1, a2);
+}
+
+struct extFloat80M cqsfi_fma_f80_m(struct extFloat80M a0, struct extFloat80M a1, struct extFloat80M a2, uint32_t a3) {
+    struct sf_ctx c = {cqsf_mode(a3), 0};
+    return sfx_fma_f80(&c, a0, a1, a2);
+}
+
+uint32_t cqsfi_fma_f80_x(struct extFloat80M a0, struct extFloat80M a1, struct extFloat80M a2, uint32_t a3) {
+    struct sf_ctx c = {cqsf_mode(a3), 0};
+    (void)sfx_fma_f80(&c, a0, a1, a2);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
 struct extFloat80M cqsfi_sqrt_f80(struct extFloat80M a0) {
     struct sf_ctx c = {softfloat_round_near_even, 0};
     return sfx_sqrt_f80(&c, a0);

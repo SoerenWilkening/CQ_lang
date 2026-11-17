@@ -251,6 +251,154 @@ static void run_conv(void) {
     }
 }
 
+/* ---- fma: an exact reference by big integers, and the host's fmal ----
+ * a*b + c is computed exactly (_BitInt(1024); an addend more than 600 bits below the other only as a
+ * sticky half unit) and rounded once to 64 bits in the mode, with the f80 exponent range, subnormals,
+ * overflow to Inf or the largest finite, and the IEEE flags (tininess after rounding, as x87). The host's
+ * fmal (macOS libm) is compared against the same reference and its disagreements are counted apart. NaN
+ * and non-canonical operands: the CR §2 rows (first NaN quieted, INVALID only for an sNaN; a
+ * non-canonical operand the real indefinite with INVALID). */
+typedef _BitInt(1024) B;
+static int msbB(B x) { int p = -1; for (int k = 15; k >= 0; k--) { u64 w = (u64)(x >> (64 * k)); if (w) { p = 64 * k + 63 - __builtin_clzll(w); break; } } return p; }
+static R ref_fma80(X a, X b, X c, int m) {
+    R r = {{0, 0}, 0};
+    if (noncanon(a) || noncanon(b) || noncanon(c)) { r.v = INDEF; r.f = FE_INVALID; return r; }
+    if (isnanx(a) || isnanx(b) || isnanx(c)) {
+        r.f = (issnanx(a) || issnanx(b) || issnanx(c)) ? FE_INVALID : 0;
+        r.v = isnanx(a) ? a : isnanx(b) ? b : c; r.v.m |= (u64)3 << 62; return r;
+    }
+    int sa = a.e >> 15, sb = b.e >> 15, sc = c.e >> 15, sp = sa ^ sb;
+    int ea = a.e & 0x7FFF, eb = b.e & 0x7FFF, ec = c.e & 0x7FFF;
+    int za = !ea && !a.m, zb = !eb && !b.m, zc = !ec && !c.m;
+    if (ea == 0x7FFF || eb == 0x7FFF) {
+        if (za || zb || (ec == 0x7FFF && sc != sp)) { r.v = INDEF; r.f = FE_INVALID; return r; }
+        r.v = (X){0x8000000000000000u, (unsigned)(sp << 15) | 0x7FFF}; return r;
+    }
+    if (ec == 0x7FFF) { r.v = c; return r; }
+    /* values: m * 2^(e - 16383 - 63), exponent field 0 read as 1 */
+    long ep = (long)(ea ? ea : 1) + (eb ? eb : 1) - 2 * (16383 + 63), eC = (long)(ec ? ec : 1) - (16383 + 63);
+    B P = (B)(unsigned __int128)a.m * (B)(unsigned __int128)b.m, C = (B)(unsigned __int128)c.m;
+    if (!P && !C) { int s = (sp == sc) ? sp : (m == FE_DOWNWARD); r.v = (X){0, (unsigned)s << 15}; return r; }
+    B S; long E;
+    if (!P) { S = sc ? -C : C; E = eC; }
+    else if (!C) { S = sp ? -P : P; E = ep; }
+    /* an addend more than 600 bits below the other: a sticky unit 200 bits under the larger's significand */
+    else if (ep - eC > 600) { P <<= 200; S = (sp ? -P : P) + (sc ? -1 : 1); E = ep - 200; }
+    else if (eC - ep > 600) { C <<= 200; S = (sc ? -C : C) + (sp ? -1 : 1); E = eC - 200; }
+    else { E = ep < eC ? ep : eC; S = (sp ? -(P << (ep - E)) : (P << (ep - E))) + (sc ? -(C << (eC - E)) : (C << (eC - E))); }
+    if (!S) { r.v = (X){0, (m == FE_DOWNWARD) ? 0x8000u : 0}; return r; }
+    int neg = S < 0; B M = neg ? -S : S;
+    int p = msbB(M);
+    /* round to the quantum q (value M * 2^E): unbounded (tininess) and bounded (the result) */
+    long eu = p + E;                                  /* the unbounded exponent of the msb */
+    long qb = eu < -16382 ? -16382 - 63 : eu - 63;    /* bounded quantum exponent */
+    long qu = eu - 63;                                /* unbounded */
+    int inexact = 0; B qres = 0; long qexp = 0; int tiny = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        long qe = pass ? qb : qu; long sh = qe - E; B q, rem = 0, half = 0;
+        if (sh <= 0) q = M << (-sh);
+        else if (sh > 1000) { q = 0; rem = M; half = (B)1 << 1000; }   /* far below the quantum: a sticky below half */
+        else { q = M >> sh; rem = M & (((B)1 << sh) - 1); half = (B)1 << (sh - 1); }
+        int up = 0;
+        if (rem) {
+            if (m == FE_TONEAREST) up = rem > half || (rem == half && (q & 1));
+            else if (m == FE_UPWARD) up = !neg; else if (m == FE_DOWNWARD) up = neg;
+        }
+        q += up;
+        if (!pass) { long e2 = qe + msbB(q); tiny = e2 < -16382; }
+        else { inexact = rem != 0; qres = q; qexp = qe; }
+    }
+    if (inexact) r.f |= FE_INEXACT;
+    if (inexact && tiny) r.f |= FE_UNDERFLOW;
+    int pq = msbB(qres);
+    if (pq < 0) { r.v = (X){0, (unsigned)neg << 15}; return r; }
+    long er = qexp + pq;                              /* the result's msb exponent */
+    if (er > 16383) {
+        r.f |= FE_OVERFLOW | FE_INEXACT;
+        int inf = m == FE_TONEAREST || (m == FE_UPWARD && !neg) || (m == FE_DOWNWARD && neg);
+        r.v = inf ? (X){0x8000000000000000u, ((unsigned)neg << 15) | 0x7FFF} : (X){~(u64)0, ((unsigned)neg << 15) | 0x7FFE};
+        return r;
+    }
+    if (er < -16382) r.v = (X){(u64)(qres << (qexp - (-16382 - 63))), (unsigned)neg << 15};   /* subnormal */
+    else r.v = (X){(u64)(pq > 63 ? qres >> (pq - 63) : qres << (63 - pq)), ((unsigned)neg << 15) | (unsigned)(er + 16383)};
+    return r;
+}
+static R h_fma(X a, X b, X c, int m) {
+    volatile long double x = L(a), y = L(b), z = L(c); hbegin(m); long double r = fmal(x, y, z); unsigned f = hend() & ~2u; return (R){Xb(r), f};
+}
+static long hfma_n, hfma_badv, hfma_badf, hfma_cls[4], hfma_fcls[2];
+static void fma_case(X a, X b, X c) {
+    for (int mi = 0; mi < 4; mi++) {
+        int m = MODES[mi];
+        R ref = ref_fma80(a, b, c, m);
+        if (!noncanon(a) && !noncanon(b) && !noncanon(c) && !isnanx(a) && !isnanx(b) && !isnanx(c)) {
+            R h = h_fma(a, b, c, m); hfma_n++;
+            int bv = !xeq(h.v, ref.v), bf = h.f != ref.f;
+            hfma_badv += bv; hfma_badf += bf;
+            if (bv) {   /* where: a zero's sign, a subnormal or zero result, a directed mode, nearest-even */
+                int zs = !(h.v.e & 0x7FFF) && !h.v.m && !(ref.v.e & 0x7FFF) && !ref.v.m;
+                int sub = !(ref.v.e & 0x7FFF) || !(h.v.e & 0x7FFF);
+                hfma_cls[zs ? 0 : sub ? 1 : mi ? 2 : 3]++;
+                if (!zs && !sub && !mi && hfma_cls[3] <= 2)
+                    printf("HOSTRNE %#" PRIx64 " %u %#" PRIx64 " %u %#" PRIx64 " %u fmal %#" PRIx64 " %u exact %#" PRIx64 " %u\n",
+                           a.m, a.e, b.m, b.e, c.m, c.e, h.v.m, h.v.e, ref.v.m, ref.v.e);
+            }
+            if (!bv && bf) hfma_fcls[mi ? 1 : 0]++;
+            if ((bv || bf) && hfma_badv + hfma_badf <= 6)
+                printf("HOST fmal mode %4d in %#" PRIx64 ":%04x %#" PRIx64 ":%04x %#" PRIx64 ":%04x: fmal %#" PRIx64 ":%04x f%02x exact %#" PRIx64 ":%04x f%02x\n",
+                       m, a.m, a.e, b.m, b.e, c.m, c.e, h.v.m, h.v.e, h.f, ref.v.m, ref.v.e, ref.f);
+        }
+        long double la = L(a), lb = L(b), lc = L(c);
+        R lib;
+        if (mi == 0) {
+            lib.v = Xb(cqsf_fma_f80(la, lb, lc)); lib.f = cqsf_fma_f80_x(la, lb, lc, 0);
+            chkx("fma_f80", m, a, b, lib, ref, 1);
+        }
+        lib.v = Xb(cqsf_fma_f80_m(la, lb, lc, (uint32_t)m)); lib.f = cqsf_fma_f80_x(la, lb, lc, (uint32_t)m);
+        if ((!xeq(lib.v, ref.v) || lib.f != ref.f) && so("fma_f80_rm")->badv + so("fma_f80_rm")->badf < 3)
+            printf("  (fma_f80 addend c = %#" PRIx64 ":%04x)\n", c.m, c.e);
+        chkx("fma_f80_rm", m, a, b, lib, ref, 1);
+    }
+}
+static X xmk(u64 m, int e, int s) { X x = {m, (unsigned)(e & 0x7FFF) | (s ? 0x8000u : 0)}; return x; }
+static void run_fma(void) {
+    X sp[64]; int ns = specials(sp);
+    for (int i = 0; i < ns; i++) for (int j = 0; j < ns; j++) for (int k = 0; k < ns; k++) fma_case(sp[i], sp[j], sp[k]);
+    long nsp = (long)ns * ns * ns;
+    for (long t = 0; t < 250000; t++) {
+        X a = rndx(), b = rndx(), c = rndx();
+        int kind = (int)(t % 5);
+        if (kind == 1) {                      /* massive cancellation: c = -(a*b) rounded, nudged by a few ulps */
+            volatile long double p = L(a) * L(b); X q = Xb(-p);
+            if ((q.e & 0x7FFF) != 0x7FFF && q.m) { q.m += rnd() % 7 - 3; q.m |= (q.e & 0x7FFF) ? 0x8000000000000000u : 0; }
+            c = q;
+        } else if (kind == 2) {               /* the subnormal boundary: a*b near 2^-16382, c tiny or zero */
+            a = xmk(rnd() | 0x8000000000000000u, 0x3FFF - 8191 + (int)(rnd() % 5) - 2, rnd() & 1);
+            b = xmk(rnd() | 0x8000000000000000u, 0x3FFF - 8191 + (int)(rnd() % 3) - 1, rnd() & 1);
+            c = (rnd() & 1) ? xmk(rnd() >> (rnd() % 64), 0, rnd() & 1) : xmk(rnd() | 0x8000000000000000u, (int)(rnd() % 3) + 1, rnd() & 1);
+        } else if (kind == 3) {               /* ties: an exact 64-bit product plus half its ulp (or nearly) */
+            a = xmk((rnd() | 0x80000000u) << 32 >> 0, 0x3FFF + (int)(rnd() % 40) - 20, rnd() & 1);
+            a.m = (a.m & 0xFFFFFFFF00000000u) | 0x8000000000000000u;
+            b = xmk(((rnd() & 0x7FFFFFFFu) | 0x80000000u) << 32, 0x3FFF + (int)(rnd() % 40) - 20, rnd() & 1);
+            volatile long double p = L(a) * L(b); X q = Xb(p);
+            int ep = (int)(q.e & 0x7FFF) - 64;                                  /* half an ulp of the product */
+            c = xmk(0x8000000000000000u, ep, rnd() & 1);
+            if (rnd() % 3 == 0) c.m += 1; else if (rnd() % 3 == 0) c.m = 0xFFFFFFFFFFFFFFFFu, c.e -= 1;
+        } else if (kind == 4) {               /* overflow: a*b near 2^16384 */
+            a = xmk(rnd() | 0x8000000000000000u, 0x3FFF + 8192, rnd() & 1);
+            b = xmk(rnd() | 0x8000000000000000u, 0x3FFF + 8191 - (int)(rnd() % 2), rnd() & 1);
+        }
+        fma_case(a, b, c);
+    }
+    so("fma_f80")->note = "reference: a*b + c exact by big integers, rounded here (CR §2 NaN rows)";
+    so("fma_f80_rm")->note = so("fma_f80")->note;
+    printf("fma_f80: %ld specials x 4 modes and 250,000 random/hard triples x 4 modes; the host's fmal against "
+           "the exact reference: %ld compared, %ld values and %ld flag words differ\n", nsp, hfma_n, hfma_badv, hfma_badf);
+    printf("fma_f80: the host's fmal differs in value: %ld the sign of a zero, %ld a subnormal or zero result, %ld in a directed "
+           "mode, %ld in nearest-even; in the flags alone: %ld in nearest-even, %ld in a directed mode\n",
+           hfma_cls[0], hfma_cls[1], hfma_cls[2], hfma_cls[3], hfma_fcls[0], hfma_fcls[1]);
+}
+
 int main(void) {
     Op ops[] = {OP2(fadd, h_add, 1), OP2(fsub, h_sub, 1), OP2(fmul, h_mul, 1), OP2(fdiv, h_div, 1), OP2(frem, h_rem, 1),
                 OP1M(sqrt, h_sqrt), OP1M(rint, h_rint), OP1(floor, h_floor), OP1(ceil, h_ceil), OP1(trunc, h_trunc), OP1(round, h_round)};
@@ -259,6 +407,7 @@ int main(void) {
     so("round_f80")->note = "reference: libm roundl";
     run_misc();
     run_conv();
+    run_fma();
     so("fptrunc_f80_to_f16_rm")->note = "reference: the exact value rounded here (no x87 f16 instruction)";
     long n = 0, bv = 0, bf = 0;
     printf("\n%-28s %9s %8s %8s  %s\n", "operation", "cases", "badval", "badflag", "note");

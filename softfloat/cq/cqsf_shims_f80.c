@@ -77,6 +77,12 @@ int32_t __cq_q_cqsf_fmin_f80_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fmin_f80_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fmin_f80_x_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fmin_f80_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fma_f80_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fma_f80_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fma_f80_x_1111_t(int32_t, int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fma_f80_x_1111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fma_f80_m_1111_t(int32_t, int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fma_f80_m_1111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_sqrt_f80_1_t(int32_t, int32_t);
 void __cq_q_cqsf_sqrt_f80_1_t_unc(int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_sqrt_f80_x_11_t(int32_t, int32_t, int32_t);
@@ -2367,6 +2373,902 @@ void cq_template_fmin_f80_lh_exc_unc(int32_t o, long double l0, int32_t a1) {
     int32_t r = __cq_q_cqsf_fmin_f80_x_11_t(s0, a1, 1);
     cqrt_copy_i32(r, o);
     __cq_q_cqsf_fmin_f80_x_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80(int32_t a0, int32_t a1, int32_t a2) {
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, a1, a2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, a1, a2, 1);
+    return o;
+}
+void cq_template_fma_f80_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2) {
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, a1, a2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, a1, a2, 1);
+}
+
+int32_t cq_template_fma_f80_exc(int32_t a0, int32_t a1, int32_t a2) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fma_f80_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fma_f80_rm(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fma_f80_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, a2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fma_f80_rm_exc(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fma_f80_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fma_f80_rmq(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, a2, m, 1);
+    return o;
+}
+void cq_template_fma_f80_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, a2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, a2, m, 1);
+}
+
+int32_t cq_template_fma_f80_rmq_exc(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, a2, m, 1);
+    return o;
+}
+void cq_template_fma_f80_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, a2, m, 1);
+}
+
+int32_t cq_template_fma_f80_qlq(int32_t a0, long double l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, s1, a2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, s1, a2, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qlq_unc(int32_t o, int32_t a0, long double l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, s1, a2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, s1, a2, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qlq_exc(int32_t a0, long double l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qlq_exc_unc(int32_t o, int32_t a0, long double l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qlq_rm(int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qlq_rm_unc(int32_t o, int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, a2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qlq_rm_exc(int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qlq_rm_exc_unc(int32_t o, int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qlq_rmq(int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qlq_rmq_unc(int32_t o, int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, a2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qlq_rmq_exc(int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qlq_rmq_exc_unc(int32_t o, int32_t a0, long double l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qql(int32_t a0, int32_t a1, long double l2) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, a1, s2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, a1, s2, 1);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_f80_qql_unc(int32_t o, int32_t a0, int32_t a1, long double l2) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, a1, s2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, a1, s2, 1);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_f80_qql_exc(int32_t a0, int32_t a1, long double l2) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_f80_qql_exc_unc(int32_t o, int32_t a0, int32_t a1, long double l2) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_f80_qql_rm(int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_f80_qql_rm_unc(int32_t o, int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, s2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_f80_qql_rm_exc(int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_f80_qql_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_f80_qql_rmq(int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_f80_qql_rmq_unc(int32_t o, int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, a1, s2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_f80_qql_rmq_exc(int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_f80_qql_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, long double l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, a1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_f80_qll(int32_t a0, long double l1, long double l2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, s1, s2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, s1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qll_unc(int32_t o, int32_t a0, long double l1, long double l2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(a0, s1, s2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, a0, s1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qll_exc(int32_t a0, long double l1, long double l2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qll_exc_unc(int32_t o, int32_t a0, long double l1, long double l2) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qll_rm(int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, s2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qll_rm_unc(int32_t o, int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, s2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qll_rm_exc(int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qll_rm_exc_unc(int32_t o, int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qll_rmq(int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qll_rmq_unc(int32_t o, int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(a0, s1, s2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_qll_rmq_exc(int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_f80_qll_rmq_exc_unc(int32_t o, int32_t a0, long double l1, long double l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(a0, s1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_f80_lqq(long double l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(s0, a1, a2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, s0, a1, a2, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lqq_unc(int32_t o, long double l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(s0, a1, a2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, s0, a1, a2, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lqq_exc(long double l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lqq_exc_unc(int32_t o, long double l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lqq_rm(long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lqq_rm_unc(int32_t o, long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, a2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lqq_rm_exc(long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lqq_rm_exc_unc(int32_t o, long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lqq_rmq(long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lqq_rmq_unc(int32_t o, long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, a2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lqq_rmq_exc(long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lqq_rmq_exc_unc(int32_t o, long double l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lql(long double l0, int32_t a1, long double l2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(s0, a1, s2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, s0, a1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lql_unc(int32_t o, long double l0, int32_t a1, long double l2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(s0, a1, s2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, s0, a1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lql_exc(long double l0, int32_t a1, long double l2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lql_exc_unc(int32_t o, long double l0, int32_t a1, long double l2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lql_rm(long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lql_rm_unc(int32_t o, long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, s2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lql_rm_exc(long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lql_rm_exc_unc(int32_t o, long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lql_rmq(long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lql_rmq_unc(int32_t o, long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, a1, s2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lql_rmq_exc(long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lql_rmq_exc_unc(int32_t o, long double l0, int32_t a1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, a1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_llq(long double l0, long double l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(s0, s1, a2, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, s0, s1, a2, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_llq_unc(int32_t o, long double l0, long double l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_111_t(s0, s1, a2, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_111_t_unc(r, s0, s1, a2, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_llq_exc(long double l0, long double l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_llq_exc_unc(int32_t o, long double l0, long double l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_llq_rm(long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_llq_rm_unc(int32_t o, long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, s1, a2, sm, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_llq_rm_exc(long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_llq_rm_exc_unc(int32_t o, long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_llq_rmq(long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_llq_rmq_unc(int32_t o, long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, s1, a2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_llq_rmq_exc(long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_llq_rmq_exc_unc(int32_t o, long double l0, long double l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lll_rmq(long double l0, long double l1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_f80(0);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lll_rmq_unc(int32_t o, long double l0, long double l1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_m_1111_t(s0, s1, s2, m, 1);
+    cqrt_copy_f80(r, o);
+    __cq_q_cqsf_fma_f80_m_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_f80_lll_rmq_exc(long double l0, long double l1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_f80_lll_rmq_exc_unc(int32_t o, long double l0, long double l1, long double l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_f80(l0);
+    int32_t s1 = cqrt_alloc_f80(l1);
+    int32_t s2 = cqrt_alloc_f80(l2);
+    int32_t r = __cq_q_cqsf_fma_f80_x_1111_t(s0, s1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_f80_x_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
     cqrt_free(s0);
 }
 

@@ -95,9 +95,9 @@ def table(widths, int_from=INT_FROM, int_to=INT_TO):
                             ["", "hl", "lh"], K_FREM[W] if op == "frem" else K_DEFAULT))
         for op in ["fmax", "fmin"]:
             out.append(Inst(f"{op}_{W}", f"sfx_{op}_{W}", [fw, fw], fw, False, True, ["", "hl", "lh"]))
-        if W != "f80":   # SoftFloat has no extF80_mulAdd
-            out.append(Inst(f"fma_{W}", f"sfx_fma_{W}", [fw, fw, fw], fw, True, True,
-                            ["", "qlq", "qql", "qll", "lqq", "lql", "llq"]))
+        # f80: SoftFloat has no extF80_mulAdd; cqsf_f80.h writes one (cqsf_extF80_mulAdd)
+        out.append(Inst(f"fma_{W}", f"sfx_fma_{W}", [fw, fw, fw], fw, True, True,
+                        ["", "qlq", "qql", "qll", "lqq", "lql", "llq"]))
         out.append(Inst(f"sqrt_{W}", f"sfx_sqrt_{W}", [fw], fw, True, True, [""]))
         out.append(Inst(f"rint_{W}", f"sfx_rint_{W}", [fw], fw, True, True, [""]))
         for op in ["floor", "ceil", "trunc", "round"]:
