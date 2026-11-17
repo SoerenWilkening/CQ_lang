@@ -8,6 +8,9 @@ Per symbol and sample: operand rails are allocated with the input values (a lite
 literal, a _rm mode as a literal, a _rmq mode as a rail); the forward template's result rail must hold the
 native root's value (cqsfi_*, the integer-only inner function, called on the same bit patterns); the _unc
 template must return that rail to 0. The toy backend separately counts dirty frees inside the library.
+An INT_X conversion (manifest "x") is checked against its root built natively from cq/cqsf_roots_x.ll,
+through the entry cqsft_<root>(operand, mode, result); an iN operand wider than 128 bits is passed in
+uint64_t parts, as LLVM passes it.
 """
 import json
 import sys
@@ -24,7 +27,20 @@ FE = [0, 1024, 2048, 3072]
 def int_ct(n, signed):
     if n == 1:
         return "bool"
-    return f"{'' if signed else 'u'}int{n}_t"
+    if n in (8, 16, 32, 64):
+        return f"{'' if signed else 'u'}int{n}_t"
+    return f"{'' if signed else 'unsigned '}_BitInt({n})"
+
+
+def wide_args(n, v):
+    """An iN value (u256 expression) as the C arguments of a call: N/64 parts above 128 bits."""
+    if n > 128:
+        return ", ".join(f"(uint64_t)({v} >> {64 * j})" for j in range((n + 63) // 64))
+    return f"({int_ct(n, True)}){v}"
+
+
+def wide_params(n):
+    return ", ".join(["uint64_t"] * ((n + 63) // 64)) if n > 128 else int_ct(n, True)
 
 
 def main():
@@ -44,7 +60,9 @@ def main():
 #include <stdio.h>
 #include <string.h>
 typedef unsigned __int128 u128;
+typedef unsigned _BitInt(256) u256;
 u128 toy_val(int32_t h);
+u256 toy_val256(int32_t h);
 void cqrt_free(int32_t h);
 int32_t cqrt_alloc_i1(bool); int32_t cqrt_alloc_i8(int8_t); int32_t cqrt_alloc_i16(int16_t); int32_t cqrt_alloc_i32(int32_t);
 int32_t cqrt_alloc_i64(int64_t); int32_t cqrt_alloc_f16(_Float16); int32_t cqrt_alloc_bf16(__bf16); int32_t cqrt_alloc_f32(float);
@@ -77,14 +95,27 @@ static u128 fpin80(void) {
     uint16_t e = (uint16_t)(0x3FFF + (int)(rnd() % 61) - 30) | ((rnd() & 1) ? 0x8000 : 0);
     return (u128)(rnd() | 0x8000000000000000u) | ((u128)e << 64);
 }
-static void bad(const char *what, u128 got, u128 want) {
+static void bad(const char *what, u256 got, u256 want) {
     nbad++;
-    if (nbad <= 20) printf("MISMATCH %s: %s got %#llx want %#llx\\n", cur, what, (unsigned long long)got, (unsigned long long)want);
+    if (nbad <= 20) printf("MISMATCH %s: %s got %#llx:%016llx want %#llx:%016llx\\n", cur, what, (unsigned long long)(got >> 64),
+                           (unsigned long long)got, (unsigned long long)(want >> 64), (unsigned long long)want);
+}
+/* an N-bit integer input: random bits with a random number of leading zeros, or their complement */
+static u256 intin(int n) {
+    u256 v = 0;
+    for (int k = 0; k < 4; k++) v = (v << 64) | (u256)rnd();
+    switch (rnd() % 4) { case 0: break; case 1: v >>= rnd() % 256; break; case 2: v = ~(v >> (rnd() % 256)); break;
+    default: v = (u256)1 << (rnd() % n); }
+    return n >= 256 ? v : v & (((u256)1 << n) - 1);
 }
 """]
     tests = []
     for sym, m in sorted(man.items()):
         if group != "all" and m["group"] != group:
+            continue
+        if m.get("x"):
+            c.append(xtest(len(tests), sym, m, samples))
+            tests.append(sym)
             continue
         root = "cqsfi_" + m["root"][5:]
         ins = [tuple(k) for k in m["ins"]]
@@ -143,12 +174,12 @@ static void bad(const char *what, u128 got, u128 want) {
         call = f"{root}({', '.join(root_args)})"
         if rt == X80:
             call = f"x80v({call})"
-        f.append(f"        u128 want = (u128)({call}) & (((u128)1 << {rw}) - 1);")
+        f.append(f"        u256 want = (u256)({call}) & (((u256)1 << {rw}) - 1);")
         f.append(f"        int32_t o = {sym}({', '.join(shim_args)});")
         f.append("        ncalls++;")
-        f.append("        if (toy_val(o) != want) bad(\"value\", toy_val(o), want);")
+        f.append("        if (toy_val256(o) != want) bad(\"value\", toy_val256(o), want);")
         f.append(f"        {sym}_unc({', '.join(['o'] + shim_args)});")
-        f.append("        if (toy_val(o) != 0) { nunc++; bad(\"_unc\", toy_val(o), 0); }")
+        f.append("        if (toy_val256(o) != 0) { nunc++; bad(\"_unc\", toy_val256(o), 0); }")
         f.append("        cqrt_free(o);")
         for h in reversed(frees):
             f.append(f"        cqrt_free({h});")
@@ -176,6 +207,64 @@ static void bad(const char *what, u128 got, u128 want) {
     c.append("    return nbad != 0;\n}")
     Path(out).write_text("\n".join(c) + "\n")
     print(f"gen_shimtest: {len(tests)} symbols, {samples} samples each")
+
+
+def xtest(idx, sym, m, samples):
+    """An INT_X template: one operand (iN or fp), the native root through cqsft_*."""
+    k = tuple(m["ins"][0])
+    shape = m["shape"] or ""
+    lit_ = shape == "l"
+    rw = 32 if m["exc"] else (BITS[m["out"][1]] if m["out"][0] == "fp" else m["out"][1])
+    f = [f"void cqsft_{m['root'][5:]}(const void *, uint32_t, void *);"]
+    if k[0] == "int":
+        n = k[1]
+        pp = wide_params(n)
+    else:
+        n = None
+        pp = LIT[k[1]]
+    proto = ["int32_t" if not lit_ else pp] + (["int32_t"] if m["rm"] else [])
+    f.append(f"int32_t {sym}({', '.join(proto)});\nvoid {sym}_unc(int32_t, {', '.join(proto)});")
+    f += [f"static void t_{idx}(void) {{", f"    cur = \"{sym}\";", f"    for (int s = 0; s < {samples}; s++) {{",
+          "        unsigned char ib[32] = {0}, ob[32] = {0};"]
+    if n is not None:
+        f.append(f"        u256 v = intin({n}); memcpy(ib, &v, 32);")
+        harg = f"cqrt_alloc_i{n}({wide_args(n, 'v')})"
+        larg = wide_args(n, "v")
+        f.append(f"        int32_t cqrt_alloc_i{n}({pp});")
+    else:
+        w = k[1]
+        if w == "f80":
+            f.append("        u128 v = fpin80(); memcpy(ib, &v, 10);")
+        else:
+            eb = {"f16": 5, "bf16": 8, "f32": 8, "f64": 11}[w]
+            f.append(f"        u256 v = fpin({BITS[w]}, {eb}); memcpy(ib, &v, {BITS[w] // 8});")
+        f.append(f"        {LIT[w]} x = 0; memcpy(&x, ib, {10 if w == 'f80' else BITS[w] // 8});")
+        harg, larg = f"cqrt_alloc_{w}(x)", "x"
+    f.append(f"        uint32_t mo = {'(uint32_t)(rnd() % 4) * 1024u' if m['rm'] else '0'};")
+    args = []
+    frees = []
+    if lit_:
+        args.append(larg)
+    else:
+        f.append(f"        int32_t h = {harg};")
+        args.append("h"); frees.append("h")
+    if m["rm"] == "_rm":
+        args.append("(int32_t)mo")
+    elif m["rm"] == "_rmq":
+        f.append("        int32_t hm = cqrt_alloc_i32((int32_t)mo);")
+        args.append("hm"); frees.append("hm")
+    f.append(f"        cqsft_{m['root'][5:]}(ib, mo, ob);")
+    f.append(f"        u256 want = 0; memcpy(&want, ob, 32); want &= ((u256)1 << {rw}) - 1;")
+    f.append(f"        int32_t o = {sym}({', '.join(args)});")
+    f.append("        ncalls++;")
+    f.append("        if (toy_val256(o) != want) bad(\"value\", toy_val256(o), want);")
+    f.append(f"        {sym}_unc({', '.join(['o'] + args)});")
+    f.append("        if (toy_val256(o) != 0) { nunc++; bad(\"_unc\", toy_val256(o), 0); }")
+    f.append("        cqrt_free(o);")
+    for h in reversed(frees):
+        f.append(f"        cqrt_free({h});")
+    f.append("    }\n}")
+    return "\n".join(f)
 
 
 _INNER = None

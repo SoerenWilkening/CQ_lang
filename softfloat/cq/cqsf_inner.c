@@ -3,6 +3,7 @@
 #include "sf_unity.h"
 #include "cqsf.h"
 #include "cqsf_f80.h"
+#include "cqsf_int.h"
 #pragma clang attribute pop
 
 uint16_t cqsfi_fadd_f16(uint16_t a0, uint16_t a1) {
@@ -1944,6 +1945,1302 @@ uint32_t cqsfi_fptoui_f64_to_i64_x(uint64_t a0) {
     return cqsf_x86flags(c.exceptionFlags);
 }
 
+uint16_t cqsfi_sitofp_i7_to_f16(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f16(&c, a0);
+}
+
+uint16_t cqsfi_sitofp_i7_to_f16_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f16(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i7_to_f16_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i7_to_f16(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f16(&c, a0);
+}
+
+uint16_t cqsfi_uitofp_i7_to_f16_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f16(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i7_to_f16_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f16_to_i7(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f16(&c, a0, 7, true);
+}
+
+uint32_t cqsfi_fptosi_f16_to_i7_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f16(&c, a0, 7, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f16_to_i7(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f16(&c, a0, 7, false);
+}
+
+uint32_t cqsfi_fptoui_f16_to_i7_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f16(&c, a0, 7, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i7_to_bf16(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_bf16(&c, a0);
+}
+
+uint16_t cqsfi_sitofp_i7_to_bf16_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_bf16(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i7_to_bf16_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_bf16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i7_to_bf16(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_bf16(&c, a0);
+}
+
+uint16_t cqsfi_uitofp_i7_to_bf16_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_bf16(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i7_to_bf16_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_bf16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_bf16_to_i7(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_bf16(&c, a0, 7, true);
+}
+
+uint32_t cqsfi_fptosi_bf16_to_i7_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_bf16(&c, a0, 7, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_bf16_to_i7(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_bf16(&c, a0, 7, false);
+}
+
+uint32_t cqsfi_fptoui_bf16_to_i7_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_bf16(&c, a0, 7, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_sitofp_i7_to_f32(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i7_to_f32_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i7_to_f32_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f32(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_uitofp_i7_to_f32(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i7_to_f32_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i7_to_f32_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f32(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f32_to_i7(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f32(&c, a0, 7, true);
+}
+
+uint32_t cqsfi_fptosi_f32_to_i7_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f32(&c, a0, 7, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f32_to_i7(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f32(&c, a0, 7, false);
+}
+
+uint32_t cqsfi_fptoui_f32_to_i7_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f32(&c, a0, 7, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_sitofp_i7_to_f64(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f64(&c, a0);
+}
+
+uint64_t cqsfi_sitofp_i7_to_f64_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f64(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i7_to_f64_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_uitofp_i7_to_f64(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f64(&c, a0);
+}
+
+uint64_t cqsfi_uitofp_i7_to_f64_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f64(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i7_to_f64_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f64_to_i7(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f64(&c, a0, 7, true);
+}
+
+uint32_t cqsfi_fptosi_f64_to_i7_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f64(&c, a0, 7, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f64_to_i7(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f64(&c, a0, 7, false);
+}
+
+uint32_t cqsfi_fptoui_f64_to_i7_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f64(&c, a0, 7, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i24_to_f16(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f16(&c, a0);
+}
+
+uint16_t cqsfi_sitofp_i24_to_f16_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f16(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i24_to_f16_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i24_to_f16(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f16(&c, a0);
+}
+
+uint16_t cqsfi_uitofp_i24_to_f16_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f16(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i24_to_f16_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f16_to_i24(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f16(&c, a0, 24, true);
+}
+
+uint32_t cqsfi_fptosi_f16_to_i24_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f16(&c, a0, 24, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f16_to_i24(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f16(&c, a0, 24, false);
+}
+
+uint32_t cqsfi_fptoui_f16_to_i24_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f16(&c, a0, 24, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i24_to_bf16(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_bf16(&c, a0);
+}
+
+uint16_t cqsfi_sitofp_i24_to_bf16_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_bf16(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i24_to_bf16_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_bf16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i24_to_bf16(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_bf16(&c, a0);
+}
+
+uint16_t cqsfi_uitofp_i24_to_bf16_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_bf16(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i24_to_bf16_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_bf16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_bf16_to_i24(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_bf16(&c, a0, 24, true);
+}
+
+uint32_t cqsfi_fptosi_bf16_to_i24_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_bf16(&c, a0, 24, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_bf16_to_i24(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_bf16(&c, a0, 24, false);
+}
+
+uint32_t cqsfi_fptoui_bf16_to_i24_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_bf16(&c, a0, 24, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_sitofp_i24_to_f32(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i24_to_f32_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i24_to_f32_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f32(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_uitofp_i24_to_f32(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i24_to_f32_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i24_to_f32_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f32(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f32_to_i24(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f32(&c, a0, 24, true);
+}
+
+uint32_t cqsfi_fptosi_f32_to_i24_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f32(&c, a0, 24, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f32_to_i24(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f32(&c, a0, 24, false);
+}
+
+uint32_t cqsfi_fptoui_f32_to_i24_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f32(&c, a0, 24, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_sitofp_i24_to_f64(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f64(&c, a0);
+}
+
+uint64_t cqsfi_sitofp_i24_to_f64_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f64(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i24_to_f64_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_uitofp_i24_to_f64(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f64(&c, a0);
+}
+
+uint64_t cqsfi_uitofp_i24_to_f64_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f64(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i24_to_f64_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f64_to_i24(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f64(&c, a0, 24, true);
+}
+
+uint32_t cqsfi_fptosi_f64_to_i24_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f64(&c, a0, 24, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f64_to_i24(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f64(&c, a0, 24, false);
+}
+
+uint32_t cqsfi_fptoui_f64_to_i24_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f64(&c, a0, 24, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i48_to_f16(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f16(&c, a0);
+}
+
+uint16_t cqsfi_sitofp_i48_to_f16_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f16(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i48_to_f16_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i48_to_f16(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f16(&c, a0);
+}
+
+uint16_t cqsfi_uitofp_i48_to_f16_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f16(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i48_to_f16_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f16_to_i48(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f16(&c, a0, 48, true);
+}
+
+uint32_t cqsfi_fptosi_f16_to_i48_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f16(&c, a0, 48, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f16_to_i48(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f16(&c, a0, 48, false);
+}
+
+uint32_t cqsfi_fptoui_f16_to_i48_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f16(&c, a0, 48, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i48_to_bf16(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_bf16(&c, a0);
+}
+
+uint16_t cqsfi_sitofp_i48_to_bf16_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_bf16(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i48_to_bf16_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_bf16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i48_to_bf16(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_bf16(&c, a0);
+}
+
+uint16_t cqsfi_uitofp_i48_to_bf16_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_bf16(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i48_to_bf16_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_bf16(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_bf16_to_i48(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_bf16(&c, a0, 48, true);
+}
+
+uint32_t cqsfi_fptosi_bf16_to_i48_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_bf16(&c, a0, 48, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_bf16_to_i48(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_bf16(&c, a0, 48, false);
+}
+
+uint32_t cqsfi_fptoui_bf16_to_i48_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_bf16(&c, a0, 48, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_sitofp_i48_to_f32(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i48_to_f32_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i48_to_f32_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f32(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_uitofp_i48_to_f32(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i48_to_f32_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f32(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i48_to_f32_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f32(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f32_to_i48(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f32(&c, a0, 48, true);
+}
+
+uint32_t cqsfi_fptosi_f32_to_i48_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f32(&c, a0, 48, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f32_to_i48(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f32(&c, a0, 48, false);
+}
+
+uint32_t cqsfi_fptoui_f32_to_i48_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f32(&c, a0, 48, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_sitofp_i48_to_f64(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f64(&c, a0);
+}
+
+uint64_t cqsfi_sitofp_i48_to_f64_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f64(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i48_to_f64_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_uitofp_i48_to_f64(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f64(&c, a0);
+}
+
+uint64_t cqsfi_uitofp_i48_to_f64_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f64(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i48_to_f64_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f64_to_i48(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f64(&c, a0, 48, true);
+}
+
+uint32_t cqsfi_fptosi_f64_to_i48_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f64(&c, a0, 48, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f64_to_i48(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f64(&c, a0, 48, false);
+}
+
+uint32_t cqsfi_fptoui_f64_to_i48_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f64(&c, a0, 48, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i100_to_f16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint16_t cqsfi_sitofp_i100_to_f16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i100_to_f16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i100_to_f16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint16_t cqsfi_uitofp_i100_to_f16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i100_to_f16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f16_to_i100(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f16(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f16_to_i100_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f16(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f16_to_i100(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f16(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f16_to_i100_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f16(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i100_to_bf16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint16_t cqsfi_sitofp_i100_to_bf16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i100_to_bf16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i100_to_bf16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint16_t cqsfi_uitofp_i100_to_bf16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i100_to_bf16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_bf16_to_i100(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_bf16(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_bf16_to_i100_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_bf16(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_bf16_to_i100(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_bf16(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_bf16_to_i100_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_bf16(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_sitofp_i100_to_f32(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i100_to_f32_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i100_to_f32_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_uitofp_i100_to_f32(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i100_to_f32_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i100_to_f32_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f32_to_i100(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f32(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f32_to_i100_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f32(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f32_to_i100(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f32(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f32_to_i100_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f32(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_sitofp_i100_to_f64(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint64_t cqsfi_sitofp_i100_to_f64_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i100_to_f64_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_uitofp_i100_to_f64(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint64_t cqsfi_uitofp_i100_to_f64_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i100_to_f64_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f64_to_i100(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f64(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f64_to_i100_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f64(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f64_to_i100(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f64(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f64_to_i100_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f64(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i128_to_f16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint16_t cqsfi_sitofp_i128_to_f16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i128_to_f16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i128_to_f16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint16_t cqsfi_uitofp_i128_to_f16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i128_to_f16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f16_to_i128(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f16(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f16_to_i128_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f16(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f16_to_i128(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f16(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f16_to_i128_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f16(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i128_to_bf16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint16_t cqsfi_sitofp_i128_to_bf16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i128_to_bf16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i128_to_bf16(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint16_t cqsfi_uitofp_i128_to_bf16_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i128_to_bf16_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_bf16(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_bf16_to_i128(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_bf16(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_bf16_to_i128_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_bf16(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_bf16_to_i128(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_bf16(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_bf16_to_i128_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_bf16(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_sitofp_i128_to_f32(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i128_to_f32_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i128_to_f32_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_uitofp_i128_to_f32(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i128_to_f32_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i128_to_f32_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f32(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f32_to_i128(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f32(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f32_to_i128_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f32(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f32_to_i128(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f32(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f32_to_i128_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f32(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_sitofp_i128_to_f64(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint64_t cqsfi_sitofp_i128_to_f64_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i128_to_f64_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_uitofp_i128_to_f64(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint64_t cqsfi_uitofp_i128_to_f64_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i128_to_f64_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f64(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f64_to_i128(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f64(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f64_to_i128_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f64(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f64_to_i128(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f64(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f64_to_i128_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f64(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i200_to_f16(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f16(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint16_t cqsfi_sitofp_i200_to_f16_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f16(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint32_t cqsfi_sitofp_i200_to_f16_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f16(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i200_to_f16(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f16(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint16_t cqsfi_uitofp_i200_to_f16_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f16(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint32_t cqsfi_uitofp_i200_to_f16_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f16(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f16_to_i200(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f16(&c, a0, 200, true);
+}
+
+uint32_t cqsfi_fptosi_f16_to_i200_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f16(&c, a0, 200, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f16_to_i200(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f16(&c, a0, 200, false);
+}
+
+uint32_t cqsfi_fptoui_f16_to_i200_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f16(&c, a0, 200, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_sitofp_i200_to_bf16(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_bf16(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint16_t cqsfi_sitofp_i200_to_bf16_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_bf16(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint32_t cqsfi_sitofp_i200_to_bf16_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_bf16(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint16_t cqsfi_uitofp_i200_to_bf16(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_bf16(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint16_t cqsfi_uitofp_i200_to_bf16_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_bf16(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint32_t cqsfi_uitofp_i200_to_bf16_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_bf16(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_bf16_to_i200(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_bf16(&c, a0, 200, true);
+}
+
+uint32_t cqsfi_fptosi_bf16_to_i200_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_bf16(&c, a0, 200, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_bf16_to_i200(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_bf16(&c, a0, 200, false);
+}
+
+uint32_t cqsfi_fptoui_bf16_to_i200_x(uint16_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_bf16(&c, a0, 200, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_sitofp_i200_to_f32(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f32(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint32_t cqsfi_sitofp_i200_to_f32_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f32(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint32_t cqsfi_sitofp_i200_to_f32_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f32(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint32_t cqsfi_uitofp_i200_to_f32(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f32(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint32_t cqsfi_uitofp_i200_to_f32_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f32(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint32_t cqsfi_uitofp_i200_to_f32_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f32(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f32_to_i200(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f32(&c, a0, 200, true);
+}
+
+uint32_t cqsfi_fptosi_f32_to_i200_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f32(&c, a0, 200, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f32_to_i200(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f32(&c, a0, 200, false);
+}
+
+uint32_t cqsfi_fptoui_f32_to_i200_x(uint32_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f32(&c, a0, 200, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_sitofp_i200_to_f64(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f64(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint64_t cqsfi_sitofp_i200_to_f64_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f64(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint32_t cqsfi_sitofp_i200_to_f64_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f64(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+uint64_t cqsfi_uitofp_i200_to_f64(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f64(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint64_t cqsfi_uitofp_i200_to_f64_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f64(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint32_t cqsfi_uitofp_i200_to_f64_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f64(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f64_to_i200(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f64(&c, a0, 200, true);
+}
+
+uint32_t cqsfi_fptosi_f64_to_i200_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f64(&c, a0, 200, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f64_to_i200(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f64(&c, a0, 200, false);
+}
+
+uint32_t cqsfi_fptoui_f64_to_i200_x(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f64(&c, a0, 200, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
 uint32_t cqsfi_fcmpq_f16_x(uint16_t a0, uint16_t a1) {
     struct sf_ctx c = {softfloat_round_near_even, 0};
     (void)sfx_fcmpq_oeq_f16(&c, a0, a1);
@@ -2559,6 +3856,330 @@ uint64_t cqsfi_fptoui_f80_to_i64(struct extFloat80M a0) {
 uint32_t cqsfi_fptoui_f80_to_i64_x(struct extFloat80M a0) {
     struct sf_ctx c = {softfloat_round_near_even, 0};
     (void)sfx_fptoui_f80_to_i64(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_sitofp_i7_to_f80(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f80(&c, a0);
+}
+
+struct extFloat80M cqsfi_sitofp_i7_to_f80_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f80(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i7_to_f80_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f80(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_uitofp_i7_to_f80(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f80(&c, a0);
+}
+
+struct extFloat80M cqsfi_uitofp_i7_to_f80_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f80(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i7_to_f80_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f80(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f80_to_i7(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f80(&c, a0, 7, true);
+}
+
+uint32_t cqsfi_fptosi_f80_to_i7_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f80(&c, a0, 7, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f80_to_i7(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f80(&c, a0, 7, false);
+}
+
+uint32_t cqsfi_fptoui_f80_to_i7_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f80(&c, a0, 7, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_sitofp_i24_to_f80(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f80(&c, a0);
+}
+
+struct extFloat80M cqsfi_sitofp_i24_to_f80_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f80(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i24_to_f80_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f80(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_uitofp_i24_to_f80(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f80(&c, a0);
+}
+
+struct extFloat80M cqsfi_uitofp_i24_to_f80_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f80(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i24_to_f80_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f80(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f80_to_i24(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f80(&c, a0, 24, true);
+}
+
+uint32_t cqsfi_fptosi_f80_to_i24_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f80(&c, a0, 24, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f80_to_i24(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f80(&c, a0, 24, false);
+}
+
+uint32_t cqsfi_fptoui_f80_to_i24_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f80(&c, a0, 24, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_sitofp_i48_to_f80(int64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_si_to_f80(&c, a0);
+}
+
+struct extFloat80M cqsfi_sitofp_i48_to_f80_m(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_si_to_f80(&c, a0);
+}
+
+uint32_t cqsfi_sitofp_i48_to_f80_x(int64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_si_to_f80(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_uitofp_i48_to_f80(uint64_t a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_ui_to_f80(&c, a0);
+}
+
+struct extFloat80M cqsfi_uitofp_i48_to_f80_m(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_ui_to_f80(&c, a0);
+}
+
+uint32_t cqsfi_uitofp_i48_to_f80_x(uint64_t a0, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_ui_to_f80(&c, a0);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptosi_f80_to_i48(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f80(&c, a0, 48, true);
+}
+
+uint32_t cqsfi_fptosi_f80_to_i48_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f80(&c, a0, 48, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+int64_t cqsfi_fptoui_f80_to_i48(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_n_f80(&c, a0, 48, false);
+}
+
+uint32_t cqsfi_fptoui_f80_to_i48_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_n_f80(&c, a0, 48, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_sitofp_i100_to_f80(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+struct extFloat80M cqsfi_sitofp_i100_to_f80_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i100_to_f80_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_uitofp_i100_to_f80(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+struct extFloat80M cqsfi_uitofp_i100_to_f80_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i100_to_f80_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f80_to_i100(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f80(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f80_to_i100_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f80(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f80_to_i100(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f80(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f80_to_i100_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f80(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_sitofp_i128_to_f80(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+struct extFloat80M cqsfi_sitofp_i128_to_f80_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+}
+
+uint32_t cqsfi_sitofp_i128_to_f80_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, true), true, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_uitofp_i128_to_f80(uint64_t a0, uint64_t a1) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+struct extFloat80M cqsfi_uitofp_i128_to_f80_m(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+}
+
+uint32_t cqsfi_uitofp_i128_to_f80_x(uint64_t a0, uint64_t a1, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f80(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, false), false, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f80_to_i128(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f80(&c, a0, true);
+}
+
+uint32_t cqsfi_fptosi_f80_to_i128_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f80(&c, a0, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f80_to_i128(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_ti_f80(&c, a0, false);
+}
+
+uint32_t cqsfi_fptoui_f80_to_i128_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_ti_f80(&c, a0, false);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_sitofp_i200_to_f80(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f80(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+struct extFloat80M cqsfi_sitofp_i200_to_f80_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f80(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+}
+
+uint32_t cqsfi_sitofp_i200_to_f80_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f80(&c, (struct cqsf_u256){a0, a1, a2, a3}, true, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+struct extFloat80M cqsfi_uitofp_i200_to_f80(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_wi_to_f80(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+struct extFloat80M cqsfi_uitofp_i200_to_f80_m(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    return sfx_wi_to_f80(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+}
+
+uint32_t cqsfi_uitofp_i200_to_f80_x(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint32_t m) {
+    struct sf_ctx c = {cqsf_mode(m), 0};
+    (void)sfx_wi_to_f80(&c, (struct cqsf_u256){a0, a1, a2, a3}, false, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptosi_f80_to_i200(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f80(&c, a0, 200, true);
+}
+
+uint32_t cqsfi_fptosi_f80_to_i200_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f80(&c, a0, 200, true);
+    return cqsf_x86flags(c.exceptionFlags);
+}
+
+cqsf_u128 cqsfi_fptoui_f80_to_i200(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    return sfx_fptoi_xl_f80(&c, a0, 200, false);
+}
+
+uint32_t cqsfi_fptoui_f80_to_i200_x(struct extFloat80M a0) {
+    struct sf_ctx c = {softfloat_round_near_even, 0};
+    (void)sfx_fptoi_xl_f80(&c, a0, 200, false);
     return cqsf_x86flags(c.exceptionFlags);
 }
 

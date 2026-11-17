@@ -17,5 +17,5 @@ python3 "$T/gen_toy_backend.py" "$B/toy_backend.c" $LL --library-manifest "$SF/b
 python3 "$T/gen_shimtest.py" "$B/shimtest.c" --samples "${1:-12}" --group "$G"
 "$LLVM/clang" -O1 -c "$B/toy_backend.c" -o "$B/toy_backend.o"
 "$LLVM/clang" -O1 -c "$B/shimtest.c" -o "$B/shimtest.o"
-"$LLVM/clang" "$B/shimtest.o" "$B/toy_backend.o" "$SF/build/native/cqsf_inner.o" $LIBS -o "$B/shimtest"
+"$LLVM/clang" "$B/shimtest.o" "$B/toy_backend.o" "$SF/build/native/cqsf_inner.o" "$SF/build/native/cqsf_roots_x.o" $LIBS -o "$B/shimtest"
 "$B/shimtest"
