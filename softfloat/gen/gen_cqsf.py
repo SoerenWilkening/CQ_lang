@@ -42,7 +42,7 @@ FP = {
     "f64": ("double", "uint64_t", 64),
     "f80": ("long double", "struct extFloat80M", 80),
 }
-ARITH_W = ["f16", "f32", "f64"]
+ARITH_W = ["f16", "bf16", "f32", "f64"]   # bf16: cqsf.h computes through f32 rounded to odd (CR §1.1)
 # f80: extF80_add/mul/div/sqrt/rem crash cq-lower today (pred: Walker::next, cq-pfpy); the f80 roots are
 # generated into their own list, cqsf_f80.roots, and are not part of the default library.
 F80_W = ["f80"]
@@ -58,7 +58,7 @@ PREDS = ["oeq", "ogt", "oge", "olt", "ole", "one", "ord", "ueq", "ugt", "uge", "
 # K per root: no root has a loop but the frem ones (SoftFloat's remainder loop, 29 quotient bits per trip,
 # then a do/while of at most a few trips). The value covers the largest exponent difference of the format.
 K_DEFAULT = 1
-K_FREM = {"f16": 8, "f32": 16, "f64": 80, "f80": 1200}
+K_FREM = {"f16": 8, "bf16": 16, "f32": 16, "f64": 80, "f80": 1200}   # bf16: f32's loop on the extension
 
 
 def int_ctype(n, signed):
@@ -115,8 +115,6 @@ def table(widths, int_from=INT_FROM, int_to=INT_TO):
 def casts(widths):
     out = []
     if "f80" not in widths:
-        out.append(Inst("is_fpclass_bf16", "sfx_is_fpclass_bf16", [("fp", "bf16"), ("int", 32, False)], ("int", 1, False),
-                        False, False, ["hl"]))
         for a, b in [("f16", "f32"), ("f16", "f64"), ("f32", "f64"), ("bf16", "f32"), ("bf16", "f64")]:
             out.append(Inst(f"fpext_{a}_to_{b}", f"sfx_fpext_{a}_to_{b}", [("fp", a)], ("fp", b), False, True, [""]))
         for a, b in [("f32", "f16"), ("f64", "f16"), ("f64", "f32"), ("f32", "bf16"), ("f64", "bf16")]:

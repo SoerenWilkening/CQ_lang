@@ -1,7 +1,7 @@
 # libqsoftfloat: the CQ float templates from Berkeley SoftFloat
 
 A lowered library (README "Lowered libraries") that defines the floating-point templates of
-`BACKEND_ABI.md` §2.6–§2.10 for f16, f32, f64, the bf16 conversions and, in a second archive, f80.
+`BACKEND_ABI.md` §2.6–§2.10 for f16, bf16, f32, f64 and, in a second archive, f80.
 SoftFloat computes IEEE arithmetic with integer operations only; `cqcc --cq-lib` lowers it into
 integer templates. A backend that implements integer circuits only (and the bit operations `fneg`,
 `fabs`, `copysign`, `select`, `bitcast`) runs float programs by linking this library:
@@ -39,7 +39,7 @@ cqcc prog.c -Lsoftfloat/build -lqsoftfloat -lmybackend
 | `cq/cqsf_int.h` | the conversions from and to the other integer widths (`INT_X`), CR §2 rows |
 | `cq/cqsf_roots_x.ll` | (generated) the `INT_X` roots as LLVM IR, with native test entries `cqsft_*` |
 | `cq/cqsf_shims.c`, `cq/cqsf_shims_f80.c` | (generated) one `cq_template_*` and `_unc` per symbol |
-| `cqsf.roots`, `cqsf_f80.roots` | the root lists (609 and 171 roots) |
+| `cqsf.roots`, `cqsf_f80.roots` | the root lists (661 and 171 roots) |
 | `build.sh` | `gen`, `native`, `ir`, `lib [LIST]`, `probe [LIST]` |
 | `test/` | the self-tests below |
 
@@ -80,18 +80,18 @@ monotone in K: with y of 3 or 5 ulps the cut remainder is periodic in the trip c
 Generated from the CR §1.2 grammar, restricted to what CQ's pass can emit (`pass/lib/eff/fenv/Fenv.cpp`):
 a mode only on operations whose constrained intrinsic has one, `_exc` on every operation with a
 constrained form, every binary op `_hl` and `_lh` (`_lh` is the NaN-literal spelling of a commutative
-op), compares `_hl` only, `_ll` / `_l` / `lll` only with `_rmq`. 1,794 forward symbols (each with its
+op), compares `_hl` only, `_ll` / `_l` / `lll` only with `_rmq`. 2,086 forward symbols (each with its
 `_unc`) for the default archive, 495 for f80. All 82 float templates the CQ_spec corpus declares
 are among them (`gen_cqsf.py --check-corpus`).
 
 | operations | widths | forms |
 |---|---|---|
-| `fadd fsub fmul fdiv frem` | f16 f32 f64 (f80) | bare `hl` `lh` `ll`(rmq) × plain `_rm` `_rmq` × `_exc` |
-| `fma` | f16 f32 f64 | bare and the 6 mixed shapes, `lll`(rmq) × plain `_rm` `_rmq` × `_exc` |
-| `sqrt rint` | f16 f32 f64 (f80) | bare, `l`(rmq) × plain `_rm` `_rmq` × `_exc` |
-| `floor ceil trunc round` | f16 f32 f64 (f80) | bare, `_exc` |
-| `fmax fmin` | f16 f32 f64 (f80) | bare `hl` `lh`, `_exc` |
-| `fcmp_<pred>` `fcmps_<pred>` (14 predicates: o/u eq gt ge lt le, one, ord, une, uno) | f16 f32 f64 (f80) | bare `hl`, `_exc` |
+| `fadd fsub fmul fdiv frem` | f16 bf16 f32 f64 (f80) | bare `hl` `lh` `ll`(rmq) × plain `_rm` `_rmq` × `_exc` |
+| `fma` | f16 bf16 f32 f64 | bare and the 6 mixed shapes, `lll`(rmq) × plain `_rm` `_rmq` × `_exc` |
+| `sqrt rint` | f16 bf16 f32 f64 (f80) | bare, `l`(rmq) × plain `_rm` `_rmq` × `_exc` |
+| `floor ceil trunc round` | f16 bf16 f32 f64 (f80) | bare, `_exc` |
+| `fmax fmin` | f16 bf16 f32 f64 (f80) | bare `hl` `lh`, `_exc` |
+| `fcmp_<pred>` `fcmps_<pred>` (14 predicates: o/u eq gt ge lt le, one, ord, une, uno) | f16 bf16 f32 f64 (f80) | bare `hl`, `_exc` |
 | `is_fpclass` | f16 bf16 f32 f64 (f80) | `hl` |
 | `fpext` | f16→f32, f16→f64, f32→f64, bf16→f32, bf16→f64 (f16/f32/f64→f80) | bare, `_exc` |
 | `fptrunc` | f32→f16, f64→f16, f64→f32, f32→bf16, f64→bf16 (f80→f16/f32/f64) | bare, `l`(rmq) × plain `_rm` `_rmq` × `_exc` |
@@ -99,8 +99,7 @@ are among them (`gen_cqsf.py --check-corpus`).
 | `fptosi fptoui` | f16 bf16 f32 f64 (f80) → i8 i16 i32 i64, i7 i24 i48 i100 i128 i200 | bare, `_exc` |
 
 Not provided:
-- bf16 arithmetic, compares, rounding ops and `fmax`/`fmin` (only the bf16 conversions and
-  `is_fpclass`); `fma` at f80 (SoftFloat has no `extF80_mulAdd`).
+- `fma` at f80 (SoftFloat has no `extF80_mulAdd`).
 - `fcmp_false`, `fcmp_true` (folded by LLVM, never emitted).
 - `sitofp`/`uitofp`/`fptosi`/`fptoui` at integer widths not in the table. `INT_X` in the generator
   lists one width of each CR §2 class (7, 24 at most 32 bits; 48 up to 64; 100, 128 up to 128; 200
@@ -130,6 +129,20 @@ reference is the CR row (the report names each):
   two roundings) are compiler-rt calls on the host, which ignore the mode and raise no flags: they
   are compared in round-to-nearest, values only. Their `_rm` forms round in the mode and their
   `_exc` forms give IEEE flags (not compared with hardware).
+- bf16 arithmetic, compares and rounding ops (`run_selftest.sh bf16`: 3,953,776 cases over 38
+  operations, 0 mismatches). CR §1.1 gives bf16 the rounding and NaN rules of the IEEE widths, so each
+  operation is one correct rounding in the mode. `cqsf.h` computes + − × ÷ √ fma in f32 rounded to odd
+  (toward zero, the last bit set when inexact), then rounds to bf16 in the mode: exact, as 24 ≥ 8 + 2;
+  upstream's `bf16_add` (f32 in the mode, then f32 → bf16) gets the UNDERFLOW flag wrong near 2^-126.
+  Compares, `frem`, the rounding ops and `fmax`/`fmin` are exact through f32. clang -O1 on x86-64
+  computes `__bf16` arithmetic as the f32 operation then `__truncsfbf2` (nearest even, no flags): for
+  + − × ÷ √ that is the same value in round-to-nearest (two roundings that agree), and the 709,200
+  nearest-even values compared with the host's own code agree bit for bit. `fma` is not: the host's
+  f32 `fma` then truncation rounds twice, and differs from the one rounding in 117 of 68,000 cases
+  (0x3f81 × 0xbfc0 + 0x0001: host 0xbfc2, one rounding 0xbfc1); CR §1.1 decides. In the modes and for
+  the flags the reference is the x87 result rounded to odd at 64 then 24 bits and rounded to bf16 in the
+  test. Reachable from C at -O1: + − × ÷, compares and `llvm.floor/ceil/trunc/rint/round.bf16`; clang
+  promotes `sqrt`, `fma` and `fmod` on `__bf16` to f32 itself, so those templates serve IR only.
 - Integer widths other than 1, 8, 16, 32, 64 (`cq/cqsf_int.h`, `INT_X`; `run_selftest.sh int`:
   3,804,864 cases over 180 operations, 0 mismatches; 324,000 nearest-even values compared with the host's
   own -O1 conversion, 0 differ). iN → fp: up to 64 bits the 64-bit conversion of the extension; 65 to
@@ -154,8 +167,8 @@ reference is the CR row (the report names each):
 
 ## Evidence that it lowers and links
 
-- `build.sh lib`: the 609 default roots lower with no pass error in 16 groups, 1 min 30 s in all
-  (26 MB of lowered IR, a 12.3 MB archive); `build.sh lib cqsf_f80.roots`: 171 roots in 5 groups,
+- `build.sh lib`: the 661 default roots lower with no pass error in 17 groups, 1 min 37 s in all
+  (a 15.2 MB archive); `build.sh lib cqsf_f80.roots`: 171 roots in 5 groups,
   44 s (10 MB, 4.8 MB).
   The lowered modules call no float template (only `bitcast` between fN and iN) and no `cqrt_qram_*`;
   the mode and the flags never touch memory. Their templates: integer add, sub, mul, udiv, and, or,
@@ -172,7 +185,7 @@ reference is the CR row (the report names each):
   test/prog_f80.c` matches the native program.
 - `test/run_shimtest.sh [N [default|f80|all]]`: every template symbol of both archives through its
   shim, the lowered library and the toy backend against the native root; each `_unc` must return its
-  rail to 0 and the backend counts dirty frees. 2,289 symbols (1,794 default, 495 f80) × 16 samples:
-  36,624 calls, 0 mismatches, 0 dirty frees (1 min). The toy backend holds 256-bit rails and takes an
+  rail to 0 and the backend counts dirty frees. 2,581 symbols (2,086 default, 495 f80) × 16 samples:
+  0 mismatches, 0 dirty frees (the default group with bf16: 33,376 calls, 0 mismatches). The toy backend holds 256-bit rails and takes an
   iN literal above 128 bits as LLVM passes it: N/64 integer registers when all fit, else all on the
   stack with the remaining integer registers skipped (measured; `select_i200_ll` has two).
