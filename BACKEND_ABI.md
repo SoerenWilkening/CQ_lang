@@ -539,7 +539,7 @@ its fields; a format entry when the fields its format string consumes are writte
   | `raise(sig)` | OUTPUT (102, 212) | none | | |
   | `abort()`, `exit(code)`, `_Exit(code)`, any other `noreturn` callee | OUTPUT, followed by `abort_i1` (CR rule 16) | none known | | |
   | `__assert_fail(expr, file, line, func)` | OUTPUT, `noreturn` | expr, file, func: strings | | |
-  | `llvm.trap` (`__builtin_trap`) | OUTPUT, `noreturn`; no host symbol of that name: the backend performs a trap | none | | |
+  | `__builtin_trap` (`llvm.trap` in the IR; the entry carries the C name) | OUTPUT, `noreturn`; no host symbol of that name: the backend performs a trap | none | | |
   | the fenv calls of CR rule 23 | OUTPUT | the `fenv_t` or `fexcept_t` object: read by `fesetenv`, `feupdateenv`, `fesetexceptflag`, written by `fegetenv`, `feholdexcept`, `fegetexceptflag` | `sizeof` in the host library | |
   | a null `name` | OUTPUT; the callee is the host address in the first field (96, 97, 211) | none known | | |
   | any other name | OUTPUT | none known | | |
@@ -1075,7 +1075,7 @@ Decided in this file, where CR leaves the matter to the backend or its text alre
 Q25 (the cells an address rail can reach: the bound the backend can prove, any superset of the
 support): §1.10. Q26 ("reduced exactly mod P" is exact for every f64, no tolerance): §1.5. Q27
 (which callees are INPUT calls, and their buffers): §1.11. Q28 (wide strings, `va_list`
-blocks, host-library objects, `setvbuf`): §1.11. Q29 (`llvm.trap`; `setjmp`/`longjmp` are
+blocks, host-library objects, `setvbuf`): §1.11. Q29 (`__builtin_trap`; `setjmp`/`longjmp` are
 never entries): §1.11. Q30 (an f80 compare of a non-canonical operand is unordered): §2.9. Q31
 (the backend appends brackets as called; fusion is a later stage's): §1.6.
 
