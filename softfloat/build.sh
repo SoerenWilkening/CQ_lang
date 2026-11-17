@@ -70,6 +70,25 @@ lib)
     "$LLVM/llvm-ar" rcs "$B/$out.a" "$B/$shim.o" $objs "$B/cq_host.o"
     echo "$B/$out.a"
     ;;
+probe)
+    # Lower every root of LIST alone; build/<list>.probe.tsv: root, ok/FAIL, seconds, the first error line.
+    list=${2:-$SF/cqsf_f80.roots}
+    stem=$(basename "$list" .roots)
+    ir "$list"
+    mkdir -p "$B/$stem.probe"; : > "$B/$stem.probe.tsv"
+    while read -r r; do
+        p=$B/$stem.probe/$r
+        echo "$r" > "$p.roots"
+        "$LLVM/opt" -S -passes=internalize,globaldce -internalize-public-api-file="$p.roots" "$B/$stem.O1.ll" -o "$p.in.ll"
+        t0=$(date +%s)
+        if nice -n 10 "$CQCC" --cq-lib -S --cq-roots "$p.roots" "$p.in.ll" -o "$p.lowered.ll" > "$p.err" 2>&1; then
+            printf '%s\tok\t%s\t\n' "$r" $(( $(date +%s) - t0 )) >> "$B/$stem.probe.tsv"
+        else
+            printf '%s\tFAIL\t%s\t%s\n' "$r" $(( $(date +%s) - t0 )) "$(grep -m1 -E 'error|ERROR' "$p.err" | cut -c1-300)" >> "$B/$stem.probe.tsv"
+        fi
+    done < "$list"
+    cut -f2 "$B/$stem.probe.tsv" | sort | uniq -c
+    ;;
 *)
     sed -n '2,13p' "$0"; exit 2 ;;
 esac

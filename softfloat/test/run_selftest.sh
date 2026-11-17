@@ -7,8 +7,8 @@ T=$(cd "$(dirname "$0")" && pwd)
 SF=$(dirname "$T")
 LLVM=${CQ_LLVM_BIN:-/usr/local/opt/llvm@19/bin}
 "$SF/build.sh" native
-SRC=$T/selftest.c; EXE=$SF/build/native/selftest
-[ "${1:-}" = f80 ] && SRC=$T/selftest_f80.c && EXE=$SF/build/native/selftest_f80
-"$LLVM/clang" -O1 -msse4.1 -mf16c -mfma -ffp-contract=off -I"$SF/cq" "$SRC" "$T/host_bf16.c" \
+SRC=$T/selftest.c; EXE=$SF/build/native/selftest; HOST=$T/host_bf16.c
+[ "${1:-}" = f80 ] && SRC=$T/selftest_f80.c && EXE=$SF/build/native/selftest_f80 && HOST=$T/host_f80.c
+"$LLVM/clang" -O1 -msse4.1 -mf16c -mfma -ffp-contract=off -I"$SF/cq" "$SRC" "$HOST" \
     "$SF/build/native/cqsf_roots.o" "$SF/build/native/cqsf_inner.o" -lm -o "$EXE"
 "$EXE"

@@ -20,14 +20,14 @@ M=${P%.c}_main.c
 "$B/$n.native" > "$B/$n.expected"
 # 2. the lowered program and the backend generated for what it and the library declare
 nice -n 10 "$CQCC" -S "$P" -o "$B/$n.lowered.ll"
-python3 "$T/gen_toy_backend.py" "$B/toy_backend.c" "$B/$n.lowered.ll" "$SF"/build/cqsf.groups/g.*.lowered.ll \
+python3 "$T/gen_toy_backend.py" "$B/toy_backend.c" "$B/$n.lowered.ll" "$SF"/build/cqsf.groups/g.*.lowered.ll $(ls "$SF"/build/cqsf_f80.groups/g.*.lowered.ll 2>/dev/null) \
     --library-manifest "$SF/build/manifest.json"
 "$LLVM/clang" -O1 -c "$B/toy_backend.c" -o "$B/toy_backend.o"
 echo "float templates the program calls:"
 grep -ohE 'call [a-z0-9]+ @cq_template_f[a-z0-9_]*|call [a-z0-9]+ @cq_template_(sqrt|floor|sitofp|fptosi|fpext|fptrunc|is_fpclass)[a-z0-9_]*' \
     "$B/$n.lowered.ll" | sed 's/.*@//' | sort -u | tr '\n' ' '; echo
 # 3. link: the program, the lowered library, the integer-only backend
-nice -n 10 "$CQCC" "$P" "$B/${n}_main.o" -L"$SF/build" -lqsoftfloat --backend "$B/toy_backend.o" -o "$B/$n.exe"
+nice -n 10 "$CQCC" "$P" "$B/${n}_main.o" -L"$SF/build" -lqsoftfloat ${CQSF_EXTRA_LIBS:-} --backend "$B/toy_backend.o" -o "$B/$n.exe"
 "$B/$n.exe" > "$B/$n.out"
 echo "expected: $(cat "$B/$n.expected")"
 echo "lowered:  $(cat "$B/$n.out")"
