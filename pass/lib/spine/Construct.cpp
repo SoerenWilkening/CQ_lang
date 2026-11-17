@@ -776,14 +776,19 @@ void Walker::planGuards() {
         if (!(inB & conj & !cf).isBottom() || !(inB & cf & !conj).isBottom())
           internalError("spine: a classical guard cover that is not the block's factor", b->getTerminator());
       }
+      // The skip edge carries the paths into b the guard turns away, with the facts inB & !conj: it goes to the
+      // first later block that runs on one of them, a block whose classical projection (the classical condition
+      // under which the walk runs it) meets those facts (cq-pfpy, rules 8, 9). The classical factor alone (a
+      // conjunction of literals, blind to a classical disjunction such as a case set) and facts without inB
+      // send the paths of one classical arm through the guards of an exclusive arm, whose literals and atoms
+      // that arm alone mints (softfloat_roundPackToExtF80: precision 80 into the 32/64 blocks).
       BasicBlock *skip = nullptr;
       for (unsigned j = idx.lookup(b) + 1; j < L.size() && !skip; ++j) {
         BasicBlock *y = L[j];
         if (!eligible(y, b))
           continue;
         const Pred py = walkedPred(y);
-        Pred cfy = py.isBottom() ? Pred::bottom() : py.classicalFactor(ctx.T, ctx.S);
-        if (!(cfy & !conj).isBottom())
+        if (!py.isBottom() && predsMeet(inB & !conj, py.classicalProjection(ctx.T, ctx.S)))
           skip = y;
       }
       if (!skip)
