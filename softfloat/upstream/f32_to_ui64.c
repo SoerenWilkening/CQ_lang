@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-uint_fast64_t f32_to_ui64( float32_t a, uint_fast8_t roundingMode, bool exact )
+uint_fast64_t f32_to_ui64( struct sf_ctx *sf_ctx, float32_t a, uint_fast8_t roundingMode, bool exact )
 {
     union ui32_f32 uA;
     uint_fast32_t uiA;
@@ -83,7 +83,7 @@ uint_fast64_t f32_to_ui64( float32_t a, uint_fast8_t roundingMode, bool exact )
         sig64 = sig64Extra.v;
         extra = sig64Extra.extra;
     }
-    return softfloat_roundToUI64( sign, sig64, extra, roundingMode, exact );
+    return softfloat_roundToUI64( sf_ctx, sign, sig64, extra, roundingMode, exact );
 #else
     extSig[indexWord( 3, 2 )] = sig<<8;
     extSig[indexWord( 3, 1 )] = 0;

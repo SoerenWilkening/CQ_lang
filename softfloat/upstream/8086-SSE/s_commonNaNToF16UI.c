@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | Converts the common NaN pointed to by `aPtr' into a 16-bit floating-point
 | NaN, and returns the bit pattern of this value as an unsigned integer.
 *----------------------------------------------------------------------------*/
-uint_fast16_t softfloat_commonNaNToF16UI( const struct commonNaN *aPtr )
+uint_fast16_t softfloat_commonNaNToF16UI( struct sf_ctx *sf_ctx, const struct commonNaN *aPtr )
 {
 
     return (uint_fast16_t) aPtr->sign<<15 | 0x7E00 | aPtr->v64>>54;

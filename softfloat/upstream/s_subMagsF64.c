@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 float64_t
- softfloat_subMagsF64( uint_fast64_t uiA, uint_fast64_t uiB, bool signZ )
+ softfloat_subMagsF64( struct sf_ctx *sf_ctx, uint_fast64_t uiA, uint_fast64_t uiB, bool signZ )
 {
     int_fast16_t expA;
     uint_fast64_t sigA;
@@ -127,12 +127,12 @@ float64_t
             expZ = expA;
             sigZ = sigA - sigB;
         }
-        return softfloat_normRoundPackToF64( signZ, expZ - 1, sigZ );
+        return softfloat_normRoundPackToF64( sf_ctx, signZ, expZ - 1, sigZ );
     }
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNF64UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiA, uiB );
  uiZ:
     uZ.ui = uiZ;
     return uZ.f;

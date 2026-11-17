@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-extFloat80_t extF80_rem( extFloat80_t a, extFloat80_t b )
+extFloat80_t extF80_rem( struct sf_ctx *sf_ctx, extFloat80_t a, extFloat80_t b )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;
@@ -104,7 +104,7 @@ extFloat80_t extF80_rem( extFloat80_t a, extFloat80_t b )
     if ( ! expB ) expB = 1;
     if ( ! (sigB & UINT64_C( 0x8000000000000000 )) ) {
         if ( ! sigB ) goto invalid;
-        normExpSig = softfloat_normSubnormalExtF80Sig( sigB );
+        normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigB );
         expB += normExpSig.exp;
         sigB = normExpSig.sig;
     }
@@ -114,7 +114,7 @@ extFloat80_t extF80_rem( extFloat80_t a, extFloat80_t b )
             expA = 0;
             goto copyA;
         }
-        normExpSig = softfloat_normSubnormalExtF80Sig( sigA );
+        normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigA );
         expA += normExpSig.exp;
         sigA = normExpSig.sig;
     }
@@ -191,12 +191,12 @@ extFloat80_t extF80_rem( extFloat80_t a, extFloat80_t b )
         rem = softfloat_sub128( 0, 0, rem.v64, rem.v0 );
     }
     return
-        softfloat_normRoundPackToExtF80(
+        softfloat_normRoundPackToExtF80( sf_ctx,
             signRem, rem.v64 | rem.v0 ? expB + 32 : 0, rem.v64, rem.v0, 80 );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNExtF80UI( uiA64, uiA0, uiB64, uiB0 );
+    uiZ = softfloat_propagateNaNExtF80UI( sf_ctx, uiA64, uiA0, uiB64, uiB0 );
     uiZ64 = uiZ.v64;
     uiZ0  = uiZ.v0;
     goto uiZ;

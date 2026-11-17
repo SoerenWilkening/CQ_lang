@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float64_t f64_mul( float64_t a, float64_t b )
+float64_t f64_mul( struct sf_ctx *sf_ctx, float64_t a, float64_t b )
 {
     union ui64_f64 uA;
     uint_fast64_t uiA;
@@ -94,13 +94,13 @@ float64_t f64_mul( float64_t a, float64_t b )
     *------------------------------------------------------------------------*/
     if ( ! expA ) {
         if ( ! sigA ) goto zero;
-        normExpSig = softfloat_normSubnormalF64Sig( sigA );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
     if ( ! expB ) {
         if ( ! sigB ) goto zero;
-        normExpSig = softfloat_normSubnormalF64Sig( sigB );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigB );
         expB = normExpSig.exp;
         sigB = normExpSig.sig;
     }
@@ -122,11 +122,11 @@ float64_t f64_mul( float64_t a, float64_t b )
         --expZ;
         sigZ <<= 1;
     }
-    return softfloat_roundPackToF64( signZ, expZ, sigZ );
+    return softfloat_roundPackToF64( sf_ctx, signZ, expZ, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNF64UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiA, uiB );
     goto uiZ;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

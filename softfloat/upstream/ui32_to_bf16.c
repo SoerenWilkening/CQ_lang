@@ -39,15 +39,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-bfloat16_t ui32_to_bf16( uint32_t a )
+bfloat16_t ui32_to_bf16( struct sf_ctx *sf_ctx, uint32_t a )
 {
     uint_fast8_t roundingMode = softfloat_roundingMode;
     softfloat_roundingMode = softfloat_round_odd;
 
-    float32_t f32A = ui32_to_f32( a );
+    float32_t f32A = ui32_to_f32( sf_ctx, a );
 
     softfloat_roundingMode = roundingMode;
 
-    return f32_to_bf16( f32A );
+    return f32_to_bf16( sf_ctx, f32A );
 }
 

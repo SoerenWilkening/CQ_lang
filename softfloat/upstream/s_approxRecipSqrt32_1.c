@@ -53,8 +53,8 @@ uint32_t softfloat_approxRecipSqrt32_1( unsigned int oddExpA, uint32_t a )
 
     index = (a>>27 & 0xE) + oddExpA;
     eps = (uint16_t) (a>>12);
-    r0 = softfloat_approxRecipSqrt_1k0s[index]
-             - ((softfloat_approxRecipSqrt_1k1s[index] * (uint_fast32_t) eps)
+    r0 = softfloat_approxRecipSqrt_1k0s_at( index )
+             - ((softfloat_approxRecipSqrt_1k1s_at( index ) * (uint_fast32_t) eps)
                     >>20);
     ESqrR0 = (uint_fast32_t) r0 * r0;
     if ( ! oddExpA ) ESqrR0 <<= 1;

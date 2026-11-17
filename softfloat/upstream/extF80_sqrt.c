@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-extFloat80_t extF80_sqrt( extFloat80_t a )
+extFloat80_t extF80_sqrt( struct sf_ctx *sf_ctx, extFloat80_t a )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;
@@ -73,7 +73,7 @@ extFloat80_t extF80_sqrt( extFloat80_t a )
     *------------------------------------------------------------------------*/
     if ( expA == 0x7FFF ) {
         if ( sigA & UINT64_C( 0x7FFFFFFFFFFFFFFF ) ) {
-            uiZ = softfloat_propagateNaNExtF80UI( uiA64, uiA0, 0, 0 );
+            uiZ = softfloat_propagateNaNExtF80UI( sf_ctx, uiA64, uiA0, 0, 0 );
             uiZ64 = uiZ.v64;
             uiZ0  = uiZ.v0;
             goto uiZ;
@@ -92,7 +92,7 @@ extFloat80_t extF80_sqrt( extFloat80_t a )
     if ( ! expA ) expA = 1;
     if ( ! (sigA & UINT64_C( 0x8000000000000000 )) ) {
         if ( ! sigA ) goto zero;
-        normExpSig = softfloat_normSubnormalExtF80Sig( sigA );
+        normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigA );
         expA += normExpSig.exp;
         sigA = normExpSig.sig;
     }
@@ -153,7 +153,7 @@ extFloat80_t extF80_sqrt( extFloat80_t a )
         }
     }
     return
-        softfloat_roundPackToExtF80(
+        softfloat_roundPackToExtF80( sf_ctx,
             0, expZ, sigZ, sigZExtra, extF80_roundingPrecision );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | Converts the common NaN pointed to by `aPtr' into a 64-bit floating-point
 | NaN, and returns the bit pattern of this value as an unsigned integer.
 *----------------------------------------------------------------------------*/
-uint_fast64_t softfloat_commonNaNToF64UI( const struct commonNaN *aPtr )
+uint_fast64_t softfloat_commonNaNToF64UI( struct sf_ctx *sf_ctx, const struct commonNaN *aPtr )
 {
 
     return

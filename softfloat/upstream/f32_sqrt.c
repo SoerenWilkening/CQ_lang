@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float32_t f32_sqrt( float32_t a )
+float32_t f32_sqrt( struct sf_ctx *sf_ctx, float32_t a )
 {
     union ui32_f32 uA;
     uint_fast32_t uiA;
@@ -65,7 +65,7 @@ float32_t f32_sqrt( float32_t a )
     *------------------------------------------------------------------------*/
     if ( expA == 0xFF ) {
         if ( sigA ) {
-            uiZ = softfloat_propagateNaNF32UI( uiA, 0 );
+            uiZ = softfloat_propagateNaNF32UI( sf_ctx, uiA, 0 );
             goto uiZ;
         }
         if ( ! signA ) return a;
@@ -81,7 +81,7 @@ float32_t f32_sqrt( float32_t a )
     *------------------------------------------------------------------------*/
     if ( ! expA ) {
         if ( ! sigA ) return a;
-        normExpSig = softfloat_normSubnormalF32Sig( sigA );
+        normExpSig = softfloat_normSubnormalF32Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
@@ -107,7 +107,7 @@ float32_t f32_sqrt( float32_t a )
             if ( negRem ) --sigZ;
         }
     }
-    return softfloat_roundPackToF32( 0, expZ, sigZ );
+    return softfloat_roundPackToF32( sf_ctx, 0, expZ, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  invalid:

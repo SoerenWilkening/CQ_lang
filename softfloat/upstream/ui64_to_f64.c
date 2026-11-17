@@ -39,7 +39,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-float64_t ui64_to_f64( uint64_t a )
+float64_t ui64_to_f64( struct sf_ctx *sf_ctx, uint64_t a )
 {
     union ui64_f64 uZ;
 
@@ -49,10 +49,10 @@ float64_t ui64_to_f64( uint64_t a )
     }
     if ( a & UINT64_C( 0x8000000000000000 ) ) {
         return
-            softfloat_roundPackToF64(
+            softfloat_roundPackToF64( sf_ctx,
                 0, 0x43D, softfloat_shortShiftRightJam64( a, 1 ) );
     } else {
-        return softfloat_normRoundPackToF64( 0, 0x43C, a );
+        return softfloat_normRoundPackToF64( sf_ctx, 0, 0x43C, a );
     }
 
 }

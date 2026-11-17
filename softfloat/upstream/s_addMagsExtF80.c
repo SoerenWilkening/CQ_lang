@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 extFloat80_t
- softfloat_addMagsExtF80(
+ softfloat_addMagsExtF80( struct sf_ctx *sf_ctx,
      uint_fast16_t uiA64,
      uint_fast64_t uiA0,
      uint_fast16_t uiB64,
@@ -84,7 +84,7 @@ extFloat80_t
         sigZ = sigA + sigB;
         sigZExtra = 0;
         if ( ! expA ) {
-            normExpSig = softfloat_normSubnormalExtF80Sig( sigZ );
+            normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigZ );
             expZ = normExpSig.exp + 1;
             sigZ = normExpSig.sig;
             goto roundAndPack;
@@ -139,12 +139,12 @@ extFloat80_t
     ++expZ;
  roundAndPack:
     return
-        softfloat_roundPackToExtF80(
+        softfloat_roundPackToExtF80( sf_ctx,
             signZ, expZ, sigZ, sigZExtra, extF80_roundingPrecision );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNExtF80UI( uiA64, uiA0, uiB64, uiB0 );
+    uiZ = softfloat_propagateNaNExtF80UI( sf_ctx, uiA64, uiA0, uiB64, uiB0 );
     uiZ64 = uiZ.v64;
     uiZ0  = uiZ.v0;
  uiZ:

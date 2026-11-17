@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float16_t f16_rem( float16_t a, float16_t b )
+float16_t f16_rem( struct sf_ctx *sf_ctx, float16_t a, float16_t b )
 {
     union ui16_f16 uA;
     uint_fast16_t uiA;
@@ -87,13 +87,13 @@ float16_t f16_rem( float16_t a, float16_t b )
     *------------------------------------------------------------------------*/
     if ( ! expB ) {
         if ( ! sigB ) goto invalid;
-        normExpSig = softfloat_normSubnormalF16Sig( sigB );
+        normExpSig = softfloat_normSubnormalF16Sig( sf_ctx, sigB );
         expB = normExpSig.exp;
         sigB = normExpSig.sig;
     }
     if ( ! expA ) {
         if ( ! sigA ) return a;
-        normExpSig = softfloat_normSubnormalF16Sig( sigA );
+        normExpSig = softfloat_normSubnormalF16Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
@@ -154,11 +154,11 @@ float16_t f16_rem( float16_t a, float16_t b )
         signRem = ! signRem;
         rem = -rem;
     }
-    return softfloat_normRoundPackToF16( signRem, expB, rem );
+    return softfloat_normRoundPackToF16( sf_ctx, signRem, expB, rem );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNF16UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF16UI( sf_ctx, uiA, uiB );
     goto uiZ;
  invalid:
     softfloat_raiseFlags( softfloat_flag_invalid );

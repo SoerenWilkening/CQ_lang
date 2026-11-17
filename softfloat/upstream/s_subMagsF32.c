@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float32_t softfloat_subMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
+float32_t softfloat_subMagsF32( struct sf_ctx *sf_ctx, uint_fast32_t uiA, uint_fast32_t uiB )
 {
     int_fast16_t expA;
     uint_fast32_t sigA;
@@ -127,14 +127,14 @@ float32_t softfloat_subMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
             sigY = sigB + (expB ? 0x40000000 : sigB);
         }
         return
-            softfloat_normRoundPackToF32(
+            softfloat_normRoundPackToF32( sf_ctx,
                 signZ, expZ, sigX - softfloat_shiftRightJam32( sigY, expDiff )
             );
     }
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNF32UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF32UI( sf_ctx, uiA, uiB );
  uiZ:
     uZ.ui = uiZ;
     return uZ.f;

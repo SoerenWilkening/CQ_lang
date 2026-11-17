@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float16_t softfloat_addMagsF16( uint_fast16_t uiA, uint_fast16_t uiB )
+float16_t softfloat_addMagsF16( struct sf_ctx *sf_ctx, uint_fast16_t uiA, uint_fast16_t uiB )
 {
     int_fast8_t expA;
     uint_fast16_t sigA;
@@ -141,11 +141,11 @@ float16_t softfloat_addMagsF16( uint_fast16_t uiA, uint_fast16_t uiB )
             }
         }
     }
-    return softfloat_roundPackToF16( signZ, expZ, sigZ );
+    return softfloat_roundPackToF16( sf_ctx, signZ, expZ, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNF16UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF16UI( sf_ctx, uiA, uiB );
     goto uiZ;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

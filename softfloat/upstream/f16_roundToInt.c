@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float16_t f16_roundToInt( float16_t a, uint_fast8_t roundingMode, bool exact )
+float16_t f16_roundToInt( struct sf_ctx *sf_ctx, float16_t a, uint_fast8_t roundingMode, bool exact )
 {
     union ui16_f16 uA;
     uint_fast16_t uiA;
@@ -84,7 +84,7 @@ float16_t f16_roundToInt( float16_t a, uint_fast8_t roundingMode, bool exact )
     *------------------------------------------------------------------------*/
     if ( 0x19 <= exp ) {
         if ( (exp == 0x1F) && fracF16UI( uiA ) ) {
-            uiZ = softfloat_propagateNaNF16UI( uiA, 0 );
+            uiZ = softfloat_propagateNaNF16UI( sf_ctx, uiA, 0 );
             goto uiZ;
         }
         return a;

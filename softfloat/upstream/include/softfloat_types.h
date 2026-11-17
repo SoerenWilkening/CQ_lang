@@ -39,6 +39,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdint.h>
 
+struct sf_ctx;   /* CQ: patched by softfloat/tools/patch_upstream.py */
+
 /*----------------------------------------------------------------------------
 | Types used to pass 16-bit, 32-bit, 64-bit, and 128-bit floating-point
 | arguments and results to/from functions.  These types must be exactly

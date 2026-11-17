@@ -45,7 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | location pointed to by `zPtr'.  If the NaN is a signaling NaN, the invalid
 | exception is raised.
 *----------------------------------------------------------------------------*/
-void softfloat_bf16UIToCommonNaN( uint_fast16_t uiA, struct commonNaN *zPtr )
+void softfloat_bf16UIToCommonNaN( struct sf_ctx *sf_ctx, uint_fast16_t uiA, struct commonNaN *zPtr )
 {
 
     if ( softfloat_isSigNaNBF16UI( uiA ) ) {

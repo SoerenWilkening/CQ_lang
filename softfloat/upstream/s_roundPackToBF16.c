@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /** sig last significant bit is sig[7], the 7 LSBs will be used for rounding */
 bfloat16_t
- softfloat_roundPackToBF16( bool sign, int_fast16_t exp, uint_fast16_t sig )
+ softfloat_roundPackToBF16( struct sf_ctx *sf_ctx, bool sign, int_fast16_t exp, uint_fast16_t sig )
 {
     uint_fast8_t roundingMode;
     bool roundNearEven;

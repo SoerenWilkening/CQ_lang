@@ -44,7 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern const uint16_t softfloat_approxRecipSqrt_1k0s[];
 extern const uint16_t softfloat_approxRecipSqrt_1k1s[];
 
-float16_t f16_sqrt( float16_t a )
+float16_t f16_sqrt( struct sf_ctx *sf_ctx, float16_t a )
 {
     union ui16_f16 uA;
     uint_fast16_t uiA;
@@ -72,7 +72,7 @@ float16_t f16_sqrt( float16_t a )
     *------------------------------------------------------------------------*/
     if ( expA == 0x1F ) {
         if ( sigA ) {
-            uiZ = softfloat_propagateNaNF16UI( uiA, 0 );
+            uiZ = softfloat_propagateNaNF16UI( sf_ctx, uiA, 0 );
             goto uiZ;
         }
         if ( ! signA ) return a;
@@ -88,7 +88,7 @@ float16_t f16_sqrt( float16_t a )
     *------------------------------------------------------------------------*/
     if ( ! expA ) {
         if ( ! sigA ) return a;
-        normExpSig = softfloat_normSubnormalF16Sig( sigA );
+        normExpSig = softfloat_normSubnormalF16Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
@@ -98,8 +98,8 @@ float16_t f16_sqrt( float16_t a )
     expA &= 1;
     sigA |= 0x0400;
     index = (sigA>>6 & 0xE) + expA;
-    r0 = softfloat_approxRecipSqrt_1k0s[index]
-             - (((uint_fast32_t) softfloat_approxRecipSqrt_1k1s[index]
+    r0 = softfloat_approxRecipSqrt_1k0s_at( index )
+             - (((uint_fast32_t) softfloat_approxRecipSqrt_1k1s_at( index )
                      * (sigA & 0x7F))
                     >>11);
     ESqrR0 = ((uint_fast32_t) r0 * r0)>>1;
@@ -122,7 +122,7 @@ float16_t f16_sqrt( float16_t a )
             if ( negRem ) --sigZ;
         }
     }
-    return softfloat_roundPackToF16( 0, expZ, sigZ );
+    return softfloat_roundPackToF16( sf_ctx, 0, expZ, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  invalid:

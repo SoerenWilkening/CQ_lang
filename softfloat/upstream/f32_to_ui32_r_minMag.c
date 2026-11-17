@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-uint_fast32_t f32_to_ui32_r_minMag( float32_t a, bool exact )
+uint_fast32_t f32_to_ui32_r_minMag( struct sf_ctx *sf_ctx, float32_t a, bool exact )
 {
     union ui32_f32 uA;
     uint_fast32_t uiA;

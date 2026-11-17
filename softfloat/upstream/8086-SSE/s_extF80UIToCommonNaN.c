@@ -47,7 +47,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | exception is raised.
 *----------------------------------------------------------------------------*/
 void
- softfloat_extF80UIToCommonNaN(
+ softfloat_extF80UIToCommonNaN( struct sf_ctx *sf_ctx,
      uint_fast16_t uiA64, uint_fast64_t uiA0, struct commonNaN *zPtr )
 {
 

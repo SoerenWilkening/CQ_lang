@@ -44,7 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <inttypes.h>
 #include <stdio.h>
 
-bfloat16_t f32_to_bf16( float32_t a )
+bfloat16_t f32_to_bf16( struct sf_ctx *sf_ctx, float32_t a )
 {
     union ui32_f32 uA;
     uint_fast32_t uiA;
@@ -68,8 +68,8 @@ bfloat16_t f32_to_bf16( float32_t a )
     if ( exp == 0xFF ) {
         if ( frac ) {
             // NaN case
-            softfloat_f32UIToCommonNaN( uiA, &commonNaN );
-            uiZ = softfloat_commonNaNToBF16UI( &commonNaN );
+            softfloat_f32UIToCommonNaN( sf_ctx, uiA, &commonNaN );
+            uiZ = softfloat_commonNaNToBF16UI( sf_ctx, &commonNaN );
         } else {
             // infinity case
             uiZ = packToBF16UI( sign, 0xFF, 0 );
@@ -96,7 +96,7 @@ bfloat16_t f32_to_bf16( float32_t a )
     // (by one bit) for subnormal numbers. Such that (exp - 1) corresponds
     // to the exponent of frac16[13]
     frac16 = frac16 << (exp ? 0 : 1);
-    return softfloat_roundPackToBF16( sign, exp - 1, frac16 | mask );
+    return softfloat_roundPackToBF16( sf_ctx, sign, exp - 1, frac16 | mask );
  uiZ:
     uZ.ui = uiZ;
     return uZ.f;

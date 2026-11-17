@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-extFloat80_t extF80_mul( extFloat80_t a, extFloat80_t b )
+extFloat80_t extF80_mul( struct sf_ctx *sf_ctx, extFloat80_t a, extFloat80_t b )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;
@@ -101,14 +101,14 @@ extFloat80_t extF80_mul( extFloat80_t a, extFloat80_t b )
     if ( ! expA ) expA = 1;
     if ( ! (sigA & UINT64_C( 0x8000000000000000 )) ) {
         if ( ! sigA ) goto zero;
-        normExpSig = softfloat_normSubnormalExtF80Sig( sigA );
+        normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigA );
         expA += normExpSig.exp;
         sigA = normExpSig.sig;
     }
     if ( ! expB ) expB = 1;
     if ( ! (sigB & UINT64_C( 0x8000000000000000 )) ) {
         if ( ! sigB ) goto zero;
-        normExpSig = softfloat_normSubnormalExtF80Sig( sigB );
+        normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigB );
         expB += normExpSig.exp;
         sigB = normExpSig.sig;
     }
@@ -123,12 +123,12 @@ extFloat80_t extF80_mul( extFloat80_t a, extFloat80_t b )
                 sig128Z.v64, sig128Z.v0, sig128Z.v64, sig128Z.v0 );
     }
     return
-        softfloat_roundPackToExtF80(
+        softfloat_roundPackToExtF80( sf_ctx,
             signZ, expZ, sig128Z.v64, sig128Z.v0, extF80_roundingPrecision );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN:
-    uiZ = softfloat_propagateNaNExtF80UI( uiA64, uiA0, uiB64, uiB0 );
+    uiZ = softfloat_propagateNaNExtF80UI( sf_ctx, uiA64, uiA0, uiB64, uiB0 );
     uiZ64 = uiZ.v64;
     uiZ0  = uiZ.v0;
     goto uiZ;

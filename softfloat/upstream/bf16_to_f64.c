@@ -41,10 +41,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float64_t bf16_to_f64( bfloat16_t a )
+float64_t bf16_to_f64( struct sf_ctx *sf_ctx, bfloat16_t a )
 {
     float32_t f32A = (float32_t) { (uint_fast32_t)a.v << 16 };
 
-    return f32_to_f64( f32A );
+    return f32_to_f64( sf_ctx, f32A );
 }
 

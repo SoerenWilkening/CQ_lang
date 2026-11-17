@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-extFloat80_t extF80_add( extFloat80_t a, extFloat80_t b )
+extFloat80_t extF80_add( struct sf_ctx *sf_ctx, extFloat80_t a, extFloat80_t b )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;
@@ -66,9 +66,9 @@ extFloat80_t extF80_add( extFloat80_t a, extFloat80_t b )
     signB = signExtF80UI64( uiB64 );
 #if defined INLINE_LEVEL && (2 <= INLINE_LEVEL)
     if ( signA == signB ) {
-        return softfloat_addMagsExtF80( uiA64, uiA0, uiB64, uiB0, signA );
+        return softfloat_addMagsExtF80( sf_ctx, uiA64, uiA0, uiB64, uiB0, signA );
     } else {
-        return softfloat_subMagsExtF80( uiA64, uiA0, uiB64, uiB0, signA );
+        return softfloat_subMagsExtF80( sf_ctx, uiA64, uiA0, uiB64, uiB0, signA );
     }
 #else
     magsFuncPtr =

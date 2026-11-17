@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 extFloat80_t
- softfloat_roundPackToExtF80(
+ softfloat_roundPackToExtF80( struct sf_ctx *sf_ctx,
      bool sign,
      int_fast32_t exp,
      uint_fast64_t sig,

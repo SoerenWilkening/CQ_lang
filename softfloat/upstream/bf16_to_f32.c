@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float32_t bf16_to_f32( bfloat16_t a )
+float32_t bf16_to_f32( struct sf_ctx *sf_ctx, bfloat16_t a )
 {
     union ui16_bf16 uA;
     uint_fast16_t uiA;
@@ -60,8 +60,8 @@ float32_t bf16_to_f32( bfloat16_t a )
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
     if ( exp == 0xFF && frac ) {
-        softfloat_bf16UIToCommonNaN( uiA, &commonNaN );
-        uiZ = softfloat_commonNaNToF32UI( &commonNaN );
+        softfloat_bf16UIToCommonNaN( sf_ctx, uiA, &commonNaN );
+        uiZ = softfloat_commonNaNToF32UI( sf_ctx, &commonNaN );
         goto uiZ;
     }
     /*------------------------------------------------------------------------

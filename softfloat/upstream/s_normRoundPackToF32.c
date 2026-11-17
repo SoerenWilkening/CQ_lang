@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 
 float32_t
- softfloat_normRoundPackToF32( bool sign, int_fast16_t exp, uint_fast32_t sig )
+ softfloat_normRoundPackToF32( struct sf_ctx *sf_ctx, bool sign, int_fast16_t exp, uint_fast32_t sig )
 {
     int_fast8_t shiftDist;
     union ui32_f32 uZ;
@@ -51,7 +51,7 @@ float32_t
         uZ.ui = packToF32UI( sign, sig ? exp : 0, sig<<(shiftDist - 7) );
         return uZ.f;
     } else {
-        return softfloat_roundPackToF32( sign, exp, sig<<shiftDist );
+        return softfloat_roundPackToF32( sf_ctx, sign, exp, sig<<shiftDist );
     }
 
 }

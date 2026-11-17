@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 float16_t
- softfloat_mulAddF16(
+ softfloat_mulAddF16( struct sf_ctx *sf_ctx,
      uint_fast16_t uiA, uint_fast16_t uiB, uint_fast16_t uiC, uint_fast8_t op )
 {
     bool signA;
@@ -103,13 +103,13 @@ float16_t
     *------------------------------------------------------------------------*/
     if ( ! expA ) {
         if ( ! sigA ) goto zeroProd;
-        normExpSig = softfloat_normSubnormalF16Sig( sigA );
+        normExpSig = softfloat_normSubnormalF16Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
     if ( ! expB ) {
         if ( ! sigB ) goto zeroProd;
-        normExpSig = softfloat_normSubnormalF16Sig( sigB );
+        normExpSig = softfloat_normSubnormalF16Sig( sf_ctx, sigB );
         expB = normExpSig.exp;
         sigB = normExpSig.sig;
     }
@@ -130,7 +130,7 @@ float16_t
             sigZ = sigProd>>15 | ((sigProd & 0x7FFF) != 0);
             goto roundPack;
         }
-        normExpSig = softfloat_normSubnormalF16Sig( sigC );
+        normExpSig = softfloat_normSubnormalF16Sig( sf_ctx, sigC );
         expC = normExpSig.exp;
         sigC = normExpSig.sig;
     }
@@ -188,11 +188,11 @@ float16_t
         }
     }
  roundPack:
-    return softfloat_roundPackToF16( signZ, expZ, sigZ );
+    return softfloat_roundPackToF16( sf_ctx, signZ, expZ, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN_ABC:
-    uiZ = softfloat_propagateNaNF16UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF16UI( sf_ctx, uiA, uiB );
     goto propagateNaN_ZC;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
@@ -206,7 +206,7 @@ float16_t
     softfloat_raiseFlags( softfloat_flag_invalid );
     uiZ = defaultNaNF16UI;
  propagateNaN_ZC:
-    uiZ = softfloat_propagateNaNF16UI( uiZ, uiC );
+    uiZ = softfloat_propagateNaNF16UI( sf_ctx, uiZ, uiC );
     goto uiZ;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

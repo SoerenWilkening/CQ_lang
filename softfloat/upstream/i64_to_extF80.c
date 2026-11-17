@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-extFloat80_t i64_to_extF80( int64_t a )
+extFloat80_t i64_to_extF80( struct sf_ctx *sf_ctx, int64_t a )
 {
     uint_fast16_t uiZ64;
     uint_fast64_t absA;

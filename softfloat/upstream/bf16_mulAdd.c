@@ -39,13 +39,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-bfloat16_t bf16_mulAdd( bfloat16_t a, bfloat16_t b, bfloat16_t c )
+bfloat16_t bf16_mulAdd( struct sf_ctx *sf_ctx, bfloat16_t a, bfloat16_t b, bfloat16_t c )
 {
-    float64_t f64A = bf16_to_f64( a );
-    float64_t f64B = bf16_to_f64( b );
-    float64_t f64C = bf16_to_f64( c );
+    float64_t f64A = bf16_to_f64( sf_ctx, a );
+    float64_t f64B = bf16_to_f64( sf_ctx, b );
+    float64_t f64C = bf16_to_f64( sf_ctx, c );
 
-    float64_t prod = f64_mul( f64A, f64B );
+    float64_t prod = f64_mul( sf_ctx, f64A, f64B );
 
     uint_fast8_t roundingMode = softfloat_roundingMode;
 
@@ -55,10 +55,10 @@ bfloat16_t bf16_mulAdd( bfloat16_t a, bfloat16_t b, bfloat16_t c )
     if ( (prod.v << 1) != 0 )
         softfloat_roundingMode = softfloat_round_odd;
 
-    float64_t sum = f64_add( prod, f64C );
+    float64_t sum = f64_add( sf_ctx, prod, f64C );
 
     softfloat_roundingMode = roundingMode;
 
-    return f64_to_bf16( sum );
+    return f64_to_bf16( sf_ctx, sum );
 }
 

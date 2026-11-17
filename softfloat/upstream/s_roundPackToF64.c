@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 float64_t
- softfloat_roundPackToF64( bool sign, int_fast16_t exp, uint_fast64_t sig )
+ softfloat_roundPackToF64( struct sf_ctx *sf_ctx, bool sign, int_fast16_t exp, uint_fast64_t sig )
 {
     uint_fast8_t roundingMode;
     bool roundNearEven;

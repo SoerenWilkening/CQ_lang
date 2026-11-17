@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 int_fast32_t
- softfloat_roundToI32(
+ softfloat_roundToI32( struct sf_ctx *sf_ctx,
      bool sign, uint_fast64_t sig, uint_fast8_t roundingMode, bool exact )
 {
     uint_fast16_t roundIncrement, roundBits;

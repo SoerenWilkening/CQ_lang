@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-float64_t f64_roundToInt( float64_t a, uint_fast8_t roundingMode, bool exact )
+float64_t f64_roundToInt( struct sf_ctx *sf_ctx, float64_t a, uint_fast8_t roundingMode, bool exact )
 {
     union ui64_f64 uA;
     uint_fast64_t uiA;
@@ -84,7 +84,7 @@ float64_t f64_roundToInt( float64_t a, uint_fast8_t roundingMode, bool exact )
     *------------------------------------------------------------------------*/
     if ( 0x433 <= exp ) {
         if ( (exp == 0x7FF) && fracF64UI( uiA ) ) {
-            uiZ = softfloat_propagateNaNF64UI( uiA, 0 );
+            uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiA, 0 );
             goto uiZ;
         }
         return a;

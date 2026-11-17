@@ -59,21 +59,21 @@ enum {
 
 /*----------------------------------------------------------------------------
 *----------------------------------------------------------------------------*/
-uint_fast32_t softfloat_roundToUI32( bool, uint_fast64_t, uint_fast8_t, bool );
+uint_fast32_t softfloat_roundToUI32( struct sf_ctx *sf_ctx, bool, uint_fast64_t, uint_fast8_t, bool );
 
 #ifdef SOFTFLOAT_FAST_INT64
 uint_fast64_t
- softfloat_roundToUI64(
+ softfloat_roundToUI64( struct sf_ctx *sf_ctx,
      bool, uint_fast64_t, uint_fast64_t, uint_fast8_t, bool );
 #else
 uint_fast64_t softfloat_roundMToUI64( bool, uint32_t *, uint_fast8_t, bool );
 #endif
 
-int_fast32_t softfloat_roundToI32( bool, uint_fast64_t, uint_fast8_t, bool );
+int_fast32_t softfloat_roundToI32( struct sf_ctx *sf_ctx, bool, uint_fast64_t, uint_fast8_t, bool );
 
 #ifdef SOFTFLOAT_FAST_INT64
 int_fast64_t
- softfloat_roundToI64(
+ softfloat_roundToI64( struct sf_ctx *sf_ctx,
      bool, uint_fast64_t, uint_fast64_t, uint_fast8_t, bool );
 #else
 int_fast64_t softfloat_roundMToI64( bool, uint32_t *, uint_fast8_t, bool );
@@ -89,15 +89,15 @@ int_fast64_t softfloat_roundMToI64( bool, uint32_t *, uint_fast8_t, bool );
 #define isNaNF16UI( a ) (((~(a) & 0x7C00) == 0) && ((a) & 0x03FF))
 
 struct exp8_sig16 { int_fast8_t exp; uint_fast16_t sig; };
-struct exp8_sig16 softfloat_normSubnormalF16Sig( uint_fast16_t );
+struct exp8_sig16 softfloat_normSubnormalF16Sig( struct sf_ctx *sf_ctx, uint_fast16_t );
 
-float16_t softfloat_roundPackToF16( bool, int_fast16_t, uint_fast16_t );
-float16_t softfloat_normRoundPackToF16( bool, int_fast16_t, uint_fast16_t );
+float16_t softfloat_roundPackToF16( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast16_t );
+float16_t softfloat_normRoundPackToF16( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast16_t );
 
-float16_t softfloat_addMagsF16( uint_fast16_t, uint_fast16_t );
-float16_t softfloat_subMagsF16( uint_fast16_t, uint_fast16_t );
+float16_t softfloat_addMagsF16( struct sf_ctx *sf_ctx, uint_fast16_t, uint_fast16_t );
+float16_t softfloat_subMagsF16( struct sf_ctx *sf_ctx, uint_fast16_t, uint_fast16_t );
 float16_t
- softfloat_mulAddF16(
+ softfloat_mulAddF16( struct sf_ctx *sf_ctx,
      uint_fast16_t, uint_fast16_t, uint_fast16_t, uint_fast8_t );
 
 /*----------------------------------------------------------------------------
@@ -109,8 +109,8 @@ float16_t
 
 #define isNaNBF16UI( a ) (((~(a) & 0x7F80) == 0) && ((a) & 0x007F))
 
-bfloat16_t softfloat_roundPackToBF16( bool, int_fast16_t, uint_fast16_t );
-struct exp8_sig16 softfloat_normSubnormalBF16Sig( uint_fast16_t );
+bfloat16_t softfloat_roundPackToBF16( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast16_t );
+struct exp8_sig16 softfloat_normSubnormalBF16Sig( struct sf_ctx *sf_ctx, uint_fast16_t );
 
 /*----------------------------------------------------------------------------
 *----------------------------------------------------------------------------*/
@@ -122,15 +122,15 @@ struct exp8_sig16 softfloat_normSubnormalBF16Sig( uint_fast16_t );
 #define isNaNF32UI( a ) (((~(a) & 0x7F800000) == 0) && ((a) & 0x007FFFFF))
 
 struct exp16_sig32 { int_fast16_t exp; uint_fast32_t sig; };
-struct exp16_sig32 softfloat_normSubnormalF32Sig( uint_fast32_t );
+struct exp16_sig32 softfloat_normSubnormalF32Sig( struct sf_ctx *sf_ctx, uint_fast32_t );
 
-float32_t softfloat_roundPackToF32( bool, int_fast16_t, uint_fast32_t );
-float32_t softfloat_normRoundPackToF32( bool, int_fast16_t, uint_fast32_t );
+float32_t softfloat_roundPackToF32( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast32_t );
+float32_t softfloat_normRoundPackToF32( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast32_t );
 
-float32_t softfloat_addMagsF32( uint_fast32_t, uint_fast32_t );
-float32_t softfloat_subMagsF32( uint_fast32_t, uint_fast32_t );
+float32_t softfloat_addMagsF32( struct sf_ctx *sf_ctx, uint_fast32_t, uint_fast32_t );
+float32_t softfloat_subMagsF32( struct sf_ctx *sf_ctx, uint_fast32_t, uint_fast32_t );
 float32_t
- softfloat_mulAddF32(
+ softfloat_mulAddF32( struct sf_ctx *sf_ctx,
      uint_fast32_t, uint_fast32_t, uint_fast32_t, uint_fast8_t );
 
 /*----------------------------------------------------------------------------
@@ -143,15 +143,15 @@ float32_t
 #define isNaNF64UI( a ) (((~(a) & UINT64_C( 0x7FF0000000000000 )) == 0) && ((a) & UINT64_C( 0x000FFFFFFFFFFFFF )))
 
 struct exp16_sig64 { int_fast16_t exp; uint_fast64_t sig; };
-struct exp16_sig64 softfloat_normSubnormalF64Sig( uint_fast64_t );
+struct exp16_sig64 softfloat_normSubnormalF64Sig( struct sf_ctx *sf_ctx, uint_fast64_t );
 
-float64_t softfloat_roundPackToF64( bool, int_fast16_t, uint_fast64_t );
-float64_t softfloat_normRoundPackToF64( bool, int_fast16_t, uint_fast64_t );
+float64_t softfloat_roundPackToF64( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast64_t );
+float64_t softfloat_normRoundPackToF64( struct sf_ctx *sf_ctx, bool, int_fast16_t, uint_fast64_t );
 
-float64_t softfloat_addMagsF64( uint_fast64_t, uint_fast64_t, bool );
-float64_t softfloat_subMagsF64( uint_fast64_t, uint_fast64_t, bool );
+float64_t softfloat_addMagsF64( struct sf_ctx *sf_ctx, uint_fast64_t, uint_fast64_t, bool );
+float64_t softfloat_subMagsF64( struct sf_ctx *sf_ctx, uint_fast64_t, uint_fast64_t, bool );
 float64_t
- softfloat_mulAddF64(
+ softfloat_mulAddF64( struct sf_ctx *sf_ctx,
      uint_fast64_t, uint_fast64_t, uint_fast64_t, uint_fast8_t );
 
 /*----------------------------------------------------------------------------
@@ -168,20 +168,20 @@ float64_t
 *----------------------------------------------------------------------------*/
 
 struct exp32_sig64 { int_fast32_t exp; uint64_t sig; };
-struct exp32_sig64 softfloat_normSubnormalExtF80Sig( uint_fast64_t );
+struct exp32_sig64 softfloat_normSubnormalExtF80Sig( struct sf_ctx *sf_ctx, uint_fast64_t );
 
 extFloat80_t
- softfloat_roundPackToExtF80(
+ softfloat_roundPackToExtF80( struct sf_ctx *sf_ctx,
      bool, int_fast32_t, uint_fast64_t, uint_fast64_t, uint_fast8_t );
 extFloat80_t
- softfloat_normRoundPackToExtF80(
+ softfloat_normRoundPackToExtF80( struct sf_ctx *sf_ctx,
      bool, int_fast32_t, uint_fast64_t, uint_fast64_t, uint_fast8_t );
 
 extFloat80_t
- softfloat_addMagsExtF80(
+ softfloat_addMagsExtF80( struct sf_ctx *sf_ctx,
      uint_fast16_t, uint_fast64_t, uint_fast16_t, uint_fast64_t, bool );
 extFloat80_t
- softfloat_subMagsExtF80(
+ softfloat_subMagsExtF80( struct sf_ctx *sf_ctx,
      uint_fast16_t, uint_fast64_t, uint_fast16_t, uint_fast64_t, bool );
 
 /*----------------------------------------------------------------------------

@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-float64_t f64_add( float64_t a, float64_t b )
+float64_t f64_add( struct sf_ctx *sf_ctx, float64_t a, float64_t b )
 {
     union ui64_f64 uA;
     uint_fast64_t uiA;
@@ -60,9 +60,9 @@ float64_t f64_add( float64_t a, float64_t b )
     signB = signF64UI( uiB );
 #if defined INLINE_LEVEL && (2 <= INLINE_LEVEL)
     if ( signA == signB ) {
-        return softfloat_addMagsF64( uiA, uiB, signA );
+        return softfloat_addMagsF64( sf_ctx, uiA, uiB, signA );
     } else {
-        return softfloat_subMagsF64( uiA, uiB, signA );
+        return softfloat_subMagsF64( sf_ctx, uiA, uiB, signA );
     }
 #else
     magsFuncPtr =

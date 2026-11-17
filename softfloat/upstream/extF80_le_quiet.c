@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-bool extF80_le_quiet( extFloat80_t a, extFloat80_t b )
+bool extF80_le_quiet( struct sf_ctx *sf_ctx, extFloat80_t a, extFloat80_t b )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;

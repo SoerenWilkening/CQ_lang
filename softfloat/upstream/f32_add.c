@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 #include "softfloat.h"
 
-float32_t f32_add( float32_t a, float32_t b )
+float32_t f32_add( struct sf_ctx *sf_ctx, float32_t a, float32_t b )
 {
     union ui32_f32 uA;
     uint_fast32_t uiA;
@@ -56,9 +56,9 @@ float32_t f32_add( float32_t a, float32_t b )
     uiB = uB.ui;
 #if defined INLINE_LEVEL && (1 <= INLINE_LEVEL)
     if ( signF32UI( uiA ^ uiB ) ) {
-        return softfloat_subMagsF32( uiA, uiB );
+        return softfloat_subMagsF32( sf_ctx, uiA, uiB );
     } else {
-        return softfloat_addMagsF32( uiA, uiB );
+        return softfloat_addMagsF32( sf_ctx, uiA, uiB );
     }
 #else
     magsFuncPtr =

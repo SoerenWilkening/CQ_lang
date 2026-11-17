@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-int_fast64_t extF80_to_i64_r_minMag( extFloat80_t a, bool exact )
+int_fast64_t extF80_to_i64_r_minMag( struct sf_ctx *sf_ctx, extFloat80_t a, bool exact )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;

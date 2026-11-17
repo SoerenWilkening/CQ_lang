@@ -41,10 +41,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "specialize.h"
 #include "softfloat.h"
 
-uint_fast32_t bf16_to_ui32( bfloat16_t a, uint_fast8_t roundingMode, bool exact )
+uint_fast32_t bf16_to_ui32( struct sf_ctx *sf_ctx, bfloat16_t a, uint_fast8_t roundingMode, bool exact )
 {
     float32_t f32A = (float32_t) { (uint_fast32_t)a.v << 16 };
 
-    return f32_to_ui32( f32A, roundingMode, exact );
+    return f32_to_ui32( sf_ctx, f32A, roundingMode, exact );
 }
 

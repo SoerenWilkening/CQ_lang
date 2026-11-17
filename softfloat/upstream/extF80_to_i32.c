@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 int_fast32_t
- extF80_to_i32( extFloat80_t a, uint_fast8_t roundingMode, bool exact )
+ extF80_to_i32( struct sf_ctx *sf_ctx, extFloat80_t a, uint_fast8_t roundingMode, bool exact )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64;
@@ -77,7 +77,7 @@ int_fast32_t
     shiftDist = 0x4032 - exp;
     if ( shiftDist <= 0 ) shiftDist = 1;
     sig = softfloat_shiftRightJam64( sig, shiftDist );
-    return softfloat_roundToI32( sign, sig, roundingMode, exact );
+    return softfloat_roundToI32( sf_ctx, sign, sig, roundingMode, exact );
 
 }
 

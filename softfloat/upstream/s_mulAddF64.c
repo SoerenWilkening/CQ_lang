@@ -44,7 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef SOFTFLOAT_FAST_INT64
 
 float64_t
- softfloat_mulAddF64(
+ softfloat_mulAddF64( struct sf_ctx *sf_ctx,
      uint_fast64_t uiA, uint_fast64_t uiB, uint_fast64_t uiC, uint_fast8_t op )
 {
     bool signA;
@@ -103,13 +103,13 @@ float64_t
     *------------------------------------------------------------------------*/
     if ( ! expA ) {
         if ( ! sigA ) goto zeroProd;
-        normExpSig = softfloat_normSubnormalF64Sig( sigA );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
     if ( ! expB ) {
         if ( ! sigB ) goto zeroProd;
-        normExpSig = softfloat_normSubnormalF64Sig( sigB );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigB );
         expB = normExpSig.exp;
         sigB = normExpSig.sig;
     }
@@ -131,7 +131,7 @@ float64_t
             sigZ = sig128Z.v64<<1 | (sig128Z.v0 != 0);
             goto roundPack;
         }
-        normExpSig = softfloat_normSubnormalF64Sig( sigC );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigC );
         expC = normExpSig.exp;
         sigC = normExpSig.sig;
     }
@@ -205,11 +205,11 @@ float64_t
         sigZ |= (sig128Z.v0 != 0);
     }
  roundPack:
-    return softfloat_roundPackToF64( signZ, expZ, sigZ );
+    return softfloat_roundPackToF64( sf_ctx, signZ, expZ, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN_ABC:
-    uiZ = softfloat_propagateNaNF64UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiA, uiB );
     goto propagateNaN_ZC;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
@@ -223,7 +223,7 @@ float64_t
     softfloat_raiseFlags( softfloat_flag_invalid );
     uiZ = defaultNaNF64UI;
  propagateNaN_ZC:
-    uiZ = softfloat_propagateNaNF64UI( uiZ, uiC );
+    uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiZ, uiC );
     goto uiZ;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
@@ -244,7 +244,7 @@ float64_t
 #else
 
 float64_t
- softfloat_mulAddF64(
+ softfloat_mulAddF64( struct sf_ctx *sf_ctx,
      uint_fast64_t uiA, uint_fast64_t uiB, uint_fast64_t uiC, uint_fast8_t op )
 {
     bool signA;
@@ -302,13 +302,13 @@ float64_t
     *------------------------------------------------------------------------*/
     if ( ! expA ) {
         if ( ! sigA ) goto zeroProd;
-        normExpSig = softfloat_normSubnormalF64Sig( sigA );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigA );
         expA = normExpSig.exp;
         sigA = normExpSig.sig;
     }
     if ( ! expB ) {
         if ( ! sigB ) goto zeroProd;
-        normExpSig = softfloat_normSubnormalF64Sig( sigB );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigB );
         expB = normExpSig.exp;
         sigB = normExpSig.sig;
     }
@@ -330,7 +330,7 @@ float64_t
             if ( shiftDist ) sigZ <<= 1;
             goto sigZ;
         }
-        normExpSig = softfloat_normSubnormalF64Sig( sigC );
+        normExpSig = softfloat_normSubnormalF64Sig( sf_ctx, sigC );
         expC = normExpSig.exp;
         sigC = normExpSig.sig;
     }
@@ -456,11 +456,11 @@ float64_t
  sigZ:
     if ( sig128Z[indexWord( 4, 1 )] || sig128Z[indexWord( 4, 0 )] ) sigZ |= 1;
  roundPack:
-    return softfloat_roundPackToF64( signZ, expZ - 1, sigZ );
+    return softfloat_roundPackToF64( sf_ctx, signZ, expZ - 1, sigZ );
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  propagateNaN_ABC:
-    uiZ = softfloat_propagateNaNF64UI( uiA, uiB );
+    uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiA, uiB );
     goto propagateNaN_ZC;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
@@ -474,7 +474,7 @@ float64_t
     softfloat_raiseFlags( softfloat_flag_invalid );
     uiZ = defaultNaNF64UI;
  propagateNaN_ZC:
-    uiZ = softfloat_propagateNaNF64UI( uiZ, uiC );
+    uiZ = softfloat_propagateNaNF64UI( sf_ctx, uiZ, uiC );
     goto uiZ;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/

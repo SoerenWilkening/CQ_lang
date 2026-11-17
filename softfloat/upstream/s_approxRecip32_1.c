@@ -39,8 +39,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef softfloat_approxRecip32_1
 
-extern const uint16_t softfloat_approxRecip_1k0s[16];
-extern const uint16_t softfloat_approxRecip_1k1s[16];
+extern const uint16_t softfloat_approxRecip_1k0s_at( 16 );
+extern const uint16_t softfloat_approxRecip_1k1s_at( 16 );
 
 uint32_t softfloat_approxRecip32_1( uint32_t a )
 {
@@ -52,8 +52,8 @@ uint32_t softfloat_approxRecip32_1( uint32_t a )
 
     index = a>>27 & 0xF;
     eps = (uint16_t) (a>>11);
-    r0 = softfloat_approxRecip_1k0s[index]
-             - ((softfloat_approxRecip_1k1s[index] * (uint_fast32_t) eps)>>20);
+    r0 = softfloat_approxRecip_1k0s_at( index )
+             - ((softfloat_approxRecip_1k1s_at( index ) * (uint_fast32_t) eps)>>20);
     sigma0 = ~(uint_fast32_t) ((r0 * (uint_fast64_t) a)>>7);
     r = ((uint_fast32_t) r0<<16) + ((r0 * (uint_fast64_t) sigma0)>>24);
     sqrSigma0 = ((uint_fast64_t) sigma0 * sigma0)>>32;

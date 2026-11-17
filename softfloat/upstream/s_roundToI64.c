@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 int_fast64_t
- softfloat_roundToI64(
+ softfloat_roundToI64( struct sf_ctx *sf_ctx,
      bool sign,
      uint_fast64_t sig,
      uint_fast64_t sigExtra,

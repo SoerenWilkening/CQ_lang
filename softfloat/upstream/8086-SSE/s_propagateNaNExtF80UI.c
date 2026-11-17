@@ -51,7 +51,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | invalid exception is raised.
 *----------------------------------------------------------------------------*/
 struct uint128
- softfloat_propagateNaNExtF80UI(
+ softfloat_propagateNaNExtF80UI( struct sf_ctx *sf_ctx,
      uint_fast16_t uiA64,
      uint_fast64_t uiA0,
      uint_fast16_t uiB64,

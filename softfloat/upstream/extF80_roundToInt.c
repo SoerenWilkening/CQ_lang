@@ -42,7 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "softfloat.h"
 
 extFloat80_t
- extF80_roundToInt( extFloat80_t a, uint_fast8_t roundingMode, bool exact )
+ extF80_roundToInt( struct sf_ctx *sf_ctx, extFloat80_t a, uint_fast8_t roundingMode, bool exact )
 {
     union { struct extFloat80M s; extFloat80_t f; } uA;
     uint_fast16_t uiA64, signUI64;
@@ -70,7 +70,7 @@ extFloat80_t
             sigZ = 0;
             goto uiZ;
         }
-        normExpSig = softfloat_normSubnormalExtF80Sig( sigA );
+        normExpSig = softfloat_normSubnormalExtF80Sig( sf_ctx, sigA );
         exp += normExpSig.exp;
         sigA = normExpSig.sig;
     }
@@ -79,7 +79,7 @@ extFloat80_t
     if ( 0x403E <= exp ) {
         if ( exp == 0x7FFF ) {
             if ( sigA & UINT64_C( 0x7FFFFFFFFFFFFFFF ) ) {
-                uiZ = softfloat_propagateNaNExtF80UI( uiA64, sigA, 0, 0 );
+                uiZ = softfloat_propagateNaNExtF80UI( sf_ctx, uiA64, sigA, 0, 0 );
                 uiZ64 = uiZ.v64;
                 sigZ  = uiZ.v0;
                 goto uiZ;

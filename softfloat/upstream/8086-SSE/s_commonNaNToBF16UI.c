@@ -42,10 +42,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | Converts the common NaN pointed to by `aPtr' into a BF16 NaN, and 
 | returns the bit pattern of this value as an unsigned integer.
 *----------------------------------------------------------------------------*/
-uint_fast16_t softfloat_commonNaNToBF16UI( const struct commonNaN *aPtr )
+uint_fast16_t softfloat_commonNaNToBF16UI( struct sf_ctx *sf_ctx, const struct commonNaN *aPtr )
 {
 
-    return (uint_fast16_t) aPtr->sign<<15 | 0x7FC0 | aPtr->v64>>56;
+    return (uint_fast16_t) aPtr->sign<<15 | 0x7FC0 | aPtr->v64>>57;   /* CQ: bf16 payload fix, softfloat/tools/patch_upstream.py */
 
 }
 

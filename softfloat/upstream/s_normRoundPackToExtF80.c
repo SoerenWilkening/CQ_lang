@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "internals.h"
 
 extFloat80_t
- softfloat_normRoundPackToExtF80(
+ softfloat_normRoundPackToExtF80( struct sf_ctx *sf_ctx,
      bool sign,
      int_fast32_t exp,
      uint_fast64_t sig,
@@ -64,7 +64,7 @@ extFloat80_t
         sigExtra = sig128.v0;
     }
     return
-        softfloat_roundPackToExtF80(
+        softfloat_roundPackToExtF80( sf_ctx,
             sign, exp, sig, sigExtra, roundingPrecision );
 
 }
