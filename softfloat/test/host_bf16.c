@@ -44,6 +44,41 @@ u64 lb_uitofp_##N##_m(TU v, uint32_t m) { return Bb(cqsf_uitofp_i##N##_to_bf16_m
 uint32_t lb_uitofp_##N##_x(TU v, uint32_t m) { return cqsf_uitofp_i##N##_to_bf16_x(v, m); }
 ITOB(1, bool, bool) ITOB(8, int8_t, uint8_t) ITOB(16, int16_t, uint16_t) ITOB(32, int32_t, uint32_t) ITOB(64, int64_t, uint64_t)
 
+/* bf16 arithmetic (selftest_bf16.c). hb_*: the host's own -O1 code (f32 op, __truncsfbf2; round to
+ * nearest even only, no flags); lbc*: a root that takes __bf16 operands, called through a pointer, with
+ * the mode m when it takes one (mm), returning the bf16 bits or (x) the flag word. */
+u64 hb_add(u64 a, u64 b) { return Bb(Bf(a) + Bf(b)); }
+u64 hb_sub(u64 a, u64 b) { return Bb(Bf(a) - Bf(b)); }
+u64 hb_mul(u64 a, u64 b) { return Bb(Bf(a) * Bf(b)); }
+u64 hb_div(u64 a, u64 b) { return Bb(Bf(a) / Bf(b)); }
+u64 hb_sqrt(u64 a) { return Bb((__bf16)__builtin_sqrtf((float)Bf(a))); }
+u64 hb_fma(u64 a, u64 b, u64 c) { return Bb((__bf16)__builtin_fmaf((float)Bf(a), (float)Bf(b), (float)Bf(c))); }
+u64 hb_floor(u64 a) { return Bb(__builtin_floorf(Bf(a))); }
+u64 hb_ceil(u64 a) { return Bb(__builtin_ceilf(Bf(a))); }
+u64 hb_trunc(u64 a) { return Bb(__builtin_truncf(Bf(a))); }
+u64 hb_rint(u64 a) { return Bb(__builtin_rintf(Bf(a))); }
+u64 hb_lt(u64 a, u64 b) { return Bf(a) < Bf(b); }
+u64 hb_neg(u64 a) { return Bb(-Bf(a)); }
+/* the -O1 code of -x on _Float16 (no FENV_ACCESS: strict code computes it through float, quieting an sNaN) */
+u64 hh_neg(u64 a) { uint16_t u = (uint16_t)a; _Float16 x; memcpy(&x, &u, 2); x = -x; memcpy(&u, &x, 2); return u; }
+u64 hb_fabs(u64 a) { return Bb(__builtin_fabsf(Bf(a))); }
+u64 hb_copysign(u64 a, u64 b) { return Bb(__builtin_copysignf(Bf(a), Bf(b))); }
+u64 lb_neg(u64 a) { return Bb(cqsf_fneg_bf16(Bf(a))); }
+u64 lb_fabs(u64 a) { return Bb(cqsf_fabs_bf16(Bf(a))); }
+u64 lb_copysign(u64 a, u64 b) { return Bb(cqsf_copysign_bf16(Bf(a), Bf(b))); }
+u64 lbc(void *f, int ar, int hm, u64 a, u64 b, u64 c, uint32_t m) {
+    if (ar == 1) return hm ? Bb(((__bf16 (*)(__bf16, uint32_t))f)(Bf(a), m)) : Bb(((__bf16 (*)(__bf16))f)(Bf(a)));
+    if (ar == 2) return hm ? Bb(((__bf16 (*)(__bf16, __bf16, uint32_t))f)(Bf(a), Bf(b), m)) : Bb(((__bf16 (*)(__bf16, __bf16))f)(Bf(a), Bf(b)));
+    return hm ? Bb(((__bf16 (*)(__bf16, __bf16, __bf16, uint32_t))f)(Bf(a), Bf(b), Bf(c), m))
+              : Bb(((__bf16 (*)(__bf16, __bf16, __bf16))f)(Bf(a), Bf(b), Bf(c)));
+}
+uint32_t lbx(void *f, int ar, int hm, u64 a, u64 b, u64 c, uint32_t m) {
+    if (ar == 1) return hm ? ((uint32_t (*)(__bf16, uint32_t))f)(Bf(a), m) : ((uint32_t (*)(__bf16))f)(Bf(a));
+    if (ar == 2) return hm ? ((uint32_t (*)(__bf16, __bf16, uint32_t))f)(Bf(a), Bf(b), m) : ((uint32_t (*)(__bf16, __bf16))f)(Bf(a), Bf(b));
+    return ((uint32_t (*)(__bf16, __bf16, __bf16, uint32_t))f)(Bf(a), Bf(b), Bf(c), m);
+}
+bool lbcmp(void *f, u64 a, u64 b) { return ((bool (*)(__bf16, __bf16))f)(Bf(a), Bf(b)); }
+
 /* bf16 -> int: value and flags of each of the eight targets, in the order of selftest.c's F2I. */
 void lb_fptoint(u64 a, u64 v[8], uint32_t f[8]) {
     __bf16 x = Bf(a);

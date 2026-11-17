@@ -22,7 +22,8 @@ ir() {   # $1 = root list -> build/<stem>.O1.ll
     # The integer-only inner bodies and the outer roots are separate units (cq/cqsf_inner.c, header).
     "$LLVM/clang" -O1 $CFLAGS -S -emit-llvm "$SF/cq/cqsf_inner.c" -o "$B/cqsf_inner.ll"
     "$LLVM/clang" -O1 -S -emit-llvm "$SF/cq/cqsf_roots.c" -o "$B/cqsf_roots.ll"
-    "$LLVM/llvm-link" -S "$B/cqsf_roots.ll" "$B/cqsf_inner.ll" -o "$B/$stem.all.ll"
+    # The INT_X roots are IR (cq/cqsf_roots_x.ll, generated): their rails have the template's own widths.
+    "$LLVM/llvm-link" -S "$B/cqsf_roots.ll" "$B/cqsf_inner.ll" "$SF/cq/cqsf_roots_x.ll" -o "$B/$stem.all.ll"
     # Only the roots stay external: every SoftFloat function is inlined (always_inline) and then dead.
     "$LLVM/opt" -S -passes=internalize,globaldce -internalize-public-api-file="$1" "$B/$stem.all.ll" -o "$B/$stem.O1.ll"
 }
@@ -36,6 +37,10 @@ native)
     mkdir -p "$B/native"
     "$LLVM/clang" -O1 $CFLAGS -c "$SF/cq/cqsf_inner.c" -o "$B/native/cqsf_inner.o"
     "$LLVM/clang" -O1 -c "$SF/cq/cqsf_roots.c" -o "$B/native/cqsf_roots.o"
+    # The INT_X roots, native, renamed cqsfn_* (a lowered library exports cqsf_* itself, the all-zero mask);
+    # the tests reach them through their entries cqsft_*.
+    sed 's/@cqsf_/@cqsfn_/g' "$SF/cq/cqsf_roots_x.ll" > "$B/native/cqsf_roots_x.ll"
+    "$LLVM/clang" -O1 -c -x ir "$B/native/cqsf_roots_x.ll" -o "$B/native/cqsf_roots_x.o"
     ;;
 ir)
     ir "${2:-$SF/cqsf.roots}"

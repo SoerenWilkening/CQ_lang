@@ -8,6 +8,10 @@ Writes, under softfloat/:
   cq/cqsf_shims.c   one definition per float template symbol (forward and _unc): it calls the root's
                     table clone with a fixed K, copies the result out and uncomputes (CR §1.4 table
                     clones; BACKEND_ABI §2.1 forward/_unc contract). Plain C, compiled natively.
+  cq/cqsf_roots_x.ll  the roots of the INT_X conversions (integer widths other than 1, 8, 16, 32, 64) as
+                    LLVM IR, so that each takes and returns a rail of its template's own width (C passes a
+                    _BitInt(100) as two i64 and a _BitInt(200) in memory), with a native test entry
+                    cqsft_<root>(ptr in, i32 mode, ptr out) per root (dropped by build.sh's internalize).
   cqsf.roots        the default root list; cqsf_f80.roots the f80 one (see F80 below).
   build/manifest.json  every template symbol: its root, K, operand kinds (read by the tests).
 
@@ -38,18 +42,23 @@ FP = {
     "f64": ("double", "uint64_t", 64),
     "f80": ("long double", "struct extFloat80M", 80),
 }
-ARITH_W = ["f16", "f32", "f64"]
+ARITH_W = ["f16", "bf16", "f32", "f64"]   # bf16: cqsf.h computes through f32 rounded to odd (CR §1.1)
 # f80: extF80_add/mul/div/sqrt/rem crash cq-lower today (pred: Walker::next, cq-pfpy); the f80 roots are
 # generated into their own list, cqsf_f80.roots, and are not part of the default library.
 F80_W = ["f80"]
 INT_FROM = [1, 8, 16, 32, 64]     # sitofp/uitofp sources
 INT_TO = [8, 16, 32, 64]          # fptosi/fptoui targets (CR §2 rows)
+# The other integer widths C reaches (_BitInt(N), __int128), both directions, every fp width. One width of
+# each CR §2 class: signed/unsigned <= 32 (c32, f80 fist16/fist32), 33..63 (c64, fist64), 64 < N <= 128
+# (compiler-rt), N > 128 (ExpandLargeFpConvert). The grammar allows any N: a width is added here (up to 256,
+# the four limbs of cq/cqsf_int.h) and needs nothing else.
+INT_X = [7, 24, 48, 100, 128, 200]
 PREDS = ["oeq", "ogt", "oge", "olt", "ole", "one", "ord", "ueq", "ugt", "uge", "ult", "ule", "une", "uno"]
 
 # K per root: no root has a loop but the frem ones (SoftFloat's remainder loop, 29 quotient bits per trip,
 # then a do/while of at most a few trips). The value covers the largest exponent difference of the format.
 K_DEFAULT = 1
-K_FREM = {"f16": 8, "f32": 16, "f64": 80, "f80": 1200}
+K_FREM = {"f16": 8, "bf16": 16, "f32": 16, "f64": 80, "f80": 1200}   # bf16: f32's loop on the extension
 
 
 def int_ctype(n, signed):
@@ -69,6 +78,7 @@ class Inst:
         self.mode, self.exc, self.shapes, self.k = mode, exc, shapes, k
         self.xroot = xroot          # a shared flags root (fcmp: one per quiet/signalling compare)
         self.plainroot = plainroot  # a shared value root (fcmps: the fcmp root)
+        self.xw = None              # an INT_X conversion: (N, signed, fp width, "itofp" | "fptoi")
 
 
 def kind(w):
@@ -85,9 +95,9 @@ def table(widths, int_from=INT_FROM, int_to=INT_TO):
                             ["", "hl", "lh"], K_FREM[W] if op == "frem" else K_DEFAULT))
         for op in ["fmax", "fmin"]:
             out.append(Inst(f"{op}_{W}", f"sfx_{op}_{W}", [fw, fw], fw, False, True, ["", "hl", "lh"]))
-        if W != "f80":   # SoftFloat has no extF80_mulAdd
-            out.append(Inst(f"fma_{W}", f"sfx_fma_{W}", [fw, fw, fw], fw, True, True,
-                            ["", "qlq", "qql", "qll", "lqq", "lql", "llq"]))
+        # f80: SoftFloat has no extF80_mulAdd; cqsf_f80.h writes one (cqsf_extF80_mulAdd)
+        out.append(Inst(f"fma_{W}", f"sfx_fma_{W}", [fw, fw, fw], fw, True, True,
+                        ["", "qlq", "qql", "qll", "lqq", "lql", "llq"]))
         out.append(Inst(f"sqrt_{W}", f"sfx_sqrt_{W}", [fw], fw, True, True, [""]))
         out.append(Inst(f"rint_{W}", f"sfx_rint_{W}", [fw], fw, True, True, [""]))
         for op in ["floor", "ceil", "trunc", "round"]:
@@ -99,14 +109,65 @@ def table(widths, int_from=INT_FROM, int_to=INT_TO):
                             ["", "hl"], xroot=f"fcmps_{W}", plainroot=f"fcmp_{p}_{W}"))
         out.append(Inst(f"is_fpclass_{W}", f"sfx_is_fpclass_{W}", [fw, ("int", 32, False)], ("int", 1, False),
                         False, False, ["hl"]))
+        # the sign-bit operations: no mode, no flags (no constrained form), integer bit operations
+        out.append(Inst(f"fneg_{W}", f"sfx_fneg_{W}", [fw], fw, False, False, [""]))
+        out.append(Inst(f"fabs_{W}", f"sfx_fabs_{W}", [fw], fw, False, False, [""]))
+        out.append(Inst(f"copysign_{W}", f"sfx_copysign_{W}", [fw, fw], fw, False, False, ["", "hl", "lh"]))
+    return out
+
+
+# select and bitcast at a float width move bits only: a rail is untyped, so each is a shim onto the integer
+# template or core call of the same bit width (no root). A float literal arm goes as its bit pattern.
+IW = {"f16": 16, "bf16": 16, "f32": 32, "f64": 64, "f80": 80}
+
+
+def int_lit_ct(n):
+    return f"int{n}_t" if n in (8, 16, 32, 64) else f"_BitInt({n})"
+
+
+def forwards(widths):
+    """[(symbol, code, manifest entry, [(integer symbol, IR return, [IR params])])] for one group."""
+    out = []
+    for W in widths:
+        n = IW[W]
+        it, lt = f"i{n}", FP[W][0]
+        nb = 10 if W == "f80" else n // 8
+        for shape in ["", "hl", "lh", "ll"]:
+            sh = f"_{shape}" if shape else ""
+            letters = shape or "hh"
+            params, args, conv, irp = ["int32_t c"], ["c"], [], ["i32"]
+            for k, l in enumerate(letters, 1):
+                if l == "h":
+                    params.append(f"int32_t a{k}"); args.append(f"a{k}"); irp.append("i32")
+                else:
+                    params.append(f"{lt} l{k}"); args.append(f"b{k}"); irp.append(it)
+                    conv.append(f"    {int_lit_ct(n)} b{k} = 0; __builtin_memcpy(&b{k}, &l{k}, {nb});")
+            tgt = f"cq_template_select_{it}{sh}"
+            name = f"cq_template_select_{W}{sh}"
+            code = (f"int32_t {name}({', '.join(params)}) {{\n" + "\n".join(conv + [f"    return {tgt}({', '.join(args)});"]) + "\n}\n"
+                    f"void {name}_unc({', '.join(['int32_t o'] + params)}) {{\n"
+                    + "\n".join(conv + [f"    {tgt}_unc({', '.join(['o'] + args)});"]) + "\n}\n")
+            decl = (f"int32_t {tgt}({', '.join(['int32_t' if x == 'i32' else int_lit_ct(n) for x in irp])});\n"
+                    f"void {tgt}_unc({', '.join(['int32_t'] + ['int32_t' if x == 'i32' else int_lit_ct(n) for x in irp])});\n")
+            out.append((name, decl + code, {"kind": "select", "shape": shape, "ins": [("int", 1, False), ("fp", W), ("fp", W)],
+                                             "out": ("fp", W), "stem": f"select_{W}", "rm": "", "exc": False, "root": None, "k": 0},
+                        [(tgt, "i32", irp), (tgt + "_unc", "void", ["i32"] + irp)]))
+        pairs = [(W, it), (it, W)] + ([("f16", "bf16"), ("bf16", "f16")] if W == "f16" else [])
+        for a, b in pairs:
+            name = f"cq_template_bitcast_{a}_to_{b}"
+            code = (f"int32_t {name}(int32_t a) {{\n    int32_t o = cqrt_alloc_{it}(0);\n    cqrt_copy_{it}(a, o);\n    return o;\n}}\n"
+                    f"void {name}_unc(int32_t o, int32_t a) {{\n    cqrt_copy_{it}(a, o);\n}}\n")
+            decl = f"int32_t cqrt_alloc_{it}({int_lit_ct(n)});\nvoid cqrt_copy_{it}(int32_t, int32_t);\n"
+            kind = lambda x: ("fp", x) if x in IW else ("int", n, False)
+            out.append((name, decl + code, {"kind": "bitcast", "shape": "", "ins": [kind(a)], "out": kind(b),
+                                             "stem": f"bitcast_{a}_to_{b}", "rm": "", "exc": False, "root": None, "k": 0},
+                        [(f"cqrt_alloc_{it}", "i32", [it]), (f"cqrt_copy_{it}", "void", ["i32", "i32"])]))
     return out
 
 
 def casts(widths):
     out = []
     if "f80" not in widths:
-        out.append(Inst("is_fpclass_bf16", "sfx_is_fpclass_bf16", [("fp", "bf16"), ("int", 32, False)], ("int", 1, False),
-                        False, False, ["hl"]))
         for a, b in [("f16", "f32"), ("f16", "f64"), ("f32", "f64"), ("bf16", "f32"), ("bf16", "f64")]:
             out.append(Inst(f"fpext_{a}_to_{b}", f"sfx_fpext_{a}_to_{b}", [("fp", a)], ("fp", b), False, True, [""]))
         for a, b in [("f32", "f16"), ("f64", "f16"), ("f64", "f32"), ("f32", "bf16"), ("f64", "bf16")]:
@@ -122,7 +183,7 @@ def casts(widths):
                 out.append(Inst(f"fptoui_{a}_to_i{n}", f"sfx_fptoui_{a}_to_i{n}", [("fp", a)], ("int", n, False),
                                 False, True, [""]))
     else:
-        for a in ["f16", "f32", "f64"]:
+        for a in ["f16", "bf16", "f32", "f64"]:
             out.append(Inst(f"fpext_{a}_to_f80", f"sfx_fpext_{a}_to_f80", [("fp", a)], ("fp", "f80"), False, True, [""]))
             out.append(Inst(f"fptrunc_f80_to_{a}", f"sfx_fptrunc_f80_to_{a}", [("fp", "f80")], ("fp", a), True, True, [""]))
         for n in INT_FROM:
@@ -135,6 +196,160 @@ def casts(widths):
                             False, True, [""]))
     return out
 
+
+def casts_x(widths):
+    """sitofp/uitofp from and fptosi/fptoui to the INT_X widths, for every fp width of the group."""
+    fps = ["f80"] if "f80" in widths else ["f16", "bf16", "f32", "f64"]
+    out = []
+    for n in INT_X:
+        for t in fps:
+            for sg, op in [(True, "sitofp"), (False, "uitofp")]:
+                i = Inst(f"{op}_i{n}_to_{t}", None, [("int", n, sg)], ("fp", t), True, True, [""])
+                i.xw = (n, sg, t, "itofp")
+                out.append(i)
+            for sg, op in [(True, "fptosi"), (False, "fptoui")]:
+                i = Inst(f"{op}_{t}_to_i{n}", None, [("fp", t)], ("int", n, sg), False, True, [""])
+                i.xw = (n, sg, t, "fptoi")
+                out.append(i)
+    return out
+
+
+# The INT_X roots. The inner function (C, cq/cqsf_inner.c) takes and returns integers whose IR is fixed:
+#   an fp operand: its bit pattern (uint16_t zeroext i16, uint32_t i32, uint64_t i64, f80 the pair i64, i16);
+#   an iN source: N <= 64 the 64-bit extension (i64), else its 128- or 256-bit extension as 2 or 4 uint64_t
+#   limbs (i64 each; C would pass an unsigned __int128 as two i64 anyway);
+#   an iN result: N <= 64 int64_t (i64), else unsigned __int128, which C returns as { i64, i64 };
+#   a flags root returns uint32_t (i32). The IR declarations must match the C definitions exactly: a call
+#   with another function type links silently and works natively by register luck, but is not the callee.
+# The outer root (IR, cq/cqsf_roots_x.ll) has the template's types and does the extension, the limb split,
+# the truncation and, above 128 bits, the result word of cq/cqsf_int.h.
+IRT = {"f16": "half", "bf16": "bfloat", "f32": "float", "f64": "double", "f80": "x86_fp80"}
+IRB = {"f16": "i16", "bf16": "i16", "f32": "i32", "f64": "i64"}
+CB = {"f16": "uint16_t", "bf16": "uint16_t", "f32": "uint32_t", "f64": "uint64_t", "f80": "struct extFloat80M"}
+
+
+def make_root_x(inst, variant):
+    """variant: '' (RNE), 'm' (mode operand), 'x' (flags; with the mode operand where the op has one)."""
+    n, sg, t, d = inst.xw
+    name = f"cqsf_{inst.stem}" + {"": "", "m": "_m", "x": "_x"}[variant]
+    hasm = variant == "m" or (variant == "x" and inst.mode)
+    ctx = "cqsf_mode(m)" if hasm else "softfloat_round_near_even"
+    sgs = "true" if sg else "false"
+    if d == "itofp":
+        if n <= 64:
+            cps, call = [f"{'int64_t' if sg else 'uint64_t'} a0"], f"sfx_{'si' if sg else 'ui'}_to_{t}(&c, a0)"
+        elif n <= 128:
+            cps = ["uint64_t a0", "uint64_t a1"]
+            call = f"sfx_wi_to_{t}(&c, cqsf_u256_of128(((cqsf_u128)a1 << 64) | a0, {sgs}), {sgs}, false)"
+        else:
+            cps = [f"uint64_t a{k}" for k in range(4)]
+            call = f"sfx_wi_to_{t}(&c, (struct cqsf_u256){{a0, a1, a2, a3}}, {sgs}, true)"
+        rt = CB[t]
+    else:
+        cps = [f"{CB[t]} a0"]
+        if n <= 64:
+            call, rt = f"sfx_fptoi_n_{t}(&c, a0, {n}, {sgs})", "int64_t"
+        elif n <= 128:
+            call, rt = f"sfx_fptoi_ti_{t}(&c, a0, {sgs})", "cqsf_u128"
+        else:
+            call, rt = f"sfx_fptoi_xl_{t}(&c, a0, {n}, {sgs})", "cqsf_u128"
+    if hasm:
+        cps.append("uint32_t m")
+    if variant == "x":
+        body, rt = f"    (void){call};\n    return cqsf_x86flags(c.exceptionFlags);\n", "uint32_t"
+    else:
+        body = f"    return {call};\n"
+    inner = (f"{rt} cqsfi_{name[5:]}({', '.join(cps)}) {{\n"
+             f"    struct sf_ctx c = {{{ctx}, 0}};\n" + body + "}\n")
+    # the outer root, IR
+    ins_ty = f"i{n}" if d == "itofp" else IRT[t]
+    out_ty = "i32" if variant == "x" else (IRT[t] if d == "itofp" else f"i{n}")
+    L = [f"define {out_ty} @{name}({ins_ty} %a{', i32 %m' if hasm else ''}) {{"]
+    args = []
+    if d == "itofp":
+        ext = "sext" if sg else "zext"
+        if n <= 64:
+            L.append(f"  %w = {ext} i{n} %a to i64")
+            args.append("i64 %w")
+        elif n <= 128:
+            src = "%a"
+            if n < 128:
+                L.append(f"  %w = {ext} i{n} %a to i128")
+                src = "%w"
+            L += [f"  %l0 = trunc i128 {src} to i64", f"  %s1 = lshr i128 {src}, 64", "  %l1 = trunc i128 %s1 to i64"]
+            args += ["i64 %l0", "i64 %l1"]
+        else:
+            sh = "ashr" if sg else "lshr"
+            for k in range(4):
+                if k == 0:
+                    L.append(f"  %l0 = trunc i{n} %a to i64")
+                elif 64 * k < n:
+                    L.append(f"  %s{k} = {sh} i{n} %a, {64 * k}")
+                    L.append(f"  %l{k} = trunc i{n} %s{k} to i64")
+                elif sg:
+                    L.append(f"  %s{k} = ashr i{n} %a, {n - 1}")
+                    L.append(f"  %l{k} = trunc i{n} %s{k} to i64")
+                else:
+                    L.append(f"  %l{k} = add i64 0, 0")
+                args.append(f"i64 %l{k}")
+    elif t == "f80":
+        L += ["  %b = bitcast x86_fp80 %a to i80", "  %b0 = trunc i80 %b to i64", "  %b1s = lshr i80 %b, 64",
+              "  %b1 = trunc i80 %b1s to i16"]
+        args += ["i64 %b0", "i16 %b1"]
+    else:
+        L.append(f"  %b = bitcast {IRT[t]} %a to {IRB[t]}")
+        args.append(f"{IRB[t]}{' zeroext' if IRB[t] == 'i16' else ''} %b")
+    if hasm:
+        args.append("i32 %m")
+    if variant == "x":
+        irr = "i32"
+    elif d == "itofp":
+        irr = "{ i64, i16 }" if t == "f80" else IRB[t]
+    else:
+        irr = "i64" if n <= 64 else "{ i64, i64 }"
+    rattr = " zeroext" if irr == "i16" else ""
+    L.append(f"  %r = call{rattr} {irr} @cqsfi_{name[5:]}({', '.join(args)})")
+    if variant == "x":
+        L.append("  ret i32 %r")
+    elif d == "itofp":
+        if t == "f80":
+            L += ["  %r0 = extractvalue { i64, i16 } %r, 0", "  %r1 = extractvalue { i64, i16 } %r, 1",
+                  "  %z0 = zext i64 %r0 to i80", "  %z1 = zext i16 %r1 to i80", "  %z2 = shl i80 %z1, 64",
+                  "  %z = or i80 %z2, %z0", "  %v = bitcast i80 %z to x86_fp80"]
+        else:
+            L.append(f"  %v = bitcast {IRB[t]} %r to {IRT[t]}")
+        L.append(f"  ret {IRT[t]} %v")
+    elif n <= 64:
+        L += [f"  %v = trunc i64 %r to i{n}", f"  ret i{n} %v"]
+    elif n <= 128:
+        L += ["  %r0 = extractvalue { i64, i64 } %r, 0", "  %r1 = extractvalue { i64, i64 } %r, 1",
+              "  %z0 = zext i64 %r0 to i128", "  %z1 = zext i64 %r1 to i128", "  %z2 = shl i128 %z1, 64",
+              "  %z = or i128 %z2, %z0"]
+        if n < 128:
+            L += [f"  %v = trunc i128 %z to i{n}", f"  ret i{n} %v"]
+        else:
+            L.append("  ret i128 %z")
+    else:
+        mx = (1 << (n - 1)) - 1
+        L += ["  %m0 = extractvalue { i64, i64 } %r, 0", "  %info = extractvalue { i64, i64 } %r, 1",
+              "  %sh = and i64 %info, 65535", "  %ng1 = lshr i64 %info, 16", "  %neg = trunc i64 %ng1 to i1",
+              "  %st1 = lshr i64 %info, 17", "  %sat = trunc i64 %st1 to i1",
+              f"  %mw = zext i64 %m0 to i{n}", f"  %sw = zext i64 %sh to i{n}", f"  %v0 = shl i{n} %mw, %sw",
+              f"  %nv = sub i{n} 0, %v0", f"  %v1 = select i1 %neg, i{n} %nv, i{n} %v0",
+              f"  %sv = select i1 %neg, i{n} {-mx - 1}, i{n} {mx}", f"  %v = select i1 %sat, i{n} %sv, i{n} %v1",
+              f"  ret i{n} %v"]
+    L.append("}")
+    T = [f"define void @cqsft_{name[5:]}(ptr %in, i32 %m, ptr %out) {{", f"  %a = load {ins_ty}, ptr %in",
+         f"  %r = call {out_ty} @{name}({ins_ty} %a{', i32 %m' if hasm else ''})", f"  store {out_ty} %r, ptr %out",
+         "  ret void", "}"]
+    dargs = ", ".join(x.rsplit(" ", 1)[0] for x in args)
+    r = Root(name, inst.ins + ([("int", 32, False)] if hasm else []),
+             ("int", 32, False) if variant == "x" else inst.out, inner, "", inst.k)
+    r.ir = "\n".join(L) + "\n"
+    r.irdecl = f"declare{rattr} {irr} @cqsfi_{name[5:]}({dargs})\n"
+    r.ir_test = "\n".join(T) + "\n"
+    r.proto = None
+    return r
 
 # ---- C spelling -------------------------------------------------------------------------------------
 def ctype(k):
@@ -179,6 +394,7 @@ INNER_PRE = """/* Generated by softfloat/gen/gen_cqsf.py: do not edit. The integ
 #include "sf_unity.h"
 #include "cqsf.h"
 #include "cqsf_f80.h"
+#include "cqsf_int.h"
 #pragma clang attribute pop
 """
 
@@ -236,6 +452,8 @@ def make_root(name, ins, out, ctx_init, expr_of, flags, k):
 def roots_for(inst):
     """The roots an instance needs: plain (RNE), _m (mode operand), _x (x86 flags; mode operand if any)."""
     rs = []
+    if inst.xw:
+        return [make_root_x(inst, v) for v in (["", "m", "x"] if inst.mode else ["", "x"])]
     n = len(inst.ins)
     data = lambda args: f"{inst.fn}(&c, {', '.join(to_sfx(t, a) for t, a in zip(inst.ins, args[:n]))})"
     m32 = [("int", 32, False)]
@@ -358,6 +576,11 @@ def shim_for(sym, rootinfo):
         if l == "h":
             params.append(f"int32_t a{i}")
             cargs.append(f"a{i}")
+        elif k[0] == "int" and k[1] > 128:   # LLVM passes an iN literal, N > 128, as N/64 i64 parts
+            nl = (k[1] + 63) // 64
+            params.append(", ".join(f"uint64_t l{i}_{j}" for j in range(nl)))
+            seeds.append((f"s{i}", f"cqrt_alloc_{wtok(k)}({', '.join(f'l{i}_{j}' for j in range(nl))})"))
+            cargs.append(f"s{i}")
         else:
             params.append(f"{lit_ctype(k)} l{i}")
             seeds.append((f"s{i}", f"cqrt_alloc_{wtok(k)}(l{i})"))
@@ -384,8 +607,9 @@ def shim_for(sym, rootinfo):
     body_tail = [f"    cqrt_copy_{ow}(r, o);",
                  f"    {clone}_unc({', '.join(['r'] + cargs + [f'{r.k}'])});"]
     body_tail += [f"    cqrt_free({s});" for s, _ in reversed(seeds)]
+    zero = ", ".join(["0"] * ((out[1] + 63) // 64)) if out[0] == "int" and out[1] > 128 else "0"
     fwd = (f"int32_t {sym.name}({', '.join(params) or 'void'}) {{\n" + "\n".join(body) + "\n"
-           f"    int32_t o = cqrt_alloc_{ow}(0);\n" + "\n".join(body_tail) + "\n    return o;\n}\n")
+           f"    int32_t o = cqrt_alloc_{ow}({zero});\n" + "\n".join(body_tail) + "\n    return o;\n}\n")
     unc = (f"void {sym.name}_unc({', '.join(['int32_t o'] + params)}) {{\n" + "\n".join(body) + "\n"
            + "\n".join(body_tail) + "\n}\n")
     decl = (f"int32_t {clone}({', '.join(['int32_t'] * (nform + 1))});\n"
@@ -398,7 +622,8 @@ def main():
     ap.add_argument("--check-corpus", help="CQ_spec examples dir: every float template the corpus declares must be generated")
     a = ap.parse_args()
 
-    groups = {"default": table(ARITH_W) + casts(ARITH_W), "f80": table(F80_W) + casts(F80_W)}
+    groups = {"default": table(ARITH_W) + casts(ARITH_W) + casts_x(ARITH_W),
+              "f80": table(F80_W) + casts(F80_W) + casts_x(F80_W)}
     allroots, rootinfo, rootlists = [], {}, {}
     for g, insts in groups.items():
         rs = []
@@ -414,9 +639,17 @@ def main():
         allroots += rs
 
     (SF / "cq" / "cqsf_inner.c").write_text(INNER_PRE + "\n" + "\n".join(r.inner for r in allroots))
-    (SF / "cq" / "cqsf_roots.c").write_text(OUTER_PRE + "\n" + "\n".join(r.outer for r in allroots))
+    croots = [r for r in allroots if not hasattr(r, "ir")]
+    xroots_ = [r for r in allroots if hasattr(r, "ir")]
+    (SF / "cq" / "cqsf_roots.c").write_text(OUTER_PRE + "\n" + "\n".join(r.outer for r in croots))
     (SF / "cq" / "cqsf_roots.h").write_text("/* Generated by softfloat/gen/gen_cqsf.py: the roots' C prototypes. */\n"
-                                           "#include <stdbool.h>\n#include <stdint.h>\n" + "\n".join(r.proto for r in allroots) + "\n")
+                                           "#include <stdbool.h>\n#include <stdint.h>\n" + "\n".join(r.proto for r in croots) + "\n"
+                                           "/* The INT_X roots (cqsf_roots_x.ll) through memory: cqsft_<root>(operand, mode, result). */\n"
+                                           + "".join(f"void cqsft_{r.name[5:]}(const void *in, uint32_t m, void *out);\n" for r in xroots_))
+    (SF / "cq" / "cqsf_roots_x.ll").write_text(
+        "; Generated by softfloat/gen/gen_cqsf.py: do not edit. The roots of the INT_X conversions (cq/cqsf_int.h)\n"
+        "; with the template's own operand types, and their native test entries cqsft_*.\n\n"
+        + "".join(r.irdecl for r in xroots_) + "\n" + "\n".join(r.ir for r in xroots_) + "\n" + "\n".join(r.ir_test for r in xroots_))
     (SF / "cqsf.roots").write_text("".join(r.name + "\n" for r in rootlists["default"]))
     (SF / "cqsf_f80.roots").write_text("".join(r.name + "\n" for r in rootlists["f80"]))
 
@@ -431,9 +664,19 @@ def main():
             shims.append((g, code))
             manifest[sym.name] = {"group": g, "root": root, "k": rootinfo[root].k, "shape": sym.shape,
                                   "rm": sym.rm, "exc": bool(sym.exc), "ins": sym.inst.ins, "out": sym.inst.out,
-                                  "stem": sym.inst.stem}
+                                  "stem": sym.inst.stem, "x": bool(sym.inst.xw)}
+    xdecl = "".join(f"int32_t cqrt_alloc_i{n}({', '.join(['uint64_t'] * ((n + 63) // 64)) if n > 128 else int_ctype(n, True)});\n"
+                    f"void cqrt_copy_i{n}(int32_t s, int32_t d);\n" for n in INT_X if n not in (1, 8, 16, 32, 64))
+    for g, ws in [("default", ARITH_W), ("f80", F80_W)]:
+        for name, code, m, calls in forwards(ws):
+            if name in seen:
+                raise SystemExit(f"gen_cqsf: duplicate symbol {name}")
+            seen.add(name)
+            shims.append((g, code))
+            m = dict(m, group=g, calls=calls)
+            manifest[name] = m
     for g in groups:
-        text = SHIM_PRE + "".join(decls[g].values()) + "\n" + "\n".join(code for gg, code in shims if gg == g)
+        text = SHIM_PRE + xdecl + "".join(decls[g].values()) + "\n" + "\n".join(code for gg, code in shims if gg == g)
         (SF / "cq" / ("cqsf_shims.c" if g == "default" else "cqsf_shims_f80.c")).write_text(text)
     (SF / "build").mkdir(exist_ok=True)
     (SF / "build" / "manifest.json").write_text(json.dumps(manifest, indent=0))

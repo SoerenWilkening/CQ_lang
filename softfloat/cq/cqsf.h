@@ -151,6 +151,91 @@ CQSF_CLASS(bf16, uint16_t, 0x7F80, 0x007F, 0x0040, 0x8000)
 CQSF_CLASS(f32, uint32_t, 0x7F800000, 0x007FFFFF, 0x00400000, 0x80000000)
 CQSF_CLASS(f64, uint64_t, UINT64_C(0x7FF0000000000000), UINT64_C(0x000FFFFFFFFFFFFF), UINT64_C(0x0008000000000000), UINT64_C(0x8000000000000000))
 
+/* fneg, fabs, copysign (CR §2): the sign bit alone, also of a NaN (no quieting, no flag). */
+#define CQSF_SIGNOPS(W, U, SIGN)                                                                         \
+static inline U sfx_fneg_##W(struct sf_ctx *sf_ctx, U a) { (void)sf_ctx; return a ^ (U)SIGN; }            \
+static inline U sfx_fabs_##W(struct sf_ctx *sf_ctx, U a) { (void)sf_ctx; return a & (U)~(U)SIGN; }        \
+static inline U sfx_copysign_##W(struct sf_ctx *sf_ctx, U a, U b) { (void)sf_ctx; return (a & (U)~(U)SIGN) | (b & (U)SIGN); }
+CQSF_SIGNOPS(f16, uint16_t, CQSF_SIGN16) CQSF_SIGNOPS(bf16, uint16_t, CQSF_SIGN16)
+CQSF_SIGNOPS(f32, uint32_t, CQSF_SIGN32) CQSF_SIGNOPS(f64, uint64_t, CQSF_SIGN64)
+
+/* ---- bf16 arithmetic, compares and rounding ops -------------------------------------------------
+ * CR §1.1: bf16 has the rounding and NaN rules of the IEEE widths, so an operation is one correct rounding
+ * in the mode. An operand extends to f32 exactly (a shift). + - * / sqrt fma are computed in f32 rounded
+ * to odd (toward zero, the last bit set when inexact), then rounded to bf16 in the mode: one correct
+ * rounding, as 24 >= 8 + 2 bits, also for fma and in the directed modes. Flags: the f32 step's without
+ * UNDERFLOW (tininess is decided at bf16, by the second step on the odd value) and the second step's. An
+ * exact zero sum takes its sign from the real mode (the f32 step is redone in it). In nearest-even the
+ * result is what x86-64 clang -O1 computes for __bf16 (f32 op, then __truncsfbf2: two roundings, which
+ * agree for + - * / sqrt). Compares, the rounding ops, fmax/fmin and frem are exact through f32. */
+static inline uint32_t cqsf_bf16x(uint16_t a) { return (uint32_t)a << 16; }
+static inline uint16_t cqsf_bf16_odd(struct sf_ctx *sf_ctx, struct sf_ctx *t, uint32_t r) {
+    if (!cqsf_isnan_f32(r) && (t->exceptionFlags & softfloat_flag_inexact)) r |= 1;
+    softfloat_raiseFlags(t->exceptionFlags & ~softfloat_flag_underflow);
+    return f32_to_bf16(sf_ctx, (float32_t){r}).v;
+}
+#define CQSF_BF16_BIN(OP, FN, ZSIGN)                                                                     \
+static inline uint16_t sfx_##OP##_bf16(struct sf_ctx *sf_ctx, uint16_t a, uint16_t b) {                   \
+    struct sf_ctx t = {softfloat_round_minMag, 0};                                                      \
+    uint32_t r = FN(&t, (float32_t){cqsf_bf16x(a)}, (float32_t){cqsf_bf16x(b)}).v;                      \
+    if (ZSIGN && !(r & 0x7FFFFFFF) && !(t.exceptionFlags & softfloat_flag_inexact)) {                    \
+        struct sf_ctx u = {sf_ctx->roundingMode, 0};                                                     \
+        r = FN(&u, (float32_t){cqsf_bf16x(a)}, (float32_t){cqsf_bf16x(b)}).v;                           \
+    }                                                                                                   \
+    return cqsf_bf16_odd(sf_ctx, &t, r);                                                                \
+}
+CQSF_BF16_BIN(fadd, f32_add, 1)
+CQSF_BF16_BIN(fsub, f32_sub, 1)
+CQSF_BF16_BIN(fmul, f32_mul, 0)
+CQSF_BF16_BIN(fdiv, f32_div, 0)
+static inline uint16_t sfx_sqrt_bf16(struct sf_ctx *sf_ctx, uint16_t a) {
+    struct sf_ctx t = {softfloat_round_minMag, 0};
+    return cqsf_bf16_odd(sf_ctx, &t, f32_sqrt(&t, (float32_t){cqsf_bf16x(a)}).v);
+}
+/* fma: the NaN rule of the other widths (the first NaN operand quieted, INVALID only for an sNaN) */
+static inline uint16_t sfx_fma_bf16(struct sf_ctx *sf_ctx, uint16_t a, uint16_t b, uint16_t d) {
+    if (cqsf_isnan_bf16(a) || cqsf_isnan_bf16(b) || cqsf_isnan_bf16(d)) {
+        if (!(a & 0x40) && cqsf_isnan_bf16(a)) softfloat_raiseFlags(softfloat_flag_invalid);
+        else if (!(b & 0x40) && cqsf_isnan_bf16(b)) softfloat_raiseFlags(softfloat_flag_invalid);
+        else if (!(d & 0x40) && cqsf_isnan_bf16(d)) softfloat_raiseFlags(softfloat_flag_invalid);
+        return (uint16_t)((cqsf_isnan_bf16(a) ? a : cqsf_isnan_bf16(b) ? b : d) | 0x40);
+    }
+    struct sf_ctx t = {softfloat_round_minMag, 0};
+    float32_t x = {cqsf_bf16x(a)}, y = {cqsf_bf16x(b)}, z = {cqsf_bf16x(d)};
+    uint32_t r = f32_mulAdd(&t, x, y, z).v;
+    if (!(r & 0x7FFFFFFF) && !(t.exceptionFlags & softfloat_flag_inexact)) {
+        struct sf_ctx u = {sf_ctx->roundingMode, 0};
+        r = f32_mulAdd(&u, x, y, z).v;
+    }
+    return cqsf_bf16_odd(sf_ctx, &t, r);
+}
+/* An exact f32 result (frem, the rounding ops) narrowed: exact, a NaN keeps its high payload. */
+static inline uint16_t cqsf_bf16n(uint32_t r) { return (uint16_t)((r >> 16) | (cqsf_isnan_f32(r) ? 0x40 : 0)); }
+static inline uint16_t sfx_frem_bf16(struct sf_ctx *sf_ctx, uint16_t a, uint16_t b) { return cqsf_bf16n(sfx_frem_f32(sf_ctx, cqsf_bf16x(a), cqsf_bf16x(b))); }
+static inline uint16_t sfx_floor_bf16(struct sf_ctx *sf_ctx, uint16_t a) { return cqsf_bf16n(sfx_floor_f32(sf_ctx, cqsf_bf16x(a))); }
+static inline uint16_t sfx_ceil_bf16(struct sf_ctx *sf_ctx, uint16_t a) { return cqsf_bf16n(sfx_ceil_f32(sf_ctx, cqsf_bf16x(a))); }
+static inline uint16_t sfx_trunc_bf16(struct sf_ctx *sf_ctx, uint16_t a) { return cqsf_bf16n(sfx_trunc_f32(sf_ctx, cqsf_bf16x(a))); }
+static inline uint16_t sfx_round_bf16(struct sf_ctx *sf_ctx, uint16_t a) { return cqsf_bf16n(sfx_round_f32(sf_ctx, cqsf_bf16x(a))); }
+static inline uint16_t sfx_rint_bf16(struct sf_ctx *sf_ctx, uint16_t a) { return cqsf_bf16n(sfx_rint_f32(sf_ctx, cqsf_bf16x(a))); }
+/* fmax/fmin: the CR row on the operands themselves (a NaN operand is returned unchanged, not quieted) */
+static inline bool cqsf_issnan_bf16(uint16_t a) { return cqsf_isnan_bf16(a) && !(a & 0x40); }
+static inline uint16_t sfx_fmax_bf16(struct sf_ctx *sf_ctx, uint16_t a, uint16_t b) {
+    if (cqsf_issnan_bf16(a) || cqsf_issnan_bf16(b)) softfloat_raiseFlags(softfloat_flag_invalid);
+    if (cqsf_isnan_bf16(a)) return b;
+    if (cqsf_isnan_bf16(b)) return a;
+    return f32_lt_quiet(sf_ctx, (float32_t){cqsf_bf16x(a)}, (float32_t){cqsf_bf16x(b)}) ? b : a;
+}
+static inline uint16_t sfx_fmin_bf16(struct sf_ctx *sf_ctx, uint16_t a, uint16_t b) {
+    if (cqsf_issnan_bf16(a) || cqsf_issnan_bf16(b)) softfloat_raiseFlags(softfloat_flag_invalid);
+    if (cqsf_isnan_bf16(a)) return b;
+    if (cqsf_isnan_bf16(b)) return a;
+    return f32_lt_quiet(sf_ctx, (float32_t){cqsf_bf16x(b)}, (float32_t){cqsf_bf16x(a)}) ? b : a;
+}
+#define CQSF_BF16_CMP(K, OP)                                                                             \
+static inline bool sfx_cmp##K##_##OP##_bf16(struct sf_ctx *sf_ctx, uint16_t a, uint16_t b) { return sfx_cmp##K##_##OP##_f32(sf_ctx, cqsf_bf16x(a), cqsf_bf16x(b)); }
+CQSF_BF16_CMP(q, eq) CQSF_BF16_CMP(q, lt) CQSF_BF16_CMP(q, le) CQSF_BF16_CMP(s, eq) CQSF_BF16_CMP(s, lt) CQSF_BF16_CMP(s, le)
+CQSF_PREDS(bf16, uint16_t, q) CQSF_PREDS(bf16, uint16_t, s)
+
 /* ---- fp to fp ------------------------------------------------------------------------------- */
 
 static inline uint32_t sfx_fpext_f16_to_f32(struct sf_ctx *sf_ctx, uint16_t a) { return f16_to_f32(sf_ctx, (float16_t){a}).v; }

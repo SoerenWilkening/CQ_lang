@@ -94,7 +94,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_*`, `__cq_*` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`) | `CQ.h`, consumed by the compiler | **no**: never reaches the backend |
 | `cqrt_*` | backend: core gates, memory bus, tape, abort, push/pop (§1) | **yes** |
 | `cq_template_*`, integer (§2.2–§2.7) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
-| `cq_template_*`, floating point (§2.8–§2.11) | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
+| `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
 | `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
@@ -783,6 +783,9 @@ Below, "BJ" names the Bennett.jl circuit. Columns: **ops**, **semantics with §2
 | `fcmp_<pred>` | `i1` result; LLVM fcmp, o = ordered and u = unordered or | f32 f64 f80 (used: oeq ogt olt one ord ueq uge ult une uno) | f64: BJ `src/softfloat/fcmp.jl:soft_fcmp_olt`, `soft_fcmp_oeq`, `soft_fcmp_ole`, `soft_fcmp_une`, `soft_fcmp_ord`, `soft_fcmp_uno`, `soft_fcmp_one`, `soft_fcmp_ueq`, `soft_fcmp_ult`, `soft_fcmp_ule`. f16, bf16, f32, f80: **EXTEND** (IEEE 754 compare, NaN unordered; f80 on x87 extended values) | 15, 48, 69 |
 | `fcmps_<pred>` | the signaling compare; value as `fcmp`. Used only as `_exc`: INVALID (1) iff either operand is NaN | f64 | **EXTEND** (exception bits) | 81, 100 |
 
+**Provided by the compiler's library (§2.12):** `fcmp` and `fcmps` at every float width. A backend
+implements `icmp`.
+
 **Impl.**
 - `icmp`: BJ `lower_icmp!`, wrapped. eq: `lower_eq!` (the bitwise XOR of the operands, an OR
   chain over it, a final X); ne: eq and one more X. ult: `lower_ult!` (the carry chain of
@@ -807,6 +810,10 @@ map with no ancilla, per bit: CX(arm2_i, o_i), CCX(c, arm1_i, o_i), CCX(c, arm2_
 `_ll`: X(o_i) at the 1-bits of lit2, CX(c, o_i) at the 1-bits of lit1 ⊕ lit2. An fp width is its
 bit pattern.
 
+**Provided by the compiler's library (§2.12):** `select` at a float width, a shim onto `select` at
+the integer width of the same bits (f16, bf16: i16; f32: i32; f64: i64; f80: i80), a float literal
+arm passed as its bit pattern. A backend implements the integer widths.
+
 ### 2.6 Casts
 | op | semantics | corpus pairs | reference | ex |
 |---|---|---|---|---|
@@ -816,6 +823,10 @@ bit pattern.
 | `fptrunc` | IEEE RNE narrowing, overflow → ±Inf. To bf16: one rounding from the source width, a NaN becomes a quiet NaN carrying the high payload bits (CR §2) | f32→f16, f64→f32 | f64→f32: BJ `src/softfloat/fpconv.jl:soft_fptrunc`. Every other pair: **EXTEND** (RNE at the target, subnormals, overflow to Inf) | 17, 111, 183 |
 | `sitofp` `uitofp` | correctly rounded (RNE). From more than 64 bits and to bf16 the CR §2 rows hold: above 128 bits `ExpandLargeFpConvert`'s value, except `uitofp` to f80, which is the non-negative value rounded to nearest even at the 64-bit significand; to bf16 through f32, two roundings | sitofp i32→f64; uitofp i1→f32/f64/f80, i8/i32→f64 | to f64 from at most 64 bits: BJ `src/softfloat/sitofp.jl:soft_sitofp`/`soft_uitofp`. Every other pair: **EXTEND** (RNE at the target's significand) | 17, 69, 157 |
 | `fptosi` `fptoui` | truncate toward 0; NaN, ±Inf, out of range: **the x86-64 LLVM 19 `-O1` result** (CR §2): with c32/c64 = cvtt to i32/i64 (indefinite = INT_MIN of that width), s8/s16 = trunc(c32), s32 = c32, s64 = c64, u8/u16 = trunc(c32), u32 = trunc(c64), u64 = `r1 \| (r2 & (r1 >>s 63))`, r1 = c64(x), r2 = c64(x − 2^63); f16 via f32; f80 via x87 `fist` and wider targets by the CR §2 row | f64→i32 | from f64: BJ `src/softfloat/fptosi.jl:soft_fptosi` (= c64), `src/softfloat/fptoui.jl:soft_fptoui` (= the u64 formula), adapted below. From f80, and to more than 64 bits: **EXTEND** | 17, 56, 169 |
+
+**Provided by the compiler's library (§2.12):** `fpext`, `fptrunc`, `sitofp`, `uitofp`, `fptosi`,
+`fptoui`, and `bitcast` with a float side (fN↔iN, f16↔bf16: `cqrt_alloc_iN` and `cqrt_copy_iN`).
+A backend implements `zext`, `sext`, `trunc`.
 
 **Impl.**
 - `zext`, `sext`, `trunc`: CX wiring straight onto o (BJ `lower_cast!`): zext CX(a_i, o_i); sext
@@ -877,6 +888,10 @@ bit pattern.
   only. bswap: o_(8j+r) ^= a_(8(n−1−j)+r) for the n = W/8 bytes; bitreverse: o_i ^= a_(W−1−i).
 
 ### 2.9 Floating-point arithmetic
+**Provided by the compiler's library (§2.12):** every row of §2.9 and §2.10 at every float width,
+`fneg`, `fabs`, `copysign` included. The Impl. lines are the contract a backend that defines one of
+these itself must meet.
+
 All results are IEEE, round to nearest even unless `_rm`/`_rmq` is present. Operands and results are
 bit patterns. `llvm.fmuladd` reaches the backend as `fmul` then `fadd` (unfused, CR §2). Only
 `llvm.fma` uses `fma`. A NaN result follows x86 SSE in IR operand order: the first NaN operand, quieted; an invalid operation gives `0xFFF8000000000000` (f32 `0xFFC00000`, f16 `0xFE00`, bf16 `0xFFC0`, f80 the real indefinite `0xFFFF_C000000000000000`) (CR §2).
@@ -904,6 +919,8 @@ pseudo-denormal reads as a denormal (CR §2).
 - Every other width, `_rm`, `_rmq`, `_exc`, `frem`: §2.11.
 
 ### 2.10 Floating-point misc
+Provided by the compiler's library (§2.12), as §2.9.
+
 | op | semantics | widths | reference | ex |
 |---|---|---|---|---|
 | `fabs` | clear the sign bit | f32 f64 f80 | BJ `src/extract/instructions.jl:_handle_intrinsic` (`llvm.fabs.`, an AND with a 64-bit mask: W ≤ 64) | 16, 69, 104 |
@@ -961,29 +978,90 @@ and `lower_ult!` were run at W = 100 and 128 against big-integer arithmetic (20 
 ---
 
 ### 2.12 Float templates from a lowered library
-The float templates are the compiler's, not the backend's. The backend's concern is §1 (core
-gates, memory bus, tape, abort, push/pop) and the integer templates of §2.2–§2.7. Every float template of §2.8–§2.11 is an ordinary
-function of register handles, so it can be lowered code: a C implementation of IEEE arithmetic
-in integer operations (Berkeley SoftFloat 3e, 8086-SSE specialization), compiled by the CQ
-compiler itself as a lowered library (§3, CR rule 27), with one shim per template:
+Every `cq_template_*` with a float width (f16, bf16, f32, f64, f80) is the compiler's: the lowered
+float library `softfloat/` (Berkeley SoftFloat 3e, 8086-SSE specialization, the mode a parameter and
+the flags a result, never a global), compiled by the CQ compiler as a lowered library (§3, CR rule
+27) into `libqsoftfloat.a` (f16, bf16, f32, f64) and `libqsoftfloat_f80.a` (f80). The driver links
+both before the backend. A backend implements none of them; a symbol it defines itself is taken
+instead of the library's.
 
-    i32  cq_template_fadd_f64(i32 a, i32 b)            = __cq_q_f64_add_11_t(a, b, K)
-    void cq_template_fadd_f64_unc(i32 r, i32 a, i32 b) = __cq_q_f64_add_11_t_unc(r, a, b, K)
+**Shims.** One per symbol and one per `_unc`. A root `f` lowers to its table clone and twin; the
+shim is `o ^= f(args)` with every operand and ancilla unchanged, the forward and `_unc` map alike:
 
-The compiler ships this library and its driver links it before the backend, so no program
-build names it. The lowered library calls §1 and the integer templates of §2.2–§2.7 and nothing
-else.
-- The C source carries no state: the rounding mode is a parameter and the exception flags a
-  result (the `_rm`/`_rmq`/`_exc` forms), never a global, so a float template stays a function
-  of its operands and touches the bus only for constant tables.
-- The contract is unchanged: each shim must meet the CR §2 rows of its template bit for bit,
-  and `_unc` returns the result rail to zero. Where the C source differs from CR §2 (`frem` is
-  `fmod`, the x86 `fptoui` formula, `fmax`/`fmin`, the f80 NaN rule and non-canonical
-  encodings, bf16) the library's own C is corrected, not the contract.
-- K in a shim is fixed per function: a bound on its data-dependent loop (`frem`), any value
-  for a loop-free one.
-- §2.8–§2.11 stay as the contracts the library is built and tested against. A backend may
-  still define a float template itself; a symbol it defines is not taken from the library.
+    r = __cq_q_cqsf_fadd_f64_11_t(a, b, K); cqrt_copy_f64(r, o); __cq_q_cqsf_fadd_f64_11_t_unc(r, a, b, K)
+
+A literal operand and a `_rm` mode become seed rails (`cqrt_alloc_<W>`, freed after the call).
+`select` and `bitcast` at a float width have no root: `select_<fW>` calls `select_i<N>` of the same
+bits (f16, bf16 i16; f32 i32; f64 i64; f80 i80; a float literal arm as its bit pattern), `bitcast` is
+`cqrt_alloc_i<N>(0)` and `cqrt_copy_i<N>`.
+
+**Provided.** 2,692 forward symbols, each with its `_unc`: 2,132 in the default archive (673 roots),
+560 at f80 (182 roots).
+
+| operations | widths |
+|---|---|
+| `fadd fsub fmul fdiv frem fma sqrt rint floor ceil trunc round fmax fmin fneg fabs copysign is_fpclass`, `fcmp`/`fcmps` (14 predicates each) | f16 bf16 f32 f64 f80 |
+| `select`; `bitcast` fN↔iN, f16↔bf16 | f16 bf16 f32 f64 f80 |
+| `fpext`, `fptrunc` | every pair of f16 bf16 f32 f64 f80 except f16↔bf16 |
+| `sitofp`, `uitofp` from; `fptosi`, `fptoui` to | i1 (sources only), i7, i8, i16, i24, i32, i48, i64, i100, i128, i200 |
+
+Every shape and `_rm`/`_rmq`/`_exc` form CQ's pass emits: a mode where the constrained intrinsic
+has one, `_exc` where a constrained form exists (the compares and `fmax`/`fmin` included; not
+`fneg`, `fabs`, `copysign`, `select`, `bitcast`, `is_fpclass`), binary ops bare, `hl`, `lh`, `ll` with `_rmq`,
+`fma` bare and the six mixed shapes, compares `hl`.
+
+**K.** Only `frem` loops: K = 8 (f16), 16 (bf16, f32), 80 (f64), 1200 (f80). The smallest K right on
+fmod(largest finite, smallest subnormal) and its neighbours is 1, 9, 72 and 1131 (f16, f32, f64,
+f80). Every other shim passes K = 1.
+
+**What a backend provides for the library** (llvm-nm over both archives: 497 symbols, `_unc` forms
+included, `softfloat/tools/backend_needs.py`):
+- At a float width only `cqrt_alloc_<W>` and `cqrt_copy_<W>` for f16, bf16, f32, f64, f80: the
+  same-width bit registers. A program's own float values reach the backend at a float width only
+  through §1 as well (`cqrt_alloc`, `cqrt_copy`, `cqrt_measure_<W>`, `cqrt_ry_<W>` and their forms,
+  tape writes): the same-width bit registers.
+- Core: `cqrt_free`, `cqrt_not_i1`, `cqrt_and_i1`, `cqrt_or_i1`, `cqrt_xor_i1`, `cqrt_xorc_i32`,
+  `cqrt_push`, `cqrt_pop`, `cqrt_qram_alloc_i8` (the bundle host's `__cq_mem`; no root touches the
+  bus), `cqrt_alloc_<iN>` and `cqrt_copy_<iN>` for i1 i7 i8 i16 i24 i32 i48 i64 i80 i100 i128 i200.
+- Integer templates, each with `_unc`:
+
+| template | widths |
+|---|---|
+| `add`, `add_hl`, `sub` | i8 i16 i32 i64 |
+| `sub_hl`; `sub_lh` | i16 i32; i8 i16 i32 i64 i128 i200 |
+| `mul` | i16 i32 i64 i128 |
+| `udiv`; `udiv_lh` | i32 i64; i64 |
+| `and`; `and_hl` | i1 i16 i32 i64; i6 i8 i16 i32 i64 |
+| `or`; `or_hl` | i1 i8 i16 i32 i64 i80 i128; i8 i16 i32 i64 |
+| `xor`; `xor_hl` | i1 i16 i32 i64; i1 i8 i16 i32 i64 |
+| `shl`; `shl_hl`; `shl_lh` | i16 i32 i64 i128 i200; i16 i32 i64 i80 i128 i200; i32 i64 |
+| `lshr`; `lshr_hl`; `lshr_lh` | i32 i64; i16 i32 i64 i80 i128 i200; i32 i64 |
+| `ashr_hl` | i16 i32 i64 i200 |
+| `icmp_eq`; `icmp_eq_hl`, `icmp_ne_hl`, `icmp_ugt_hl`, `icmp_ult_hl`, `icmp_slt_hl` | i8 i16 i32 i64 |
+| `icmp_ne`, `icmp_ule`, `icmp_ult`; `icmp_ugt`; `icmp_sgt` | i16 i32 i64; i16 i64; i32 |
+| `icmp_sgt_hl` | i8 i16 i32 i64 i128 |
+| `select`, `select_ll`; `select_hl`, `select_lh` | i1 i8 i16 i32 i64 i80 i128 i200; i1 i8 i16 i32 i64 i80 |
+| `zext` | i1→i8/i16/i32/i64, i6→i32, i7→i64, i8→i16/i32/i64, i16→i32/i64/i80, i24→i64, i31→i32, i32→i64/i128, i48→i64, i64→i80/i128/i200, i100→i128 |
+| `sext` | i1→i8/i16/i32/i64, i7→i64, i8→i16/i32/i64, i16→i32/i64, i24→i64, i32→i64, i48→i64, i100→i128 |
+| `trunc` | i8/i16/i32/i64→i1, i32→i6, i16/i32/i64→i8, i64→i7/i17/i24/i31/i48, i32/i64/i80→i16, i64→i32, i80/i128/i200→i64, i128→i100 |
+| `abs`; `smax_hl`; `umax_hl`; `umin_hl`; `usub_sat_hl` | i1 i8 i16 i32 i64; i8 i16 i32; i16 i32; i32; i8 i16 |
+| `ctlz`; `fshl`, `fshl_qql`; `bitreverse` | i8 i32 i64; i64; i6 |
+
+An `iN` literal with N > 128 (`select_i200_ll`, `shl_i200_hl`) arrives as LLVM passes it: N/64
+integer argument registers when all fit, else all on the stack with the remaining integer argument
+registers skipped.
+
+**Not provided.** `fpext`/`fptrunc` between f16 and bf16 (out of scope, CR §2); `fcmp_false`,
+`fcmp_true` (folded, never emitted); conversions at integer widths other than those listed (one more
+`INT_X` entry in the generator, up to 256 bits).
+
+**Contract and evidence.** Each template meets its CR §2 rows bit for bit and `_unc` returns its
+result rail to zero. Where the C source differs from CR §2 (`frem` is `fmod`, the x86 `fptoui`
+formula, `fmax`/`fmin`, the f80 NaN rule and non-canonical encodings, bf16's one rounding,
+`ExpandLargeFpConvert` above 128 bits) the library's C is corrected, not the contract. Evidence: the
+roots built natively against the host and the CR rows (`softfloat/test/run_selftest.sh`), every
+symbol through its shim, the lowered library and an integer-only backend
+(`run_shimtest.sh`), and the repo's checker on a sample of lowered roots (`softfloat/README.md`).
 
 ---
 
@@ -1082,7 +1160,8 @@ circuit are in §1 and §2.
   `fptosi` 3, `fptoui` 1, `fadd` 30, `fsub` 17, `fmul` 34, `fdiv` 12, the `_rm`/`_rmq`/`_exc`
   forms 4 (80, 81, 82, 100), `fneg` 12, `fabs` 14, `copysign` 11, `sqrt` 3, `fma` 0, `frem` 1,
   `fmax` 2, `fmin` 0, `floor` 1, `trunc` 1, `rint` 1, `ceil` 0, `round` 0, `is_fpclass` 1.
-- **EXTEND** (no Bennett.jl circuit; route in §2.11): every fp op at f16, bf16, f32 or f80 other
+- **EXTEND** (no Bennett.jl circuit; route in §2.11; the float ones are provided by the compiler's
+  library, §2.12): every fp op at f16, bf16, f32 or f80 other
   than `fneg`, `fabs`, `copysign`, `select`, `bitcast`, `fcmp` at f32, `fpext` f32→f64 and
   `fptrunc` f64→f32;
   every `_rm`/`_rmq`/`_exc` form; `fcmps`; `frem`; `is_fpclass`; `sitofp`/`uitofp` to a width

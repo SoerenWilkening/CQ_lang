@@ -27,6 +27,18 @@ void cqrt_copy_bf16(int32_t s, int32_t d);
 void cqrt_copy_f32(int32_t s, int32_t d);
 void cqrt_copy_f64(int32_t s, int32_t d);
 void cqrt_copy_f80(int32_t s, int32_t d);
+int32_t cqrt_alloc_i7(_BitInt(7));
+void cqrt_copy_i7(int32_t s, int32_t d);
+int32_t cqrt_alloc_i24(_BitInt(24));
+void cqrt_copy_i24(int32_t s, int32_t d);
+int32_t cqrt_alloc_i48(_BitInt(48));
+void cqrt_copy_i48(int32_t s, int32_t d);
+int32_t cqrt_alloc_i100(_BitInt(100));
+void cqrt_copy_i100(int32_t s, int32_t d);
+int32_t cqrt_alloc_i128(_BitInt(128));
+void cqrt_copy_i128(int32_t s, int32_t d);
+int32_t cqrt_alloc_i200(uint64_t, uint64_t, uint64_t, uint64_t);
+void cqrt_copy_i200(int32_t s, int32_t d);
 int32_t __cq_q_cqsf_fadd_f16_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fadd_f16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fadd_f16_x_111_t(int32_t, int32_t, int32_t, int32_t);
@@ -133,6 +145,124 @@ int32_t __cq_q_cqsf_fcmp_uno_f16_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fcmp_uno_f16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_is_fpclass_f16_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_is_fpclass_f16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fneg_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fneg_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fabs_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fabs_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_copysign_f16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_copysign_f16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fadd_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fadd_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fadd_bf16_x_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fadd_bf16_x_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fadd_bf16_m_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fadd_bf16_m_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fsub_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fsub_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fsub_bf16_x_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fsub_bf16_x_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fsub_bf16_m_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fsub_bf16_m_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmul_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmul_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmul_bf16_x_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmul_bf16_x_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmul_bf16_m_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmul_bf16_m_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fdiv_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fdiv_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fdiv_bf16_x_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fdiv_bf16_x_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fdiv_bf16_m_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fdiv_bf16_m_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_frem_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_frem_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_frem_bf16_x_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_frem_bf16_x_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_frem_bf16_m_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_frem_bf16_m_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmax_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmax_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmax_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmax_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmin_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmin_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fmin_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fmin_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fma_bf16_111_t(int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fma_bf16_111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fma_bf16_x_1111_t(int32_t, int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fma_bf16_x_1111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fma_bf16_m_1111_t(int32_t, int32_t, int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fma_bf16_m_1111_t_unc(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sqrt_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sqrt_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sqrt_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sqrt_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sqrt_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sqrt_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_rint_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_rint_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_rint_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_rint_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_rint_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_rint_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_floor_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_floor_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_floor_bf16_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_floor_bf16_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_ceil_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_ceil_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_ceil_bf16_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_ceil_bf16_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_trunc_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_trunc_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_trunc_bf16_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_trunc_bf16_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_round_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_round_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_round_bf16_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_round_bf16_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_oeq_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmpq_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmps_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmps_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ogt_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_oge_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_olt_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ole_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_one_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_one_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ord_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ueq_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ugt_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_uge_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ult_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_ule_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_une_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_une_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fcmp_uno_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_is_fpclass_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_is_fpclass_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fneg_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fneg_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fabs_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fabs_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_copysign_bf16_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_copysign_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fadd_f32_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fadd_f32_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fadd_f32_x_111_t(int32_t, int32_t, int32_t, int32_t);
@@ -239,6 +369,12 @@ int32_t __cq_q_cqsf_fcmp_uno_f32_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fcmp_uno_f32_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_is_fpclass_f32_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_is_fpclass_f32_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fneg_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fneg_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fabs_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fabs_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_copysign_f32_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_copysign_f32_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fadd_f64_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fadd_f64_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fadd_f64_x_111_t(int32_t, int32_t, int32_t, int32_t);
@@ -345,8 +481,12 @@ int32_t __cq_q_cqsf_fcmp_uno_f64_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_fcmp_uno_f64_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_is_fpclass_f64_11_t(int32_t, int32_t, int32_t);
 void __cq_q_cqsf_is_fpclass_f64_11_t_unc(int32_t, int32_t, int32_t, int32_t);
-int32_t __cq_q_cqsf_is_fpclass_bf16_11_t(int32_t, int32_t, int32_t);
-void __cq_q_cqsf_is_fpclass_bf16_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fneg_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fneg_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fabs_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fabs_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_copysign_f64_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_copysign_f64_11_t_unc(int32_t, int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fpext_f16_to_f32_1_t(int32_t, int32_t);
 void __cq_q_cqsf_fpext_f16_to_f32_1_t_unc(int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fpext_f16_to_f32_x_1_t(int32_t, int32_t);
@@ -765,6 +905,486 @@ int32_t __cq_q_cqsf_fptoui_f64_to_i64_1_t(int32_t, int32_t);
 void __cq_q_cqsf_fptoui_f64_to_i64_1_t_unc(int32_t, int32_t, int32_t);
 int32_t __cq_q_cqsf_fptoui_f64_to_i64_x_1_t(int32_t, int32_t);
 void __cq_q_cqsf_fptoui_f64_to_i64_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i7_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i7_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i7_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i7_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i24_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i24_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i24_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i24_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i48_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i48_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i48_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i48_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i100_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i100_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i100_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i100_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i128_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i128_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i128_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i128_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f16_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f16_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f16_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f16_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_bf16_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_bf16_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_bf16_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_bf16_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_bf16_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_bf16_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f32_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f32_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f32_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f32_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f32_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f32_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f64_1_t(int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f64_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(int32_t, int32_t, int32_t);
+void __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptosi_f64_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptosi_f64_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i200_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i200_1_t_unc(int32_t, int32_t, int32_t);
+int32_t __cq_q_cqsf_fptoui_f64_to_i200_x_1_t(int32_t, int32_t);
+void __cq_q_cqsf_fptoui_f64_to_i200_x_1_t_unc(int32_t, int32_t, int32_t);
 
 int32_t cq_template_fadd_f16(int32_t a0, int32_t a1) {
     int32_t r = __cq_q_cqsf_fadd_f16_11_t(a0, a1, 1);
@@ -5697,6 +6317,5085 @@ void cq_template_is_fpclass_f16_hl_unc(int32_t o, int32_t a0, int32_t l1) {
     cqrt_copy_i1(r, o);
     __cq_q_cqsf_is_fpclass_f16_11_t_unc(r, a0, s1, 1);
     cqrt_free(s1);
+}
+
+int32_t cq_template_fneg_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_fneg_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fneg_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_fneg_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fabs_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_fabs_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fabs_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_fabs_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_copysign_f16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_f16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_copysign_f16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_copysign_f16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_f16_11_t(a0, a1, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_copysign_f16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_copysign_f16_hl(int32_t a0, _Float16 l1) {
+    int32_t s1 = cqrt_alloc_f16(l1);
+    int32_t r = __cq_q_cqsf_copysign_f16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_copysign_f16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_copysign_f16_hl_unc(int32_t o, int32_t a0, _Float16 l1) {
+    int32_t s1 = cqrt_alloc_f16(l1);
+    int32_t r = __cq_q_cqsf_copysign_f16_11_t(a0, s1, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_copysign_f16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_copysign_f16_lh(_Float16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_f16(l0);
+    int32_t r = __cq_q_cqsf_copysign_f16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_copysign_f16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_copysign_f16_lh_unc(int32_t o, _Float16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_f16(l0);
+    int32_t r = __cq_q_cqsf_copysign_f16_11_t(s0, a1, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_copysign_f16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fadd_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fadd_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fadd_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fadd_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fadd_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fadd_bf16_rm(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fadd_bf16_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fadd_bf16_rm_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fadd_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fadd_bf16_rmq(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fadd_bf16_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fadd_bf16_rmq_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fadd_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fadd_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fadd_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fadd_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fadd_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fadd_bf16_hl_rm(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fadd_bf16_hl_rm_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, s1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fadd_bf16_hl_rm_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fadd_bf16_hl_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fadd_bf16_hl_rmq(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fadd_bf16_hl_rmq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(a0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fadd_bf16_hl_rmq_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fadd_bf16_hl_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(a0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fadd_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_lh_rm(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_lh_rm_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(s0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_lh_rm_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_lh_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_lh_rmq(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_lh_rmq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(s0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_lh_rmq_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_lh_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_ll_rmq(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_ll_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_m_111_t(s0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fadd_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fadd_bf16_ll_rmq_exc(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fadd_bf16_ll_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fadd_bf16_x_111_t(s0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fadd_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fsub_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fsub_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fsub_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fsub_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fsub_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fsub_bf16_rm(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fsub_bf16_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fsub_bf16_rm_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fsub_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fsub_bf16_rmq(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fsub_bf16_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fsub_bf16_rmq_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fsub_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fsub_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fsub_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fsub_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fsub_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fsub_bf16_hl_rm(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fsub_bf16_hl_rm_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, s1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fsub_bf16_hl_rm_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fsub_bf16_hl_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fsub_bf16_hl_rmq(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fsub_bf16_hl_rmq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(a0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fsub_bf16_hl_rmq_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fsub_bf16_hl_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(a0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fsub_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_lh_rm(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_lh_rm_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(s0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_lh_rm_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_lh_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_lh_rmq(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_lh_rmq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(s0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_lh_rmq_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_lh_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_ll_rmq(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_ll_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_m_111_t(s0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fsub_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fsub_bf16_ll_rmq_exc(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fsub_bf16_ll_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fsub_bf16_x_111_t(s0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fsub_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmul_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fmul_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmul_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fmul_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fmul_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fmul_bf16_rm(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fmul_bf16_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fmul_bf16_rm_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fmul_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fmul_bf16_rmq(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fmul_bf16_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fmul_bf16_rmq_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fmul_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fmul_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmul_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmul_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmul_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmul_bf16_hl_rm(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmul_bf16_hl_rm_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, s1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmul_bf16_hl_rm_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmul_bf16_hl_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmul_bf16_hl_rmq(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmul_bf16_hl_rmq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(a0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmul_bf16_hl_rmq_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmul_bf16_hl_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(a0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmul_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_lh_rm(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_lh_rm_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(s0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_lh_rm_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_lh_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_lh_rmq(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_lh_rmq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(s0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_lh_rmq_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_lh_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_ll_rmq(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_ll_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_m_111_t(s0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmul_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmul_bf16_ll_rmq_exc(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmul_bf16_ll_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmul_bf16_x_111_t(s0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmul_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fdiv_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fdiv_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fdiv_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fdiv_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fdiv_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fdiv_bf16_rm(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fdiv_bf16_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fdiv_bf16_rm_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fdiv_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, a1, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fdiv_bf16_rmq(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fdiv_bf16_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fdiv_bf16_rmq_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, a1, m, 1);
+    return o;
+}
+void cq_template_fdiv_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, a1, m, 1);
+}
+
+int32_t cq_template_fdiv_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fdiv_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fdiv_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fdiv_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fdiv_bf16_hl_rm(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fdiv_bf16_hl_rm_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, s1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fdiv_bf16_hl_rm_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, s1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fdiv_bf16_hl_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, s1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, s1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fdiv_bf16_hl_rmq(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fdiv_bf16_hl_rmq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(a0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fdiv_bf16_hl_rmq_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fdiv_bf16_hl_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(a0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, a0, s1, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fdiv_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_lh_rm(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_lh_rm_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(s0, a1, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_lh_rm_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, a1, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_lh_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, a1, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, a1, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_lh_rmq(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_lh_rmq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(s0, a1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_lh_rmq_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, a1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_lh_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, a1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, a1, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_ll_rmq(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_ll_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_m_111_t(s0, s1, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fdiv_bf16_m_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fdiv_bf16_ll_rmq_exc(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, s1, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fdiv_bf16_ll_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fdiv_bf16_x_111_t(s0, s1, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fdiv_bf16_x_111_t_unc(r, s0, s1, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_frem_bf16_11_t(a0, a1, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_11_t_unc(r, a0, a1, 16);
+    return o;
+}
+void cq_template_frem_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_frem_bf16_11_t(a0, a1, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_11_t_unc(r, a0, a1, 16);
+}
+
+int32_t cq_template_frem_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, a1, sm, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, a1, sm, 16);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_frem_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, a1, sm, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, a1, sm, 16);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_frem_bf16_rm(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, a1, sm, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, a1, sm, 16);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_frem_bf16_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, a1, sm, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, a1, sm, 16);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_frem_bf16_rm_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, a1, sm, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, a1, sm, 16);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_frem_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, a1, sm, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, a1, sm, 16);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_frem_bf16_rmq(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, a1, m, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, a1, m, 16);
+    return o;
+}
+void cq_template_frem_bf16_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, a1, m, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, a1, m, 16);
+}
+
+int32_t cq_template_frem_bf16_rmq_exc(int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, a1, m, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, a1, m, 16);
+    return o;
+}
+void cq_template_frem_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t m) {
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, a1, m, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, a1, m, 16);
+}
+
+int32_t cq_template_frem_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_11_t(a0, s1, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_11_t_unc(r, a0, s1, 16);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_frem_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_11_t(a0, s1, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_11_t_unc(r, a0, s1, 16);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_frem_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, s1, sm, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, s1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_frem_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, s1, sm, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, s1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_frem_bf16_hl_rm(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, s1, sm, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, s1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_frem_bf16_hl_rm_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, s1, sm, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, s1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_frem_bf16_hl_rm_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, s1, sm, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, s1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_frem_bf16_hl_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, s1, sm, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, s1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_frem_bf16_hl_rmq(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, s1, m, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, s1, m, 16);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_frem_bf16_hl_rmq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(a0, s1, m, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, a0, s1, m, 16);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_frem_bf16_hl_rmq_exc(int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, s1, m, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, s1, m, 16);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_frem_bf16_hl_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(a0, s1, m, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, a0, s1, m, 16);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_frem_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_frem_bf16_11_t(s0, a1, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_11_t_unc(r, s0, a1, 16);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_frem_bf16_11_t(s0, a1, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_11_t_unc(r, s0, a1, 16);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, a1, sm, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, a1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, a1, sm, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, a1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_lh_rm(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(s0, a1, sm, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, s0, a1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_lh_rm_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(s0, a1, sm, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, s0, a1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_lh_rm_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, a1, sm, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, a1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_lh_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, a1, sm, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, a1, sm, 16);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_lh_rmq(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(s0, a1, m, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, s0, a1, m, 16);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_lh_rmq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(s0, a1, m, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, s0, a1, m, 16);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_lh_rmq_exc(__bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, a1, m, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, a1, m, 16);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_lh_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, a1, m, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, a1, m, 16);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_ll_rmq(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(s0, s1, m, 16);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, s0, s1, m, 16);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_ll_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_m_111_t(s0, s1, m, 16);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_frem_bf16_m_111_t_unc(r, s0, s1, m, 16);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_frem_bf16_ll_rmq_exc(__bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, s1, m, 16);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, s1, m, 16);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_frem_bf16_ll_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_frem_bf16_x_111_t(s0, s1, m, 16);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_frem_bf16_x_111_t_unc(r, s0, s1, m, 16);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmax_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmax_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmax_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fmax_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmax_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmax_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fmax_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmax_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmax_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fmax_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmax_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmax_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fmax_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmax_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmax_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmax_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmax_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmax_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmax_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmax_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmax_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmax_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmax_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmax_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmax_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmax_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmax_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmax_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmax_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmax_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmax_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmax_bf16_x_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmax_bf16_x_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmax_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmax_bf16_x_11_t(s0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmax_bf16_x_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmin_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmin_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmin_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fmin_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmin_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmin_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fmin_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmin_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmin_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fmin_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fmin_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmin_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fmin_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmin_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmin_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmin_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmin_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmin_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmin_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmin_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmin_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fmin_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fmin_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmin_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fmin_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmin_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmin_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmin_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmin_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fmin_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fmin_bf16_lh_exc(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmin_bf16_x_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmin_bf16_x_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fmin_bf16_lh_exc_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fmin_bf16_x_11_t(s0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fmin_bf16_x_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16(int32_t a0, int32_t a1, int32_t a2) {
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, a1, a2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, a1, a2, 1);
+    return o;
+}
+void cq_template_fma_bf16_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2) {
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, a1, a2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, a1, a2, 1);
+}
+
+int32_t cq_template_fma_bf16_exc(int32_t a0, int32_t a1, int32_t a2) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fma_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fma_bf16_rm(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fma_bf16_rm_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, a2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fma_bf16_rm_exc(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_fma_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, a2, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_fma_bf16_rmq(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, a2, m, 1);
+    return o;
+}
+void cq_template_fma_bf16_rmq_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, a2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, a2, m, 1);
+}
+
+int32_t cq_template_fma_bf16_rmq_exc(int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, a2, m, 1);
+    return o;
+}
+void cq_template_fma_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, a2, m, 1);
+}
+
+int32_t cq_template_fma_bf16_qlq(int32_t a0, __bf16 l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, s1, a2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, s1, a2, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qlq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, s1, a2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, s1, a2, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qlq_exc(int32_t a0, __bf16 l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qlq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t a2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qlq_rm(int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qlq_rm_unc(int32_t o, int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, a2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qlq_rm_exc(int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qlq_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qlq_rmq(int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qlq_rmq_unc(int32_t o, int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, a2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qlq_rmq_exc(int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qlq_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, a2, m, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qql(int32_t a0, int32_t a1, __bf16 l2) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, a1, s2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, a1, s2, 1);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_bf16_qql_unc(int32_t o, int32_t a0, int32_t a1, __bf16 l2) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, a1, s2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, a1, s2, 1);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_bf16_qql_exc(int32_t a0, int32_t a1, __bf16 l2) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_bf16_qql_exc_unc(int32_t o, int32_t a0, int32_t a1, __bf16 l2) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_bf16_qql_rm(int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_bf16_qql_rm_unc(int32_t o, int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, s2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_bf16_qql_rm_exc(int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_bf16_qql_rm_exc_unc(int32_t o, int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_bf16_qql_rmq(int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_bf16_qql_rmq_unc(int32_t o, int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, a1, s2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_bf16_qql_rmq_exc(int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+    return o;
+}
+void cq_template_fma_bf16_qql_rmq_exc_unc(int32_t o, int32_t a0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, a1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, a1, s2, m, 1);
+    cqrt_free(s2);
+}
+
+int32_t cq_template_fma_bf16_qll(int32_t a0, __bf16 l1, __bf16 l2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, s1, s2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, s1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qll_unc(int32_t o, int32_t a0, __bf16 l1, __bf16 l2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(a0, s1, s2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, a0, s1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qll_exc(int32_t a0, __bf16 l1, __bf16 l2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qll_exc_unc(int32_t o, int32_t a0, __bf16 l1, __bf16 l2) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qll_rm(int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, s2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qll_rm_unc(int32_t o, int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, s2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qll_rm_exc(int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qll_rm_exc_unc(int32_t o, int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qll_rmq(int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qll_rmq_unc(int32_t o, int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(a0, s1, s2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_qll_rmq_exc(int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fma_bf16_qll_rmq_exc_unc(int32_t o, int32_t a0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(a0, s1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, a0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fma_bf16_lqq(__bf16 l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(s0, a1, a2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, s0, a1, a2, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lqq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(s0, a1, a2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, s0, a1, a2, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lqq_exc(__bf16 l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lqq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lqq_rm(__bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lqq_rm_unc(int32_t o, __bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, a2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lqq_rm_exc(__bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lqq_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lqq_rmq(__bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lqq_rmq_unc(int32_t o, __bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, a2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lqq_rmq_exc(__bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lqq_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, a2, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lql(__bf16 l0, int32_t a1, __bf16 l2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(s0, a1, s2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, s0, a1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lql_unc(int32_t o, __bf16 l0, int32_t a1, __bf16 l2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(s0, a1, s2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, s0, a1, s2, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lql_exc(__bf16 l0, int32_t a1, __bf16 l2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lql_exc_unc(int32_t o, __bf16 l0, int32_t a1, __bf16 l2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lql_rm(__bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lql_rm_unc(int32_t o, __bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, s2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lql_rm_exc(__bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, s2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lql_rm_exc_unc(int32_t o, __bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, s2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, s2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lql_rmq(__bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lql_rmq_unc(int32_t o, __bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, a1, s2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lql_rmq_exc(__bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lql_rmq_exc_unc(int32_t o, __bf16 l0, int32_t a1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, a1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, a1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_llq(__bf16 l0, __bf16 l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(s0, s1, a2, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, s0, s1, a2, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_llq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_111_t(s0, s1, a2, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_111_t_unc(r, s0, s1, a2, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_llq_exc(__bf16 l0, __bf16 l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_llq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t a2) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_llq_rm(__bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_llq_rm_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, s1, a2, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_llq_rm_exc(__bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, a2, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_llq_rm_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, a2, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, a2, sm, 1);
+    cqrt_free(sm);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_llq_rmq(__bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_llq_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, s1, a2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_llq_rmq_exc(__bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, a2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_llq_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, int32_t a2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, a2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, a2, m, 1);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lll_rmq(__bf16 l0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lll_rmq_unc(int32_t o, __bf16 l0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_m_1111_t(s0, s1, s2, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fma_bf16_m_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fma_bf16_lll_rmq_exc(__bf16 l0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, s2, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_fma_bf16_lll_rmq_exc_unc(int32_t o, __bf16 l0, __bf16 l1, __bf16 l2, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t s2 = cqrt_alloc_bf16(l2);
+    int32_t r = __cq_q_cqsf_fma_bf16_x_1111_t(s0, s1, s2, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fma_bf16_x_1111_t_unc(r, s0, s1, s2, m, 1);
+    cqrt_free(s2);
+    cqrt_free(s1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sqrt_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sqrt_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sqrt_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sqrt_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sqrt_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sqrt_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sqrt_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sqrt_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sqrt_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sqrt_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sqrt_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sqrt_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sqrt_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sqrt_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sqrt_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sqrt_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sqrt_bf16_l_rmq(__bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sqrt_bf16_l_rmq_unc(int32_t o, __bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sqrt_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sqrt_bf16_l_rmq_exc(__bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sqrt_bf16_l_rmq_exc_unc(int32_t o, __bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_sqrt_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sqrt_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_rint_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_rint_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_rint_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_rint_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_rint_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_rint_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_rint_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_rint_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_rint_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_rint_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_rint_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_rint_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_rint_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_rint_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_rint_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_rint_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_rint_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_rint_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_rint_bf16_l_rmq(__bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_rint_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_rint_bf16_l_rmq_unc(int32_t o, __bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_rint_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_rint_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_rint_bf16_l_rmq_exc(__bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_rint_bf16_l_rmq_exc_unc(int32_t o, __bf16 l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_rint_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_rint_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_floor_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_floor_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_floor_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_floor_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_floor_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_floor_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_floor_bf16_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_floor_bf16_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_floor_bf16_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_floor_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_floor_bf16_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_floor_bf16_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_ceil_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_ceil_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_ceil_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_ceil_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_ceil_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_ceil_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_ceil_bf16_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_ceil_bf16_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_ceil_bf16_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_ceil_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_ceil_bf16_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_ceil_bf16_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_trunc_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_trunc_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_trunc_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_trunc_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_trunc_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_trunc_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_trunc_bf16_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_trunc_bf16_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_trunc_bf16_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_trunc_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_trunc_bf16_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_trunc_bf16_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_round_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_round_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_round_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_round_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_round_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_round_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_round_bf16_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_round_bf16_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_round_bf16_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_round_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_round_bf16_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_round_bf16_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fcmp_oeq_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_oeq_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_oeq_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_oeq_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_oeq_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_oeq_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_oeq_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_oeq_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_oeq_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_oeq_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_oeq_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_oeq_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_oeq_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_oeq_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oeq_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oeq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_oeq_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_oeq_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ogt_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ogt_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ogt_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ogt_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ogt_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ogt_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ogt_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ogt_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ogt_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ogt_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ogt_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ogt_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ogt_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ogt_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ogt_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ogt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ogt_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ogt_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_oge_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_oge_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_oge_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_oge_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_oge_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_oge_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_oge_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_oge_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_oge_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_oge_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_oge_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_oge_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_oge_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_oge_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_oge_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_oge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_oge_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_oge_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_olt_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_olt_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_olt_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_olt_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_olt_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_olt_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_olt_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_olt_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_olt_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_olt_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_olt_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_olt_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_olt_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_olt_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_olt_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_olt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_olt_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_olt_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ole_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ole_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ole_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ole_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ole_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ole_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ole_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ole_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ole_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ole_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ole_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ole_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ole_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ole_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ole_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ole_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ole_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ole_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_one_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_one_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_one_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_one_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_one_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_one_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_one_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_one_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_one_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_one_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_one_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_one_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_one_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_one_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_one_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_one_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_one_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_one_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ord_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ord_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ord_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ord_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ord_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ord_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ord_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ord_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ord_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ord_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ord_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ord_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ord_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ord_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ord_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ord_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ord_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ord_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ueq_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ueq_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ueq_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ueq_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ueq_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ueq_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ueq_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ueq_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ueq_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ueq_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ueq_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ueq_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ueq_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ueq_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ueq_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ueq_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ueq_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ueq_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ugt_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ugt_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ugt_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ugt_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ugt_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ugt_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ugt_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ugt_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ugt_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ugt_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ugt_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ugt_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ugt_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ugt_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ugt_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ugt_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ugt_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ugt_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_uge_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_uge_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_uge_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_uge_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_uge_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_uge_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_uge_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_uge_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_uge_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_uge_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_uge_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_uge_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_uge_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_uge_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uge_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uge_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_uge_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_uge_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ult_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ult_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ult_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ult_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ult_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ult_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ult_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ult_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ult_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ult_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ult_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ult_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ult_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ult_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ult_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ult_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ult_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ult_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ule_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ule_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ule_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_ule_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_ule_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ule_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_ule_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_ule_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ule_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ule_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ule_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_ule_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_ule_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ule_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_ule_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_ule_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_ule_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_ule_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_une_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_une_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_une_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_une_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_une_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_une_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_une_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_une_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_une_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_une_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_une_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_une_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_une_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_une_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_une_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_une_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_une_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_une_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_uno_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_uno_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_uno_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmp_uno_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmp_uno_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_uno_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmp_uno_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmp_uno_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmpq_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmpq_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_uno_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_uno_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, a1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_uno_bf16_exc(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_fcmps_uno_bf16_exc_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, a1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_fcmps_uno_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_uno_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmp_uno_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_fcmp_uno_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fcmps_uno_bf16_hl_exc(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_fcmps_uno_bf16_hl_exc_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_fcmps_bf16_x_11_t(a0, s1, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fcmps_bf16_x_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_is_fpclass_bf16_hl(int32_t a0, int32_t l1) {
+    int32_t s1 = cqrt_alloc_i32(l1);
+    int32_t r = __cq_q_cqsf_is_fpclass_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_i1(0);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_is_fpclass_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_is_fpclass_bf16_hl_unc(int32_t o, int32_t a0, int32_t l1) {
+    int32_t s1 = cqrt_alloc_i32(l1);
+    int32_t r = __cq_q_cqsf_is_fpclass_bf16_11_t(a0, s1, 1);
+    cqrt_copy_i1(r, o);
+    __cq_q_cqsf_is_fpclass_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_fneg_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fneg_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fneg_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fneg_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fabs_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fabs_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fabs_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_fabs_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_copysign_bf16(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_bf16_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_copysign_bf16_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_copysign_bf16_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_bf16_11_t(a0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_copysign_bf16_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_copysign_bf16_hl(int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_copysign_bf16_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_copysign_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_copysign_bf16_hl_unc(int32_t o, int32_t a0, __bf16 l1) {
+    int32_t s1 = cqrt_alloc_bf16(l1);
+    int32_t r = __cq_q_cqsf_copysign_bf16_11_t(a0, s1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_copysign_bf16_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_copysign_bf16_lh(__bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_copysign_bf16_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_copysign_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_copysign_bf16_lh_unc(int32_t o, __bf16 l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_bf16(l0);
+    int32_t r = __cq_q_cqsf_copysign_bf16_11_t(s0, a1, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_copysign_bf16_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
 }
 
 int32_t cq_template_fadd_f32(int32_t a0, int32_t a1) {
@@ -10632,6 +16331,79 @@ void cq_template_is_fpclass_f32_hl_unc(int32_t o, int32_t a0, int32_t l1) {
     cqrt_free(s1);
 }
 
+int32_t cq_template_fneg_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_fneg_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fneg_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_fneg_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fabs_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_fabs_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fabs_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_fabs_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_copysign_f32(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_f32_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_copysign_f32_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_copysign_f32_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_f32_11_t(a0, a1, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_copysign_f32_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_copysign_f32_hl(int32_t a0, float l1) {
+    int32_t s1 = cqrt_alloc_f32(l1);
+    int32_t r = __cq_q_cqsf_copysign_f32_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_copysign_f32_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+    return o;
+}
+void cq_template_copysign_f32_hl_unc(int32_t o, int32_t a0, float l1) {
+    int32_t s1 = cqrt_alloc_f32(l1);
+    int32_t r = __cq_q_cqsf_copysign_f32_11_t(a0, s1, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_copysign_f32_11_t_unc(r, a0, s1, 1);
+    cqrt_free(s1);
+}
+
+int32_t cq_template_copysign_f32_lh(float l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_f32(l0);
+    int32_t r = __cq_q_cqsf_copysign_f32_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_copysign_f32_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_copysign_f32_lh_unc(int32_t o, float l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_f32(l0);
+    int32_t r = __cq_q_cqsf_copysign_f32_11_t(s0, a1, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_copysign_f32_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+}
+
 int32_t cq_template_fadd_f64(int32_t a0, int32_t a1) {
     int32_t r = __cq_q_cqsf_fadd_f64_11_t(a0, a1, 1);
     int32_t o = cqrt_alloc_f64(0);
@@ -15565,21 +21337,77 @@ void cq_template_is_fpclass_f64_hl_unc(int32_t o, int32_t a0, int32_t l1) {
     cqrt_free(s1);
 }
 
-int32_t cq_template_is_fpclass_bf16_hl(int32_t a0, int32_t l1) {
-    int32_t s1 = cqrt_alloc_i32(l1);
-    int32_t r = __cq_q_cqsf_is_fpclass_bf16_11_t(a0, s1, 1);
-    int32_t o = cqrt_alloc_i1(0);
-    cqrt_copy_i1(r, o);
-    __cq_q_cqsf_is_fpclass_bf16_11_t_unc(r, a0, s1, 1);
+int32_t cq_template_fneg_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_fneg_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fneg_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fneg_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_fneg_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fabs_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_fabs_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fabs_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fabs_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_fabs_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_copysign_f64(int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_f64_11_t(a0, a1, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_copysign_f64_11_t_unc(r, a0, a1, 1);
+    return o;
+}
+void cq_template_copysign_f64_unc(int32_t o, int32_t a0, int32_t a1) {
+    int32_t r = __cq_q_cqsf_copysign_f64_11_t(a0, a1, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_copysign_f64_11_t_unc(r, a0, a1, 1);
+}
+
+int32_t cq_template_copysign_f64_hl(int32_t a0, double l1) {
+    int32_t s1 = cqrt_alloc_f64(l1);
+    int32_t r = __cq_q_cqsf_copysign_f64_11_t(a0, s1, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_copysign_f64_11_t_unc(r, a0, s1, 1);
     cqrt_free(s1);
     return o;
 }
-void cq_template_is_fpclass_bf16_hl_unc(int32_t o, int32_t a0, int32_t l1) {
-    int32_t s1 = cqrt_alloc_i32(l1);
-    int32_t r = __cq_q_cqsf_is_fpclass_bf16_11_t(a0, s1, 1);
-    cqrt_copy_i1(r, o);
-    __cq_q_cqsf_is_fpclass_bf16_11_t_unc(r, a0, s1, 1);
+void cq_template_copysign_f64_hl_unc(int32_t o, int32_t a0, double l1) {
+    int32_t s1 = cqrt_alloc_f64(l1);
+    int32_t r = __cq_q_cqsf_copysign_f64_11_t(a0, s1, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_copysign_f64_11_t_unc(r, a0, s1, 1);
     cqrt_free(s1);
+}
+
+int32_t cq_template_copysign_f64_lh(double l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_f64(l0);
+    int32_t r = __cq_q_cqsf_copysign_f64_11_t(s0, a1, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_copysign_f64_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_copysign_f64_lh_unc(int32_t o, double l0, int32_t a1) {
+    int32_t s0 = cqrt_alloc_f64(l0);
+    int32_t r = __cq_q_cqsf_copysign_f64_11_t(s0, a1, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_copysign_f64_11_t_unc(r, s0, a1, 1);
+    cqrt_free(s0);
 }
 
 int32_t cq_template_fpext_f16_to_f32(int32_t a0) {
@@ -22122,4 +27950,7490 @@ void cq_template_fptoui_f64_to_i64_exc_unc(int32_t o, int32_t a0) {
     int32_t r = __cq_q_cqsf_fptoui_f64_to_i64_x_1_t(a0, 1);
     cqrt_copy_i32(r, o);
     __cq_q_cqsf_fptoui_f64_to_i64_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i7_to_f16_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_f16_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f16_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f16_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i7_to_bf16_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_bf16_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_bf16_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_bf16_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i7_to_f32_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_f32_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f32_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f32_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i7_to_f64_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i7_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i7_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i7_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_l_rmq(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_l_rmq_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i7_to_f64_l_rmq_exc(_BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i7_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(7) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i7(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i7_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i7_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f64_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f64_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i7(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i7_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i7(0);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i7_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i7_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i7_1_t(a0, 1);
+    cqrt_copy_i7(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i7_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i7_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i7_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i7_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i7_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i7_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i7_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i24_to_f16_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_f16_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f16_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f16_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i24_to_bf16_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_bf16_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_bf16_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_bf16_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i24_to_f32_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_f32_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f32_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f32_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i24_to_f64_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i24_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i24_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i24_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_l_rmq(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_l_rmq_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i24_to_f64_l_rmq_exc(_BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i24_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(24) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i24(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i24_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i24_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f64_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f64_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i24(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i24_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i24(0);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i24_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i24_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i24_1_t(a0, 1);
+    cqrt_copy_i24(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i24_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i24_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i24_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i24_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i24_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i24_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i24_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i48_to_f16_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_f16_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f16_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f16_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i48_to_bf16_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_bf16_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_bf16_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_bf16_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i48_to_f32_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_f32_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f32_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f32_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i48_to_f64_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i48_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i48_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i48_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_l_rmq(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_l_rmq_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i48_to_f64_l_rmq_exc(_BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i48_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(48) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i48(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i48_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i48_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f64_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f64_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i48(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i48_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i48(0);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i48_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i48_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i48_1_t(a0, 1);
+    cqrt_copy_i48(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i48_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i48_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i48_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i48_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i48_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i48_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i48_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i100_to_f16_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_f16_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f16_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f16_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i100_to_bf16_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_bf16_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_bf16_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_bf16_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i100_to_f32_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_f32_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f32_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f32_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i100_to_f64_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i100_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i100_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i100_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_l_rmq(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_l_rmq_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i100_to_f64_l_rmq_exc(_BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i100_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(100) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i100(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i100_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i100_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f64_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f64_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i100(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i100_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i100(0);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i100_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i100_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i100_1_t(a0, 1);
+    cqrt_copy_i100(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i100_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i100_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i100_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i100_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i100_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i100_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i100_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i128_to_f16_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_f16_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_f16_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f16_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f16_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i128_to_bf16_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_bf16_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_bf16_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_bf16_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_bf16_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i128_to_f32_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_f32_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_f32_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f32_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f32_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i128_to_f64_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i128_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_sitofp_i128_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i128_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_l_rmq(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_l_rmq_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i128_to_f64_l_rmq_exc(_BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i128_to_f64_l_rmq_exc_unc(int32_t o, _BitInt(128) l0, int32_t m) {
+    int32_t s0 = cqrt_alloc_i128(l0);
+    int32_t r = __cq_q_cqsf_uitofp_i128_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i128_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f64_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f64_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i128(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i128_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i128(0);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i128_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i128_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i128_1_t(a0, 1);
+    cqrt_copy_i128(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i128_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i128_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i128_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i128_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i128_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i128_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i128_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i200_to_f16_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_f16_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_f16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_1_t(a0, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(a0, sm, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(a0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f16(0);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_m_11_t(s0, m, 1);
+    cqrt_copy_f16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_f16_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_f16_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f16_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f16_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f16_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f16_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f16_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f16_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f16_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f16_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f16_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i200_to_bf16_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_bf16_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_1_t(a0, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_1_t(a0, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(a0, sm, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(a0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_bf16(0);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t(s0, m, 1);
+    cqrt_copy_bf16(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_bf16_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_bf16_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_bf16_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_bf16_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_bf16_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_bf16_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_bf16_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_bf16_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_bf16_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_bf16_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_bf16_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_bf16_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i200_to_f32_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_f32_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_f32(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_1_t(a0, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(a0, sm, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(a0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f32(0);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_m_11_t(s0, m, 1);
+    cqrt_copy_f32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_f32_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_f32_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f32_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f32_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f32_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f32_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f32_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f32_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f32_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f32_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f32_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f32_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f32_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_sitofp_i200_to_f64_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_sitofp_i200_to_f64_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_sitofp_i200_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_sitofp_i200_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_f64(int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_1_t(a0, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_1_t(a0, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_exc(int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_exc_unc(int32_t o, int32_t a0) {
+    int32_t sm = cqrt_alloc_i32(0);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_rm(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_rm_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(a0, sm, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_rm_exc(int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_rm_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t sm = cqrt_alloc_i32(m);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(a0, sm, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, a0, sm, 1);
+    cqrt_free(sm);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_rmq(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_rmq_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(a0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_rmq_exc(int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(a0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, a0, m, 1);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_rmq_exc_unc(int32_t o, int32_t a0, int32_t m) {
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(a0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, a0, m, 1);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_l_rmq(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_f64(0);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_l_rmq_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_m_11_t(s0, m, 1);
+    cqrt_copy_f64(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_m_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_uitofp_i200_to_f64_l_rmq_exc(uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(s0, m, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+    return o;
+}
+void cq_template_uitofp_i200_to_f64_l_rmq_exc_unc(int32_t o, uint64_t l0_0, uint64_t l0_1, uint64_t l0_2, uint64_t l0_3, int32_t m) {
+    int32_t s0 = cqrt_alloc_i200(l0_0, l0_1, l0_2, l0_3);
+    int32_t r = __cq_q_cqsf_uitofp_i200_to_f64_x_11_t(s0, m, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_uitofp_i200_to_f64_x_11_t_unc(r, s0, m, 1);
+    cqrt_free(s0);
+}
+
+int32_t cq_template_fptosi_f64_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptosi_f64_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptosi_f64_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptosi_f64_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptosi_f64_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i200(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i200_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i200(0, 0, 0, 0);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i200_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i200_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i200_1_t(a0, 1);
+    cqrt_copy_i200(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i200_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_fptoui_f64_to_i200_exc(int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i200_x_1_t(a0, 1);
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i200_x_1_t_unc(r, a0, 1);
+    return o;
+}
+void cq_template_fptoui_f64_to_i200_exc_unc(int32_t o, int32_t a0) {
+    int32_t r = __cq_q_cqsf_fptoui_f64_to_i200_x_1_t(a0, 1);
+    cqrt_copy_i32(r, o);
+    __cq_q_cqsf_fptoui_f64_to_i200_x_1_t_unc(r, a0, 1);
+}
+
+int32_t cq_template_select_i16(int32_t, int32_t, int32_t);
+void cq_template_select_i16_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_f16(int32_t c, int32_t a1, int32_t a2) {
+    return cq_template_select_i16(c, a1, a2);
+}
+void cq_template_select_f16_unc(int32_t o, int32_t c, int32_t a1, int32_t a2) {
+    cq_template_select_i16_unc(o, c, a1, a2);
+}
+
+int32_t cq_template_select_i16_hl(int32_t, int32_t, int16_t);
+void cq_template_select_i16_hl_unc(int32_t, int32_t, int32_t, int16_t);
+int32_t cq_template_select_f16_hl(int32_t c, int32_t a1, _Float16 l2) {
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    return cq_template_select_i16_hl(c, a1, b2);
+}
+void cq_template_select_f16_hl_unc(int32_t o, int32_t c, int32_t a1, _Float16 l2) {
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    cq_template_select_i16_hl_unc(o, c, a1, b2);
+}
+
+int32_t cq_template_select_i16_lh(int32_t, int16_t, int32_t);
+void cq_template_select_i16_lh_unc(int32_t, int32_t, int16_t, int32_t);
+int32_t cq_template_select_f16_lh(int32_t c, _Float16 l1, int32_t a2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    return cq_template_select_i16_lh(c, b1, a2);
+}
+void cq_template_select_f16_lh_unc(int32_t o, int32_t c, _Float16 l1, int32_t a2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    cq_template_select_i16_lh_unc(o, c, b1, a2);
+}
+
+int32_t cq_template_select_i16_ll(int32_t, int16_t, int16_t);
+void cq_template_select_i16_ll_unc(int32_t, int32_t, int16_t, int16_t);
+int32_t cq_template_select_f16_ll(int32_t c, _Float16 l1, _Float16 l2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    return cq_template_select_i16_ll(c, b1, b2);
+}
+void cq_template_select_f16_ll_unc(int32_t o, int32_t c, _Float16 l1, _Float16 l2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    cq_template_select_i16_ll_unc(o, c, b1, b2);
+}
+
+int32_t cqrt_alloc_i16(int16_t);
+void cqrt_copy_i16(int32_t, int32_t);
+int32_t cq_template_bitcast_f16_to_i16(int32_t a) {
+    int32_t o = cqrt_alloc_i16(0);
+    cqrt_copy_i16(a, o);
+    return o;
+}
+void cq_template_bitcast_f16_to_i16_unc(int32_t o, int32_t a) {
+    cqrt_copy_i16(a, o);
+}
+
+int32_t cqrt_alloc_i16(int16_t);
+void cqrt_copy_i16(int32_t, int32_t);
+int32_t cq_template_bitcast_i16_to_f16(int32_t a) {
+    int32_t o = cqrt_alloc_i16(0);
+    cqrt_copy_i16(a, o);
+    return o;
+}
+void cq_template_bitcast_i16_to_f16_unc(int32_t o, int32_t a) {
+    cqrt_copy_i16(a, o);
+}
+
+int32_t cqrt_alloc_i16(int16_t);
+void cqrt_copy_i16(int32_t, int32_t);
+int32_t cq_template_bitcast_f16_to_bf16(int32_t a) {
+    int32_t o = cqrt_alloc_i16(0);
+    cqrt_copy_i16(a, o);
+    return o;
+}
+void cq_template_bitcast_f16_to_bf16_unc(int32_t o, int32_t a) {
+    cqrt_copy_i16(a, o);
+}
+
+int32_t cqrt_alloc_i16(int16_t);
+void cqrt_copy_i16(int32_t, int32_t);
+int32_t cq_template_bitcast_bf16_to_f16(int32_t a) {
+    int32_t o = cqrt_alloc_i16(0);
+    cqrt_copy_i16(a, o);
+    return o;
+}
+void cq_template_bitcast_bf16_to_f16_unc(int32_t o, int32_t a) {
+    cqrt_copy_i16(a, o);
+}
+
+int32_t cq_template_select_i16(int32_t, int32_t, int32_t);
+void cq_template_select_i16_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_bf16(int32_t c, int32_t a1, int32_t a2) {
+    return cq_template_select_i16(c, a1, a2);
+}
+void cq_template_select_bf16_unc(int32_t o, int32_t c, int32_t a1, int32_t a2) {
+    cq_template_select_i16_unc(o, c, a1, a2);
+}
+
+int32_t cq_template_select_i16_hl(int32_t, int32_t, int16_t);
+void cq_template_select_i16_hl_unc(int32_t, int32_t, int32_t, int16_t);
+int32_t cq_template_select_bf16_hl(int32_t c, int32_t a1, __bf16 l2) {
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    return cq_template_select_i16_hl(c, a1, b2);
+}
+void cq_template_select_bf16_hl_unc(int32_t o, int32_t c, int32_t a1, __bf16 l2) {
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    cq_template_select_i16_hl_unc(o, c, a1, b2);
+}
+
+int32_t cq_template_select_i16_lh(int32_t, int16_t, int32_t);
+void cq_template_select_i16_lh_unc(int32_t, int32_t, int16_t, int32_t);
+int32_t cq_template_select_bf16_lh(int32_t c, __bf16 l1, int32_t a2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    return cq_template_select_i16_lh(c, b1, a2);
+}
+void cq_template_select_bf16_lh_unc(int32_t o, int32_t c, __bf16 l1, int32_t a2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    cq_template_select_i16_lh_unc(o, c, b1, a2);
+}
+
+int32_t cq_template_select_i16_ll(int32_t, int16_t, int16_t);
+void cq_template_select_i16_ll_unc(int32_t, int32_t, int16_t, int16_t);
+int32_t cq_template_select_bf16_ll(int32_t c, __bf16 l1, __bf16 l2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    return cq_template_select_i16_ll(c, b1, b2);
+}
+void cq_template_select_bf16_ll_unc(int32_t o, int32_t c, __bf16 l1, __bf16 l2) {
+    int16_t b1 = 0; __builtin_memcpy(&b1, &l1, 2);
+    int16_t b2 = 0; __builtin_memcpy(&b2, &l2, 2);
+    cq_template_select_i16_ll_unc(o, c, b1, b2);
+}
+
+int32_t cqrt_alloc_i16(int16_t);
+void cqrt_copy_i16(int32_t, int32_t);
+int32_t cq_template_bitcast_bf16_to_i16(int32_t a) {
+    int32_t o = cqrt_alloc_i16(0);
+    cqrt_copy_i16(a, o);
+    return o;
+}
+void cq_template_bitcast_bf16_to_i16_unc(int32_t o, int32_t a) {
+    cqrt_copy_i16(a, o);
+}
+
+int32_t cqrt_alloc_i16(int16_t);
+void cqrt_copy_i16(int32_t, int32_t);
+int32_t cq_template_bitcast_i16_to_bf16(int32_t a) {
+    int32_t o = cqrt_alloc_i16(0);
+    cqrt_copy_i16(a, o);
+    return o;
+}
+void cq_template_bitcast_i16_to_bf16_unc(int32_t o, int32_t a) {
+    cqrt_copy_i16(a, o);
+}
+
+int32_t cq_template_select_i32(int32_t, int32_t, int32_t);
+void cq_template_select_i32_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_f32(int32_t c, int32_t a1, int32_t a2) {
+    return cq_template_select_i32(c, a1, a2);
+}
+void cq_template_select_f32_unc(int32_t o, int32_t c, int32_t a1, int32_t a2) {
+    cq_template_select_i32_unc(o, c, a1, a2);
+}
+
+int32_t cq_template_select_i32_hl(int32_t, int32_t, int32_t);
+void cq_template_select_i32_hl_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_f32_hl(int32_t c, int32_t a1, float l2) {
+    int32_t b2 = 0; __builtin_memcpy(&b2, &l2, 4);
+    return cq_template_select_i32_hl(c, a1, b2);
+}
+void cq_template_select_f32_hl_unc(int32_t o, int32_t c, int32_t a1, float l2) {
+    int32_t b2 = 0; __builtin_memcpy(&b2, &l2, 4);
+    cq_template_select_i32_hl_unc(o, c, a1, b2);
+}
+
+int32_t cq_template_select_i32_lh(int32_t, int32_t, int32_t);
+void cq_template_select_i32_lh_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_f32_lh(int32_t c, float l1, int32_t a2) {
+    int32_t b1 = 0; __builtin_memcpy(&b1, &l1, 4);
+    return cq_template_select_i32_lh(c, b1, a2);
+}
+void cq_template_select_f32_lh_unc(int32_t o, int32_t c, float l1, int32_t a2) {
+    int32_t b1 = 0; __builtin_memcpy(&b1, &l1, 4);
+    cq_template_select_i32_lh_unc(o, c, b1, a2);
+}
+
+int32_t cq_template_select_i32_ll(int32_t, int32_t, int32_t);
+void cq_template_select_i32_ll_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_f32_ll(int32_t c, float l1, float l2) {
+    int32_t b1 = 0; __builtin_memcpy(&b1, &l1, 4);
+    int32_t b2 = 0; __builtin_memcpy(&b2, &l2, 4);
+    return cq_template_select_i32_ll(c, b1, b2);
+}
+void cq_template_select_f32_ll_unc(int32_t o, int32_t c, float l1, float l2) {
+    int32_t b1 = 0; __builtin_memcpy(&b1, &l1, 4);
+    int32_t b2 = 0; __builtin_memcpy(&b2, &l2, 4);
+    cq_template_select_i32_ll_unc(o, c, b1, b2);
+}
+
+int32_t cqrt_alloc_i32(int32_t);
+void cqrt_copy_i32(int32_t, int32_t);
+int32_t cq_template_bitcast_f32_to_i32(int32_t a) {
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(a, o);
+    return o;
+}
+void cq_template_bitcast_f32_to_i32_unc(int32_t o, int32_t a) {
+    cqrt_copy_i32(a, o);
+}
+
+int32_t cqrt_alloc_i32(int32_t);
+void cqrt_copy_i32(int32_t, int32_t);
+int32_t cq_template_bitcast_i32_to_f32(int32_t a) {
+    int32_t o = cqrt_alloc_i32(0);
+    cqrt_copy_i32(a, o);
+    return o;
+}
+void cq_template_bitcast_i32_to_f32_unc(int32_t o, int32_t a) {
+    cqrt_copy_i32(a, o);
+}
+
+int32_t cq_template_select_i64(int32_t, int32_t, int32_t);
+void cq_template_select_i64_unc(int32_t, int32_t, int32_t, int32_t);
+int32_t cq_template_select_f64(int32_t c, int32_t a1, int32_t a2) {
+    return cq_template_select_i64(c, a1, a2);
+}
+void cq_template_select_f64_unc(int32_t o, int32_t c, int32_t a1, int32_t a2) {
+    cq_template_select_i64_unc(o, c, a1, a2);
+}
+
+int32_t cq_template_select_i64_hl(int32_t, int32_t, int64_t);
+void cq_template_select_i64_hl_unc(int32_t, int32_t, int32_t, int64_t);
+int32_t cq_template_select_f64_hl(int32_t c, int32_t a1, double l2) {
+    int64_t b2 = 0; __builtin_memcpy(&b2, &l2, 8);
+    return cq_template_select_i64_hl(c, a1, b2);
+}
+void cq_template_select_f64_hl_unc(int32_t o, int32_t c, int32_t a1, double l2) {
+    int64_t b2 = 0; __builtin_memcpy(&b2, &l2, 8);
+    cq_template_select_i64_hl_unc(o, c, a1, b2);
+}
+
+int32_t cq_template_select_i64_lh(int32_t, int64_t, int32_t);
+void cq_template_select_i64_lh_unc(int32_t, int32_t, int64_t, int32_t);
+int32_t cq_template_select_f64_lh(int32_t c, double l1, int32_t a2) {
+    int64_t b1 = 0; __builtin_memcpy(&b1, &l1, 8);
+    return cq_template_select_i64_lh(c, b1, a2);
+}
+void cq_template_select_f64_lh_unc(int32_t o, int32_t c, double l1, int32_t a2) {
+    int64_t b1 = 0; __builtin_memcpy(&b1, &l1, 8);
+    cq_template_select_i64_lh_unc(o, c, b1, a2);
+}
+
+int32_t cq_template_select_i64_ll(int32_t, int64_t, int64_t);
+void cq_template_select_i64_ll_unc(int32_t, int32_t, int64_t, int64_t);
+int32_t cq_template_select_f64_ll(int32_t c, double l1, double l2) {
+    int64_t b1 = 0; __builtin_memcpy(&b1, &l1, 8);
+    int64_t b2 = 0; __builtin_memcpy(&b2, &l2, 8);
+    return cq_template_select_i64_ll(c, b1, b2);
+}
+void cq_template_select_f64_ll_unc(int32_t o, int32_t c, double l1, double l2) {
+    int64_t b1 = 0; __builtin_memcpy(&b1, &l1, 8);
+    int64_t b2 = 0; __builtin_memcpy(&b2, &l2, 8);
+    cq_template_select_i64_ll_unc(o, c, b1, b2);
+}
+
+int32_t cqrt_alloc_i64(int64_t);
+void cqrt_copy_i64(int32_t, int32_t);
+int32_t cq_template_bitcast_f64_to_i64(int32_t a) {
+    int32_t o = cqrt_alloc_i64(0);
+    cqrt_copy_i64(a, o);
+    return o;
+}
+void cq_template_bitcast_f64_to_i64_unc(int32_t o, int32_t a) {
+    cqrt_copy_i64(a, o);
+}
+
+int32_t cqrt_alloc_i64(int64_t);
+void cqrt_copy_i64(int32_t, int32_t);
+int32_t cq_template_bitcast_i64_to_f64(int32_t a) {
+    int32_t o = cqrt_alloc_i64(0);
+    cqrt_copy_i64(a, o);
+    return o;
+}
+void cq_template_bitcast_i64_to_f64_unc(int32_t o, int32_t a) {
+    cqrt_copy_i64(a, o);
 }

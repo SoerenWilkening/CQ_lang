@@ -255,11 +255,14 @@ softfloat/build.sh lib softfloat/cqsf_f80.roots    # softfloat/build/libqsoftflo
 cqcc prog.c -lmybackend -o prog                    # cqcc links both archives when they exist
 ```
 
-- The library covers `float`, `double`, `_Float16` and `long double`: arithmetic, `sqrt`, `fma`
-  (not for `long double`), compares, rounding, and the conversions between floating-point widths
-  and to and from 8, 16, 32 and 64-bit integers, with every rounding mode and the exception flags.
+- The library covers `float`, `double`, `_Float16`, `__bf16` and `long double`: arithmetic, `sqrt`,
+  `fma`, compares, rounding, and the conversions between floating-point widths and to and from
+  integers (8 to 64 bits, `__int128` and `_BitInt` widths; the generator lists which), with every
+  rounding mode and the exception flags.
 - It is optional. `cqcc --no-softfloat`, or simply not building it, leaves the floating-point
-  operations to the backend, which must then implement them itself. A backend may also implement
+  operations to the backend, which must then implement them itself. With it, a backend implements no
+  floating-point template at all, `fneg`, `select` and `bitcast` included; at float widths it sees only
+  `cqrt_alloc`/`cqrt_copy` (and a program's own `cqrt_ry`/`cqrt_measure`) as same-width bit registers. A backend may also implement
   only some: an operation the backend defines is the backend's, the library supplies the rest.
 - Results match x86 hardware bit for bit, as the C standard library coverage above assumes.
 
@@ -270,8 +273,8 @@ Time spent in the lowering, on one x86-64 Mac:
 | What | Functions | Time | Result |
 |---|---|---|---|
 | The C standard library, all nine root lists | 387 | 29 min | `libqc.a`, 52 MB |
-| SoftFloat, `float`, `double`, `_Float16` | 369 | 1 min 10 s | `libqsoftfloat.a`, 8.6 MB |
-| SoftFloat, `long double` | 111 | 36 s | `libqsoftfloat_f80.a`, 4.1 MB |
+| SoftFloat, `float`, `double`, `_Float16`, `__bf16` | 673 | 1 min 40 s | `libqsoftfloat.a`, 15.2 MB |
+| SoftFloat, `long double` | 182 | 36 s | `libqsoftfloat_f80.a`, 5.2 MB |
 
 ## How the lowering works
 

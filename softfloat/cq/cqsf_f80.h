@@ -62,6 +62,13 @@ static inline cqsf_x80 sfx_sqrt_f80(struct sf_ctx *sf_ctx, cqsf_x80 a) {
     return extF80_sqrt(sf_ctx, cqsf_canon_f80(a));
 }
 
+/* fneg, fabs, copysign (CR §2): bit 79 alone, whatever the encoding (no quieting, no flag). */
+static inline cqsf_x80 sfx_fneg_f80(struct sf_ctx *sf_ctx, cqsf_x80 a) { (void)sf_ctx; a.signExp ^= 0x8000; return a; }
+static inline cqsf_x80 sfx_fabs_f80(struct sf_ctx *sf_ctx, cqsf_x80 a) { (void)sf_ctx; a.signExp &= 0x7FFF; return a; }
+static inline cqsf_x80 sfx_copysign_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b) {
+    (void)sf_ctx; a.signExp = (uint16_t)((a.signExp & 0x7FFF) | (b.signExp & 0x8000)); return a;
+}
+
 /* frem = C fmod, as in cqsf.h: the IEEE remainder corrected by an exact addition of copysign(|b|, a). */
 static inline cqsf_x80 sfx_frem_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b) {
     cqsf_x80 r;
@@ -71,6 +78,116 @@ static inline cqsf_x80 sfx_frem_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 
     if (cqsf_isnan_f80(r) || !(r.signif) || !((r.signExp ^ a.signExp) & 0x8000)) return r;
     cqsf_x80 y = {b.signif, (uint16_t)((b.signExp & 0x7FFF) | (a.signExp & 0x8000))};
     return extF80_add(sf_ctx, r, y);
+}
+
+/* fma at f80: SoftFloat has no extF80_mulAdd. One rounding of the exact a*b + c, in SoftFloat's style:
+ * the 128-bit product of the normalized significands (softfloat_mul64To128), c aligned to it in a 192-bit
+ * frame with a sticky jam, the sum or difference (exact: when the two cancel, c is shifted by at most one
+ * bit and every bit of both stays in the frame), normalized, and one softfloat_roundPackToExtF80 at
+ * precision 80 in the context's mode with its flags. An exact zero sum is +0, -0 in round-down (IEEE).
+ * Operands are canonical and not NaN (sfx_fma_f80 handles the rest by the CR §2 rows). */
+struct cqsf_u192 { uint64_t w2, w1, w0; };
+static inline struct cqsf_u192 cqsf_srj192(struct cqsf_u192 a, uint_fast32_t dist) {
+    uint64_t st = 0;
+    if (dist > 192) dist = 192;
+    if (dist >= 64) { st |= a.w0; a.w0 = a.w1; a.w1 = a.w2; a.w2 = 0; dist -= 64; }
+    if (dist >= 64) { st |= a.w0; a.w0 = a.w1; a.w1 = 0; dist -= 64; }
+    if (dist >= 64) { st |= a.w0; a.w0 = 0; dist -= 64; }
+    if (dist) {
+        st |= a.w0 << (64 - dist);
+        a.w0 = (a.w0 >> dist) | (a.w1 << (64 - dist));
+        a.w1 = (a.w1 >> dist) | (a.w2 << (64 - dist));
+        a.w2 >>= dist;
+    }
+    a.w0 |= (uint64_t)(st != 0);
+    return a;
+}
+static inline cqsf_x80 cqsf_extF80_mulAdd(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b, cqsf_x80 c) {
+    bool signA = a.signExp >> 15, signB = b.signExp >> 15, signC = c.signExp >> 15, signP = signA ^ signB;
+    int_fast32_t expA = a.signExp & 0x7FFF, expB = b.signExp & 0x7FFF, expC = c.signExp & 0x7FFF;
+    uint64_t sigA = a.signif, sigB = b.signif, sigC = c.signif;
+    bool zeroA = !expA && !sigA, zeroB = !expB && !sigB, zeroC = !expC && !sigC;
+    if (expA == 0x7FFF || expB == 0x7FFF) {                    /* an infinite product */
+        if (zeroA || zeroB || (expC == 0x7FFF && signC != signP)) return cqsf_indef_f80(sf_ctx);
+        return (cqsf_x80){UINT64_C(0x8000000000000000), (uint16_t)(((unsigned)signP << 15) | 0x7FFF)};
+    }
+    if (expC == 0x7FFF) return c;
+    if (zeroA || zeroB) {                                      /* a zero product: c, or the sum of zeros */
+        if (!zeroC) return c;
+        bool s = (signP == signC) ? signP : (sf_ctx->roundingMode == softfloat_round_min);
+        return (cqsf_x80){0, (uint16_t)((unsigned)s << 15)};
+    }
+    if (!expA) expA = 1;
+    if (!(sigA >> 63)) { uint_fast8_t s = softfloat_countLeadingZeros64(sigA); expA -= s; sigA <<= s; }
+    if (!expB) expB = 1;
+    if (!(sigB >> 63)) { uint_fast8_t s = softfloat_countLeadingZeros64(sigB); expB -= s; sigB <<= s; }
+    int_fast32_t expP = expA + expB - 0x3FFE;
+    struct uint128 p = softfloat_mul64To128(sigA, sigB);
+    if (!(p.v64 >> 63)) { --expP; p = softfloat_shortShiftLeft128(p.v64, p.v0, 1); }
+    if (zeroC) return softfloat_roundPackToExtF80(sf_ctx, signP, expP, p.v64, p.v0, 80);
+    if (!expC) expC = 1;
+    if (!(sigC >> 63)) { uint_fast8_t s = softfloat_countLeadingZeros64(sigC); expC -= s; sigC <<= s; }
+    /* the frame: the msb at bit 191 has the exponent expZ, as SoftFloat's sig with the msb at bit 63 */
+    struct cqsf_u192 P = {p.v64, p.v0, 0}, C = {sigC, 0, 0}, x, y;
+    int_fast32_t expDiff = expP - expC, expZ;
+    bool signZ;
+    if (expDiff >= 0) { x = P; y = cqsf_srj192(C, (uint_fast32_t)expDiff); expZ = expP; signZ = signP; }
+    else { x = C; y = cqsf_srj192(P, (uint_fast32_t)-expDiff); expZ = expC; signZ = signC; }
+    struct cqsf_u192 z;
+    if (signP == signC) {
+        z.w0 = x.w0 + y.w0;
+        uint64_t c0 = z.w0 < x.w0;
+        z.w1 = x.w1 + y.w1 + c0;
+        uint64_t c1 = (z.w1 < x.w1) | (c0 & (z.w1 == x.w1));
+        z.w2 = x.w2 + y.w2 + c1;
+        uint64_t c2 = (z.w2 < x.w2) | (c1 & (z.w2 == x.w2));
+        if (c2) {
+            z.w0 = (z.w0 >> 1) | (z.w1 << 63) | (z.w0 & 1);
+            z.w1 = (z.w1 >> 1) | (z.w2 << 63);
+            z.w2 = (z.w2 >> 1) | UINT64_C(0x8000000000000000);
+            ++expZ;
+        }
+    } else {
+        z.w0 = x.w0 - y.w0;
+        uint64_t b0 = x.w0 < y.w0;
+        z.w1 = x.w1 - y.w1 - b0;
+        uint64_t b1 = (x.w1 < y.w1) | (b0 & (x.w1 == y.w1));
+        z.w2 = x.w2 - y.w2 - b1;
+        uint64_t b2 = (x.w2 < y.w2) | (b1 & (x.w2 == y.w2));
+        if (b2) {                                              /* only with expDiff = 0: |c| > |a*b| */
+            z.w0 = ~z.w0; z.w1 = ~z.w1; z.w2 = ~z.w2;
+            z.w0 += 1;
+            uint64_t k = (z.w0 == 0);
+            z.w1 += k; k &= (z.w1 == 0);
+            z.w2 += k;
+            signZ = !signZ;
+        }
+        if (!(z.w2 | z.w1 | z.w0))
+            return (cqsf_x80){0, (uint16_t)(sf_ctx->roundingMode == softfloat_round_min ? 0x8000 : 0)};
+        if (!z.w2) { z.w2 = z.w1; z.w1 = z.w0; z.w0 = 0; expZ -= 64; }
+        if (!z.w2) { z.w2 = z.w1; z.w1 = 0; expZ -= 64; }
+        uint_fast8_t s = softfloat_countLeadingZeros64(z.w2);
+        if (s) {
+            z.w2 = (z.w2 << s) | (z.w1 >> (64 - s));
+            z.w1 = (z.w1 << s) | (z.w0 >> (64 - s));
+            z.w0 <<= s;
+            expZ -= s;
+        }
+    }
+    return softfloat_roundPackToExtF80(sf_ctx, signZ, expZ, z.w2, z.w1 | (uint64_t)(z.w0 != 0), 80);
+}
+/* The CR §2 rows: a non-canonical operand gives the real indefinite with INVALID; a NaN the first NaN
+ * operand quieted, INVALID only for an sNaN (the rule of the other widths' fma); a pseudo-denormal reads
+ * as a denormal. */
+static inline cqsf_x80 sfx_fma_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b, cqsf_x80 c) {
+    if (cqsf_noncanon_f80(a) || cqsf_noncanon_f80(b) || cqsf_noncanon_f80(c)) return cqsf_indef_f80(sf_ctx);
+    if (cqsf_isnan_f80(a) || cqsf_isnan_f80(b) || cqsf_isnan_f80(c)) {
+        if (cqsf_issnan_f80(a) || cqsf_issnan_f80(b) || cqsf_issnan_f80(c)) softfloat_raiseFlags(softfloat_flag_invalid);
+        cqsf_x80 z = cqsf_isnan_f80(a) ? a : cqsf_isnan_f80(b) ? b : c;
+        z.signif |= UINT64_C(0xC000000000000000);
+        return z;
+    }
+    return cqsf_extF80_mulAdd(sf_ctx, cqsf_canon_f80(a), cqsf_canon_f80(b), cqsf_canon_f80(c));
 }
 
 static inline cqsf_x80 sfx_fmax_f80(struct sf_ctx *sf_ctx, cqsf_x80 a, cqsf_x80 b) {
@@ -159,6 +276,18 @@ static inline uint64_t sfx_fptrunc_f80_to_f64(struct sf_ctx *sf_ctx, cqsf_x80 a)
     if (cqsf_noncanon_f80(a)) { softfloat_raiseFlags(softfloat_flag_invalid); return UINT64_C(0xFFF8000000000000); }
     return extF80_to_f64(sf_ctx, cqsf_canon_f80(a)).v;
 }
+/* bf16 <-> f80 (clang emits fpext bfloat to x86_fp80 and the fptrunc back). To f80: the shift to f32, then
+ * the exact f32 -> f80. To bf16 (CR §2 bf16 row; compiler-rt __truncxfbf2 on the host, so IEEE): one
+ * rounding, through f32 rounded to odd and then f32 -> bf16 in the mode (24 >= 8 + 2, the same exponent
+ * range); f32's UNDERFLOW is dropped, tininess is decided at bf16. A NaN keeps its high payload. */
+static inline cqsf_x80 sfx_fpext_bf16_to_f80(struct sf_ctx *sf_ctx, uint16_t a) { return f32_to_extF80(sf_ctx, (float32_t){(uint32_t)a << 16}); }
+static inline uint16_t sfx_fptrunc_f80_to_bf16(struct sf_ctx *sf_ctx, cqsf_x80 a) {
+    if (cqsf_noncanon_f80(a)) { softfloat_raiseFlags(softfloat_flag_invalid); return 0xFFC0; }
+    struct sf_ctx t = {softfloat_round_minMag, 0};
+    uint32_t r = extF80_to_f32(&t, cqsf_canon_f80(a)).v;
+    return cqsf_bf16_odd(sf_ctx, &t, r);
+}
+
 static inline cqsf_x80 sfx_si_to_f80(struct sf_ctx *sf_ctx, int64_t x) { return i64_to_extF80(sf_ctx, x); }
 static inline cqsf_x80 sfx_ui_to_f80(struct sf_ctx *sf_ctx, uint64_t x) { return ui64_to_extF80(sf_ctx, x); }
 
