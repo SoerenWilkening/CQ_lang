@@ -8,7 +8,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/env.sh"
-src=${1:-$WT/../CQ_lang2/build/pass/libCQLower.so}
+src=${1:-$WT/../CQ_lang/build/pass/libCQLower.so}
 src=$(cd "$(dirname "$src")" && pwd)/$(basename "$src")
 sha=$(shasum -a 256 "$src" | cut -d' ' -f1)
 d=$KSRC/check/plugin/$sha; mkdir -p "$d"

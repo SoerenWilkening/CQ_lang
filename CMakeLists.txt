@@ -1,4 +1,4 @@
-# CQ_lang2 build (scaffold). Toolchain: brew llvm@19 (19.1.7), never Apple clang.
+# CQ_lang build (scaffold). Toolchain: brew llvm@19 (19.1.7), never Apple clang.
 #   cmake -S . -B build -G Ninja && cmake --build build && ctest --test-dir build
 cmake_minimum_required(VERSION 3.20)
 
@@ -10,7 +10,7 @@ if(NOT CMAKE_CXX_COMPILER)
   set(CMAKE_CXX_COMPILER "${CQ_LLVM_PREFIX}/bin/clang++")
 endif()
 
-project(CQ_lang2 LANGUAGES C CXX)
+project(CQ_lang LANGUAGES C CXX)
 
 foreach(lang C CXX)
   if(NOT CMAKE_${lang}_COMPILER_ID STREQUAL "Clang" OR NOT CMAKE_${lang}_COMPILER_VERSION VERSION_EQUAL 19.1.7)

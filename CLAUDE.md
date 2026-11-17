@@ -1,4 +1,7 @@
-# CQ_lang2: operating manual
+# CQ_lang: operating manual
+
+This compiler was built under the name CQ_lang2. That name in `DECISIONS.md`, bead text and reports means this
+repository. The compiler it replaced is on branch `archive/v1` (tag `cq-lang-v1-final`).
 
 Read [`NORTHSTAR.md`](NORTHSTAR.md) first. It holds the goals and principles and wins over this file.
 This file is how to work.
