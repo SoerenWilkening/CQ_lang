@@ -201,6 +201,15 @@ reference is the CR row (the report names each):
 
 ## Evidence that it lowers and links
 
+- The repo's checker (`cqcheck user`, light mode, 16 samples) on 24 lowered roots, each called from an
+  entry that makes its operands quantum with `cq_theta` and measures the result (`test/checker/`:
+  `entries.c`, `build.sh default|f80`, `check.sh`): fadd f64 and its `_x`, fmul f32, fdiv f16, sqrt
+  f64, frem f16, fma f64, fcmp olt f64, rint f32 `_m`, floor f16, fptosi f64 → i32, sitofp i64 → f32
+  and i7 → f64, fpext f16 → f64, fptrunc f64 → bf16, fadd bf16, fmul bf16 `_m`, fcmp ueq bf16, fneg
+  f32; fadd, fma, sqrt, fptoui → i64, fcmp ogt at f80: 24 PASS (§6-equal to the C program on 16
+  compared samples each), about 45 s a root. `_Float16` and `__bf16` operands enter as quantum 16-bit
+  patterns (CQ.h has no forms for them).
+
 - `build.sh lib`: the 673 default roots lower with no pass error in 17 groups, 1 min 40 s in all
   (a 15.2 MB archive); `build.sh lib cqsf_f80.roots`: 171 roots in 5 groups,
   182 roots, 36 s (5.2 MB).
