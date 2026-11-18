@@ -74,18 +74,23 @@ translator of the IR. A call never returns before its gates are appended in prog
   CR §1.1). `f80` is the x87 80-bit extended pattern (explicit integer bit, CR rule 25). `i1` is one qubit. The qubit order inside a rail is internal to the backend, because
   only values cross the ABI (`alloc`, `measure`, literals). The quantum-angle ladder (§1.5) is the
   one place where bit weights matter.
-- Widths in the corpus: `i1 i7 i8 i16 i32 i64 i100 i128 f16 f32 f64 f80`. Any `N ≥ 1` is legal
-  (CR §1.1), so implement templates generically in W.
+- **Widths.** The integer widths a backend must provide are those the corpus and the lowered
+  float library (§2.12) use, currently `i1 i6 i7 i8 i16 i17 i24 i31 i32 i48 i64 i80 i100 i128
+  i200`; the core gates (§1) also take the float tokens `f16 bf16 f32 f64 f80`. This bullet is
+  the one definition of that list: CR carries no copy. `bswap` exists only where W is a multiple
+  of 16 (§2.8). Any `N ≥ 1` is legal (CR §1.1), so implement templates generically in W: a width
+  outside the list is an undefined symbol at link time until it is added here.
 - **Literal** means a classical value known at run time, not only a compile-time constant
   (`fshl_i32_qll(h, %2, 3)` in 134 passes a function argument). A literal has the LLVM operand
-  type: `i1`, `iN`, `half`, `float`, `double`, `x86_fp80`.
+  type: `i1`, `iN`, `half`, `bfloat`, `float`, `double`, `x86_fp80`.
 - **Aliasing** *(corpus)*. One rail may fill several read-only operand slots of one call, as in
   `cq_template_fshr_i32(%5, %5, %6)` (112) and `cq_template_fadd_f16(%0, %0)` (111). The target of an
   in-place core gate (`not/and/or/xor_i1` `t`, `copy` `d`, `xorc` `h`, `ry/rz` target) never equals
   any other operand of that call.
 - **Narrow scalar arguments and returns.** The corpus declares 6 symbols both with and without
-  `signext`/`zeroext` (allowed, CR §1.2). The backend reads only the low W bits of an
-  `i1`/`i8`/`i16` argument and returns `i1` zero-extended and `i8`/`i16` sign-extended.
+  `signext`/`zeroext` (allowed, CR §1.2). The backend reads only the low W bits of a
+  narrow integer argument and returns `i1` zero-extended and every other integer sign-extended
+  from W (§1.3).
 
 **Namespaces (CR §1.1).**
 
@@ -93,18 +98,20 @@ translator of the IR. A call never returns before its gates are appended in prog
 |---|---|---|
 | `cq_*`, `__cq_*` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`) | `CQ.h`, consumed by the compiler | **no**: never reaches the backend |
 | `cqrt_*` | backend: core gates, memory bus, tape, abort, push/pop (§1) | **yes** |
-| `cq_template_*`, integer (§2.2–§2.7) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
+| `cq_template_*`, integer (§2.2–§2.8) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
 | `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
 | `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
-**Link order.** A referencing archive comes before the archive it references:
-`main.o  [lowered libraries (rule 27)]  libcq_templates.a  libcq_runtime.a` (template circuits
-are built from core primitives).
+**Link order.** The backend is ONE static archive, `libcq_backend.a`, holding every `cqrt_*`
+symbol and every backend `cq_template_*` symbol. A referencing archive comes before the archive
+it references: `main.o  [lowered libraries (rule 27)]  libcq_backend.a`, followed by whatever
+defines the gate operations the backend emits.
 
 **Static or shared.** The backend is a link-time dependency of the lowered program, named to
-the linker like any library: by path, or by `-l<name>` with `-L<dir>`. The lowered program
+the linker like any library: by path, or by `-l<name>` with `-L<dir>`; the name is
+`cq_backend`. The lowered program
 refers to it only by the symbol names of §1 and §2, so both kinds satisfy this ABI.
 - An archive (`.a`): the backend's code is copied into the executable. Nothing is needed at
   run time; another backend needs a relink. The link order above applies.
@@ -137,7 +144,7 @@ cross this ABI.
   the controlled arithmetic grid, `cqrt_qram_alloc_host_<W>[_s]`, `cqrt_qram_realloc_<W>[_unc]`, `cqrt_qram_size`,
   `cqrt_qram_free`, `cqrt_qram_store_<W>*_unc`, `cq_template_qrom_load_<W>[_s]`, the `i32`-index
   `_hl` bus forms, and `cqrt_qram_alloc_<W>` for any bus other than the one of §1.10.
-- `cqrt_push`/`cqrt_pop` are classical host functions the runtime library defines (§1.12), not
+- `cqrt_push`/`cqrt_pop` are classical host functions the backend defines (§1.12), not
   circuit primitives.
 
 **Global obligations.**
@@ -204,12 +211,14 @@ cross this ABI.
 
 ## 1. Core gates (`cqrt_*`)
 
-`<W>` is the width token. `_controlled` takes the control flag (an `i1` rail) as **argument 0**.
-`_unc` of an in-place core gate takes the same arguments (CR §1.3). ⟦h⟧ is the basis value of rail
+`<W>` is the width token. `_controlled` takes the control flag (an `i1` rail) as **argument 0**;
+in the bus load's `_controlled_unc`, which puts the result handle first, it is argument 1 (§1.10).
+The bus load's is the only core `_unc` symbol: the undo of an in-place core XOR gate (§1.8, §1.9,
+the bus swap) is the same call. ⟦h⟧ is the basis value of rail
 h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 
 ### 1.1 `cqrt_alloc_<W>`
-- **Sig.** `i32 @cqrt_alloc_<W>(<T> lit)`, where `<T>` is `iN`/`half`/`float`/`double`/`x86_fp80`.
+- **Sig.** `i32 @cqrt_alloc_<W>(<T> lit)`, where `<T>` is `iN`/`half`/`bfloat`/`float`/`double`/`x86_fp80`.
 - **Sem.** Allocates a fresh W-qubit rail in the basis state `|lit⟩` (`lit` mod 2^W, or the fp bit
   pattern) and returns its handle.
 - **Rails.** Fresh. A seed that is never written is freed directly (CR rule 7).
@@ -233,8 +242,11 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
   reset qubits the same way.
 
 ### 1.3 `cqrt_measure_<W>`
-- **Sig.** `<T> @cqrt_measure_<W>(i32 h)` with `<T>` the C type (`i1`, `i8`, `i16`, `i32`, `i64`,
-  `float`, `double`, `x86_fp80`).
+- **Sig.** `<T> @cqrt_measure_<W>(i32 h)` at every width, with `<T>` the LLVM type of `<W>`
+  (`iN`, `half`, `bfloat`, `float`, `double`, `x86_fp80`). An integer narrower than its register
+  is the value sign-extended from W in the smallest register-passed type (8, 16, 32, 64 or 128
+  bits), `i1` as 0 or 1; an integer wider than 128 bits is returned through a hidden pointer
+  (§2.12).
 - **Sem.** Projective measurement of all W qubits in the computational basis. Returns the outcome
   as a value of type `<T>`.
 - **Rails.** h stays allocated and is never freed. Afterwards it holds the outcome, a known basis
@@ -298,16 +310,18 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
     exponent, the significand that brings val·2^N/P closest to half an integer). No tolerance
     is granted.
   - *Rotations (a).* For each ladder bit i < N and each qubit q of h: Ry(P·2^(i−N)) on q,
-    controlled by K_i. `_controlled`: t ^= c ∧ K_i by CCX on a fresh ancilla, the controlled Ry
+    controlled by K_i. The angle of ladder step i is fl(P)·2^(i−N), where fl(P) is the double
+    nearest to P and the scaling is exact (§1.7 likewise). `_controlled`: t ^= c ∧ K_i by CCX on a fresh ancilla, the controlled Ry
     from t, the same CCX again. Then the reduction once more, which returns K to `|0⟩`, and K is
     released.
   - A classical-valued A needs no reduction circuit: the backend computes k on the host and
-    appends Ry(P·k/2^N).
+    appends Ry(P·k/2^N), the angle being fl(k·fl(P))·2^−N: one rounding, the scaling exact.
 
 ### 1.6 `cqrt_rz_i1`
 - **Sig.** `void @cqrt_rz_i1(i32 f, double θ)`.
 - **Sem.** The phase gate P(θ) = diag(1, e^{iθ}) on flag f. It is not Rz: the two differ by a phase
-  e^{iθ/2}, which is global only because the gate is never controlled. Implement exactly P.
+  e^{iθ/2}, which is global only because the gate is never controlled. Any gate equal to P(θ)
+  up to a global phase conforms, because P is never applied under a direct control.
 - **Rails.** f is unchanged in value and gets a relative phase. There is no `_unc`; the adjoint is
   P(−θ).
 - **§2.** A non-finite θ is the identity. **Ref.** No reference implementation. **Ex.** 03, 08, 41.
@@ -416,7 +430,9 @@ circuit.
   on; any such R gives the same unitary (a flag of an address outside the support never
   fires), so a circuit builder, which cannot know the support, takes the bound it can prove. The
   backend reads and overlays exactly the cells of R. A looser R costs qubits and turns more HOST
-  cells QUANTUM; how tight it is is the backend's resource question, like N and K.
+  cells QUANTUM; how tight it is is the backend's resource question, like N and K. A backend
+  may impose a resource limit on the number of quantum address bits of one access and must fail
+  loudly, not silently, when it is exceeded.
 - **Undo (CR rule 5).** The lowered code undoes a bus event in two cases only, and the backend
   relies on nothing else:
   1. *A load copy* is un-copied (`_unc`) after the last consumer of the loaded value and every
@@ -499,13 +515,14 @@ its fields; a format entry when the fields its format string consumes are writte
   them reading 1. The backend performs a resolved entry at once when
   its predicate is 1 and skips it when 0: a format entry is `printf` on `fmt` and its fields in
   order, an effect entry the host call `name` with its fields as the arguments (a null `name`:
-  the call of the host address in the first field, with the remaining fields). The backend
+  the call of the host address in the first field, with the remaining fields). An integer field
+  narrower than 32 bits is passed sign-extended, an `i1` zero-extended. The backend
   performs every entry with the host C library the lowered program is linked against, never
   with a lowered symbol; that library made every `FILE` the program holds. Memory the host
   call reads or writes is host memory, which the bus sees through the overlay (§1.10); a write the
   backend itself makes for an effect entry is a bus store (§1.10).
 - **The host-boundary table.** An effect entry. The first and the last two rows apply when
-  every earlier event is resolved; the five INPUT rows apply at the call whatever precedes
+  every earlier event is resolved; the INPUT rows apply at the call whatever precedes
   (input is never held behind a deferred output; only the order of outputs is kept):
 
   | case | backend |
@@ -516,6 +533,9 @@ its fields; a format entry when the fields its format string consumes are writte
   | INPUT call, the LENGTH is a quantum rail n | one host call at the backend's bound K2 (§0) into a temporary classical buffer; for each value v the rail n can take, the bytes the same host call with length v would have stored from that input (`fgets`: the first min(v − 1, len) bytes then a NUL for v ≥ 1, nothing for v = 0; `read`/`fread`: byte j for j < min(v, got)) are bus-stored under n = v. The input consumed is that of the K2 call on every branch (a stated deviation from the C program, like the predicate row) |
   | INPUT call under a quantum predicate | performed unconditionally, its result and its bytes merged under the predicate; the input is consumed on every branch (a stated deviation from the C program, like the measurement in an arm of CR rule 2) |
   | INPUT call, its `FILE`, descriptor or other identifying argument is a quantum rail id | never deferred: for each value v the rail can take that names a stream open at the call, one host call on v into a temporary classical buffer, its bytes bus-stored and its result merged under id = v; a value that names no open stream stores nothing. The input is consumed on every such stream (a stated deviation, like the predicate row) |
+  | INPUT call, another field is a quantum rail: `pread`'s offset off | as the row above, with no stream state consumed: for each value v the rail can take, one host call at offset v into a temporary classical buffer, its bytes bus-stored and its result merged under off = v |
+  | INPUT call, another field is a quantum rail: `getdelim`'s delimiter d | as the LENGTH row: one host call at the bound K2 into a temporary classical buffer; for each value v the rail d can take, the bytes and the result the same call with delimiter v would have given from that input, bus-stored and merged under d = v. The input consumed is that of the K2 call on every branch (a stated deviation) |
+  | INPUT call that reads a QUANTUM cell (a `scanf` format) | the host call as it stands: at that cell it reads an unspecified byte (CR rule 16), a stated deviation and the user's responsibility |
   | OUTPUT call with a quantum field or predicate, or one that reads a QUANTUM cell | deferred to the end of the shot |
   | a call that is no INPUT call whose file number, path or other identifying argument is truly quantum | deferred to the end of the shot |
 
@@ -537,7 +557,7 @@ its fields; a format entry when the fields its format string consumes are writte
   | `fgets(s, n, f)`, `fgetws(s, n, f)` | INPUT (210) | s, written | n characters (`fgetws`: of 4 bytes) | f |
   | `fread(p, size, nmemb, f)` | INPUT | p, written | size·nmemb | f |
   | `read(fd, p, n)`, `pread(fd, p, n, off)` | INPUT | p, written | n | fd |
-  | `gets(s)` | INPUT | s, written, at most K2 bytes | | stdin |
+  | `gets(s)` | INPUT | s, written, at most K2 bytes: `fgets` at K2 with the newline removed | | stdin |
   | `fgetc(f)`, `getc(f)`, `getchar()`, `fgetwc(f)`, `getwc(f)`, `getwchar()`, `getw(f)`, `ungetc(c, f)`, `ungetwc(c, f)`, `feof(f)`, `ferror(f)`, `clearerr(f)` | INPUT | none | | f |
   | `scanf(fmt, …)`, `fscanf(f, fmt, …)`, `vscanf(fmt, ap)`, `vfscanf(f, fmt, ap)`, and the wide `wscanf`, `fwscanf`, `vwscanf`, `vfwscanf` | INPUT | fmt: a string (wide in the `w` forms), read; each pointer the format consumes: written with what its conversion stores | | f |
   | `getline(lp, np, f)`, `getdelim(lp, np, d, f)`, `fgetln(f, np)` | INPUT | the pointer cell `*lp`, the size cell `*np` and the line they name: written | | f |
@@ -567,12 +587,18 @@ its fields; a format entry when the fields its format string consumes are writte
   quantum predicate a `longjmp` is `abort_i1` alone), the `pthread_*` calls (CR rule 24), the
   string formatters `sprintf`, `snprintf`, `sscanf` and their kin (lifted, CR rule 16), and the
   `errno` accessor.
+- **Limits.** A backend may impose a resource limit on the number of quantum bits of a rail
+  whose values an INPUT row enumerates, and may leave unimplemented: a quantum character of
+  `ungetc` or `ungetwc` (a pushback is classical host state), a format or `va_list` pointer of
+  an INPUT call that is a quantum rail, positional `%n$` conversions, and a host call with more
+  than 16 stack argument slots. It must fail loudly, not silently, on each (as §1.10).
 - **Deferred.** A deferred event is one of the last two rows, an unresolved format entry or
   abort flag, or any event that is not an INPUT call behind one; its r is `|0⟩`. At the end of
   the shot (process exit: return from `main`, `exit`, or an `atexit` handler the backend registers on its first call; a
   classical `_Exit` loses the tape as it loses unflushed stdio) the backend measures the
   deferred events and performs, in sequence order, every entry whose predicate read 1 and that
-  no earlier abort flag reading 1 precedes.
+  no earlier abort flag reading 1 precedes. A deferred `exit` entry performed there is
+  `fflush(NULL)` then `_Exit(code)`.
 - **Capture.** A buffer or string a deferred entry reads is captured when the entry is
   complete, never at the end of the shot, under the entry's predicate c, over the extent the backend knows by `name` (a classical length; an OUTPUT buffer's rail
   length n at the bound K2, byte j under `j < n`; a NUL-terminated string up to its first HOST
@@ -584,7 +610,10 @@ its fields; a format entry when the fields its format string consumes are writte
   performed call receives the captured bytes of a string followed by a 0 and reads them up to the
   first 0 among them, a measured cell's outcome included; a string of K2 or more bytes is cut at K2
   (a stated deviation). `fmt` and `name` are copied
-  at the call. The predicate c of an entry (`cqrt_tape_fmt_controlled`,
+  at the call. The conversions that decide what is captured are read from the format's host
+  bytes at the call: at a QUANTUM cell of the format or of a `va_list`, and for a format at an
+  address rail, those bytes are unspecified (CR rule 16), a stated deviation and the user's
+  responsibility. The predicate c of an entry (`cqrt_tape_fmt_controlled`,
   `cqrt_tape_effect[_<W>]_controlled`) is captured at that call too: a classical-valued c as
   its bit, any other c XOR-copied into a fresh tape rail of the event, never freed, and that
   rail is what the end of the shot measures. After the call the compiler treats c by its own
@@ -597,7 +626,7 @@ its fields; a format entry when the fields its format string consumes are writte
 | `void @cqrt_tape_effect_controlled(i32 c, i32 t, ptr name, i32 n)` and `i32 @cqrt_tape_effect_<W>_controlled(i32 c, i32 t, ptr name, i32 n)` → r | The effect entry of the host call `name` (`raise`, `remove`, `read`, …; a host string) under predicate c. Its arguments are the last n fields written to t before the call; fields of a preceding format entry beyond those its format string uses are ignored. `<W>` is the width token of the callee's result type (a pointer: `i64`); the bare form is emitted when the callee has no result or the program does not read it (CR rule 16). r is a fresh rail: the call's result when the entry is performed at this call, `\|0⟩` when it is skipped or deferred. No uncontrolled form exists: the compiler passes a `cqrt_alloc_i1(true)` seed (CR rule 16). |
 | `i32 @cqrt_tape_write_<W>(i32 t, i32 h)` → h′ and `i32 @cqrt_tape_write_<W>_controlled(i32 c, i32 t, i32 h)` → h′ | Appends a field. h′ is a fresh write-only tape rail with h′ ^= h (`_controlled`: h′ ^= c ? h : 0). h is unchanged. h′ stays entangled with h and is never freed or uncomputed *(corpus, 47; sample_check)*. |
 | `void @cqrt_tape_write_<W>_lit(i32 t, <T> lit)` | Appends a classical field. |
-| `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and an event of the sequence. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). When f is classical-valued 1 (§0; always so for a fresh `alloc_i1(true)` seed) every branch aborted here and the call does not return: the shot ends at this point as at process exit (Deferred, above), the backend measuring the deferred events and performing the tape in order, the `noreturn` entry before the flag among it; the backend then ends the process if no performed entry did (CR rule 16, `noreturn`). |
+| `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and an event of the sequence. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). When f is classical-valued 1 (§0; always so for a fresh `alloc_i1(true)` seed) every branch aborted here and the call does not return: the shot ends at this point as at process exit (Deferred, above), the backend measuring the deferred events and performing the tape in order, the `noreturn` entry before the flag among it; the backend then ends the process, with exit status 1, if no performed entry did (CR rule 16, `noreturn`). |
 
 - **Impl.** Not gates (b, c), except the copies named here. `tape_alloc`, `tape_fmt`,
   `tape_write_<W>_lit`, `tape_effect` and `abort_i1` append a record to the event sequence; the
@@ -1047,9 +1076,22 @@ included, `softfloat/tools/backend_needs.py`):
 | `abs`; `smax_hl`; `umax_hl`; `umin_hl`; `usub_sat_hl` | i1 i8 i16 i32 i64; i8 i16 i32; i16 i32; i32; i8 i16 |
 | `ctlz`; `fshl`, `fshl_qql`; `bitreverse` | i8 i32 i64; i64; i6 |
 
-An `iN` literal with N > 128 (`select_i200_ll`, `shl_i200_hl`) arrives as LLVM passes it: N/64
-integer argument registers when all fit, else all on the stack with the remaining integer argument
-registers skipped.
+An `iN` literal with N > 128 (`select_i200_ll`, `shl_i200_hl`) arrives as the pinned LLVM 19.1.7
+passes it on x86-64: as ⌈N/64⌉ 64-bit limbs, low limb first (an `i200`: 4). With r the number of
+integer argument registers (rdi rsi rdx rcx r8 r9) earlier arguments have taken (a hidden result
+pointer counts as one; a `double` does not count), an `i200` takes:
+
+| r | limbs of an `i200` |
+|---|---|
+| ≤ 2 | four registers |
+| 3 | limbs 0–2 in rcx, r8, r9; limb 3 on the stack |
+| 4 | limbs 0–1 in r8, r9; limbs 2–3 on the stack |
+| 5 | all four on the stack; r9 stays unused, by every later argument too |
+| 6 | all four on the stack |
+
+A two-limb literal (`i128`, `i100`) takes two registers for r ≤ 4; at r = 5 both limbs go on the
+stack and r9 stays unused, by every later argument too. An `i200` result is returned through a
+hidden pointer in rdi. LLVM 22 differs (it uses r9 at r = 5), so the pinned version is normative.
 
 **Not provided.** `fpext`/`fptrunc` between f16 and bf16 (out of scope, CR §2); `fcmp_false`,
 `fcmp_true` (folded, never emitted); conversions at integer widths other than those listed (one more

@@ -149,7 +149,8 @@ and returns `out` to `|0⟩` by recomputation. Literals carry the LLVM operand t
 
 ### 1.3 Core gates (`cqrt_*`)
 
-Control flag is always argument 0 of a `_controlled` form.
+Control flag is always argument 0 of a `_controlled` form, except in `qram_load`'s
+`_controlled_unc`, which puts the result handle first: `(h, c, m, addr)`.
 
 ```
 alloc_<W>(lit) -> h               fresh rail in basis state |lit>
