@@ -321,12 +321,21 @@ Every function is also lowered on its own, with all arguments quantum and its ca
 | SQLite 3 (core) | 1,542 | 1,542 | `sqlite3VdbeExec`, the bytecode interpreter, takes about 14 minutes; every other function is under 2 |
 | GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | |
 | GMP 6.3.0 (generic C) | 650 | 650 | |
+| [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | |
+| [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | |
 
 "Lowers" means the pass produced a module that passes its structural verifier. The lowered
 libraries are not checked against the C programs: the checker runs programs, and the reduced cases
 under `experiments/repro-round*/` are what it has run. Two of them are known faults:
 `repro-round8/asrt5.c` (a wrong result: an assert on a classical condition in the body of a loop with
 a quantum exit tested at its header) and `repro-round8/exitdead_leak.c` (a rail left live at exit).
+
+A function whose body is in the program is lowered once per mix of classical and quantum arguments
+it is called with, so ABC and Game of Life are also lowered under every such mix except all-classical
+(`experiments/mask_sweep.sh`): ABC 171 of 171 arrangements (`encode_move`, 7 arguments, 127 of them),
+Game of Life 79 of 79. Each needed one source change. ABC's argument-less functions are declared `f()`,
+which C17 reads as unprototyped; they now say `(void)`. Game of Life's display loop `while (1)` has no
+exit; it is now a loop of 1000 generations.
 
 Gate counts come from the recommended backend's counting gate backend (`-lcq_gates_count`, results
 in the file named by `CQ_COUNT`), which counts gates, depth and qubits without building a circuit.
@@ -353,6 +362,23 @@ they were taken on intermediate builds of the pass and are not validated.
 | `gsl_stats_variance` | 130.3 M |
 | `gsl_complex_mul`, then `gsl_complex_abs` | 159.8 M |
 | `gsl_cdf_ugaussian_P` | 369.5 M |
+
+Game of Life is counted from its kernel (`addPadding`, then `nextGen`) on a torus with the
+sizes and the two arrays' addresses classical and the cells in superposition (`experiments/gol/life.c`):
+
+| Board | Cells in superposition | Generations | Gates | of them CCX | Depth | Qubits |
+|---|---|---|---|---|---|---|
+| 3 x 3 | 1 | 1 | 2,161 | 294 | 819 | 83 |
+| 3 x 3 | 9 | 1 | 7,471 | 2,016 | 1,795 | 315 |
+| 3 x 3 | 9 | 2 | 14,847 | 4,032 | 3,587 | 473 |
+| 8 x 8 | 64 | 1 | 52,941 | 14,336 | 12,730 | 1,675 |
+| 8 x 8 | 64 | 10 | 523,605 | 143,360 | 127,273 | 10,387 |
+| 8 x 8 | 64 | 100 | 5,230,245 | 1,433,600 | 1,272,703 | 97,507 |
+| 8 x 8 | 64 | 1,000 | 52,296,645 | 14,336,000 | 12,727,003 | 968,707 |
+| 32 x 32 | 1,024 | 100 | 83,595,045 | 22,937,600 | 20,371,903 | 1,470,307 |
+
+Every cell costs 224 CCX per generation. The qubit count grows with the generations (about 15 per cell
+and generation) because nothing uncomputes a generation's overwritten cells.
 
 Not counted yet: LU, Cholesky, Jacobi, the symmetric eigensolver and interpolation stop in the
 backend, because a memory read inside a loop with a quantum exit gets an address the backend treats
