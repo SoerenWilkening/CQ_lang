@@ -1968,6 +1968,13 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
         if w:
             body = (f"{rt} cqd_r = {callexpr}; "
                     f'CQD_RESULT({ci}, "{fn}", "{w}", &cqd_r, sizeof cqd_r, {bits});')
+            if w.startswith("i") and bits < 32:
+                # cq-qdqtr: a lowered entry returns a narrow rail result as its i32 handle (CR rule 27, Entry); a
+                # consumer that defines CQD_HRET(fn) reads it whole through an int-returning type
+                types = ", ".join(parse_ctype(a["ctype"]).spelling for a in call["args"]) or "void"
+                body = (f'\n#ifdef CQD_HRET\n            if (CQD_HRET("{fn}")) {{ int cqd_h = ((int (*)({types})){fn})'
+                        f'({", ".join(names)}); CQD_RESULT({ci}, "{fn}", "{w}", &cqd_h, sizeof cqd_h, 32); }} else\n'
+                        f"#endif\n            {{ {body} }}")
         else:
             body = f"(void){callexpr};"
         outs = [f'{out_mem}("{o}", (const void *)&{o}, sizeof({o}));' for o in objects]

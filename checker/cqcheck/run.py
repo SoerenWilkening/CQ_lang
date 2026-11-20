@@ -297,6 +297,7 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
   snprintf(line, sizeof line, "{\"ev\":\"ret\",\"v\":\"%s\",\"w\":\"%s\",\"call\":%d,\"fn\":\"%s\"%s}", hex, w, call, fn, hn);
   cqe_log(line);
 }
+#define CQD_HRET(fn) cqd_hret(fn)   /* drivers.driver_source: a narrow result read as its i32 handle (cq-qdqtr) */
 #define CQD_RESULT(call, fn, w, p, n, bits) \
   cqd_ret(call, fn, (w)[0] == 'a' ? "" : (w), p, n, (bits) ? (bits) : (unsigned)(8 * (n)))
 """
@@ -1971,6 +1972,7 @@ _K2_SPINE = re.compile(r"^\s+(?:tail |notail )?call void @(?:[-\w.$]+_unc|cqrt_f
 _K2_SEED = re.compile(r"^\s+%[-\w.$]+ = (?:tail |notail )?call i32 @cqrt_alloc_i8\(i8 -?\d+\)\s*$")
 _K2_BR = re.compile(r"^\s+br label %([-\w.$]+)\s*$")
 _K2_PHI = re.compile(r"^\s+(%[-\w.$]+) = phi i64 \[ 0, %[-\w.$]+ \], \[ %[-\w.$]+, %([-\w.$]+) \]\s*$")
+_K2_RUNPHI = re.compile(r"^\s+%[-\w.$]+ = phi i1 ")
 _K2_LOOP_BR = re.compile(r"^\s+br i1 %[-\w.$]+, label %[-\w.$]+, label %([-\w.$]+)\s*$")
 
 
@@ -1989,7 +1991,10 @@ def _k2_trips(lines: List[str], j: int, hi: int, labels: Dict[str, int], n: str,
     head = labels.get(b.group(1))
     if head is None or head + 1 >= hi:
         return False
-    phi = _K2_PHI.match(lines[head + 1])
+    # cq-8dpur: the spine's run-flag phis (i1, uncompute flagAt) may stand in the loop's header before its counter
+    while head + 1 < hi and _K2_RUNPHI.match(lines[head + 1]):
+        head += 1
+    phi = _K2_PHI.match(lines[head + 1]) if head + 1 < hi else None
     if not phi or phi.group(2) != b.group(1):
         return False
     pred = re.compile(rf"^\s+%[-\w.$]+ = (?:tail |notail )?call i32 @cq_template_icmp_ugt_i64_hl\(i32 {re.escape(n)}, "

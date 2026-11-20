@@ -1,7 +1,10 @@
 // Module pred (cq-w0-pred), private. A reduced ordered BDD manager: the canonical form behind Pred.
 //
-// Variables are condition atoms, numbered in creation order (that is also the variable order). Node 0
-// is false, node 1 is true. Nodes are never freed: one compiler run builds a bounded number of them.
+// Variables are condition atoms, numbered in creation order. The variable order is creation order too,
+// except for a variable placed with placeAfter (cq-ewzri): it is inserted into the order after an older
+// one. Inserting a new variable keeps every existing node a reduced ordered BDD of the same function
+// (no node reads it), so node numbers stay canonical and the memos stay valid. Node 0 is false, node 1
+// is true. Nodes are never freed: one compiler run builds a bounded number of them.
 #pragma once
 
 #include <cstdint>
@@ -21,6 +24,14 @@ public:
   static Bdd &get();   // the one manager of this process
 
   unsigned var(unsigned n) const { return nodes[n].var; }
+  // A variable's position in the order (smaller is nearer the root).
+  unsigned level(unsigned v) {
+    place(v);
+    return lvl[v];
+  }
+  // Order v (not yet ordered) right after variable `after` (ordered); a variable never placed is
+  // appended at its first use, every unordered variable below it first.
+  void placeAfter(unsigned v, unsigned after);
   unsigned lo(unsigned n) const { return nodes[n].lo; }
   unsigned hi(unsigned n) const { return nodes[n].hi; }
   bool terminal(unsigned n) const { return n <= T; }
@@ -59,7 +70,14 @@ private:
       return size_t(h ^ (h >> 32));
     }
   };
+  void place(unsigned v) {
+    if (v >= lvl.size() || lvl[v] == NoVar)
+      append(v);
+  }
+  void append(unsigned v);
+  unsigned top(unsigned n) { return terminal(n) ? NoVar : level(var(n)); }   // NoVar: below every variable
   std::vector<Node> nodes;
+  std::vector<unsigned> lvl, order;   // var -> level, level -> var
   std::unordered_map<Key3, unsigned, Hash3> unique, iteMemo;
   // cq-g3h1i: per-walk marks of cofactor and support: seenAt[n] == stamp says n was visited by the current walk
   // (memoVal[n]: cofactor's result for it).

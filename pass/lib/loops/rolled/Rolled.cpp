@@ -231,6 +231,10 @@ void Region::flushTrips() {
     for (auto &[t, gs] : mid)
       U.flushRailsBefore(gs, t);
   }
+  SmallVector<unsigned, 8> segScopes;
+  for (const Seg &sg : segs)
+    segScopes.push_back(sg.scope);
+  U.beginTripFlush(segScopes);   // cq-rb96s: no outer deferred item is placed in the trip
   for (unsigned i = 0; i < segs.size(); ++i) {
     for (auto &[g, at] : lateR6)
       if (at->getParent() == segs[i].bb)
@@ -239,6 +243,7 @@ void Region::flushTrips() {
     finishSubs(i + 1);
   }
   finishSubs(~0u);
+  U.endTripFlush();
   for (unsigned h = 0; h < heads.size(); ++h)
     if (headEntry[h].first)
       heads[h].first = headEntry[h].first->getSuccessor(headEntry[h].second);
@@ -593,13 +598,41 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
               work.push_back(sb);
       }
     }
+    // cq-aqr5v (CR rules 5, 14): a rail a record of this segment's scope makes in the block of an earlier segment ds:
+    // pred's per-edge flag on an edge into this classical join, minted at the end of ds's block while this segment was
+    // walked. Every path through ds made it, whether or not it reaches this segment (ds may leave the trip, or the join
+    // may not follow ds at all), so its undo runs on ds's paths, in R[ds] before ds's own mirror: the reverse comes there
+    // after this segment's (whose items read the rail through the join's phi), and ds pushes what the undo reads.
+    auto segOfDef = [&](const Value *v) -> int {
+      auto *d = dyn_cast<Instruction>(v);
+      return d && region.count(d->getParent()) && segOf.count(d->getParent()) ? int(segOf.lookup(d->getParent())) : -1;
+    };
+    DenseMap<const Value *, unsigned> foreign;
+    for (const Record &rec : U.scopeRecords(segs[i].scope))
+      if (int s = rec.forward ? segOfDef(rec.forward) : -1; s >= 0 && unsigned(s) < i && !rec.forward->getType()->isVoidTy())
+        foreign[rec.forward] = unsigned(s);
+    SmallPtrSet<Instruction *, 8> moved;
+    for (Instruction *I : mirror) {
+      if (foreign.empty() || I->isTerminator() || isa<PHINode>(I) || !I->use_empty() || inRevSub.count(I->getParent()))
+        continue;
+      int ds = -1;
+      for (Use &u : I->operands())
+        if (auto f = foreign.find(u.get()); f != foreign.end())
+          ds = int(f->second);
+      if (ds < 0 || any_of(I->operands(), [&](Use &u) { int s = segOfDef(u.get()); return s >= 0 && !dom[ds].test(s); }))
+        continue;
+      I->moveBefore(*R[ds], R[ds]->end());
+      moved.insert(I);
+    }
+    llvm::erase_if(mirror, [&](Instruction *I) { return moved.count(I) != 0; });
     // The forward values the mirror reads: popped here, pushed at the end of the segment.
     std::vector<Value *> needs;
+    DenseSet<Value *> needSet;   // cq-ewzri: needs' members (a scan of needs per operand is quadratic)
     for (Instruction *I : mirror)
       for (Use &u : I->operands())
         if (auto *d = dyn_cast<Instruction>(u.get());
             d && ((region.count(d->getParent()) && segOf.count(d->getParent())) || inRevSub.count(d->getParent())) &&
-            !is_contained(needs, d)) {
+            !needSet.count(d)) {
           // cq-9kcq S11f: a value of an inReverse sub-unit's trips (its exit value, read by a record of this trip) stands
           // for the segment entering the sub-unit.
           unsigned ds = segOf.count(d->getParent()) ? segOf.lookup(d->getParent()) : inRevSub.lookup(d->getParent());
@@ -608,6 +641,7 @@ void Region::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool gu
                           "its own",
                           d);
           needs.push_back(d);
+          needSet.insert(d);
         }
     DenseMap<Value *, Value *> popped;
     {
@@ -1128,14 +1162,9 @@ bool Region::finishExits(BasicBlock *T, unsigned seedScope, const ExitWiring &w,
   const std::vector<unsigned> &scs = w.scs;
   const DenseSet<const Value *> &ownedH = w.ownedH;
   const std::vector<RailId> &exits = w.exits;
-  if (exits.empty()) {
-    flushTrips();
-    IRBuilder<> B(T);
-    reverse(B, X, seedScope, false);
-    ctx.B().SetInsertPoint(B.GetInsertBlock());
-    return false;
-  }
-  // The exit rails are read after the loop: no trip's flush may resolve them in their own trip.
+  // The exit rails are read after the loop: no trip's flush may resolve them in their own trip. cq-03rdt (CR rules 5, 14):
+  // nor the initial rails the header phis name, which trip 0 reads through the phi and the reverse reads after the loop
+  // (cq-odo1): a flush in a trip would otherwise place an earlier loop's reverse, which frees them, inside this loop.
   {
     Instruction *xt = nullptr;
     for (BasicBlock *p : predecessors(X))
@@ -1144,6 +1173,39 @@ bool Region::finishExits(BasicBlock *T, unsigned seedScope, const ExitWiring &w,
       internalError("loops-classical: the loop's exit block has no predecessor", latchTerm);
     for (RailId x : exits)
       U.noteUse(x, xt);
+    for (Value *h : externalInits)
+      U.noteUse(U.idOf(h), xt);
+    // Likewise every rail from outside the region a trip's record reads (an earlier loop's exit predicate as this loop's
+    // arm flag, GSL rk4imp): the reverse reads it after the loop, so no flush in a trip may place the item that frees it
+    // (CR rule 5: an operand rail outlives every _unc that reads it; rule 14: the reverse runs once, after the trips).
+    DenseSet<RailId> made;
+    DenseSet<const BasicBlock *> inRegion;
+    for (const Seg &sg : segs) {
+      inRegion.insert(sg.bb);
+      inRegion.insert(sg.head);
+      for (const Record &r : U.scopeRecords(sg.scope))
+        made.insert(r.out);
+    }
+    for (auto &[H, from] : heads)
+      inRegion.insert(H);
+    std::vector<RailId> outer;
+    for (const Seg &sg : segs)
+      for (const Record &r : U.scopeRecords(sg.scope))
+        for (const Operand &o : r.ops) {
+          auto *d = o.handle ? dyn_cast<Instruction>(o.v) : nullptr;
+          if (d && !inRegion.count(d->getParent()))
+            if (RailId x = U.idOf(o.v); !made.count(x) && !is_contained(outer, x))
+              outer.push_back(x);
+        }
+    for (RailId x : outer)
+      U.noteUse(x, xt);
+  }
+  if (exits.empty()) {
+    flushTrips();
+    IRBuilder<> B(T);
+    reverse(B, X, seedScope, false);
+    ctx.B().SetInsertPoint(B.GetInsertBlock());
+    return false;
   }
   flushTrips();
   std::vector<RailId> reads;

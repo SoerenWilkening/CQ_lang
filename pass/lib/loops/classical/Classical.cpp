@@ -57,6 +57,7 @@
 #include "cq/Calls.h"
 #include "cq/Aggregates.h"
 #include "cq/Bus.h"
+#include "cq/FenvCarry.h"
 #include "cq/Predicate.h"
 #include "cq/Switch.h"
 #include "../../spine/SpineInternal.h"
@@ -428,8 +429,9 @@ void Unit::planRuleSix(Loop &L, Case c) {
   BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
   if (!pre)
     return;   // several entries: the initial value is a merge of them, undone by the reverse like any record
-  if (exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
-    return;   // a trip may end before the update: the exit value is not the chain's
+  if (!latch || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
+    return;   // a trip may end before the update: the exit value is not the chain's (no latch: several back edges after
+              // fix-irreducible, where liveExiting is nullptr too when several blocks exit: __gmpn_hgcd2_jacobi)
   const bool c3 = c == Case::ClassicalBoundQuantumExit;
   if (!c3 && !qp(header).isTop())
     return;
@@ -506,7 +508,7 @@ void Unit::planRuleSix(Loop &L, Case c) {
 // anything else the reverse loop would undo: each is a kept store's value, or reaches only a chain planned above.
 void Unit::planRuleSixMerges(Loop &L) {
   BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
-  if (!pre || !qp(header).isTop() || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
+  if (!pre || !latch || !qp(header).isTop() || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
     return;
   DominatorTree &DT = spine::shared(ctx).dt(F);
   auto chainEnd = [&](const Value *v) {
@@ -859,6 +861,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     SmallVector<Value *, 2> res;    // this trip's res, one per field
     SmallVector<Value *, 2> atCx;   // the captures as cxb's classical exit into the arm sees them (cxArm)
     SmallVector<RailType, 2> rails; // the fields' rail types
+    // cq-11qhg: the captures on the walk's open flow (cap, with the exits taken early, below, selected in) and at the end of
+    // each walked block; joined at a classical join of the trip as the trip predicate is.
+    SmallVector<Value *, 2> run;
+    SmallVector<DenseMap<const BasicBlock *, Value *>, 2> runOut;
     bool ptr = false;
     bool shaped = false;
     const Value *orig() const { return P ? static_cast<const Value *>(P) : x; }
@@ -900,6 +906,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   SmallVector<ArmExit, 2> armExits;
   BasicBlock *tgtFrom = nullptr;                    // the block whose terminator is being emitted
   SmallVector<Disj, 4> mixedDs;   // cq-h8y6: the classical disjuncts of a mixed exit test at cxb (empty: cxb is classical)
+  bool midCxb = false;            // cq-iaz30: cxb is a classical test into C inside the trip (neither header nor latch)
   auto buildArmUnits = [&]() {
     if ((UX.arm.empty() && UX.abort.empty()) || mxLI)
       return;
@@ -1019,10 +1026,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             if (is_contained(UX.abort, x))
               cxArm = x;
         }
-    if (cxb && cxb != latch && cxb != header)
-      unimplemented("loops-classical: a multi-exit case-3 loop whose classical exit test is neither its latch's nor "
-                    "its header's",
-                    cxb->getTerminator());
     auto *lbr = dyn_cast<BranchInst>(latch->getTerminator());
     if (!lbr)
       unimplemented("loops-classical: a multi-exit case-3 loop whose latch test is quantum", latch->getTerminator());
@@ -1043,6 +1046,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     buildArmUnits();
     if (cxArm)
       armExits.emplace_back(cxb, cxArm, newBlock());
+    // cq-iaz30 (CR rule 14 case 3 with rule 8): a classical bound tested mid-trip (gsl_min_find_bracket: `i == max` before the
+    // latch's quantum test; broyden_iterate: the mixed test `q && i < 9 && q'`) into C leaves where the trip stands at it, as a
+    // classical exit test besides the bound does (cq-2xl5): its res is made at its branch (extraRes: the trip predicate there
+    // selects its own edge's value over the exits taken before it), not at the latch, which the trip that leaves never reaches.
+    midCxb = cxb && cxb != latch && cxb != header && !cxArm;
     for (BasicBlock *a : UX.arm)
       for (Instruction &I : *a) {
         // The arm's branches are flags of its blocks and edges, its phis rule 9 selects, its effects run
@@ -1382,6 +1390,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         capInits.push_back(seed(Constant::getNullValue(irTypeOf(C, w)), w));
     }
   }
+  // cq-v1fu, cq-03rdt (CR rules 14, 23; cq/FenvCarry.h step 1): every piece of the environment a trip may change, its rail at
+  // the entry. The reverse reads it as it reads a quantum header phi's initial rail.
+  std::vector<fenv::CarriedPiece> fenvPieces = fenv::loopCarried(ctx, L);
+  if (outermost)
+    for (const fenv::CarriedPiece &pc : fenvPieces)
+      externalInits.push_back(pc.init);
   BasicBlock *H = newBlock();
   ctx.B().CreateBr(H);
   if (outermost) {
@@ -1411,6 +1425,16 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       carried.push_back({&p, np, q, false});
     }
   }
+  // Steps 2-3: each piece is a carried handle phi the trip reads; its back-edge incoming is the piece at the end of the trip.
+  std::vector<std::pair<unsigned, PHINode *>> fenvPhis;
+  for (const fenv::CarriedPiece &pc : fenvPieces) {
+    PHINode *np = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), 2, "cq.fenv");
+    np->addIncoming(pc.init, entryFrom);
+    ctx.unc().recordExternal(np, Role::UserRegister);
+    ctx.unc().noteCarried(np);
+    fenv::bindPiece(ctx, pc.id, np);
+    fenvPhis.push_back({pc.id, np});
+  }
   PHINode *notFirst = nullptr;
   if (any_of(plan6, [&](const R6 &r) { return r.initLoad && L.contains(r.p); })) {
     notFirst = ctx.B().CreatePHI(Type::getInt1Ty(ctx.M.getContext()), 2, "nfirst");
@@ -1433,6 +1457,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         cp->addIncoming(capInits[at++], entryFrom);
         ctx.unc().recordExternal(cp, Role::UserRegister);
         c.cap.push_back(cp);
+        c.run.push_back(cp);
+        c.runOut.emplace_back();
       }
     unsigned k = 0;
     for (const Instruction *v : liveOut)
@@ -1503,11 +1529,16 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // from the unit bound by it. kOf: the unit's blocks inside L -> the sub-loop.
   DenseMap<const BasicBlock *, Loop *> kOf;
   // A case-3 sub-loop with several exits (its exit arm, lowered with it) is such a unit too: its classical
-  // exit is a real branch into C, its C phis bound by it.
+  // exit is a real branch into C, its C phis bound by it. "Several exits" is lowerLoop's multi-exit form (mx): several live
+  // exit blocks, a noreturn arm, or a live exit edge from a block other than the latch (cq-aqr5v: two exiting blocks into one
+  // hub).
+  auto c3Multi = [&](Loop &s) {
+    exits::Unit SU = exits::unitOf(s);
+    return SU.multi() || exits::liveExiting(s) != s.getLoopLatch() || !SU.abort.empty();
+  };
   for (Loop *s : L.getSubLoops())
     if (Case sc = classify(*s, ctx.T, ctx.S);
-        sc == Case::QuantumExit ||
-        (sc == Case::ClassicalBoundQuantumExit && (exits::unitOf(*s).multi() || !exits::unitOf(*s).abort.empty()))) {
+        sc == Case::QuantumExit || (sc == Case::ClassicalBoundQuantumExit && c3Multi(*s))) {
       exits::Unit SU = exits::unitOf(*s);
       for (BasicBlock *b : s->blocks())
         kOf[b] = s;
@@ -1576,6 +1607,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // and, per phi of the join, the rejoin's value.
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, Pred> rejoinFact;
   DenseMap<std::pair<const PHINode *, const BasicBlock *>, Operand> rejoinVal;
+  // cq-11qhg: linearized edges into a classical join whose open flow ended in a real branch into it (flowInto, below).
+  DenseSet<std::pair<const BasicBlock *, const BasicBlock *>> flowReal;
   auto termQ = [&](const Instruction *t) {
     if (auto *br = dyn_cast<BranchInst>(t))
       return br->isConditional() && isQ(br->getCondition());
@@ -1602,6 +1635,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (is_contained(UX.abort, a) == is_contained(UX.abort, b))
       return nullptr;
     return is_contained(UX.abort, a) ? b : a;
+  };
+  // A quantum exit test of a multi-exit trip before the latch (emitTerminator's qExit): its exit is the flags e and a', so the
+  // trip goes on into its one successor inside the loop on every path, as through an unconditional branch (cq-11qhg).
+  auto qExitNext = [&](const BasicBlock *u) -> BasicBlock * {
+    auto *br = dyn_cast<BranchInst>(u->getTerminator());
+    if (!mx || u == latch || !br || !br->isConditional() || !termQ(br))
+      return nullptr;
+    BasicBlock *a = br->getSuccessor(0), *b = br->getSuccessor(1);
+    if (L.contains(a) == L.contains(b) || a == header || b == header)
+      return nullptr;
+    return L.contains(a) ? a : b;
   };
   std::function<EK(const BasicBlock *, const BasicBlock *)> edgeKind;
   // A tail block entered from outside the unit both by a linearized edge (a quantum skip of the loop, in the unit's classical
@@ -1658,6 +1702,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   edgeKindAt = [&](const BasicBlock *u, const BasicBlock *s) {
     if (rejoinFact.count({u, s}))
       return EK::Linear;
+    if (flowReal.count({u, s}))
+      return EK::Real;
     if (Loop *k = kunit(u); k && kunit(s) != k)
       return kReal(k) ? EK::Real : EK::Linear;
     if (subOf(u))
@@ -1665,9 +1711,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (u == cxb && !mixedDs.empty())
       return EK::Real;   // cq-h8y6: a mixed exit test branches classically on its classical disjuncts
     const Instruction *t = u->getTerminator();
-    if (termQ(t))
+    if (termQ(t) && !qExitNext(u))
       return EK::Linear;
-    if (auto *br = dyn_cast<BranchInst>(t); br && (!br->isConditional() || abortTestNext(u))) {
+    if (auto *br = dyn_cast<BranchInst>(t); br && (!br->isConditional() || abortTestNext(u) || qExitNext(u))) {
       // A classical join inside a quantum arm (rule 8: the classical branch nested in the arm stays a
       // classical branch, and its arms meet again under the same quantum predicate) is a real join.
       if (armed(u)) {
@@ -1888,7 +1934,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           continue;
         if (!uo.handle)
           internalError("loops-classical: a K-unit bound a phi of its continuation to no rail", &p);
-        PHINode *np = PHINode::Create(handleTy(ctx.M.getContext()), 2, p.getName());
+        // cq-aqr5v (cq-2xl5 in a trip): a case-3 sub-loop with classical exit tests besides its bound joined its exit edges'
+        // values at ob(b) itself: uo is that join, the value on every edge of the unit.
+        auto *unitJoin = dyn_cast<PHINode>(uo.v);
+        if (unitJoin && unitJoin->getParent() != ob(b))
+          unitJoin = nullptr;
         DenseSet<const Loop *> doneUnit;
         SmallVector<std::pair<BasicBlock *, Value *>, 4> ins;
         for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
@@ -1896,7 +1946,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (edgeKind(u, b) != EK::Real)
             continue;
           Loop *k = kunit(u);
-          if (k && !doneUnit.insert(k).second)
+          if (k && (!doneUnit.insert(k).second || unitJoin))
             continue;
           const BasicBlock *ru = k ? kRep.lookup(k) : u;
           auto it = edgeFrom.find({ru, b});
@@ -1919,6 +1969,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         }
         if (auto kf = kFlowVal.find(&p); kf != kFlowVal.end())
           ins.push_back(kf->second);
+        if (unitJoin && ins.empty())
+          continue;   // p is bound to the unit's join already
+        PHINode *np = PHINode::Create(handleTy(ctx.M.getContext()), 2, p.getName());
         np->insertInto(ob(b), ob(b)->getFirstNonPHIIt());
         for (auto &[from, v] : ins)
           np->addIncoming(v, from);
@@ -2062,6 +2115,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       const bool composite = p.getType()->isAggregateType() || p.getType()->isVectorTy();
       std::vector<std::pair<Pred, Operand>> arms;
       SmallVector<const Value *, 4> vals;
+      std::optional<Pred> partFact;
       for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
         BasicBlock *pi = p.getIncomingBlock(i);
         if (unitEdgeIntoTail(pi, s) || (kp && kunit(pi) == kp))
@@ -2069,17 +2123,26 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (pi != u) {
           if (edgeKind(pi, s) == EK::Real)
             continue;   // another classical arm: not on u's path
+          // cq-vs1eo (rules 8, 9, 14): an incoming from the other quantum arm, not walked yet (no fact), whose value does
+          // not exist here: that flow runs after this region, which rejoin() closes into a block of its own; s then
+          // joins it with the region's value as linearized incomings. On u's real edge only the region's flow.
+          if (!factOf.count(pi) && !isa<Constant>(p.getIncomingValue(i)) && !ctx.bound(p.getIncomingValue(i)))
+            continue;
           if (!factOf.count(pi))
             unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &p);
           Pred pf = factAt(pi);
           if ((uf & pf).isBottom())
             continue;
+          // cq-ad51l (rule 9): pi's flow is on u's path only where its fact holds (sqlite jsonExtractFunc: `c2 ? J : q ? ..`
+          // beside a region under `p != 0` in another quantum arm): its arm is chosen under that fact too.
           if (!(uf & !pf).isBottom())
-            internalError("loops-classical: a linearized incoming of a mixed join whose classical fact holds on part "
-                          "of a real edge's path",
-                          &p);
+            partFact = pf;
         }
         Pred e = ctx.preds().edge(pi, s).quantumPart(ctx.T, ctx.S);
+        if (partFact) {
+          e = e & *partFact;
+          partFact.reset();
+        }
         if (auto tp = kTailPred.find(pi); kp && tp != kTailPred.end())
           e = tp->second & ctx.preds().edge(pi, s);   // its classical atoms too: the unit's value is read where they exclude it
         const Value *v = p.getIncomingValue(i);
@@ -2184,8 +2247,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         mixedEdge(u, s);
     }
     for (PHINode &p : s->phis()) {
-      if (!isQ(&p) || edgeSeed.count({&p, u}) || edgeVal.count({&p, u}))
-        continue;
+      if (!isQ(&p) || edgeSeed.count({&p, u}) || edgeVal.count({&p, u}) || (kBound.count(&p) && kunit(u)))
+        continue;   // (a phi a K-unit bound takes the unit's value on its edges)
       Value *v = p.getIncomingValueForBlock(u);
       Operand o = ctx.operand(v);
       if (o.handle)
@@ -2407,7 +2470,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ev.entry[e] = f;
     walkArm(ev, UX.arm);
     for (CPhi &cp : cphis) {
-      SmallVector<Value *, 2> c(cp.cap.begin(), cp.cap.end());
+      SmallVector<Value *, 2> c(cp.run.begin(), cp.run.end());
       SmallVector<Operand, 2> vl;
       for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {
         if (u == cxb && mixedDs.empty()) {
@@ -2426,7 +2489,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         cp.cap[f]->addIncoming(c[f], cur);
       if (cxArm && cxb == latch)
         cp.atCx.assign(c.begin(), c.end());
-      else if (cxb != header || cxb == latch) {
+      else if ((cxb != header && !midCxb) || cxb == latch) {
         cp.res.clear();
         for (unsigned f = 0; f < c.size(); ++f)
           cp.res.push_back(!vl.empty() ? select(aCur, vl[f], Operand{c[f], true}, cp.rails[f]) : c[f]);
@@ -2536,13 +2599,23 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   std::vector<ExtraExit> extraExits;
   auto extraRes = [&](BasicBlock *u) {
     ArmEval ev;
+    // The quantum exits this trip has tested before u: a test that reaches u in the trip (a linearized quantum arm's runs in
+    // the open flow; one in a classical arm of its own took its edge in run already, and left exitFlag).
+    DenseSet<const BasicBlock *> before;
+    {
+      SmallVector<const BasicBlock *, 8> work{u};
+      while (!work.empty())
+        for (const BasicBlock *p : predecessors(work.pop_back_val()))
+          if (L.contains(p) && p != latch && before.insert(p).second)
+            work.push_back(p);
+    }
     for (auto &[e, f] : exitFlag)
-      if (mxDT->dominates(e.first, u))
+      if (mxDT->dominates(e.first, u) || before.count(e.first))
         ev.entry[e] = f;
     walkArm(ev, UX.arm);
     ExtraExit xx{u, {}};
     for (CPhi &cp : cphis) {
-      SmallVector<Value *, 2> c(cp.cap.begin(), cp.cap.end());
+      SmallVector<Value *, 2> c(cp.run.begin(), cp.run.end());
       SmallVector<Operand, 2> vl;
       for (auto &[w, val] : cp.incomings(inUnit, UX.cont)) {
         if (w == u) {
@@ -2568,7 +2641,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     Instruction *t = u->getTerminator();
     if (isAbortTest(u))
       abortTest(u);
-    if (mx && is_contained(cxExtra, u))
+    if (mx && (is_contained(cxExtra, u) || (midCxb && u == cxb)))
       extraRes(u);
     const bool qExit = mx && termQ(t) && any_of(successors(u), [&](const BasicBlock *s) { return !L.contains(s); });
     if (u == latch && !qExit)
@@ -2640,6 +2713,23 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (auto &[x, e] : intoArm)
         noreturnArm(u, x, e);
       followInsert();
+      // cq-11qhg (CR rule 14 case 3 with rules 8, 9): an exit test in a classical arm of the trip (its classical fact stronger
+      // than the latch's) makes e where the latch's flow does not see it: the captures take its edge here, and the open flow
+      // carries them to the classical join (run), as it carries the trip predicate.
+      if (UX.cont && !(cfOf(ctx.preds().block(latch)) & !cfOf(ctx.preds().block(u))).isBottom())
+        for (BasicBlock *x : xs) {
+          auto ef = exitFlag.find({u, x});
+          if (x != UX.cont || ef == exitFlag.end())
+            continue;
+          for (CPhi &cp : cphis)
+            for (auto &[w, val] : cp.incomings(inUnit, UX.cont))
+              if (w == u) {
+                SmallVector<Operand, 2> fv = fieldsOf(cp, val);
+                for (unsigned f = 0; f < cp.run.size(); ++f)
+                  cp.run[f] = select(ef->second, fv[f], Operand{cp.run[f], true}, cp.rails[f]);
+              }
+          exitFlag.erase(ef);
+        }
       // cq-h8y6: a mixed exit test (cxb with classical disjuncts) leaves the loop classically where one of them
       // holds: there its flag is 1, so this trip's exit took its value under a (the captures, or res).
       Value *cExit = nullptr;
@@ -2672,6 +2762,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (BasicBlock *s : successors(u))
           mintEdgeSeeds(u, s);
         ctx.B().CreateCondBr(cExit, cxArm ? target(cxArm) : T, target(in));
+        cur = nullptr;
+      } else if (BasicBlock *in = qExitNext(u); in && edgeKind(u, in) == EK::Real) {
+        // The trip goes on into a classical join (the exit test sat in a classical arm of the trip): a real edge.
+        mintEdgeSeeds(u, in);
+        ctx.B().CreateBr(target(in));
         cur = nullptr;
       }
       return;
@@ -2857,8 +2952,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   requireFact(header);
   emitInstructions(header);
   emitTerminator(header);
+  auto noteRun = [&](const BasicBlock *b) {
+    for (CPhi &cp : cphis)
+      for (unsigned f = 0; f < cp.run.size(); ++f)
+        cp.runOut[f][b] = cp.run[f];
+  };
   aOut[header] = aCur;
   stopOut[header] = stopCur;
+  noteRun(header);
   // The walk order (rule 8 inside a trip). A block entered by classical edges only starts a segment of
   // its own and needs no open block; a block entered by linearized edges only continues the open block,
   // which must run exactly where the block's classical factor holds (a quantum arm's code runs on every
@@ -2928,6 +3029,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         joinTrip(b, aOut, aCur, aPhi);
       if (stopPhi)
         joinTrip(b, stopOut, stopCur, stopCur);
+      for (CPhi &cp : cphis)
+        for (unsigned f = 0; f < cp.run.size(); ++f)
+          joinTrip(b, cp.runOut[f], cp.run[f], cp.run[f]);
     } else if (!cur) {
       internalError("loops-classical: a linearized block walked with no open block", &*b->begin());
     }
@@ -2952,6 +3056,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (!sl)
       requireFact(b);
     if (sl) {
+      // A sub-loop takes no exit of this loop: the captures leave its blocks as they enter them.
+      for (const BasicBlock *x : sl->blocks())
+        noteRun(x);
+      for (auto &[x, k] : kOf)
+        if (k == sl)
+          noteRun(x);
       Case sc = classify(*sl, ctx.T, ctx.S);
       if (sc == Case::QuantumExit) {
         // CR rule 14, nested K-loops: the chain's seed is this trip's predicate (case 3: a_{j-1}; a case-1
@@ -3052,6 +3162,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         }
         kRep[sl] = rep;
         if (edgeKind(rep, C) == EK::Real) {
+          // cq-a0x8d (gmp __gmpn_mu_bdiv_q): a phi of C the unit did not bind (a literal on its exit edge) takes the unit's real
+          // edge like any real edge: a seed of the literal (rule 7), the select over the linearized incomings at a mixed join.
+          mintEdgeSeeds(const_cast<BasicBlock *>(rep), C);
           ctx.B().CreateBr(ob(C));
           cur = nullptr;
         }
@@ -3104,12 +3217,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         else
           ctx.bindFields(v, ops);   // a phi of the multi-exit sub-loop's continuation (its exit value)
       }
-      if ((SU.multi() || !SU.abort.empty()) && sc != Case::ClassicalBound) {
+      if (sc == Case::ClassicalBoundQuantumExit && c3Multi(*sl)) {
         for (PHINode &P : sx->phis())
           if (!was.count(&P) && ctx.bound(&P))
             kBound.insert(&P);
+        // Its real edge into sx: a classical exit test's branch (a quantum exit's edge is the flags of its test's block).
         for (const BasicBlock *p : predecessors(sx))
-          if (kunit(p) == sl && edgeFrom.count({p, sx}))
+          if (auto ef = edgeFrom.find({p, sx}); kunit(p) == sl && ef != edgeFrom.end() && ef->second->getTerminator() &&
+                                                is_contained(successors(ef->second), ob(sx)))
             kRep[sl] = p;
         if (!kRep.count(sl))
           internalError("loops-classical: a multi-exit sub-loop with no real edge into its continuation",
@@ -3125,6 +3240,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     emitTerminator(b);
     aOut[b] = aCur;
     stopOut[b] = stopCur;
+    noteRun(b);
   };
   auto drain = [&]() {
     for (unsigned k = 0; k < pending.size();) {
@@ -3138,14 +3254,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       k = 0;
     }
   };
+  // cq-a0x8d: the joins rejoin took real edges from; one left with no real edge is walked in the open flow only.
+  SmallVector<const BasicBlock *, 2> rejoined;
   // cq-vs1eo (CR rule 14 with rules 8, 9): the walk waits with no open block for a linearized block w (the other quantum
   // arm) while a classical region nested in an earlier arm has left for a join s still to walk. Where the region's real
   // edges into s hold on every path w runs on, they end in a rejoin block R instead: R's phis join the region's values of
   // s's phis (rule 9: a classical join of the arm's values, a phi of handles), the open flow goes on from R under the
-  // region's fact, and s takes those edges as linearized incomings carrying R's values (a mixed join, mixedEdge).
+  // region's fact, and s takes those edges as linearized incomings carrying R's values (a mixed join, mixedEdge). The region
+  // may be a sub-loop's exit edge (cq-a0x8d: a sub-loop always ends in a real branch).
+  // cq-a0x8d (glpk glp_analyze_bound): with an open flow, the same rejoin joins the flow too, where the region's edges and
+  // the flow's fact together cover where w runs (`if (c) { if (q) W; }  if (d) { if (q2) W; } else S;`: c's arm already
+  // flowed into d's test). The flow ends in R as well, with a |0> seed for each phi of s (s's edge is not its path: rules 7, 9).
   auto rejoin = [&]() -> bool {
-    if (cur)
-      return false;
     BasicBlock *w = nullptr;
     for (BasicBlock *b : pending)
       if (pendSet.count(b)) {
@@ -3164,10 +3284,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!pendSet.count(s) || s == w)
         continue;
       SmallVector<BasicBlock *, 4> rs;
-      Pred f = Pred::bottom();
+      Pred f = cur ? curFact : Pred::bottom();
       for (const BasicBlock *p : fwdPreds(s))
         if (factOf.count(p) && !pendSet.count(p) && edgeKind(p, s) == EK::Real && edgeFrom.count({p, s}) && armed(p) &&
-            !subOf(p) && !kunit(p)) {
+            !kunit(p)) {
           rs.push_back(const_cast<BasicBlock *>(p));
           f = f | edgeFact(p, s);
         }
@@ -3176,6 +3296,24 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       BasicBlock *R = newBlock();
       for (BasicBlock *p : rs)
         edgeFrom[{p, s}]->getTerminator()->replaceSuccessorWith(ob(s), R);
+      rejoined.push_back(s);
+      // The open flow's trip predicate, stop rail and captures, and its |0> seed per phi of s.
+      BasicBlock *flow = cur ? ctx.B().GetInsertBlock() : nullptr;
+      SmallVector<Value *, 8> flowAt;
+      DenseMap<const PHINode *, Value *> flowSeed;
+      if (flow) {
+        flowAt.push_back(aCur);
+        flowAt.push_back(stopCur);
+        for (CPhi &cp : cphis)
+          flowAt.append(cp.run.begin(), cp.run.end());
+        for (PHINode &P : s->phis())
+          if (!P.getType()->isAggregateType() && !P.getType()->isVectorTy())
+            flowSeed[&P] = isQ(&P) ? seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), railOf(P.getType()))),
+                                          railOf(P.getType()))
+                                   : static_cast<Value *>(Constant::getNullValue(P.getType()));
+        ctx.B().CreateBr(R);
+        cur = nullptr;
+      }
       startSeg(R);
       curFact = f;
       for (PHINode &P : s->phis()) {
@@ -3185,6 +3323,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           continue;
         }
         SmallVector<std::pair<BasicBlock *, Operand>, 4> in;
+        if (flow)
+          in.push_back({flow, Operand{flowSeed.lookup(&P), q}});
         for (BasicBlock *p : rs) {
           Operand o;
           if (auto e = edgeVal.find({&P, p}); e != edgeVal.end())
@@ -3218,10 +3358,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (BasicBlock *p : rs)
         rejoinFact[{p, s}] = f;
       // The trip predicate and the stop rail at R: the region's, joined as at any classical join.
-      for (auto [outOf, var] : {std::make_pair(&aOut, &aCur), std::make_pair(&stopOut, &stopCur)}) {
+      SmallVector<std::pair<DenseMap<const BasicBlock *, Value *> *, Value **>, 4> vars{{&aOut, &aCur}, {&stopOut, &stopCur}};
+      for (CPhi &cp : cphis)
+        for (unsigned f = 0; f < cp.run.size(); ++f)
+          vars.push_back({&cp.runOut[f], &cp.run[f]});
+      for (unsigned vi = 0; vi < vars.size(); ++vi) {
+        auto [outOf, var] = vars[vi];
         if (!*var)
           continue;
         SmallVector<std::pair<BasicBlock *, Value *>, 4> in;
+        if (flow)
+          in.push_back({flow, flowAt[vi]});
         for (BasicBlock *p : rs)
           if (Value *x = outOf->lookup(p))
             in.push_back({edgeFrom[{p, s}], x});
@@ -3259,11 +3406,145 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
     drain();
   }
-  while (!pendSet.empty() && rejoin())
+  // cq-11qhg (CR rule 14 with rules 8, 9): the walk waits with an open block for a classical join s that the open flow
+  // also enters by linearized edges (a quantum branch in one classical arm of the trip with an edge into the join of that
+  // arm: `if (c || !q) J;`). Where everything the open flow still has to run lies at s or after it in the trip, the flow
+  // ends in a real branch into s: those edges are real edges of s from then on, and the code past them runs once, after s.
+  auto flowInto = [&]() -> bool {
+    if (!cur)
+      return false;
+    const unsigned now = unsigned(segs.size() - 1);
+    auto inFlow = [&](const BasicBlock *p, const BasicBlock *b) {
+      auto ef = edgeFrom.find({p, b});
+      return ef != edgeFrom.end() && segIdx.count(ef->second) && segIdx.lookup(ef->second) == now;
+    };
+    // The blocks of the trip reached from s without the back edge.
+    auto after = [&](BasicBlock *s) {
+      DenseSet<const BasicBlock *> r{s};
+      SmallVector<BasicBlock *, 8> work{s};
+      while (!work.empty())
+        for (BasicBlock *t : successors(work.pop_back_val()))
+          if (t != header && L.contains(t) && r.insert(t).second)
+            work.push_back(t);
+      return r;
+    };
+    for (BasicBlock *s : pending) {
+      if (!pendSet.count(s) || !entryKinds(s).first)
+        continue;
+      SmallVector<const BasicBlock *, 4> lin;
+      for (const BasicBlock *p : fwdPreds(s))
+        if (!pendSet.count(p) && edgeKind(p, s) != EK::Real && inFlow(p, s))
+          lin.push_back(p);
+      if (lin.empty())
+        continue;
+      // Every edge the open flow has yet to follow leads to s or past it.
+      DenseSet<const BasicBlock *> r = after(s);
+      bool ok = true;
+      for (auto &[e, from] : edgeFrom)
+        if (segIdx.count(from) && segIdx.lookup(from) == now && L.contains(e.second) && e.second != header &&
+            !factOf.count(e.second) && !r.count(e.second))
+          ok = false;
+      if (!ok)
+        continue;
+      for (const BasicBlock *p : lin) {
+        mintEdgeSeeds(const_cast<BasicBlock *>(p), s);
+        flowReal.insert({p, s});
+        edgeFrom[{p, s}] = cur;
+      }
+      ctx.B().CreateBr(ob(s));
+      cur = nullptr;
+      return true;
+    }
+    return false;
+  };
+  // cq-a0x8d (CR rule 14 with rules 8, 9; glpk _glp_wclique, glp_analyze_coef): the arms of a classical branch of the trip
+  // each hold a quantum branch whose linearized edges meet at a block W before the arms' classical join (`if (c) { if (q1)
+  // W; } else { if (q2) W; }`). W runs where either arm ran, so the arms' flows join first: an open flow that waits while
+  // another classical arm is still to walk ends in a real branch into a join block R (collect), the arm is walked, and
+  // once nothing else can be walked R starts a segment under the union of the flows' facts, the trip predicate, stop rail
+  // and captures joined as at any classical join (openJoin). W and the code after it run there.
+  struct FlowIn {
+    BasicBlock *from;
+    SmallVector<Value *, 8> at;
+  };
+  BasicBlock *joinR = nullptr;
+  Pred joinFact = Pred::bottom();
+  SmallVector<FlowIn, 4> joinIns;
+  auto flowVars = [&]() {
+    SmallVector<Value **, 8> v{&aCur, &stopCur};
+    for (CPhi &cp : cphis)
+      for (unsigned f = 0; f < cp.run.size(); ++f)
+        v.push_back(&cp.run[f]);
+    return v;
+  };
+  auto closeFlow = [&]() {
+    if (!joinR)
+      joinR = newBlock();
+    FlowIn in{ctx.B().GetInsertBlock(), {}};
+    for (Value **v : flowVars())
+      in.at.push_back(*v);
+    joinIns.push_back(std::move(in));
+    joinFact = joinFact | curFact;
+    ctx.B().CreateBr(joinR);
+    cur = nullptr;
+  };
+  auto collect = [&]() -> bool {
+    if (!cur)
+      return false;
+    for (BasicBlock *b : pending) {
+      if (!pendSet.count(b))
+        continue;
+      if (Loop *t = kTail.lookup(b); t && (pendSet.count(t->getHeader()) || !walkedUnits.count(t)))
+        continue;
+      if (any_of(fwdPreds(b), [&](const BasicBlock *p) { return p != b && pendSet.count(p); }))
+        continue;
+      if (auto [anyReal, anyLin] = entryKinds(b); anyReal && !anyLin) {
+        closeFlow();
+        return true;
+      }
+    }
+    return false;
+  };
+  auto openJoin = [&]() -> bool {
+    if (!joinR)
+      return false;
+    if (cur)
+      closeFlow();
+    BasicBlock *R = joinR;
+    joinR = nullptr;
+    startSeg(R);
+    curFact = joinFact;
+    joinFact = Pred::bottom();
+    SmallVector<Value **, 8> vars = flowVars();
+    for (unsigned vi = 0; vi < vars.size(); ++vi) {
+      Value *v0 = joinIns.front().at[vi];
+      if (!v0)
+        continue;
+      *vars[vi] = v0;
+      if (all_of(joinIns, [&](const FlowIn &in) { return in.at[vi] == v0; }))
+        continue;
+      PHINode *ph = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), unsigned(joinIns.size()));
+      for (const FlowIn &in : joinIns)
+        ph->addIncoming(in.at[vi], in.from);
+      ctx.unc().recordMerge(ph);
+      *vars[vi] = ph;
+    }
+    joinIns.clear();
+    return true;
+  };
+  // A flow into its join first (flowInto); an open flow closes for a classical arm still to walk before it rejoins.
+  while (!pendSet.empty() && ((!cur && rejoin()) || flowInto() || collect() || (cur && rejoin()) || openJoin()))
     drain();
+  openJoin();   // a flow closed with nothing left to walk goes on from R (and then ends open: the check below)
+  // cq-a0x8d (gmp __gmpn_brootinv): a join whose real edges all went to rejoin blocks (a sub-loop's exit edge in one quantum
+  // arm, linearized code in the other) was walked in the open flow; its output block was made for those edges and is dead.
+  for (const BasicBlock *s : rejoined)
+    if (BasicBlock *o = obMap.lookup(s); o && o->empty() && pred_empty(o)) {
+      obMap.erase(s);
+      o->eraseFromParent();
+    }
   if (!pendSet.empty())
-    unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &*(*pendSet.begin())->begin());
-  if (cur)
+    unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &*(*pendSet.begin())->begin());  if (cur)
     internalError("loops-classical: the trip walk ended with an open block", latch->getTerminator());
 
   // Back edges.
@@ -3277,6 +3558,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       notFirst->addIncoming(ConstantInt::getTrue(ctx.M.getContext()), it->second);
     if (stopPhi)
       stopPhi->addIncoming(stopOut.lookup(latch), it->second);
+    for (auto &[id, np] : fenvPhis) {
+      IRBuilderBase::InsertPointGuard g(ctx.B());
+      ctx.B().SetInsertPoint(it->second->getTerminator());
+      np->addIncoming(fenv::pieceNow(ctx, id), it->second);
+    }
   }
   // CR rule 14 case 3 with rules 8, 9: the classical exit test left into the exit arm. It holds once per activation, on
   // a real branch, so the arm on that edge runs once, in a segment of its own, under the trip predicate at the test (a
@@ -3383,12 +3669,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       auto ef = edgeFrom.find({u, UX.cont});
       return ef == edgeFrom.end() ? nullptr : ef->second;
     };
-    if (BasicBlock *lb = leave(cxb))
+    if (BasicBlock *lb = midCxb ? nullptr : leave(cxb))
       from.push_back({lb, &bound});
     for (ExtraExit &xx : extraExits)
       if (BasicBlock *lb = leave(xx.u))
         from.push_back({lb, &xx.res});
-    if (!outermost || !T || cxArm || !armExits.empty() ||
+    if (!T || cxArm || !armExits.empty() ||
         any_of(predecessors(T), [&](BasicBlock *p) { return none_of(from, [&](const auto &e) { return e.first == p; }); })) {
       noteUnbuilt("loops-classical: a case-3 loop with several classical exit tests whose exit edges do not all enter "
                   "its continuation from the trip",
@@ -3411,16 +3697,20 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         }
         cp.res.assign(merged.begin(), merged.end());
       }
-      exitIndex = PHINode::Create(Type::getInt32Ty(Cx), unsigned(from.size()), "exit");
-      exitIndex->insertInto(T, T->end());
-      for (BasicBlock *p : predecessors(T))
-        for (unsigned j = 0; j < from.size(); ++j)
-          if (from[j].first == p) {
-            exitIndex->addIncoming(ConstantInt::get(Type::getInt32Ty(Cx), j), p);
-            break;
-          }
-      for (auto &[lb, rs] : from)
-        exitSegs.push_back(lb);
+      // A sub-loop's T is a block of the parent's trip: the parent's reverse comes back through the edge taken (its
+      // come-from); the exit index is the outermost loop's alone.
+      if (outermost) {
+        exitIndex = PHINode::Create(Type::getInt32Ty(Cx), unsigned(from.size()), "exit");
+        exitIndex->insertInto(T, T->end());
+        for (BasicBlock *p : predecessors(T))
+          for (unsigned j = 0; j < from.size(); ++j)
+            if (from[j].first == p) {
+              exitIndex->addIncoming(ConstantInt::get(Type::getInt32Ty(Cx), j), p);
+              break;
+            }
+        for (auto &[lb, rs] : from)
+          exitSegs.push_back(lb);
+      }
     }
   }
   for (CPhi &cp : cphis) {
@@ -3611,14 +3901,38 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     // a rail from before the loop) is copied out first, as before.
     if (stopCur)
       stopFinal = stopCur;
+    // cq-v1fu, cq-03rdt (CR rules 14, 23; cq/FenvCarry.h step 4): each piece at T is an exit value of the loop, wired as one
+    // (read in place or copied out before the reverse undoes the trips), never a trip's rail read after the reverse freed it.
+    std::vector<std::pair<unsigned, Operand>> fenvOut;
+    for (auto &[id, np] : fenvPhis) {
+      fenvOut.push_back({id, Operand{fenv::pieceNow(ctx, id), true}});
+      out.push_back({fenv::pieceKey(ctx, id), fenvOut.back().second});
+      outW.push_back(RailType{Kind::Int, 32});
+    }
+    auto fenvSlot = [&](const Value *v) -> Operand * {
+      for (auto &[id, o] : fenvOut)
+        if (fenv::pieceKey(ctx, id) == v)
+          return &o;
+      return nullptr;
+    };
     // cq-037u2 (CR rule 17 with rule 14): an outermost loop inside an open cq_invert region keeps a copy of each value read
     // after the region's end, made before its reverse, which then runs inside the region.
     auto afterEnd = [&](const Value *v) { return rolled::readAfterInvertEnd(top, v); };
     rolled::Region::ExitWiring wiring = wireExits(
         seedScope, out, outW, stopCur, keptFinal,
-        [&](const Value *v) { return nested || inTrip || !extraExits.empty() || !readersKeep(v); }, put, nullptr,
+        // the environment after the loop is read by eff-fenv until it is replaced: a copy, uncomputed after that reader
+        [&](const Value *v) { return fenvSlot(v) || nested || inTrip || !extraExits.empty() || !readersKeep(v); },
+        [&](const Value *v, Operand op) {
+          if (Operand *o = fenvSlot(v))
+            *o = op;
+          else
+            put(v, op);
+        },
+        nullptr,
         !nested && !inTrip && !stopCur && U.invertOpen() ? function_ref<bool(const Value *)>(afterEnd)
                                                           : function_ref<bool(const Value *)>());
+    for (auto &[id, o] : fenvOut)
+      fenv::bindPiece(ctx, id, o.v);
     std::vector<unsigned> &scs = wiring.scs;
     DenseSet<const Value *> &ownedH = wiring.ownedH;
     std::vector<RailId> &exits = wiring.exits;
@@ -3705,15 +4019,33 @@ void Unit::resolvePreheader() {
   if (DT.dominates(pre, exitB))
     return;
   std::vector<RailId> rails;
+  // GSL ode-initval rk4imp (CR rule 5: a rail is uncomputed before every rail its producer read, so resolving one here resolves its
+  // readers too): read nowhere but there and in the loop, transitively. A rail of the preheader read by one that is read
+  // after the loop (`q & 2` read by its `lshr`, a value of the exit merge) waits with that one. A quantum guard's atoms are
+  // read after the loop too: the exit merge's arms are under the guard's edge predicates (rules 8, 9).
+  DenseSet<const Instruction *> outside;
+  // The preheader's own terminator, a quantum switch as well as a guard branch (SQLite sqlite3Pragma: a load at an address
+  // made here is the scrutinee, read by the flags of the other cases after the loop).
+  outside.insert(pre->getTerminator());
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (Instruction &I : *pre)
+      if (!outside.count(&I))
+        for (const User *u : I.users()) {
+          auto *ui = dyn_cast<Instruction>(u);
+          if (!ui || (ui->getParent() != pre && !top.contains(ui)) || outside.count(ui)) {
+            outside.insert(&I);
+            changed = true;
+            break;
+          }
+        }
+  }
   for (Instruction &I : *pre) {
     if (I.isTerminator() || !isQ(&I) || isa<CallBase>(I) || isa<PHINode>(I))
       continue;
-    bool inside = true;
-    for (const User *u : I.users()) {
-      auto *ui = dyn_cast<Instruction>(u);
-      inside &= ui && (ui->getParent() == pre || top.contains(ui));
-    }
-    if (!inside)
+    bool inside = !outside.count(&I);
+    // A guard condition read by the branch alone has no rail of its own (rule 8: its predicate is its atoms' flags).
+    if (!inside || !ctx.bound(&I))
       continue;
     Operand op = ctx.operand(&I);
     auto *ci = op.handle ? dyn_cast<CallInst>(op.v) : nullptr;
@@ -3744,6 +4076,40 @@ void lowerClassical(LoweringContext &ctx, Loop &L, Case c) {
 
 namespace exits {
 
+namespace {
+// CR rule 14 with rules 8, 9 (cq-h8y6): a loop of a K-loop's tail runs in that K-loop's trips for the unit's paths only
+// (Exits.h Unit::tail); the walker lowers the tail again for the paths that enter it from outside. Its blocks' predicates
+// over the whole function also hold those outside paths, whose atoms may lie in a quantum arm the walk has not reached
+// (GMP's mpz_scan0: the tail's join with the other arm). The trip's paths: the assumption, beside any in force, under
+// which the loop is lowered in the trip. nullopt when L's header is in no K-loop's tail.
+std::optional<Pred> tripPaths(LoweringContext &ctx, const Loop &L) {
+  BasicBlock *h = L.getHeader();
+  Function &F = *h->getParent();
+  DominatorTree DT(F);
+  LoopInfo LI(DT);
+  for (Loop *O : LI.getLoopsInPreorder()) {
+    if (O->contains(h) || classify(*O, ctx.T, ctx.S) != Case::QuantumExit)
+      continue;
+    Unit U = unitOf(*O);
+    if (is_contained(U.tail, h))
+      return !tailPred(ctx, *O, U, h, DT);
+  }
+  return std::nullopt;
+}
+
+// Runs f under tripPaths(L) (restored after).
+template <typename Fn> auto underTripPaths(LoweringContext &ctx, const Loop &L, Fn f) {
+  std::optional<Pred> P = tripPaths(ctx, L);
+  if (!P)
+    return f();
+  std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
+  ctx.preds().assume(was ? *was & *P : *P, ctx.T, ctx.S);
+  auto r = f();
+  ctx.preds().assume(was, ctx.T, ctx.S);
+  return r;
+}
+} // namespace
+
 Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
   Case c = classify(L, ctx.T, ctx.S);
   if (c == Case::QuantumExit)
@@ -3768,7 +4134,7 @@ Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
     for (PHINode &p : SU.cont->phis())
       if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
         sh.binds.erase(&p);
-  return std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip);
+  return underTripPaths(ctx, L, [&] { return std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip); });
 }
 
 std::shared_ptr<rolled::Region> lowerClassicalSubInTrip(LoweringContext &ctx, Loop &L, Value *trip, BasicBlock *resetAt,
@@ -3795,7 +4161,7 @@ std::shared_ptr<rolled::Region> lowerClassicalSubInTrip(LoweringContext &ctx, Lo
       if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
         sh.binds.erase(&p);
   auto sub = std::make_shared<cq::loops::Unit>(ctx, L);
-  stop = sub->runSubInTrip(c, trip, resetAt);
+  stop = underTripPaths(ctx, L, [&] { return sub->runSubInTrip(c, trip, resetAt); });
   return sub;
 }
 

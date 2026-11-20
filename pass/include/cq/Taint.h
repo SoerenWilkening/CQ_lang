@@ -9,6 +9,7 @@
 
 #include "cq/Abi.h"
 #include "cq/Common.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -79,6 +80,8 @@ enum class FenvObject { Confined, Constant, Memory };
 FenvObject fenvObjectKind(const llvm::Value *ptr);
 class TaintInfo {
 public:
+  // eff-fenv's answer per specialization (Fenv.cpp carriesEnvImpl), kept for the life of this result.
+  mutable llvm::DenseMap<const Specialization *, bool> carriesEnvMemo;
   bool isQuantum(const llvm::Value *, const Specialization &) const;
   llvm::SmallVector<bool, 4> fieldMask(const llvm::Value *, const Specialization &) const;
   bool isTainted(const llvm::Function &) const;   // Q2: F is rewritten (not its own lowering)

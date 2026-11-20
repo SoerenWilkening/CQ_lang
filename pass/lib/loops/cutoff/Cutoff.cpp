@@ -85,8 +85,10 @@
 #include "../../spine/SpineInternal.h"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/AssumptionCache.h"
@@ -651,8 +653,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     local.insert({b, acc});
   }
   Pred cont = Pred::bottom();   // body form: some back edge is taken
+  // cq-iaz30 (CR rule 14): a latch inside a sub-loop whose exit edge is the back edge (sqlite exprAnalyzeOrTerm: the inner
+  // scan's `if (!p) continue outer`) is that sub-loop's exit; as a unit the sub-loop always ends there (contribution). Its
+  // exit test's atom is a rail of the sub-loop's rolled trip, which does not reach the end of this trip.
   for (BasicBlock *l : latches)
-    cont = cont | (local.find(l)->second & edgeCond(l, H));
+    cont = cont | contribution(l, H);
   Pred regionCont = Pred::bottom();                               // region form
   if (regionForm)
     for (const BasicBlock *r : L.blocks())   // the loop's order: a first edgeCond may number an atom
@@ -682,7 +687,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Value *off = nullptr;                            // the classical offset of the current trip
     std::optional<Operand> exitRail;                 // set when the value is read after the loop
   };
-  DenseMap<PHINode *, QInduction> qind;
+  MapVector<PHINode *, QInduction> qind;   // cq-aeroi: walked to seed rails, in insertion order
   DominatorTree &DT = A.DT;
   for (PHINode *h : hphis) {
     if (!isQ(h) || !h->getType()->isIntegerTy())
@@ -734,7 +739,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // CR rule 14 (f981c89): an affine induction (a classical header phi, taint) is not carried; when the
   // program reads its exit value after the loop, a rail seeded with the start advances by
   // select(q_j, rail + step, rail) for that read alone (never used in the loop).
-  DenseMap<PHINode *, Operand> exitRail;
+  MapVector<PHINode *, Operand> exitRail;   // cq-aeroi: walked to seed rails, in insertion order
   std::vector<Instruction *> regionQReads;   // region form: quantum values read after the loop
   // GENERAL EXIT CAPTURE. The single-exit forms read an exit value from the final state (body form:
   // a header phi's latch incoming; region form: the last region evaluation, the state being frozen
@@ -984,7 +989,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         Value *v = P.getIncomingValue(i);
         if (!ctx.bound(v) || !predReadable(ctx, outsideEdge(u))) {
           const Loop *vl = A.LI.getLoopFor(u);
-          if (!vl || vl->contains(H))
+          // cq-iaz30 (rules 9, 14): u in the exit arm of another quantum-exit loop into C is that unit's, whether it is lowered
+          // later (GSL gsl_ran_hypergeometric) or around this one, L in its arm (SQLite sqlite3ExprAffinity). On its own paths
+          // its trips merge u's edge (their atoms are one trip's); only a tail block's paths from outside it are the walker's,
+          // under its tail predicate (as that unit gives them, unless it is lowered earlier).
+          std::optional<Pred> ownArm;
+          if (!vl)
+            for (Loop *O : A.LI.getLoopsInPreorder()) {
+              if (O == &L || O->contains(H) || !is_contained(exits::unitOf(*O).arm, u))
+                continue;
+              const Case oc = classify(*O, ctx.T, ctx.S);
+              if (oc != Case::QuantumExit && oc != Case::ClassicalBoundQuantumExit)
+                continue;
+              exits::Unit OU = exits::unitOf(*O);
+              ownArm = is_contained(OU.tail, u) ? exits::tailPred(ctx, *O, OU, u, A.DT) & ctx.preds().edge(u, C)
+                                                : Pred::bottom();
+              break;
+            }
+          if (ownArm && !ownArm->isBottom())
+            ctx.addJoinArm(&P, *ownArm, v);
+          else if (!ownArm && (!vl || vl->contains(H)))
             ctx.addJoinArm(&P, outsideEdge(u), v);   // lowered after the loop: the walker selects it in
           continue;   // or another loop unit's exit: it selects its value in over this binding when lowered
         }
@@ -3812,6 +3836,61 @@ bool Unit::contains(const Loop &L, const BasicBlock *b) const {
   return L.contains(b) || is_contained(arm, b) || is_contained(abort, b);
 }
 
+// cq-fi2wc: the nearest block every path from each of xs to a return passes, paths into a dead end (no return reachable)
+// set aside; nullptr when there is none. Iterative post-dominator sets over the blocks that reach a return.
+static BasicBlock *nearestPostDomPastDeadEnds(Function &F, ArrayRef<BasicBlock *> xs) {
+  DenseMap<const BasicBlock *, unsigned> idx;
+  std::vector<BasicBlock *> alive;
+  SmallVector<BasicBlock *, 16> work;
+  for (BasicBlock &b : F)
+    if (isa<ReturnInst>(b.getTerminator())) {
+      idx[&b] = alive.size();
+      alive.push_back(&b);
+      work.push_back(&b);
+    }
+  while (!work.empty())
+    for (BasicBlock *p : predecessors(work.pop_back_val()))
+      if (idx.try_emplace(p, alive.size()).second) {
+        alive.push_back(p);
+        work.push_back(p);
+      }
+  for (BasicBlock *x : xs)
+    if (!idx.count(x))
+      return nullptr;
+  const unsigned n = alive.size();
+  std::vector<BitVector> pd(n, BitVector(n, true));
+  for (unsigned i = 0; i < n; ++i)
+    if (isa<ReturnInst>(alive[i]->getTerminator())) {
+      pd[i].reset();
+      pd[i].set(i);
+    }
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (unsigned i = 0; i < n; ++i) {   // found order, from the returns backwards: mostly successors first
+      if (isa<ReturnInst>(alive[i]->getTerminator()))
+        continue;
+      BitVector v(n, true);
+      for (BasicBlock *s : successors(alive[i]))
+        if (auto it = idx.find(s); it != idx.end())
+          v &= pd[it->second];
+      v.set(i);
+      if (v != pd[i]) {
+        pd[i] = std::move(v);
+        changed = true;
+      }
+    }
+  }
+  BitVector common(n, true);
+  for (BasicBlock *x : xs)
+    common &= pd[idx.lookup(x)];
+  // The post-dominators common to all of xs form a chain: the nearest has the most post-dominators of its own.
+  int best = -1;
+  for (int i = common.find_first(); i >= 0; i = common.find_next(i))
+    if (best < 0 || pd[i].count() > pd[best].count())
+      best = i;
+  return best < 0 ? nullptr : alive[best];
+}
+
 Unit unitOf(const Loop &L) {
   Unit U;
   SmallVector<BasicBlock *, 4> exitBlocks;
@@ -3887,11 +3966,18 @@ Unit unitOf(const Loop &L) {
   Function &F = *L.getHeader()->getParent();
   PostDominatorTree PDT(F);
   BasicBlock *c = U.live.front();
-  for (BasicBlock *x : U.live) {
-    c = PDT.findNearestCommonDominator(c, x);
-    if (!c)
-      unimplemented("loops-cutoff: a rule-14 loop whose live exits have no common post-dominator (cq-0dvv)", x->getTerminator());
-  }
+  for (BasicBlock *x : U.live)
+    if (!(c = PDT.findNearestCommonDominator(c, x)))
+      break;
+  // cq-fi2wc: LLVM's post-dominators end a path at an `unreachable` too, so a dead end between the exits and their meeting
+  // point (pow_equals: an ASSERT's noreturn call in the code after the loop) leaves them none. A path into a dead end is no
+  // path of the program's continuation (as an exit into one is no exit above): C is their nearest common post-dominator
+  // over the paths that reach a return.
+  if (!c)
+    c = nearestPostDomPastDeadEnds(F, U.live);
+  if (!c)
+    unimplemented("loops-cutoff: a rule-14 loop whose live exits have no common post-dominator (cq-0dvv)",
+                  U.live.front()->getTerminator());
   if (L.contains(c))
     internalError("loops-cutoff: a loop's exits post-dominated by a block of the loop", c);
   U.cont = c;

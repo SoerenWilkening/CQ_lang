@@ -99,6 +99,8 @@ public:
   // Is the rail, or an arm of the merge it is, an exit rail of a deferred item (recordDeferred)? Its reverse must still
   // read it, so it cannot escape.
   bool deferredExit(RailId) const;
+  // Is the rail an item of its own, one resolveAt may place: no merge, no rail of a deferred item (resolved with it)?
+  bool ownItem(RailId) const;
   // Rule 6 (204): a merge of kept rails becomes one rail of its own, Role::Garbage, which a clean-up may then clean; its
   // arms keep their roles.
   void mergeToRail(RailId);
@@ -142,6 +144,9 @@ public:
   void resolveRegionMadeOnce(llvm::Instruction *end, llvm::function_ref<bool(llvm::Value *)> keep, RailId start,
                              llvm::SmallVectorImpl<llvm::Value *> &out);
   unsigned openScope(); void closeScope(unsigned);
+  // cq-rb96s: a rule-14 region flushes its trip (its back edges cut) between these: only a deferred item hosted by one of
+  // `segScopes` (a sub-unit of the trip) is placed meanwhile; any other would run once per trip.
+  void beginTripFlush(llvm::ArrayRef<unsigned> segScopes); void endTripFlush();
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   // Is a mirror being emitted? A deferred reverse placed in one runs in the scope's own reverse, under no guard of its own.
   bool mirroring() const;

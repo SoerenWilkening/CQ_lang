@@ -1,0 +1,68 @@
+diff --git a/pass/lib/pred/Flags.cpp b/pass/lib/pred/Flags.cpp
+index 2ab61593..256fdc10 100644
+--- a/pass/lib/pred/Flags.cpp
++++ b/pass/lib/pred/Flags.cpp
+@@ -479,23 +479,6 @@ Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
+   }
+   if (ins.empty())
+     internalError("pred: a phi with no reachable incoming edge", &phi);
+-  {
+-    // Each incoming value is read where its edge leaves.
+-    IRBuilderBase::InsertPointGuard g(B);
+-    for (In &in : ins) {
+-      Instruction *t = in.out->getTerminator();
+-      if (!t)
+-        internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
+-      B.SetInsertPoint(t);
+-      in.op = sink.reaching(read(in.v), w, phi, in.u);
+-    }
+-  }
+-  if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
+-    if (ins[0].op.handle || !seedClassical)
+-      return ins[0].op;
+-    return Operand{sink.seed(ins[0].op.v, w), true};   // one value on every edge
+-  }
+-
+   // When the output CFG reaches the join through exactly the incoming edges' blocks, each output edge
+   // carries its own incoming. Otherwise (the walk ran two incoming blocks on one output path, or reached
+   // the join by a guard's skip edge or a redirected edge; cq-pfpy) each output edge into the join takes
+@@ -510,7 +493,24 @@ Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
+   routed &= outs.size() == preds.size();
+   for (BasicBlock *p : preds)
+     routed &= outs.count(p) > 0;
+-  if (!routed) {
++  if (routed) {
++    // Each incoming value is read where its edge leaves. outOf(u) is u's first output block, and only when
++    // the output edges into the join are the incoming ones is its terminator that point: a guard continues
++    // u's code in a block of its own, whose values do not reach the guard's branch (cq-iaz30).
++    IRBuilderBase::InsertPointGuard g(B);
++    for (In &in : ins) {
++      Instruction *t = in.out->getTerminator();
++      if (!t)
++        internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
++      B.SetInsertPoint(t);
++      in.op = sink.reaching(read(in.v), w, phi, in.u);
++    }
++    if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
++      if (ins[0].op.handle || !seedClassical)
++        return ins[0].op;
++      return Operand{sink.seed(ins[0].op.v, w), true};   // one value on every edge
++    }
++  } else {
+     std::vector<In> per;
+     IRBuilderBase::InsertPointGuard g(B);
+     for (BasicBlock *p : predecessors(join)) {
+@@ -1639,7 +1639,12 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
+     spec.shape = shape == "hh" ? "" : shape;
+     return Operand{ctx.emitTemplate(spec, {Operand{cond, true}, tv, fv}), true};
+   };
+-  return emit(0, Bdd::T).v;
++  // selectTree's conditions are restricted to the arms' union (buildSelect's context): outside it no arm is
++  // taken and the merge is never read, so a condition is a don't-care there (cq-iaz30).
++  unsigned all = Bdd::F;
++  for (unsigned n : nodes)
++    all = m.orOp(all, n);
++  return emit(0, all).v;
+ }
+ } // namespace
+ 

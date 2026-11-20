@@ -98,7 +98,32 @@ const TaintInfo &taintOf(const Specialization &S) {
 }
 
 abi::CloneSpec cloneSpecOf(const Specialization &S) {
-  return abi::CloneSpec{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table, S.rm};
+  abi::CloneSpec cs{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table, S.rm};
+  // cq-7guqg (CR §1.4: two distinct clones whose names would coincide get distinct symbols): the name's `_b` values read
+  // onto the quantum integer formals in order. A bound on a later formal (lnchoose_e(n, m) with m bounded, beside a call
+  // with n bounded by the same value) is spelled at its own position, each formal before it with no bound of its own
+  // taking its type's maximum, a bound that always holds. Without it both specializations materialized one function.
+  if (S.boundFormals.size() != S.bounds.size())
+    return cs;
+  const TaintInfo &T = taintOf(S);
+  SmallVector<std::pair<unsigned, unsigned>, 4> qi;   // (formal, width), the reading order
+  for (Argument &A : S.F->args())
+    if (A.getType()->isIntegerTy() && A.getType()->getIntegerBitWidth() > 1 && is_contained(T.fieldMask(&A, S), true))
+      qi.push_back({A.getArgNo(), A.getType()->getIntegerBitWidth()});
+  bool inOrder = S.boundFormals.size() <= qi.size();
+  for (size_t i = 0; inOrder && i < S.boundFormals.size(); ++i)
+    inOrder = S.boundFormals[i] == qi[i].first;
+  if (inOrder)
+    return cs;
+  cs.bounds.clear();
+  for (auto [f, w] : qi) {
+    if (f > S.boundFormals.back())
+      break;
+    auto at = find(S.boundFormals, f);
+    cs.bounds.push_back(at != S.boundFormals.end() ? S.bounds[at - S.boundFormals.begin()]
+                                                   : (w >= 64 ? ~uint64_t(0) : (uint64_t(1) << w) - 1));
+  }
+  return cs;
 }
 
 // A scalar C type a rail can hold (CR §1.1); everything else is a field-wise ABI of another module.

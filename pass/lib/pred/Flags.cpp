@@ -21,6 +21,7 @@
 #include "cq/Rotation.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -61,14 +62,15 @@ public:
   }
 
   // The latest quantum-like atom of n: the innermost condition, so a nested predicate is its parent's
-  // flag joined with the inner condition (08, 137).
+  // flag joined with the inner condition (08, 137). Latest in the variable order (cq-ewzri: creation
+  // order but for an atom placed into a switch case's group).
   unsigned shannonVar(unsigned n) {
     std::set<unsigned> sup;
     m.support(n, sup);
     unsigned v = 0;
     bool found = false;
     for (unsigned s : sup)
-      if (ql(s)) {
+      if (ql(s) && (!found || m.level(s) > m.level(v))) {
         v = s;
         found = true;
       }
@@ -479,23 +481,6 @@ Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
   }
   if (ins.empty())
     internalError("pred: a phi with no reachable incoming edge", &phi);
-  {
-    // Each incoming value is read where its edge leaves.
-    IRBuilderBase::InsertPointGuard g(B);
-    for (In &in : ins) {
-      Instruction *t = in.out->getTerminator();
-      if (!t)
-        internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
-      B.SetInsertPoint(t);
-      in.op = sink.reaching(read(in.v), w, phi, in.u);
-    }
-  }
-  if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
-    if (ins[0].op.handle || !seedClassical)
-      return ins[0].op;
-    return Operand{sink.seed(ins[0].op.v, w), true};   // one value on every edge
-  }
-
   // When the output CFG reaches the join through exactly the incoming edges' blocks, each output edge
   // carries its own incoming. Otherwise (the walk ran two incoming blocks on one output path, or reached
   // the join by a guard's skip edge or a redirected edge; cq-pfpy) each output edge into the join takes
@@ -510,7 +495,24 @@ Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
   routed &= outs.size() == preds.size();
   for (BasicBlock *p : preds)
     routed &= outs.count(p) > 0;
-  if (!routed) {
+  if (routed) {
+    // Each incoming value is read where its edge leaves. outOf(u) is u's first output block, and only when
+    // the output edges into the join are the incoming ones is its terminator that point: a guard continues
+    // u's code in a block of its own, whose values do not reach the guard's branch (cq-iaz30).
+    IRBuilderBase::InsertPointGuard g(B);
+    for (In &in : ins) {
+      Instruction *t = in.out->getTerminator();
+      if (!t)
+        internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
+      B.SetInsertPoint(t);
+      in.op = sink.reaching(read(in.v), w, phi, in.u);
+    }
+    if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
+      if (ins[0].op.handle || !seedClassical)
+        return ins[0].op;
+      return Operand{sink.seed(ins[0].op.v, w), true};   // one value on every edge
+    }
+  } else {
     std::vector<In> per;
     IRBuilderBase::InsertPointGuard g(B);
     for (BasicBlock *p : predecessors(join)) {
@@ -829,6 +831,7 @@ class JoinRepair {
   std::shared_ptr<Oracle> O;
   std::function<bool(unsigned)> ql;
   std::unique_ptr<DominatorTree> dt;
+  std::unique_ptr<LoopInfo> li;
   std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
   std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *>, Value *> valueMemo;
   std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *, int, bool>, Value *> constMemo;
@@ -838,6 +841,78 @@ class JoinRepair {
     if (!dt)
       dt = std::make_unique<DominatorTree>(ctx.out());
     return *dt;
+  }
+  LoopInfo &LI() {
+    if (!li)
+      li = std::make_unique<LoopInfo>(DT());
+    return *li;
+  }
+
+  // cq-03rdt (CR rules 5, 9, 14): a value read at `at` through a block b inside output loops that do not hold `at` (a
+  // rolled loop's trip, one of its arms, read past the loop) is the same on every trip when everything it reads is
+  // defined before the loop: it is read at the loop's entry instead, the one block outside the outermost such loop that
+  // enters it. Per-edge values built at a join inside the loop would mint one rail per trip, after the loop's records
+  // were closed: nothing undoes or frees them. Null: b lies in no such loop, the loop has several entries, or a value
+  // read is defined where the loop's header reaches without passing its entry (in the loop or after it).
+  BasicBlock *loopEntry(BasicBlock *b, BasicBlock *at, ArrayRef<Value *> reads) {
+    Loop *out = nullptr;
+    for (Loop *L = LI().getLoopFor(b); L && !L->contains(at); L = L->getParentLoop())
+      out = L;
+    BasicBlock *E = out ? out->getLoopPredecessor() : nullptr;
+    if (!E)
+      return nullptr;
+    auto [it, fresh] = pastEntry.try_emplace(out);
+    if (fresh) {
+      SmallVector<BasicBlock *, 16> work{out->getHeader()};
+      it->second.insert(out->getHeader());
+      while (!work.empty())
+        for (BasicBlock *s : successors(work.pop_back_val()))
+          if (s != E && it->second.insert(s).second)
+            work.push_back(s);
+    }
+    for (Value *x : reads)
+      if (auto *i = dyn_cast_or_null<Instruction>(x); i && it->second.count(i->getParent()))
+        return nullptr;
+    return E;
+  }
+  DenseMap<Loop *, SmallPtrSet<BasicBlock *, 32>> pastEntry;   // loopEntry: the blocks a header reaches avoiding its entry
+
+  // cq-03rdt (CR rules 5, 14): an edge p -> J leaving output loops that do not hold J (one that loopEntry does not move:
+  // the value depends on the trip). A flag or carried value built at p's end would be minted on every trip, after the
+  // loop's records were closed, and only the last trip's is read: nothing undoes or frees the others. It is built once,
+  // in a block of its own on the edge, outside the loop. Returns the block to build in (p itself when p is in no such loop).
+  BasicBlock *onEdge(BasicBlock *p, BasicBlock *J) {
+    Loop *L = LI().getLoopFor(p);
+    if (!L || L->contains(J))
+      return p;
+    BasicBlock *B = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out(), J);
+    BranchInst::Create(J, B);
+    Instruction *t = p->getTerminator();
+    for (unsigned i = 0; i < t->getNumSuccessors(); ++i)
+      if (t->getSuccessor(i) == J)
+        t->setSuccessor(i, B);
+    for (PHINode &ph : J->phis()) {   // one entry for B, however many edges p had into J
+      bool kept = false;
+      for (unsigned i = ph.getNumIncomingValues(); i-- > 0;)
+        if (ph.getIncomingBlock(i) == p) {
+          if (kept)
+            ph.removeIncomingValue(i, false);
+          else
+            ph.setIncomingBlock(i, B), kept = true;
+        }
+    }
+    li.reset();
+    dt.reset();
+    pastEntry.clear();
+    return B;
+  }
+  SmallVector<Value *, 4> atomValues(unsigned n) {
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    SmallVector<Value *, 4> xs;
+    for (unsigned v : sup)
+      xs.push_back(atomValue(v));
+    return xs;
   }
 
   // Does the output value v reach the point (U, pt): a constant or formal, an instruction before pt in
@@ -973,6 +1048,19 @@ class JoinRepair {
             r = m.notOp(eqOf(x, k->getValue()));
         }
       }
+      // cq-rb96s: a compare fixes, besides what it says itself, every atom whose output value is an identical compare
+      // (the same predicate over the same operands): two atoms `icmp ne %3, 0` of the C program, or a guard's literal
+      // recomputed at the guard (spine guardRecomputes; SQLite flattenSubquery). In addition to the decoding above, never
+      // instead of it: `icmp eq %1, 2` is also switch case 2, and not case 1 (SQLite windowCodeOp).
+      if (const auto *cv = dyn_cast<CmpInst>(v)) {
+        SmallVector<unsigned, 2> same;   // by variable, not by the map's pointer order: one BDD whatever the addresses
+        for (auto &[x, var] : condVar)
+          if (x != v && isa<CmpInst>(x) && cast<CmpInst>(x)->isIdenticalTo(cv))
+            same.push_back(var);
+        llvm::sort(same);
+        for (unsigned var : same)
+          r = m.andOp(r, pol ? m.ithVar(var) : m.notOp(m.ithVar(var)));
+      }
       memo[key] = r;
       return r;
     }
@@ -1017,14 +1105,22 @@ class JoinRepair {
     return m.andOp(fp, D.edge(p, J));
   }
 
-  // The classical facts over `vars` every forward output path from the entry establishes on reaching U.
+  // The classical facts over `vars` every forward output path from the entry establishes on reaching U. Leaving an
+  // output loop, a fact about a value the loop defines is one trip's (cq-b9w7) and is dropped (a weaker fact, sound):
+  // kept, the exits of n loops in a row each add their own atom beside the skip edge's, and the facts past them are a
+  // BDD of 2^n nodes in the atoms' order (cq-iaz30, GSL ode-initval rk8pd_apply).
   unsigned inFacts(Decoder &D, BasicBlock *U, const std::set<unsigned> &vars) {
+    DenseMap<unsigned, const Instruction *> defOf;
     for (unsigned v : vars) {
       const Atom &a = atomOf(v);
       if (a.kind == AtomKind::Cond)
         D.condVar[ctx.operand(a.v).v] = v;
       else if (a.kind == AtomKind::Eq)
         D.eqVar.emplace_back(ctx.operand(a.v).v, a.c, v);
+      else
+        continue;
+      if (auto *x = dyn_cast<Instruction>(ctx.operand(a.v).v))
+        defOf[v] = x;
     }
     Function &OF = ctx.out();
     DenseMap<const BasicBlock *, unsigned> idx, in;
@@ -1043,7 +1139,16 @@ class JoinRepair {
         auto qi = idx.find(q);
         if (qi == idx.end() || qi->second >= idx[b] || !seen.insert(q).second)
           continue;
-        f = m.orOp(f, m.andOp(in[q], D.edge(q, b)));
+        unsigned e = m.andOp(in[q], D.edge(q, b));
+        Loop *out = nullptr;
+        for (Loop *L = LI().getLoopFor(q); L && !L->contains(b); L = L->getParentLoop())
+          out = L;
+        if (out && !m.terminal(e))
+          e = m.exists(e, [&](unsigned v) {
+            auto it = defOf.find(v);
+            return it != defOf.end() && out->contains(it->second->getParent());
+          });
+        f = m.orOp(f, e);
       }
       in[b] = f;
     }
@@ -1312,6 +1417,8 @@ public:
       return materialize(n, sink, ql);
     }
     BasicBlock *J = joinAbove(U, what, [&] { return "the predicate " + describe(n); });
+    if (BasicBlock *E = loopEntry(J, U, atomValues(n)))
+      return flagAt(n, care, E, E->getTerminator()->getIterator(), what);   // cq-03rdt
     {
       // Per-edge flags need every atom the point reads to exist where J's edges leave. When one is
       // minted between J and the point (a later arm's own condition), the atoms that do not reach are
@@ -1357,14 +1464,18 @@ public:
     for (BasicBlock *p : uniquePreds(J)) {
       if (backEdge(p))
         continue;
-      unsigned c = m.andOp(care, edgeFacts(p, J, vars));
+      // cq-03rdt: an edge leaving a loop J is not in is read at the loop's entry, without one trip's facts.
+      BasicBlock *q = loopEntry(p, J, atomValues(n));
+      unsigned c = q ? care : m.andOp(care, edgeFacts(p, J, vars));
+      if (!q)
+        q = p = onEdge(p, J);
       unsigned np = c == Bdd::F ? Bdd::F : m.restrict(n, c);
-      auto key = std::make_tuple(np, c, p);
+      auto key = std::make_tuple(np, c, q);
       Value *v;
       if (auto it = flagMemo.find(key); it != flagMemo.end())
         v = it->second;
       else
-        v = flagMemo[key] = flagAt(np, c, p, p->getTerminator()->getIterator(), what);
+        v = flagMemo[key] = flagAt(np, c, q, q->getTerminator()->getIterator(), what);
       per.push_back({p, v});
     }
     return settle(jkey, loopPhiOf(J, per, backEdge, true));
@@ -1407,6 +1518,8 @@ public:
       raw_string_ostream(vs) << *v;
       return (k.var < 0 ? "the merge arm " : "the atom ") + vs + " under " + describe(k.node);
     });
+    if (BasicBlock *E = loopEntry(J, U, {v}))
+      return carry(v, handle, w, k, E, E->getTerminator()->getIterator(), what);   // cq-03rdt
     auto jkey = std::make_tuple(v, k.node, k.care, k.var, J);
     if (Value *x = reentered(jkey, handle ? irTypeOf(ctx.M.getContext(), w) : v->getType()))
       return x;
@@ -1425,7 +1538,13 @@ public:
     for (BasicBlock *p : uniquePreds(J)) {
       if (backEdge(p))
         continue;
+      if (BasicBlock *E = loopEntry(p, J, {v})) {
+        // cq-03rdt: an edge leaving a loop J is not in carries v as it is at the loop's entry.
+        per.push_back({p, carry(v, handle, w, k, E, E->getTerminator()->getIterator(), what)});
+        continue;
+      }
       unsigned c = m.andOp(k.care, edgeFacts(p, J, vars));
+      p = onEdge(p, J);
       unsigned a = c == Bdd::F ? Bdd::F : m.restrict(k.node, c);
       bool unneeded, one = false;
       if (k.var < 0) {
@@ -1555,8 +1674,13 @@ Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) {
   unsigned n = nodeOf(p);
   if (n == Bdd::T)
     return nullptr;
-  if (n == Bdd::F)
-    internalError("pred: a flag for the false predicate (code under it never runs)");
+  if (n == Bdd::F) {
+    // cq-rb96s (rule 7): -O1 can keep a block no path reaches, its predicate false (GLPK lux_decomp branches twice on one
+    // `n < 1` around loops; mpl_constraint_statement's switch default where an earlier switch on the value admits only
+    // its cases). The C program never runs it: its controlled code runs under a |0> seed and does nothing.
+    CtxSink sink(ctx);
+    return sink.classicalSeed(n);
+  }
   {
     JoinRepair R(ctx);   // cq-2p1p: an atom minted in a classical arm that does not reach the point
     if (!R.nodeReachesHere(n))
@@ -1599,7 +1723,11 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
   std::vector<SelectNode> tree = selectTree(nodes);
   if (tree[0].arm >= 0) {
     // One arm reaches the merge on every path: the merge is that value (a representation change).
-    const Operand &op = arms[tree[0].arm].second;
+    Operand op = arms[tree[0].arm].second;
+    // cq-iaz30 (rule 9; SQLite allocateBtreePage): the only arm (the others poison or undef) may be minted on a classical
+    // path that joins others above the point; there its value is carried, a don't-care where the path excludes its arm.
+    if (JoinRepair R(ctx); !R.reachesHere(op.v))
+      op = R.operandHere(op, w, nodes[tree[0].arm], care, what);
     return op.handle ? op.v : seedOf(ctx, op.v, w);
   }
   std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
@@ -1639,7 +1767,13 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
     spec.shape = shape == "hh" ? "" : shape;
     return Operand{ctx.emitTemplate(spec, {Operand{cond, true}, tv, fv}), true};
   };
-  return emit(0, Bdd::T).v;
+  // cq-03rdt: selectTree restricts each condition to the arms' union (buildSelect's context), so outside it a
+  // condition says nothing and no arm is chosen there: the select is read only inside it, and a flag of a condition
+  // is a don't-care outside (a caller's arms on one classical side only, read where the other side also passes).
+  unsigned all = Bdd::F;
+  for (unsigned n : nodes)
+    all = m.orOp(all, n);
+  return emit(0, all).v;
 }
 } // namespace
 
@@ -1823,7 +1957,11 @@ Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
     internalError("pred: lowerSelect of a vector, aggregate or data pointer select (the spine routes them to aggr "
                   "and rule 3)",
                   &sel);
-  if (!ctx.T.isQuantum(c, ctx.S)) {
+  // cq-iaz30 (rules 9, 14; SQLite sqlite3AddColumn): a condition taint calls quantum that this evaluation bound classically
+  // (a classically bounded K-loop's induction read in one trip's exit arm) is a classical choice here, as a classical one.
+  auto cf = ctx.bound(c) ? ctx.fields(c) : SmallVector<Operand, 4>();
+  bool boundClassical = cf.size() == 1 && !cf.front().handle;
+  if (!ctx.T.isQuantum(c, ctx.S) || boundClassical) {
     CtxMergeSink sink(ctx);   // rule 9 at a58c3a4: a classical select over the handles, no gate
     // Rule 14: a classical per-trip value read after a quantum-exit loop is its exit value, a rail (exit capture; the
     // induction's test in musl-shaped `i != 0` after the loop): no atom of any predicate, one select on that rail.

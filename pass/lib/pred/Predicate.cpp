@@ -47,10 +47,70 @@ namespace {
 struct AtomRegistry {
   std::vector<Atom> atoms;
   std::map<std::tuple<int, const Value *, unsigned, std::string>, unsigned> index;
+  // cq-ewzri: the variable order's case groups. parent[v]: the atom v was placed after (NoVar: v was
+  // appended); last[v]: the last variable of v's group (v and every atom placed into it, transitively).
+  std::vector<unsigned> parent, last;
   static AtomRegistry &get() {
     static AtomRegistry r;
     return r;
   }
+};
+
+// cq-ewzri: a case atom of a switch (or computed goto) with at least kLargeSwitch destinations. Only their
+// groups leave creation order: below it the join's 2^cases nodes are affordable, and the order, so the
+// output, stays what it was.
+constexpr unsigned kLargeSwitch = 12;
+bool largeCase(const Atom &a) {
+  unsigned n = 0;
+  if (a.kind == AtomKind::Eq) {
+    for (const User *u : a.v->users())
+      if (const auto *si = dyn_cast<SwitchInst>(u); si && si->getCondition() == a.v)
+        n = std::max(n, si->getNumCases());
+  } else if (a.kind == AtomKind::Addr) {
+    for (const User *u : a.v->users())
+      if (const auto *ib = dyn_cast<IndirectBrInst>(u); ib && ib->getAddress() == a.v)
+        n = std::max(n, unsigned(computedGotoDestinations(*ib).size()));
+  }
+  return n >= kLargeSwitch;
+}
+
+// The block predicate of the edge whose condition is being built (computePaths), else top.
+unsigned placementContext = Bdd::T;
+
+// cq-ewzri: a new atom's place in the variable order. Appended (creation order), except in a large switch's
+// case: when the deepest variable of the context is such a case atom (largeCase) or an atom placed into one's
+// group, the new atom goes at the end of that group. Otherwise the case atoms of one switch, all made at once,
+// precede every condition inside the cases, and the join of the cases, OR_k (case_k & c_k), has a node
+// for every subset of the cases (sqlite3VdbeExec). The order changes the BDD's shape, never its function.
+void placeNew(AtomRegistry &R, unsigned var) {
+  R.parent.resize(var + 1, Bdd::NoVar);
+  R.last.resize(var + 1, Bdd::NoVar);
+  R.last[var] = var;
+  Bdd &m = Bdd::get();
+  if (m.terminal(placementContext))
+    return;
+  std::set<unsigned> sup;
+  m.support(placementContext, sup);
+  unsigned d = Bdd::NoVar;
+  for (unsigned v : sup)
+    if (d == Bdd::NoVar || m.level(v) > m.level(d))
+      d = v;
+  unsigned root = d;
+  while (R.parent[root] != Bdd::NoVar)
+    root = R.parent[root];
+  if (!largeCase(R.atoms[root]))
+    return;
+  unsigned end = R.last[d];
+  m.placeAfter(var, end);
+  R.parent[var] = d;
+  for (unsigned a = d; a != Bdd::NoVar && R.last[a] == end; a = R.parent[a])
+    R.last[a] = var;
+}
+
+struct PlacementContext {
+  unsigned was;
+  explicit PlacementContext(unsigned ctx) : was(placementContext) { placementContext = ctx; }
+  ~PlacementContext() { placementContext = was; }
 };
 } // namespace
 
@@ -65,6 +125,7 @@ unsigned atomVar(AtomKind k, const Value *v, const APInt &c) {
   unsigned var = unsigned(R.atoms.size());
   R.atoms.push_back({k, v, c});
   R.index.emplace(key, var);
+  placeNew(R, var);
   return var;
 }
 
@@ -83,6 +144,7 @@ unsigned addrVar(const Value *a, const BasicBlock *d) {
   unsigned var = unsigned(R.atoms.size());
   R.atoms.push_back({AtomKind::Addr, a, APInt(), d});
   R.index.emplace(key, var);
+  placeNew(R, var);
   return var;
 }
 
@@ -539,6 +601,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
         if (i + 1 == edgesInOrder.size()) {
           x = m.notOp(covered);
         } else {
+          PlacementContext pc(predOf(ep));
           unsigned d = m.restrict(m.andOp(predOf(ep), liveEdgeCond(ep, eb, O, I)), h);
           x = m.andOp(d, m.notOp(covered));
         }
@@ -564,6 +627,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
       if (!seen.insert(p).second || !reachable.count(p) || isBackEdge(p, bb))
         continue;   // a back edge: the loop module chains trips
       unsigned contrib;
+      PlacementContext pc(predOf(p));
       const Loop *out = leftLoop(p, bb);
       if (out && O.deadEnd(bb) && !O.deadEnd(p))
         contrib = m.andOp(predOf(p), edgeCond(p, bb, O, I));   // a loop exit into a dead end
@@ -584,6 +648,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
     for (const BasicBlock *s : successors(bb)) {
       if (!seen.insert(s).second || I.edges.count({bb, s}))
         continue;
+      PlacementContext pc(predOf(bb));
       I.edges[{bb, s}] = makePred(m.andOp(predOf(bb), liveEdgeCond(bb, s, O, I)));
     }
   }

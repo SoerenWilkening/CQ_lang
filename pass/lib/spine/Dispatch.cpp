@@ -362,7 +362,23 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     return calls::lowerAsm(ctx, CB);
   }
   case Class::HostEffect: return tape::lowerHostEffect(ctx, CB);
-  case Class::Noreturn: return tape::lowerNoreturn(ctx, CB);
+  case Class::Noreturn: {
+    tape::lowerNoreturn(ctx, CB);
+    // A call that does not return has no result on any execution, but a call site without the attribute keeps the code
+    // after it, which reads the result (GLPK's _glp_relax4, a noreturn stub declared from another unit): whatever it
+    // reads is a don't-care (rule 16: the program it ends continues uncontrolled), a 0, a |0> seed where it is quantum.
+    Type *rt = CB.getType();
+    if (rt->isVoidTy() || CB.use_empty() || ctx.bound(&CB))
+      return;
+    if (!isQ(ctx, &CB))
+      return bindOperand(ctx, &CB, Operand{Constant::getNullValue(rt), false});
+    if (rt->isAggregateType() || rt->isVectorTy())
+      return noteUnbuilt("spine: the composite result of a call that does not return, read after it", &CB);
+    RailType w = rt->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(rt);
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    ctx.unc().recordSeed(z);
+    return bindOperand(ctx, &CB, Operand{z, true});
+  }
   case Class::Alloc:
     // Rule 20 Allocation: a bus-resident object's lifetime markers are dropped.
     if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::lifetime_start)

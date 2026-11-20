@@ -252,6 +252,18 @@ bool readsModeT(const Function &F) {
 class Analyzer {
 public:
   explicit Analyzer(ImplState &S) : st(S) {}
+  // Per run, per function or global: the body and use-list scans below were asked again at every call site and every
+  // memory access (29% of SQLite's taint time). The IR does not change during one computeTaint.
+  DenseMap<const Function *, bool> envMemo, modeMemo;
+  DenseMap<const GlobalVariable *, bool> hostGlobalMemo;
+  bool touchesEnvM(const Function &F) {
+    auto it = envMemo.find(&F);
+    return it != envMemo.end() ? it->second : (envMemo[&F] = touchesEnvT(F));
+  }
+  bool readsModeM(const Function &F) {
+    auto it = modeMemo.find(&F);
+    return it != modeMemo.end() ? it->second : (modeMemo[&F] = readsModeT(F));
+  }
   void run();
 
   // Lanes of a type.
@@ -1088,16 +1100,25 @@ void Analyzer::computeCDT(SpecState &S) {
     ch = false;
     for (const BasicBlock *BB : fi.rpo) {
       auto pit = fi.cdParents.find(BB);
-      if (pit == fi.cdParents.end())
+      // cq-rb96s (rule 14): a block of a loop with a tainted exit runs in every trip under that trip's predicate a_j, so it
+      // depends on what its header depends on, also where it post-dominates the header (the loop's only way out lies
+      // behind a quantum branch: GMP block_resieve).
+      SmallVector<const BasicBlock *, 4> fromHeader;
+      for (const Loop *Lp = fi.LI->getLoopFor(BB); Lp; Lp = Lp->getParentLoop())
+        if (Lp->getHeader() != BB && S.exitQ.count(Lp))
+          if (auto hit = S.cdt.find(Lp->getHeader()); hit != S.cdt.end())
+            fromHeader.append(hit->second.begin(), hit->second.end());
+      if (pit == fi.cdParents.end() && fromHeader.empty())
         continue;
-      SmallVector<const BasicBlock *, 4> v;
-      for (const BasicBlock *A : pit->second) {
-        if (S.taintedTerm.count(A))
-          v.push_back(A);
-        auto ait = S.cdt.find(A);
-        if (ait != S.cdt.end())
-          v.append(ait->second.begin(), ait->second.end());
-      }
+      SmallVector<const BasicBlock *, 4> v(fromHeader);
+      if (pit != fi.cdParents.end())
+        for (const BasicBlock *A : pit->second) {
+          if (S.taintedTerm.count(A))
+            v.push_back(A);
+          auto ait = S.cdt.find(A);
+          if (ait != S.cdt.end())
+            v.append(ait->second.begin(), ait->second.end());
+        }
       llvm::sort(v);
       v.erase(std::unique(v.begin(), v.end()), v.end());
       auto &dst = S.cdt[BB];
@@ -1691,7 +1712,10 @@ const Value *Analyzer::hostObject(const Value *ptr) {
   if (!b)
     return nullptr;
   if (auto *GV = dyn_cast<GlobalVariable>(b))
-    return hostGlobal(*GV) ? b : nullptr;
+{
+    auto it = hostGlobalMemo.find(GV);
+    return (it != hostGlobalMemo.end() ? it->second : (hostGlobalMemo[GV] = hostGlobal(*GV))) ? b : nullptr;
+  }
   if (auto *AI = dyn_cast<AllocaInst>(b))
     return AI->getFunction() == cur->F && hostAlloca(AI) ? b : nullptr;
   return nullptr;
@@ -1918,14 +1942,14 @@ std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
 uint8_t Analyzer::modeWord(const Function *G) {
   if (!G || G->isDeclaration() || hostCallee(*G))
     return 0;
-  bool strict = touchesEnvT(*G);
-  if (!strict && !readsModeT(*G))
+  bool strict = touchesEnvM(*G);
+  if (!strict && !readsModeM(*G))
     return 0;
   if (fenvNow() & 1)
     return 2;
   if (strict)
     return 0;
-  return cur->rm || touchesEnvT(*cur->F) ? 1 : 0;
+  return cur->rm || touchesEnvM(*cur->F) ? 1 : 0;
 }
 
 void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool viaIntrinsic) {
@@ -1962,7 +1986,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   // never the own symbol (its C parameter list carries no flags, and a classical root calling it stays as it is,
   // principle 1): the all-zero mask with 82's ABI and the mode as a handle, `_rmq` (§1.4).
   if (!rm && !viaIntrinsic && !anyQ && !plain && (fenvNow() & 2) && !G->isDeclaration() && !hostCallee(*G) &&
-      touchesEnvT(*G))
+      touchesEnvM(*G))
     rm = 2;
   // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
   // actuals give now (lanes only rise during the fixed point).
@@ -2367,8 +2391,11 @@ void Analyzer::transferCall(CallBase &CB) {
     return;
   }
   // setjmp and longjmp outside rule 24's pairing are host calls: a classical result, no gate and no tape entry
-  // (abort_i1 under a quantum predicate); the pairing is rewritten before the final taint.
-  if (CB.hasFnAttr(Attribute::ReturnsTwice))
+  // (abort_i1 under a quantum predicate); the pairing is rewritten before the final taint. One with a rail operand has no
+  // host form: eff-conc's lowerSetjmp makes it the effect entry, so it falls to the effect entry below (its result the
+  // entry's rail, read: rule 18's no twin, so no _pure that would drop the entry its body reads).
+  if ((CB.hasFnAttr(Attribute::ReturnsTwice) || G->hasFnAttribute(Attribute::ReturnsTwice)) &&
+      none_of(actuals, [&](Value *A) { return L(A).any(); }))
     return;
   if (CB.doesNotReturn()) {
     if (!cur->hasNoreturn) {
@@ -2811,10 +2838,26 @@ void Analyzer::analyze(SpecState &S) {
       // state at the end of every block before it in L that does not reach it in the CFG.
       if (S.taintedTerm.size())
         for (const BasicBlock *O : fi.rpo) {
-          if (O == BB || fi.walk.lookup(O) >= fi.walk.lookup(BB) || !S.fenvOut.lookup(O))
+          // A state that adds nothing to fenvCur needs no reachability answer (every pair, in a function with no
+          // fenv call at all: half of SQLite's taint time).
+          uint8_t oo = S.fenvOut.lookup(O);
+          if (O == BB || (fenvCur | oo) == fenvCur || fi.walk.lookup(O) >= fi.walk.lookup(BB))
             continue;
-          if (!isPotentiallyReachable(O, BB, nullptr, fi.DT.get(), fi.LI.get()))
-            fenvCur |= S.fenvOut.lookup(O);
+          if (fi.reachIdx.empty()) {
+            unsigned n = 0;
+            for (const BasicBlock *B : fi.rpo)
+              fi.reachIdx[B] = n++;
+            fi.reachKnown.resize(n * n);
+            fi.reachVal.resize(n * n);
+          }
+          unsigned k = fi.reachIdx.lookup(O) * unsigned(fi.rpo.size()) + fi.reachIdx.lookup(BB);
+          if (!fi.reachKnown.test(k)) {
+            fi.reachKnown.set(k);
+            if (isPotentiallyReachable(O, BB, nullptr, fi.DT.get(), fi.LI.get()))
+              fi.reachVal.set(k);
+          }
+          if (!fi.reachVal.test(k))
+            fenvCur |= oo;
         }
       for (const Instruction &CI : *BB) {
         Instruction &I = const_cast<Instruction &>(CI);
@@ -3844,9 +3887,10 @@ template <class P> const ImplState &needImpl(const P &p) {
 }
 
 SpecState *stateOf(const ImplState &I, const Specialization &S) {
-  for (size_t k = 0; k < I.published.size(); ++k)
-    if (&I.published[k] == &S)
-      return I.publishedState[k];
+  // published is contiguous: the index is the address difference (a scan here was 9% of a 500-function module).
+  const Specialization *b = I.published.data();
+  if (std::greater_equal<>()(&S, b) && std::less<>()(&S, b + I.published.size()))
+    return I.publishedState[&S - b];
   internalError("taint: not a specialization of this TaintInfo");
 }
 

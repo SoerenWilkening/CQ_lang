@@ -20,6 +20,7 @@
 
 #include "DeadEnd.h"
 #include "cq/Taint.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DenseSet.h"
@@ -56,6 +57,10 @@ struct FnInfo {
   // The spine's walk order L (spine/Construct.cpp Walker::plan: reverse post-order, successors visited last to first),
   // the order in which a quantum branch's arms are linearized (rules 8, 9; cq-ndwfr).
   llvm::DenseMap<const llvm::BasicBlock *, unsigned> walk;
+  // isPotentiallyReachable(rpo[i], rpo[j]) by i * rpo.size() + j, asked once per pair: the CFG, DT and LI are fixed for
+  // one computeTaint and Analyzer::analyze asks every pair in every round (cq-k4l4z's SQLite run: 98% of the time).
+  llvm::DenseMap<const llvm::BasicBlock *, unsigned> reachIdx;
+  llvm::BitVector reachKnown, reachVal;
   // cq-z6q1: per (loop header, exiting block), whether SCEV computes the exit's count (exitCountKnown).
   std::map<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>, bool> exitKnown;
   // cq-s7c4: per (classical disjunct of a quantum exit test, exit polarity), exitCondCountKnown.

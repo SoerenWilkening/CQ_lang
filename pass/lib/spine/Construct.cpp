@@ -264,6 +264,7 @@ private:
   DenseMap<const BasicBlock *, SmallVector<BasicBlock *, 2>> outEdges;
   DenseMap<const BasicBlock *, unsigned> outPreds;
   DenseSet<const BasicBlock *> merged;
+  DenseMap<const BasicBlock *, const BasicBlock *> mergedFrom;   // a merged block -> the block whose output it continues
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> edgeOut;
   std::vector<std::pair<PHINode *, PHINode *>> classicalPhis;
   DenseMap<const PHINode *, Value *> unitClassical;   // cq-j5mq: a classical phi's value on its loop unit's output edge
@@ -316,6 +317,7 @@ private:
   };
   DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
   void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
+  Loop *carriedUnit(const BasicBlock *b) const;
   Value *factoredMerge(PHINode &phi);
   void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *tailHead = nullptr);
   DenseSet<const Loop *> tailJoined;
@@ -373,7 +375,11 @@ bool Walker::classicalEdgeMeets(const BasicBlock *x, const BasicBlock *s, const 
   const Pred &e = ctx.preds().edge(x, s), &py = ctx.preds().block(y);
   if (e.isBottom() || py.isBottom())
     return false;
-  return predsMeet(py, e.classicalFactor(ctx.T, ctx.S));
+  // cq-iaz30 (CR rules 8, 9): the edge fixes every classical condition under which it is taken, not only the literals the
+  // rule-8 factor keeps. In a _ctl clone each predicate is the plain one under the entry flag, a quantum conjunct, and the
+  // factor of a non-cube classical part was weaker than the plain clone's walk (GSL hyperg_1F1_ab_neg: a block ran on an
+  // edge that excludes it, and the arm after it never).
+  return predsMeet(py, e.classicalProjection(ctx.T, ctx.S));
 }
 
 BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
@@ -590,14 +596,18 @@ void Walker::plan() {
         classicalPhi |= !spine::isQ(ctx, &phi);
       // Rule 13 (b137e75): an address-taken block keeps its identity, an output block of its own.
       if (uncond && outPreds.lookup(b) == 1 && !classicalPhi && !pureHeaders.count(b) && !unitOf.count(b) &&
-          !b->hasAddressTaken())
+          !b->hasAddressTaken()) {
         merged.insert(b);
+        mergedFrom[b] = prev;
+      }
       // A unit's exit continues where the loop module leaves the builder when the unit is its only
       // way in and it comes next; otherwise (a zero-trip guard's skip edge also reaches it, 41, 177)
       // the unit ends in a jump to it (emitBlock).
       if (unitOf.count(prev) && pe != outEdges.end() && !pe->second.empty() && pe->second.front() == b &&
-          outPreds.lookup(b) == 1 && !b->hasAddressTaken())
+          outPreds.lookup(b) == 1 && !b->hasAddressTaken()) {
         merged.insert(b);
+        mergedFrom[b] = prev;
+      }
     }
     prev = b;
   }
@@ -923,6 +933,31 @@ void Walker::jump(const BasicBlock *from, const BasicBlock *to) {
   maybeFlush(br);
 }
 
+// cq-qs9va (CR rules 9, 14): a block the walker places after a unit and enters only on that unit's continuation (an early
+// return's arm that -O1 joined into the loop's continuation C, lowered after the loop on its classical path) carries the
+// unit's paths on: every output edge out of it, its guard's skip included, is the unit's edge into C, where C's phis hold
+// the unit's binding (whose initial value already took that arm's incoming in). Read as an edge from outside the unit it
+// would take the original incomings that meet its facts in place of the loop's value.
+Loop *Walker::carriedUnit(const BasicBlock *b) const {
+  // A merged block continues its predecessor's output block: the unit's own, or one that carries it.
+  if (auto m = mergedFrom.find(b); m != mergedFrom.end()) {
+    Loop *u = unitOf.lookup(m->second);
+    if (u && u->getHeader() == m->second)
+      return units.find(u)->second.cont == b ? nullptr : u;
+    return carriedUnit(m->second);
+  }
+  auto ie = inEdges.find(b);
+  if (ie == inEdges.end() || ie->second.empty())
+    return nullptr;
+  Loop *u = ie->second.front().unit;
+  if (!u || units.find(u)->second.cont == b)
+    return nullptr;
+  for (const InEdge &e : ie->second)
+    if (e.unit != u || e.excluded)
+      return nullptr;
+  return u;
+}
+
 void Walker::noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit) {
   auto f = edgeFacts.find({from, to});
   InEdge ne;
@@ -939,6 +974,8 @@ void Walker::noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit) {
       ctx.preds().assume(was, ctx.T, ctx.S);
       ne.excluded = !predsMeet(tailPredOf(from), unitPaths);
     }
+  if (!unit)
+    unit = carriedUnit(from);
   ne.unit = unit;
   inEdges[to].push_back(std::move(ne));
   if (unit)
@@ -1103,7 +1140,9 @@ Value *Walker::factoredMerge(PHINode &phi) {
   PHINode *np = PHINode::Create(ty, unsigned(ops.size()), phi.getName());
   np->insertInto(join, join->getFirstNonPHIIt());
   for (unsigned k = 0; k < ops.size(); ++k)
-    np->addIncoming(ops[k].v, chosen[k].out);
+    for (BasicBlock *s : successors(chosen[k].out))   // a switch's cases into one block: one incoming per edge
+      if (s == join)
+        np->addIncoming(ops[k].v, chosen[k].out);
   if (!ops.front().handle)
     return seedHere(np);   // every arm read classically: one value, one rail
   ctx.unc().recordMerge(np);
@@ -1187,7 +1226,7 @@ void Walker::tailMerge(PHINode &phi) {
   if (kept.empty()) {
     // No outside path reaches the block (it runs on none): a don't-care, the null value.
     for (RailType w : ws)
-      out.push_back(Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false});
+      out.push_back(Operand{Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), false});
   } else if (kept.size() == 1) {
     out = fieldsOf(kept.front().second);
   } else {
@@ -1270,6 +1309,11 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *ta
       const BasicBlock *u = phi.getIncomingBlock(i);
       if (!idx.count(u) || unitOf.count(u) || (tailHead && tailOf.count(u)) || (ctx.preds().edge(u, b) & F).isBottom())
         continue;
+      // An incoming whose block the walk reaches after the tail's head (the other arm of a quantum branch around the unit:
+      // GMP's mpz_divisible_2exp_p) lies on no path through this edge; the loop module left it to the walker as a join arm
+      // (lowered after the loop), selected in at C.
+      if (tailHead && idx.lookup(u) > idx.lookup(tailHead))
+        continue;
       if (none_of(cands, [&](unsigned k) { return phi.getIncomingValue(k) == phi.getIncomingValue(i); }))
         cands.push_back(i);
     }
@@ -1283,7 +1327,7 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *ta
       // No original edge into b meets the facts: the output edge is never taken (its path is one the
       // classical branches exclude); any rail serves, a |0> seed.
       for (RailType w : ws)
-        os.push_back(Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false});
+        os.push_back(Operand{Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), false});
     } else if (cands.size() == 1) {
       const Value *v = phi.getIncomingValue(cands.front());
       Pred p = Pred::bottom();
@@ -2249,7 +2293,9 @@ void Walker::emitBlock(BasicBlock *b) {
       continue;
     }
     if (unitBoundPhis.count(&phi)) {
-      if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1)
+      auto ie = inEdges.find(b);
+      const bool joined = ie != inEdges.end() && ie->second.size() > 1;
+      if (joined)
         joinUnitPhi(phi, ie->second);
       // cq-mgkr: incomings the unit could not read (lowered after the loop), selected in where their edges
       // hold (rule 9); they exclude the loop, so the unit's binding stands elsewhere.
@@ -2260,8 +2306,33 @@ void Walker::emitBlock(BasicBlock *b) {
           E = E | e;
           arms.push_back({e, ctx.operand(v)});
         }
+        // cq-iaz30 (rules 9, 14): an incoming on a classical skip of the unit (its edge excludes the classical condition
+        // the unit runs under) is joined with the unit's binding at C's output block (joinUnitPhi). When the skip's output
+        // edge meets the unit's before C (both continue at a linearized arm of a quantum branch that also reaches C:
+        // btreeBeginTrans), C has one output edge in and no join took the skip's value: it is one more arm here.
+        if (!joined)
+          for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+            const BasicBlock *u = phi.getIncomingBlock(i);
+            if (!idx.count(u) || unitOf.count(u) || tailOf.count(u))
+              continue;
+            Pred e = ctx.preds().edge(u, b);
+            bool skip = false;
+            for (auto &[lp, U] : units)
+              if (U.cont == b && !U.contains(*lp, u)) {
+                std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
+                Pred cH = ctx.preds().block(lp->getHeader()).classicalFactor(ctx.T, ctx.S);
+                ctx.preds().assume(was, ctx.T, ctx.S);
+                skip |= (e & cH).isBottom();
+              }
+            if (!skip || e.isBottom())
+              continue;
+            E = E | e;
+            arms.push_back({e, ctx.operand(phi.getIncomingValue(i))});
+          }
         arms.push_back({!E, ctx.operand(&phi)});
-        Value *m = selectChain(ctx, arms, railTypeOf(phi.getType()));
+        // The merge is read only where b runs: elsewhere (a skip path whose arm is not this one) every arm is a don't-care.
+        Value *m = joined ? selectChain(ctx, arms, railTypeOf(phi.getType()))
+                          : selectChain(ctx, arms, railTypeOf(phi.getType()), ctx.preds().block(b));
         sh.joinArms.erase(ja);
         ctx.rebind(&phi, {Operand{m, true}});
       }
@@ -2374,6 +2445,41 @@ void Walker::emitGuard(BasicBlock *b) {
     InEdge ne;
     ne.out = from;
     ne.facts = gf == guardFacts.end() ? std::nullopt : std::optional<Pred>(gf->second);
+    ne.unit = carriedUnit(b);
+    // cq-xspwx (rules 9, 14; GSL gsl_sf_mathieu_Mc_e): b is also entered from outside the unit, but the skip's facts admit
+    // only the unit's edges in (a classical arm's guard after the other arm's K-loop: the skip runs on that arm's path to the
+    // unit's continuation). On the skip the unit's binding stands; read as an outside edge it would find no incoming outside the units.
+    if (!ne.unit && ne.facts)
+      if (auto ib = inEdges.find(b); ib != inEdges.end()) {
+        Loop *u = nullptr;
+        bool only = true;
+        for (const InEdge &x : ib->second) {
+          if (x.facts && !predsMeet(*x.facts, *ne.facts))
+            continue;
+          only &= x.unit && !x.excluded && (!u || u == x.unit);
+          u = x.unit;
+        }
+        if (only && u && units.find(u)->second.cont == skip)
+          ne.unit = u;
+      }
+    if (ne.unit)
+      for (const PHINode &phi : skip->phis())
+        if (auto bi = sh.binds.find(&phi); bi != sh.binds.end())
+          ne.unitFields[&phi] = SmallVector<Operand, 4>(bi->second.begin(), bi->second.end());
+    // cq-iaz30 (rules 9, 14; SQLite sqlite3AddColumn): a tail head's guard skipping straight to its unit's continuation C.
+    // The paths into the head are the unit's (its exit edge in) or, joined there (tailJoined), those and the outside ones;
+    // the skip runs no tail block, so C's phis hold on it what they hold at the head: the unit's binding, as for a tail's
+    // edge into C (noteIn). Read as an ordinary edge it would select among C's incomings, a tail block's among them.
+    if (!ne.unit)
+      if (Loop *t = tailOf.lookup(b); t && units.find(t)->second.cont == skip) {
+        auto ib = inEdges.find(b);
+        if (ib != inEdges.end() && any_of(ib->second, [&](const InEdge &x) { return x.unit == t; })) {
+          ne.unit = t;
+          for (const PHINode &phi : skip->phis())
+            if (auto bi = sh.binds.find(&phi); bi != sh.binds.end())
+              ne.unitFields[&phi] = SmallVector<Operand, 4>(bi->second.begin(), bi->second.end());
+        }
+      }
     inEdges[skip].push_back(std::move(ne));
   }
   B.SetInsertPoint(cont);

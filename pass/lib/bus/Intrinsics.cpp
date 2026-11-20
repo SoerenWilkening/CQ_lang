@@ -238,17 +238,18 @@ void resolveFinished(LoweringContext &ctx, ArrayRef<Value *> roots, ArrayRef<Val
     for (Value *a : cast<CallInst>(v)->args())
       work.push_back(a);
   }
-  // The candidates: every rail call `roots` were made from.
+  Uncompute &U = ctx.unc();
+  // The candidates: every rail call `roots` were made from. cq-03rdt (CR rules 5, 14): never a merge or a rail of a deferred
+  // item (a loop's exit rail, undone by its reverse), nor what it was made from: those go with their item.
   SetVector<Value *> cands;
   work.assign(roots.begin(), roots.end());
   while (!work.empty()) {
     Value *v = work.pop_back_val();
-    if (!isRailCall(v) || kept.count(v) || !cands.insert(v))
+    if (!isRailCall(v) || kept.count(v) || (U.recorded(v) && !U.ownItem(U.idOf(v))) || !cands.insert(v))
       continue;
     for (Value *a : cast<CallInst>(v)->args())
       work.push_back(a);
   }
-  Uncompute &U = ctx.unc();
   auto pendingRail = [&](Value *h) {
     std::optional<Role> r = U.liveRole(U.idOf(h));
     return r && (*r == Role::Garbage || *r == Role::Seed);

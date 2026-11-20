@@ -282,6 +282,7 @@ struct Uncompute::Impl {
     SmallVector<RailId, 8> reads;
     SmallPtrSet<const BasicBlock *, 8> region; // the blocks of the owned records
     SmallVector<unsigned, 8> hostScopes;       // F2: an enclosing region's scopes (its trip hosts the item)
+    SmallVector<unsigned, 4> scopes;           // the scopes whose records it owns (recordDeferred)
     RailId pseudo = kNone;
     BasicBlock *placedAt = nullptr;            // the block the program continues in after the item
   };
@@ -314,6 +315,7 @@ struct Uncompute::Impl {
   const BasicBlock *srcBlock = nullptr;
   DenseMap<const Instruction *, const BasicBlock *> srcOf;
   SmallVector<unsigned, 4> openStack;
+  std::vector<SmallVector<unsigned, 8>> tripFlush;   // beginTripFlush: the segment scopes of the trip being flushed
   DenseSet<const Instruction *> emitted;
   MapVector<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;   // insertion order: keyed by a pointer
   // cq-g3h1i: per rail, the positions of its itemEnd entries (in insertion order; no entry is ever removed), so
@@ -642,7 +644,13 @@ struct Uncompute::Impl {
     DenseMap<unsigned, BitVector> to;               // per target: the blocks with a path of length >= 1 to it
     std::unique_ptr<DominatorTree> DT;
     // cq-a24ig: flagAt's answers while the CFG stands, by the at block and the events per block (see flagAt).
-    std::map<std::vector<uintptr_t>, WeakVH> flagMemo;
+    // cq-aeroi: the key holds the conditions' addresses, so an entry carries handles to them and counts only while they
+    // all live: a condition erased since (sweepChooses) frees its address for an unrelated value, which would match.
+    struct FlagMemo {
+      WeakVH r;
+      std::vector<WeakVH> conds;
+    };
+    std::map<std::vector<uintptr_t>, FlagMemo> flagMemo;
     void build() {
       dirty = false;
       flagMemo.clear();
@@ -1015,15 +1023,36 @@ struct Uncompute::Impl {
   // in another block), so the decision waits until the old rail itself is resolved.
   void pruneCleanups(const SmallVectorImpl<RailId> *only = nullptr) {
     syncPhiHits();   // cq-igqp: before any placement
+    // cq-ewzri: the rails visited, in rail order: `only` sorted (the same visits as filtering every rail by
+    // membership in it, without a scan of `only` per rail of the function).
+    std::vector<RailId> picked;
+    if (only) {
+      picked.assign(only->begin(), only->end());
+      llvm::sort(picked);
+      picked.erase(std::unique(picked.begin(), picked.end()), picked.end());
+    }
+    auto visit = [&](auto &&f) {
+      if (!only) {
+        for (RailId g = 0; g < rails.size(); ++g)
+          if (f(g))
+            return;
+        return;
+      }
+      for (RailId g : picked)
+        if (g < rails.size() && f(g))
+          return;
+    };
     for (;;) {
       // To a fixed point: dropping one clean-up makes its rail plain garbage again, which may now be a
       // garbage reader of an earlier clean-up's operand (164's clone: %6 = %7 - %3 kept while %7's own
       // clean-up through the result was still there, then %7's dropped: a cycle).
       for (bool again = true; again;) {
         again = false;
-        for (RailId g = 0; g < rails.size(); ++g)
-          if ((!only || is_contained(*only, g)) && pruneOne(g))
+        visit([&](RailId g) {
+          if (pruneOne(g))
             again = true;
+          return false;
+        });
       }
       // cq-4wbdf (CR rule 6: "when the old value is still needed to uncompute other rails, those are uncomputed
       // first"; "the old value is kept only when no such point exists"): a cycle that runs through another rail's
@@ -1033,9 +1062,7 @@ struct Uncompute::Impl {
       // plain fixed point again after each: the others may hold then.
       viaCleanups = true;
       bool dropped = false;
-      for (RailId g = 0; g < rails.size() && !dropped; ++g)
-        if ((!only || is_contained(*only, g)) && pruneOne(g))
-          dropped = true;
+      visit([&](RailId g) { return dropped = pruneOne(g); });
       viaCleanups = false;
       if (!dropped)
         return;
@@ -1065,6 +1092,7 @@ struct Uncompute::Impl {
         llvm::erase(rails[x].cleanupReaders, g);
       if (alts.empty()) {
         r.cleanup.reset();
+        keepIfNoProducer(g);
         return true;
       }
       r.cleanup->reads.clear();
@@ -1087,7 +1115,15 @@ struct Uncompute::Impl {
     for (RailId x : r.cleanup->reads)
       llvm::erase(rails[x].cleanupReaders, g);
     r.cleanup.reset();
+    keepIfNoProducer(g);
     return true;
+  }
+  // cq-rb96s (CR rule 6: "the old value is kept only when no such point exists"; GMP toom6h_mul): a rail with no producer
+  // (a merge of kept arms that rule 6 took over, spine clean/keptMerge) has no plain item to fall back on once its
+  // clean-up gives way: it is kept, as the merge of kept arms was.
+  void keepIfNoProducer(RailId g) {
+    if (rails[g].creator == kNone && rails[g].role == Role::Garbage)
+      rails[g].role = Role::Kept;
   }
 
   // cq-g3h1i: itemReads per rail, kept while resolve only reads the rails (dropBlocked and order: no record,
@@ -1099,10 +1135,19 @@ struct Uncompute::Impl {
     if (rails[g].deferred != kNone) {
       // F1: the item frees its exit rails, so every rail outside it whose item reads one goes first.
       const Deferred &d = defs[rails[g].deferred];
+      // cq-03rdt (CR rules 5, 14): a rail a record of the item's own scopes made is the item's, undone by its reverse,
+      // also once an enclosing loop's recordDeferred took it over (ownedBy names the outer item then).
+      auto own = [&](RailId o) {
+        unsigned c = rails[o].creator;
+        return rails[o].ownedBy == rails[g].deferred ||
+               (c != kNone && any_of(d.scopes, [&](unsigned s) {
+                  return c >= scopes[s].begin && c < scopes[s].end && !scopes[s].left.count(o);
+                }));
+      };
       SmallVector<RailId, 4> out;
       for (RailId x : d.exits)
         for (RailId o : readersOf(x))
-          if (o != g && rails[o].ownedBy != rails[g].deferred && !is_contained(out, o))
+          if (o != g && !own(o) && !is_contained(out, o))
             out.push_back(o);
       return out;
     }
@@ -1447,7 +1492,9 @@ struct Uncompute::Impl {
     SmallVector<Value *, 8> conds;
     for (const FlagEv &e : evs)
       conds.push_back(e.set ? T : e.cond ? e.cond : e.merge == kNone ? static_cast<Value *>(T) : chooses(e.merge, e.arm));
-    DenseMap<const BasicBlock *, SmallVector<unsigned, 2>> byBlock;
+    // Insertion order (cq-aeroi): the loops over byBlock mint run flags and seed worklists, and a DenseMap keyed by block
+    // address walks in an order that changes from run to run.
+    MapVector<const BasicBlock *, SmallVector<unsigned, 2>> byBlock;
     for (unsigned i = 0; i < evs.size(); ++i)
       if (evs[i].at && evs[i].at->getParent())
         byBlock[evs[i].at->getParent()].push_back(i);
@@ -1461,6 +1508,7 @@ struct Uncompute::Impl {
     // where it still dominates `at` (a function with many K-loops has thousands of items placed at a return, each of
     // which would mint its own chain of run phis over every classical arm).
     std::vector<uintptr_t> memoKey;
+    std::vector<WeakVH> memoConds;
     ReachCache *rc = activeReach();
     if (rc && rc->F != at->getFunction())
       rc = nullptr;
@@ -1480,10 +1528,12 @@ struct Uncompute::Impl {
         for (unsigned i : is) {
           memoKey.push_back(evs[i].set);
           memoKey.push_back(reinterpret_cast<uintptr_t>(conds[i]));
+          memoConds.emplace_back(conds[i]);
         }
       }
-      if (auto it = rc->flagMemo.find(memoKey); it != rc->flagMemo.end()) {
-        Value *v = it->second;
+      if (auto it = rc->flagMemo.find(memoKey);
+          it != rc->flagMemo.end() && all_of(it->second.conds, [](const WeakVH &c) { return c != nullptr; })) {
+        Value *v = it->second.r;
         if (v && isa<ConstantInt>(v))
           return v;
         if (auto *vi = dyn_cast_or_null<Instruction>(v); vi && vi->getParent() && vi->getFunction() == at->getFunction() &&
@@ -1711,7 +1761,7 @@ struct Uncompute::Impl {
     }
     sweepChooses(r);
     if (!memoKey.empty() && activeReach() == rc && !rc->dirty)
-      rc->flagMemo[memoKey] = r;
+      rc->flagMemo[memoKey] = {r, std::move(memoConds)};
     return r;
   }
   // Choice values nothing reads (a flag that folded to a constant): erased, to a fixed point.
@@ -2207,6 +2257,11 @@ struct Uncompute::Impl {
       // (cleared by the item itself, so a later pass through the block before a redefinition is no
       // second free).
       BasicBlock *Bp = cyclePoint(g, as);
+      if (!Bp)
+        internalError("uncompute: no block resolves each instance of " + describe(r.handle) +
+                          " (an arm on a cycle read where no block every path from it passes before it runs again or "
+                          "returns lies after its uses: cyclePoint)",
+                      r.handle);
       placeAt(g, {Bp, Bp->getTerminator()}, true, /*exists=*/true, /*selfClear=*/true);
       return;
     }
@@ -3265,6 +3320,10 @@ struct Uncompute::Impl {
     // Never inside another region whose own records are still pending (a later rule-14 loop's trip, its
     // back edges cut while it flushes per trip, or a cq_invert region): the item would run per trip.
     const BasicBlock *P = point->getParent();
+    // cq-rb96s (CR rule 14; GLPK spx_update_d): a later rule-14 loop's trip flushed with its back edges cut looks acyclic
+    // and, before its own first record, holds no pending record before P; only its sub-units' items belong in it.
+    if (!tripFlush.empty() && none_of(tripFlush.back(), [&](unsigned s) { return is_contained(d.hostScopes, s); }))
+      return false;
     for (unsigned si = 0; si < scopes.size(); ++si) {
       const Scope &sc = scopes[si];
       if (sc.open)
@@ -3898,8 +3957,10 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
     }
     // cq-j2r0j (CR rule 19 "Function pointers", rule 27): a declared clone's twin is called exactly once, at its rule-18
     // position; where rule 18 would keep a result (a store of it) the result is first copied into a fresh rail KEPT in its
-    // place. The store reads that copy; the call's result stays garbage, which its twin zeroes.
-    if (x.group != kNone && I.groups[x.group].table && !Impl::keptRole(x.role) && !I.isMerge(r)) {
+    // place. The store reads that copy; the call's result stays garbage, which its twin zeroes. Every result of the call:
+    // a member past the first names the lead as its arm (recordCall's U2 alias, no merge), and keeping it would keep the
+    // lead, so a twin in a loop's reverse would never run (cq-03rdt: GSL complex_tri_invert_L3's gsl_complex_inverse).
+    if (x.group != kNone && I.groups[x.group].table && !Impl::keptRole(x.role)) {
       I.keepCopyForStore(r, store, h);
       continue;
     }
@@ -3913,7 +3974,10 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
       I.keepCopyForStore(r, store, h);
       continue;
     }
-    if (plain && x.deferred == kNone && x.ownedBy == kNone && Impl::bypassed(I.defBlock(r), store->getParent())) {
+    // cq-o546l: a rail a loop's deferred reverse owns (an exit capture read in place after the loop) is such a trip instance
+    // too: kept outright, the paths that skip the store would leave it live.
+    if (plain && (I.inScope(x.creator) || (x.deferred == kNone && x.ownedBy == kNone)) &&
+        Impl::bypassed(I.defBlock(r), store->getParent())) {
       if (I.inScope(x.creator))
         // An instance per trip, undone by the reverse loop (rule 14), which replays no store: the store reads a copy of
         // the rail, and that copy is the value or control rail rule 5 keeps, on exactly the trips the store ran.
@@ -3985,6 +4049,11 @@ bool Uncompute::deferredExit(RailId r) const {
     if (a != r && deferredExit(a))
       return true;
   return false;
+}
+
+bool Uncompute::ownItem(RailId r) const {
+  const Impl::Rail &x = impl->rails[r];
+  return x.ownedBy == kNone && x.deferred == kNone && !impl->isMerge(r);
 }
 
 void Uncompute::mergeToRail(RailId m) {
@@ -4571,6 +4640,7 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
   Impl::Deferred d;
   d.emit = std::move(emit);
   d.hostScopes.assign(hostScopes.begin(), hostScopes.end());
+  d.scopes.assign(scopes.begin(), scopes.end());
   for (unsigned s : scopes) {
     if (s >= I.scopes.size() || I.scopes[s].open)
       internalError("uncompute: recordDeferred over a scope that is not closed: " + std::to_string(s));
@@ -4585,6 +4655,10 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
   if (exitRails.empty())
     internalError("uncompute: recordDeferred without exit rails");
   for (RailId x : exitRails) {
+    // cq-03rdt (CR rules 18, 14): a call's result past the first names the lead (recordCall's U2 alias); the lead's twin
+    // zeroes and frees every result, so the item's exit rail is the lead.
+    if (I.rail(x, "recordDeferred").group != kNone)
+      x = I.groups[I.rails[x].group].members.front();
     Impl::Rail &rx = I.rail(x, "recordDeferred");
     if (rx.ownedBy != di || rx.released || I.isMerge(x))
       internalError("uncompute: recordDeferred: an exit rail that is not a pending rail of the item's scopes", rx.handle);
@@ -4621,6 +4695,16 @@ unsigned Uncompute::openScope() {
   impl->scopes.push_back({static_cast<unsigned>(impl->records.size()), kNone, true});
   impl->openStack.push_back(id);
   return id;
+}
+
+void Uncompute::beginTripFlush(ArrayRef<unsigned> segScopes) {
+  impl->tripFlush.emplace_back(segScopes.begin(), segScopes.end());
+}
+
+void Uncompute::endTripFlush() {
+  if (impl->tripFlush.empty())
+    internalError("uncompute: endTripFlush without beginTripFlush");
+  impl->tripFlush.pop_back();
 }
 
 void Uncompute::closeScope(unsigned s) {

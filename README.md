@@ -92,7 +92,8 @@ An LLVM outside `/usr/local/opt/llvm@19` is named by `-DCQ_LLVM_PREFIX=<prefix>`
 and by `CQ_LLVM_BIN=<prefix>/bin` when running `cqcc`. `cqcc --help` lists every option.
 
 An executable needs a backend: a library that implements `spec/BACKEND_ABI.md`. This repository
-contains none. `cqcc -S`, `cqcc -c` and `--cq-check` work without one. A backend has to implement
+contains none; the recommended one is described under "Recommended backend" below. `cqcc -S`,
+`cqcc -c` and `--cq-check` work without one. A backend has to implement
 the core gates, the memory bus, the tape and the integer operations. Floating point is optional
 for it: see "Floating point from SoftFloat" below.
 
@@ -101,6 +102,34 @@ search path) or a path given to `--backend`. Built as a shared library, it is bo
 program starts, so one executable runs against any backend installed under that name, such as a
 simulator, a resource counter or hardware, with no relink. Built as an archive (`.a`), it is copied
 into the executable.
+
+## Recommended backend
+
+[opcode_quantum_operations](https://github.com/SoerenWilkening/opcode_quantum_operations) is the
+recommended backend. It implements the runtime, the memory bus, the tape and the integer operations
+and turns each call into X, CNOT, CCX, Ry, controlled Ry, Rz and measurement on integer qubit indices. Floating
+point comes from this repository's SoftFloat library. It needs a C11 compiler and CMake only.
+
+```sh
+git clone https://github.com/SoerenWilkening/opcode_quantum_operations.git
+cmake -S opcode_quantum_operations -B opcode_quantum_operations/build \
+      -DCMAKE_C_COMPILER=/usr/local/opt/llvm@19/bin/clang
+cmake --build opcode_quantum_operations/build -j4
+cmake --install opcode_quantum_operations/build --prefix /usr/local
+
+cqcc prog.c -lcq_backend -lcq_gates_trace -o prog          # the backend, then a gate backend
+CQ_TRACE=prog.trace ./prog                                 # writes the circuit as a trace
+```
+
+The last library on the line defines the seven gate operations. The backend ships three:
+
+| Gate backend | What it does |
+|---|---|
+| `-lcq_gates_trace` | Simulates nothing and writes the circuit to the file named by `CQ_TRACE` (stdout without it). Every measurement returns 0. [qec-trace-viewer](https://github.com/SoerenWilkening/qec-trace-viewer) renders the trace: `python3 scripts/verify_view.py prog.trace -o prog.html`. |
+| `-lcq_gates_replay` | Runs the circuit on classical bits and counts gates and depth. Rotations are not simulated. |
+| `-lcq_gates_count` | Builds no circuit and counts gates, depth and qubits into the file named by `CQ_COUNT`. Every measurement returns 0. |
+
+Your own simulator or hardware compiler replaces either one by defining the same seven functions.
 
 ## C coverage
 
@@ -275,6 +304,64 @@ Time spent in the lowering, on one x86-64 Mac:
 | The C standard library, all nine root lists | 387 | 29 min | `libqc.a`, 52 MB |
 | SoftFloat, `float`, `double`, `_Float16`, `__bf16` | 673 | 1 min 40 s | `libqsoftfloat.a`, 15.2 MB |
 | SoftFloat, `long double` | 182 | 36 s | `libqsoftfloat_f80.a`, 5.2 MB |
+
+## Experiments on existing C projects
+
+[`experiments/`](experiments/) lowers existing C libraries unchanged, as lowered libraries (`cqcc --cq-lib`)
+that link against the precompiled C standard library and SoftFloat. Nothing in a project is rewritten
+and the standard library is not recompiled per project. Sources, builds and lowered archives are not
+in the repository; each project's `build_lib.sh` fetches and builds them.
+
+Every function is also lowered on its own, with all arguments quantum and its callees as calls
+(`experiments/per_function.sh`), so one failure does not hide another:
+
+| Project | Functions | Lower on their own | Open |
+|---|---|---|---|
+| GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | |
+| SQLite 3 (core) | 1,542 | 1,539 | 2 errors, 1 over the 120 s limit (`sqlite3VdbeExec`) |
+| GLPK 5.0 (without the two minisat files) | 1,256 | 1,246 | 7 errors, 3 over the 120 s limit |
+| GMP 6.3.0 (generic C) | 650 | 647 | 2 errors, 1 crash |
+
+"Lowers" means the pass produced a module that passes its structural verifier. The lowered
+libraries are not checked against the C programs: the checker runs programs, and the reduced cases
+under `experiments/repro-round*/` are what it has run. `experiments/repro-round6/resieve_exitvalue.c`
+is a known wrong result (a loop counter's value after a loop whose classical exit test sits in a
+quantum branch).
+
+Gate counts come from the recommended backend's counting gate backend (`-lcq_gates_count`, results
+in the file named by `CQ_COUNT`), which counts gates, depth and qubits without building a circuit.
+The drivers in `experiments/gsl/easy/` call one GSL function from precompiled, all-quantum GSL with
+one `double` built from two qubits, at the default loop cutoff 4. These numbers are preliminary:
+they were taken on intermediate builds of the pass and are not validated.
+
+| GSL call | Gates |
+|---|---|
+| `gsl_stats_max` | 0.86 M |
+| `gsl_sort` (4 elements) | 3.6 M |
+| `gsl_fft_complex_radix2_forward` (4 points) | 6.0 M |
+| `cblas_ddot` | 9.3 M |
+| `cblas_dgemm` | 10.9 M |
+| `cblas_dgemv` | 15.6 M |
+| `gsl_poly_solve_quadratic` | 16.7 M |
+| `gsl_poly_eval` | 20.5 M |
+| `gsl_hypot` | 22.0 M |
+| `gsl_stats_mean` | 25.6 M |
+| `gsl_pow_int` | 25.8 M |
+| `gsl_fit_linear` | 65.4 M |
+| `gsl_stats_correlation` | 113.3 M |
+| `gsl_linalg_HH_svx` (2x2 solve) | 128.2 M |
+| `gsl_stats_variance` | 130.3 M |
+| `gsl_complex_mul`, then `gsl_complex_abs` | 159.8 M |
+| `gsl_cdf_ugaussian_P` | 369.5 M |
+
+Not counted yet: LU, Cholesky, Jacobi, the symmetric eigensolver and interpolation stop in the
+backend, because a memory read inside a loop with a quantum exit gets an address the backend treats
+as 61 to 64 quantum bits (its limit is 16). Gauss-Legendre integration and GMP's `mpn_fib2_ui`
+lower and run but did not finish counting in 10 minutes.
+
+`cqcc -cq-no-output` replaces calls to the `printf` family, `puts`, `fwrite` and `perror` on declared
+streams by their error return, so a library's error reporting does not enter the count. It is meant
+for building such a library, not the C standard library.
 
 ## How the lowering works
 

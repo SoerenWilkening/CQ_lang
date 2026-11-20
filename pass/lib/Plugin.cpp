@@ -89,6 +89,9 @@ cl::list<std::string> HostRoots("cq-host-roots", cl::CommaSeparated, cl::value_d
 cl::list<std::string> DropBodies("cq-drop-bodies", cl::CommaSeparated, cl::value_desc("fn"),
                                  cl::desc("cq-drop-bodies: the functions whose bodies are removed"));
 cl::opt<bool> DumpTaint("cq-dump-taint", cl::desc("cq: print the taint result to stderr"));
+cl::opt<bool> NoOutput("cq-no-output",
+                       cl::desc("cq: in the functions this module lowers, a call of a stream-output function the module "
+                                "does not define fails as on a closed stream (its error value, no output, no formatting)"));
 // Private to scaffold (Plugin.cpp and tests/scaffold): one stderr line per pipeline step, so a test
 // can see that the taint the constructions read is the one computed over the final CFG.
 cl::opt<bool> TracePipeline("cq-trace-pipeline", cl::Hidden,
@@ -446,8 +449,10 @@ void endAtNoreturn(Module &M, const std::set<std::string> &wasNoreturn) {
           Function *G = CB->getCalledFunction();
           if (!G)
             continue;
-          if (G->doesNotReturn() || (G->getName() == "cqrt_abort_i1" && CB->arg_size() == 1 && trueSeed(CB->getArgOperand(0))))
+          if (G->doesNotReturn() || (G->getName() == "cqrt_abort_i1" && CB->arg_size() == 1 && trueSeed(CB->getArgOperand(0)))) {
             cuts.push_back(CB->getNextNode());
+            break;   // the first cut of a block erases the rest of it, a later noreturn call too (_glp_dlsym: two asserts)
+          }
         }
       if (cuts.empty())
         continue;
@@ -1192,6 +1197,98 @@ bool rewriteRoundingIntrinsics(Function &F) {
   return true;
 }
 
+// cq-zd8jo: llvm.load.relative(p, off), which clang -O1's RelLookupTableConverter emits for a switch turned into a
+// table of pointers (PIC), is by definition (LangRef) p + sext(load i32 from p + off). In a tainted function it
+// becomes exactly that, so the ordinary load (rules 20 to 22) and address arithmetic lower it, a quantum index included.
+bool rewriteLoadRelative(Function &F) {
+  SmallVector<IntrinsicInst *, 4> work;
+  for (Instruction &I : instructions(F))
+    if (auto *II = dyn_cast<IntrinsicInst>(&I); II && II->getIntrinsicID() == Intrinsic::load_relative)
+      work.push_back(II);
+  for (IntrinsicInst *II : work) {
+    IRBuilder<> B(II);
+    Value *p = II->getArgOperand(0);
+    Value *rel = B.CreateAlignedLoad(B.getInt32Ty(), B.CreateGEP(B.getInt8Ty(), p, II->getArgOperand(1)), Align(4));
+    II->replaceAllUsesWith(B.CreateGEP(B.getInt8Ty(), p, B.CreateSExt(rel, B.getInt64Ty())));
+    II->eraseFromParent();
+  }
+  return !work.empty();
+}
+
+// cq-zd8jo, cq-p45s (CR rule 26: an SSA aggregate is one rail per scalar field; extractvalue/insertvalue and their vector
+// forms are representation changes): in a tainted function an aggregate or vector phi becomes one phi per field, each
+// incoming extracted at the end of its block, and the value rebuilt after the phis. The loop constructions then carry
+// and join scalars only (gsl_complex through a K-loop: GSL's complex_LU_det, spmatrix_complex_float_get).
+bool scalarizeAggregatePhis(Function &F) {
+  SmallVector<PHINode *, 4> work;
+  for (BasicBlock &BB : F)
+    for (PHINode &P : BB.phis())
+      if (P.getType()->isAggregateType() || P.getType()->isVectorTy())
+        work.push_back(&P);
+  bool changed = !work.empty();
+  while (!work.empty()) {
+    PHINode *P = work.pop_back_val();
+    Type *ty = P->getType();
+    auto *vt = dyn_cast<FixedVectorType>(ty);
+    unsigned n = vt ? vt->getNumElements() : isa<StructType>(ty) ? ty->getStructNumElements() : ty->getArrayNumElements();
+    IRBuilder<> R(P->getParent(), P->getParent()->getFirstInsertionPt());
+    Value *whole = PoisonValue::get(ty);
+    for (unsigned k = 0; k < n; ++k) {
+      PHINode *f = PHINode::Create(vt ? vt->getElementType() : GetElementPtrInst::getTypeAtIndex(ty, k),
+                                   P->getNumIncomingValues(), P->getName() + ".f" + Twine(k), P->getIterator());
+      // A block listed twice (a switch's cases into one block) takes one extract: LLVM requires one value per block.
+      SmallDenseMap<BasicBlock *, Value *, 4> fromBlock;
+      for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
+        BasicBlock *u = P->getIncomingBlock(i);
+        Value *&e = fromBlock[u];
+        if (!e) {
+          IRBuilder<> B(u->getTerminator());
+          Value *v = P->getIncomingValue(i);
+          e = vt ? B.CreateExtractElement(v, uint64_t(k)) : B.CreateExtractValue(v, {k});
+        }
+        f->addIncoming(e, u);
+      }
+      whole = vt ? R.CreateInsertElement(whole, f, uint64_t(k)) : R.CreateInsertValue(whole, f, {k});
+      if (f->getType()->isAggregateType() || f->getType()->isVectorTy())
+        work.push_back(f);   // a nested aggregate: its fields in turn
+    }
+    P->replaceAllUsesWith(whole);
+    P->eraseFromParent();
+  }
+  return changed;
+}
+
+// -cq-no-output (owner 2026-11-19): a library lowered for all-quantum arguments builds every error path's message as
+// circuit (GSL's gsl_error and cblas_xerbla: printf's formatting under each parameter check). With the flag, a call of a
+// stream-output function of <stdio.h>/<wchar.h> that this module only declares is not made: its result is the function's
+// error value, what the C program gets on a stream that cannot be written. sprintf and snprintf write memory the program
+// reads and are not output. Never used to build the C library itself, whose module defines these functions.
+bool dropStreamOutput(Function &F) {
+  static const char *const names[] = {"printf",  "fprintf",  "vprintf",  "vfprintf",  "wprintf", "fwprintf", "vwprintf",
+                                      "vfwprintf", "puts",   "fputs",    "fputws",    "putc",    "fputc",    "putchar",
+                                      "putwc",   "fputwc",   "putwchar", "fwrite",    "perror"};
+  SmallVector<CallBase *, 8> work;
+  for (Instruction &I : instructions(F))
+    if (auto *CB = dyn_cast<CallBase>(&I))
+      if (const Function *G = CB->getCalledFunction(); G && G->isDeclaration() && !isa<InvokeInst>(CB)) {
+        StringRef n = G->getName();
+        if (n.consume_front("\01"))   // an asm label is the object symbol: Mach-O's leading underscore (\01_fputs)
+          n.consume_front("_");
+        if (is_contained(names, n))
+          work.push_back(CB);
+      }
+  for (CallBase *CB : work) {
+    Type *T = CB->getType();
+    if (T->isIntegerTy())   // fwrite: no item written; the others: EOF, WEOF or a negative count
+      CB->replaceAllUsesWith(CB->getCalledFunction()->getName().ends_with("fwrite") ? ConstantInt::get(T, 0)
+                                                                                     : ConstantInt::getAllOnesValue(T));
+    else if (!T->isVoidTy())
+      continue;
+    CB->eraseFromParent();
+  }
+  return !work.empty();
+}
+
 bool isCqSurface(StringRef name) {
   return name.starts_with("cq_theta_") || name.starts_with("cq_measure_") || name == "cq_phi" ||
          name == "__cq_invert_begin" || name == "__cq_invert_end";
@@ -1472,9 +1569,12 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // 2b. One return block per tainted function (unifyReturns), and the rounding intrinsics as the C17 calls
     // (rewriteRoundingIntrinsics), cq-jkq8.
     for (Function *F : Tainted) {
-      if (!rewriteRoundingIntrinsics(*F))
+      bool rounding = rewriteRoundingIntrinsics(*F);
+      bool relative = rewriteLoadRelative(*F);
+      bool output = NoOutput && dropStreamOutput(*F);
+      if (!scalarizeAggregatePhis(*F) && !rounding && !relative && !output)
         continue;
-      trace("rounding intrinsics: changed @" + F->getName());
+      trace("rounding intrinsics / load.relative / aggregate phis: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
@@ -1594,6 +1694,9 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       for (Function *F : Tainted)
         if (armOnceAfterTrips(*F, T)) {
           trace("exit arm after trips: changed @" + F->getName());
+          // cq-fi2wc: a noreturn arm of the loop that the exit arm also entered (step 2c kept it the loop's while the arm ran
+          // per trip; read_char's error call) is entered from after the loop now: that edge gets its own copy.
+          splitSharedNoreturnArms(*F);
           moved = true;
           FAM.invalidate(*F, PreservedAnalyses::none());
         }

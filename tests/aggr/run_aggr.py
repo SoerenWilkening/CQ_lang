@@ -43,6 +43,7 @@ ENTRIES = {
     "mulconst.ll": None,   # cq-z6bul: one rule 6 clean-up per rail across the scalar and lane forms
     "loopinv.O1.ll": None,  # cq-941o: no lane rule 6 inside a loop unit (a lane every trip reads)
     "alias.ll": None,      # cq-qasj: rule 6 follows lane and field aliases of the old value
+    "aggphi.ll": None,     # cq-03rdt: an aggregate phi with a predecessor listed twice (one extract per block)
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 FWD = re.compile(r"call [^@]*@cq_template_\w+?(?<!_unc)\(")

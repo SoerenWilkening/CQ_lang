@@ -16,9 +16,34 @@ Bdd::Bdd() {
   nodes.push_back({NoVar, T, T});   // true
 }
 
+void Bdd::append(unsigned v) {
+  if (v >= lvl.size())
+    lvl.resize(v + 1, NoVar);
+  for (unsigned u = 0; u <= v; ++u)
+    if (lvl[u] == NoVar) {
+      lvl[u] = unsigned(order.size());
+      order.push_back(u);
+    }
+}
+
+void Bdd::placeAfter(unsigned v, unsigned after) {
+  place(after);
+  if (v < lvl.size() && lvl[v] != NoVar)
+    return;   // ordered already (used before it was placed)
+  if (v >= lvl.size())
+    lvl.resize(v + 1, NoVar);
+  for (unsigned u = 0; u < v; ++u)
+    place(u);
+  unsigned at = lvl[after] + 1;
+  order.insert(order.begin() + at, v);
+  for (unsigned i = at; i < order.size(); ++i)
+    lvl[order[i]] = i;
+}
+
 unsigned Bdd::mk(unsigned v, unsigned l, unsigned h) {
   if (l == h)
     return l;
+  place(v);
   Key3 k{v, l, h};
   auto it = unique.find(k);
   if (it != unique.end())
@@ -30,7 +55,8 @@ unsigned Bdd::mk(unsigned v, unsigned l, unsigned h) {
 }
 
 unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
-  if (terminal(f) || var(f) > v)
+  const unsigned lv = level(v);
+  if (terminal(f) || top(f) > lv)
     return f;
   if (var(f) == v)
     return val ? hi(f) : lo(f);
@@ -48,10 +74,10 @@ unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
   }
   struct Walk {
     Bdd &m;
-    unsigned v, call;
+    unsigned v, lv, call;
     bool val;
     unsigned go(unsigned n) {
-      if (m.terminal(n) || m.var(n) > v)
+      if (m.terminal(n) || m.top(n) > lv)
         return n;
       if (m.var(n) == v)
         return val ? m.hi(n) : m.lo(n);
@@ -64,7 +90,7 @@ unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
       m.memoVal[n] = r;
       return r;
     }
-  } walk{*this, v, call, val};
+  } walk{*this, v, lv, call, val};
   return walk.go(f);
 }
 
@@ -81,7 +107,7 @@ unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
   auto it = iteMemo.find(k);
   if (it != iteMemo.end())
     return it->second;
-  unsigned v = std::min({var(f), var(g), var(h)});
+  unsigned lv = std::min({top(f), top(g), top(h)}), v = order[lv];
   auto co = [&](unsigned x, bool b) {
     if (terminal(x) || var(x) != v)
       return x;
@@ -120,7 +146,7 @@ unsigned Bdd::restrict(unsigned f, unsigned c) {
     if (it != memo.end())
       return it->second;
     unsigned r;
-    if (var(c) < var(f)) {
+    if (top(c) < top(f)) {
       r = go(f, orOp(lo(c), hi(c)));
     } else if (var(c) == var(f)) {
       if (lo(c) == F)

@@ -1,0 +1,5 @@
+src/
+build/
+lib/
+*.log
+out*.ll

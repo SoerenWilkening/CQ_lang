@@ -472,8 +472,15 @@ bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<
 }
 
 bool carriesEnvImpl(const TaintInfo &T, const Specialization &S) {
+  // Asked for every constrained FP instruction, each time a scan of every specialization's body (up to 99% of
+  // construct on libm). A function of the run's taint alone, so the answer is kept with it.
+  auto it = T.carriesEnvMemo.find(&S);
+  if (it != T.carriesEnvMemo.end())
+    return it->second;
   SmallPtrSet<const Specialization *, 8> seen;
-  return carriesEnvImpl(T, S, seen);
+  bool r = carriesEnvImpl(T, S, seen);
+  T.carriesEnvMemo[&S] = r;
+  return r;
 }
 
 // --------------------------------------------------------------------------------------------
@@ -983,7 +990,45 @@ Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, Rea
   return m;
 }
 
+// cq-ewzri: the one value every path back from B reaches, when there is exactly one; nullopt otherwise.
+// Visits each block once, with readEnd's and readStart's stopping rules. Then readAt's walk would
+// return that value with no merge and no error: every block's non-pending inputs can only be that
+// value, and B's own walk finds it (a path to it that avoids B exists). The walk alone revisits a
+// block once per stack it is reached with when an output cycle keeps it unsettled.
+std::optional<Part> uniqueReaching(State &st, const Key &k, BasicBlock *B) {
+  Var &v = st.vars[k];
+  std::optional<Part> one;
+  SmallPtrSet<BasicBlock *, 32> seen{B};
+  SmallVector<BasicBlock *, 64> work{B};
+  while (!work.empty()) {
+    BasicBlock *X = work.pop_back_val();
+    const Part *p = nullptr;
+    Part entry;
+    if (auto it = v.end.find(X); it != v.end.end())
+      p = &it->second;
+    else if (auto it = v.start.find(X); it != v.start.end())
+      p = &it->second;
+    else if (pred_empty(X)) {
+      entry = k == kState ? st.initial : Part{};
+      p = &entry;
+    }
+    if (p) {
+      if (!one)
+        one = *p;
+      else if (!one->same(*p))
+        return std::nullopt;
+      continue;
+    }
+    for (BasicBlock *P : predecessors(X))
+      if (seen.insert(P).second)
+        work.push_back(P);
+  }
+  return one;
+}
+
 Part readAt(LoweringContext &ctx, State &st, const Key &k) {
+  if (std::optional<Part> one = uniqueReaching(st, k, ctx.B().GetInsertBlock()))
+    return *one;
   ReadWalk w;
   Part p = readEnd(ctx, st, k, ctx.B().GetInsertBlock(), w);
   if (p.pending)

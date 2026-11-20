@@ -153,7 +153,9 @@ void __cq_clone_register(const void *fn, const char *sig, void *clone, void *ctl
   void *k[4] = {clone, ctl, unc, ctl_unc};
   for (size_t i = 0; i < nrows; ++i)
     if (rows[i].fn == fn) {
-      if (strcmp(rows[i].sig, sig) != 0 || memcmp(rows[i].k, k, sizeof k) != 0) {
+      /* Two names of one host function register a row each: macOS libm's ldexp is scalbn. Both rows lower that one
+       * function, so the first stands; only a different signature for one address is a conflict. */
+      if (strcmp(rows[i].sig, sig) != 0) {
         fprintf(stderr, "cq: __cq_clone_register: %p registered twice with different rows\n", fn);
         abort();
       }
