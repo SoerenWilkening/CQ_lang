@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <string>
 
+#include "llvm/ADT/DenseMap.h"
+
 namespace cq::pred_detail {
 
 Bdd &Bdd::get() {
@@ -60,6 +62,9 @@ unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
     return f;
   if (var(f) == v)
     return val ? hi(f) : lo(f);
+  const Key3 key{f, v, unsigned(val)};
+  if (auto it = cofMemo.find(key); it != cofMemo.end())
+    return it->second;
   // cq-g3h1i: memoized per call (a stamp per node), so the walk is linear in f's nodes and not in its paths.
   // A node is still made the first time its children are done, low child first: the node numbers are the
   // unmemoized walk's.
@@ -91,7 +96,9 @@ unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
       return r;
     }
   } walk{*this, v, lv, call, val};
-  return walk.go(f);
+  unsigned r = walk.go(f);
+  cofMemo.emplace(key, r);
+  return r;
 }
 
 unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
@@ -136,32 +143,75 @@ unsigned Bdd::exists(unsigned f, const std::function<bool(unsigned)> &pick) {
   return go(f);
 }
 
-unsigned Bdd::restrict(unsigned f, unsigned c) {
-  std::unordered_map<uint64_t, unsigned> memo;
-  std::function<unsigned(unsigned, unsigned)> go = [&](unsigned f, unsigned c) -> unsigned {
-    if (c == F || c == T || terminal(f))
-      return f;
-    uint64_t key = (uint64_t(f) << 32) | c;
-    auto it = memo.find(key);
-    if (it != memo.end())
-      return it->second;
-    unsigned r;
-    if (top(c) < top(f)) {
-      r = go(f, orOp(lo(c), hi(c)));
-    } else if (var(c) == var(f)) {
-      if (lo(c) == F)
-        r = go(hi(f), hi(c));
-      else if (hi(c) == F)
-        r = go(lo(f), lo(c));
-      else
-        r = mk(var(f), go(lo(f), lo(c)), go(hi(f), hi(c)));
-    } else {
-      r = mk(var(f), go(lo(f), c), go(hi(f), c));
+std::pair<bool, bool> Bdd::sides(unsigned f, unsigned v) {
+  const unsigned lv = level(v);
+  if (++stamp == 0) {
+    std::fill(seenAt.begin(), seenAt.end(), 0u);
+    stamp = 1;
+  }
+  if (seenAt.size() < nodes.size()) {
+    seenAt.resize(nodes.size(), 0u);
+    memoVal.resize(nodes.size(), 0u);
+  }
+  // Bit 0: satisfiable with v false; bit 1: with v true. A node below v's level does not read v.
+  struct Walk {
+    Bdd &m;
+    unsigned v, lv, call;
+    unsigned go(unsigned n) {
+      if (n == F)
+        return 0;
+      if (n == T || m.top(n) > lv)
+        return 3;
+      if (m.var(n) == v)
+        return (m.lo(n) != F ? 1u : 0u) | (m.hi(n) != F ? 2u : 0u);
+      if (m.seenAt[n] == call)
+        return m.memoVal[n];
+      unsigned r = go(m.lo(n));
+      if (r != 3)
+        r |= go(m.hi(n));
+      m.seenAt[n] = call;
+      m.memoVal[n] = r;
+      return r;
     }
-    memo.emplace(key, r);
-    return r;
-  };
-  return go(f, c);
+  } walk{*this, v, lv, stamp};
+  unsigned r = walk.go(f);
+  return {(r & 1) != 0, (r & 2) != 0};
+}
+
+unsigned Bdd::restrict(unsigned f, unsigned c) {
+  // A plain recursion over a flat memo (not std::function over node-allocating buckets); children low first.
+  struct Walk {
+    Bdd &m;
+    llvm::DenseMap<uint64_t, unsigned> memo;
+    unsigned go(unsigned f, unsigned c) {
+      if (c == F || c == T || m.terminal(f))
+        return f;
+      uint64_t key = (uint64_t(f) << 32) | c;
+      if (auto it = memo.find(key); it != memo.end())
+        return it->second;
+      unsigned r;
+      if (m.top(c) < m.top(f)) {
+        r = go(f, m.orOp(m.lo(c), m.hi(c)));
+      } else if (m.var(c) == m.var(f)) {
+        if (m.lo(c) == F)
+          r = go(m.hi(f), m.hi(c));
+        else if (m.hi(c) == F)
+          r = go(m.lo(f), m.lo(c));
+        else {
+          unsigned l = go(m.lo(f), m.lo(c));
+          unsigned h = go(m.hi(f), m.hi(c));
+          r = m.mk(m.var(f), l, h);
+        }
+      } else {
+        unsigned l = go(m.lo(f), c);
+        unsigned h = go(m.hi(f), c);
+        r = m.mk(m.var(f), l, h);
+      }
+      memo[key] = r;
+      return r;
+    }
+  } walk{*this, llvm::DenseMap<uint64_t, unsigned>()};
+  return walk.go(f, c);
 }
 
 void Bdd::support(unsigned f, std::set<unsigned> &out) const {

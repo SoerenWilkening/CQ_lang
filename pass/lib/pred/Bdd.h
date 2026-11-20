@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace cq::pred_detail {
@@ -45,6 +46,9 @@ public:
   unsigned xorOp(unsigned a, unsigned b) { return ite(a, notOp(b), b); }
   // f with variable v fixed to val.
   unsigned cofactor(unsigned f, unsigned v, bool val);
+  // Whether f holds for some assignment with v false (first) and with v true (second): f & !v != F and f & v != F,
+  // without making either conjunction.
+  std::pair<bool, bool> sides(unsigned f, unsigned v);
   // Existential quantification over every variable `pick` selects.
   unsigned exists(unsigned f, const std::function<bool(unsigned)> &pick);
   // Coudert-Madre restrict: a function that agrees with f wherever c holds, with support within f's.
@@ -78,7 +82,9 @@ private:
   unsigned top(unsigned n) { return terminal(n) ? NoVar : level(var(n)); }   // NoVar: below every variable
   std::vector<Node> nodes;
   std::vector<unsigned> lvl, order;   // var -> level, level -> var
-  std::unordered_map<Key3, unsigned, Hash3> unique, iteMemo;
+  // cofMemo: cofactor results keyed {f, v, val}; like iteMemo it stays valid when a variable is placed (node numbers
+  // are canonical and a hit means the walk already made every node it would make).
+  std::unordered_map<Key3, unsigned, Hash3> unique, iteMemo, cofMemo;
   // cq-g3h1i: per-walk marks of cofactor and support: seenAt[n] == stamp says n was visited by the current walk
   // (memoVal[n]: cofactor's result for it).
   mutable std::vector<unsigned> seenAt, memoVal;

@@ -143,6 +143,7 @@
 #include "cq/Order.h"
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <map>
 #include <optional>
@@ -230,6 +231,8 @@ struct Uncompute::Impl {
     SmallVector<RailId, 3> reads; // handle operands other than the record's own rail
     bool preserving = false;      // an uncontrolled xorc: a seed stays in a known basis state
     RailId item = kNone;          // the item that undoes it: out
+    RecInfo() = default; RecInfo(const RecInfo &) = default; RecInfo(RecInfo &&) noexcept = default;   // moved on growth
+    RecInfo &operator=(const RecInfo &) = default; RecInfo &operator=(RecInfo &&) = default;
   };
   struct Cleanup {
     abi::TemplateSpec inverse;
@@ -295,7 +298,7 @@ struct Uncompute::Impl {
 
   std::vector<Record> records;
   std::vector<RecInfo> info;
-  std::vector<Rail> rails;
+  std::deque<Rail> rails;   // a deque: growth never copies the rails (Rail is not nothrow-movable)
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
   std::vector<Deferred> defs;
@@ -446,9 +449,12 @@ struct Uncompute::Impl {
   // g and every merge that may name it (transitively), g first.
   SmallVector<RailId, 4> names(RailId g) const {
     SmallVector<RailId, 4> out{g};
+    if (rails[g].mergedInto.empty())
+      return out;
+    SmallDenseSet<RailId, 16> seen{g};   // membership beside the list: a rail may be named by many merges
     for (unsigned i = 0; i < out.size(); ++i)
       for (RailId m : rails[out[i]].mergedInto)
-        if (!is_contained(out, m))
+        if (seen.insert(m).second)
           out.push_back(m);
     return out;
   }
@@ -1148,6 +1154,30 @@ struct Uncompute::Impl {
   // rail or instruction changes between their calls); null outside.
   mutable DenseMap<RailId, SmallVector<RailId, 4>> *readsMemo = nullptr;
 
+  // readersOf's candidates from its in-place write targets: the items its walk reaches from that list of targets,
+  // in the order it lists them (it depends on the list alone). Kept per list within a readsMemo session.
+  using BfsMemo = std::map<std::vector<RailId>, SmallVector<RailId, 8>>;
+  mutable BfsMemo *bfsMemo = nullptr;
+  SmallVector<RailId, 8> targetCands(ArrayRef<RailId> roots) const {
+    SmallVector<RailId, 8> cand;
+    SmallVector<RailId, 4> targets(roots.begin(), roots.end());
+    SmallDenseSet<RailId, 16> candSet, targetSet(roots.begin(), roots.end());
+    for (unsigned i = 0; i < targets.size(); ++i)
+      for (RailId n : names(targets[i])) {
+        for (unsigned rec : rails[n].readerRecs) {
+          if (candSet.insert(info[rec].item).second)
+            cand.push_back(info[rec].item);
+          if (!isCreator(info[rec].kind))
+            if (RailId x = records[rec].out; x < rails.size() && targetSet.insert(x).second)
+              targets.push_back(x);
+        }
+        for (RailId o : rails[n].cleanupReaders)
+          if (candSet.insert(o).second)
+            cand.push_back(o);
+      }
+    return cand;
+  }
+
   // Rails whose item reads g, directly or through a merge that may name g (U1).
   SmallVector<RailId, 4> readersOf(RailId g) const {
     if (rails[g].deferred != kNone) {
@@ -1190,9 +1220,22 @@ struct Uncompute::Impl {
     };
     for (RailId n : ns)
       addCands(n);
-    for (unsigned i = 0; i < targets.size(); ++i)
-      for (RailId n : names(targets[i]))
-        addCands(n);
+    if (bfsMemo && !targets.empty()) {
+      // The walk from the targets is the same for every rail with the same targets (in place writes into one rail):
+      // within a readsMemo session (nothing changes) it is made once. Its candidates follow g's own, those already
+      // listed skipped.
+      std::vector<RailId> key(targets.begin(), targets.end());
+      auto it = bfsMemo->find(key);
+      if (it == bfsMemo->end())
+        it = bfsMemo->emplace(std::move(key), targetCands(targets)).first;
+      for (RailId o : it->second)
+        if (candSet.insert(o).second)
+          cand.push_back(o);
+    } else {
+      for (unsigned i = 0; i < targets.size(); ++i)
+        for (RailId n : names(targets[i]))
+          addCands(n);
+    }
     SmallVector<RailId, 4> out;
     for (RailId o : cand) {
       if (o == g)
@@ -3727,9 +3770,12 @@ struct Uncompute::Impl {
     std::pair<ReadsMap, ReadsMap> own;
     auto &[readers, reads] = pre ? *pre : own;
     readsMemo = &reads;
+    BfsMemo bfs;
+    bfsMemo = &bfs;
     dropBlocked(cands, c, c.mode == Mode::Mirror, &readers);
     SmallVector<RailId, 16> ord = order(cands, &readers);
     readsMemo = nullptr;
+    bfsMemo = nullptr;
     for (RailId g : ord)
       place(g, c);
   }
@@ -4276,8 +4322,8 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
       continue;
     bool ok = true;
     for (Instruction *a : I.anchors(g))
-      if (a->getParent() != P || !cq::comesBefore(a, point) ||
-          (!isa<CallBase>(a) && !I.emitted.count(a) && !I.isMergeHandle(a))) {
+      if (a->getParent() != P || (!isa<CallBase>(a) && !I.emitted.count(a) && !I.isMergeHandle(a)) ||
+          !cq::comesBefore(a, point)) {   // the order test last: it is the costly one
         ok = false;
         break;
       }
@@ -4812,7 +4858,10 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   std::pair<Impl::ReadsMap, Impl::ReadsMap> pre;
   {
     auto *was = I.readsMemo;
+    auto *wasBfs = I.bfsMemo;
+    Impl::BfsMemo bfs;
     I.readsMemo = &pre.second;
+    I.bfsMemo = &bfs;
     DenseSet<RailId> inCands(cands.begin(), cands.end());
     for (unsigned k = 0; k < cands.size(); ++k) {
       SmallVector<RailId, 4> rd = I.readersOf(cands[k]);
@@ -4822,6 +4871,7 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
       pre.first.try_emplace(cands[k], std::move(rd));
     }
     I.readsMemo = was;
+    I.bfsMemo = wasBfs;
   }
   I.resolve(cands, c, &pre);
   I.inMirror = wasInMirror;

@@ -27,6 +27,8 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <unordered_map>
+
 using namespace llvm;
 
 namespace cq {
@@ -45,13 +47,30 @@ class Materializer {
 public:
   Materializer(GateSink &sink, const std::function<bool(unsigned)> &ql) : sink(sink), ql(ql) {}
 
+  // Memoized per node over this lowering (not a support set per call): classical(n) says no quantum-like atom
+  // is in n's support; latestQl(n) is n's quantum-like atom latest in the variable order, Bdd::NoVar for none.
+  std::unordered_map<unsigned, bool> classicalMemo;
+  std::unordered_map<unsigned, unsigned> latestMemo;
+
   bool classical(unsigned n) {
-    std::set<unsigned> sup;
-    m.support(n, sup);
-    for (unsigned v : sup)
-      if (ql(v))
-        return false;
-    return true;
+    if (m.terminal(n))
+      return true;
+    if (auto it = classicalMemo.find(n); it != classicalMemo.end())
+      return it->second;
+    bool r = !ql(m.var(n)) && classical(m.lo(n)) && classical(m.hi(n));
+    return classicalMemo[n] = r;
+  }
+
+  unsigned latestQl(unsigned n) {
+    if (m.terminal(n))
+      return Bdd::NoVar;
+    if (auto it = latestMemo.find(n); it != latestMemo.end())
+      return it->second;
+    unsigned v = ql(m.var(n)) ? m.var(n) : Bdd::NoVar;
+    for (unsigned s : {latestQl(m.lo(n)), latestQl(m.hi(n))})
+      if (s != Bdd::NoVar && (v == Bdd::NoVar || m.level(s) > m.level(v)))
+        v = s;
+    return latestMemo[n] = v;
   }
 
   Value *atomRail(unsigned v) {
@@ -65,16 +84,8 @@ public:
   // flag joined with the inner condition (08, 137). Latest in the variable order (cq-ewzri: creation
   // order but for an atom placed into a switch case's group).
   unsigned shannonVar(unsigned n) {
-    std::set<unsigned> sup;
-    m.support(n, sup);
-    unsigned v = 0;
-    bool found = false;
-    for (unsigned s : sup)
-      if (ql(s) && (!found || m.level(s) > m.level(v))) {
-        v = s;
-        found = true;
-      }
-    if (!found)
+    unsigned v = latestQl(n);
+    if (v == Bdd::NoVar)
       internalError("pred: flag synthesis lost its quantum atom");
     return v;
   }
@@ -385,10 +396,10 @@ Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
   }
   for (User *u : atom->users()) {
     auto *c = dyn_cast<CallInst>(u);
-    if (!c || !negates(*c, atom))
+    if (!c)
       continue;
-    auto at = std::find(chain.begin(), chain.end(), c->getParent());
-    if (at == chain.end())
+    auto at = std::find(chain.begin(), chain.end(), c->getParent());   // the cheap test first
+    if (at == chain.end() || !negates(*c, atom))
       continue;
     if (c->getParent() == bb) {   // before pt
       bool before = false;

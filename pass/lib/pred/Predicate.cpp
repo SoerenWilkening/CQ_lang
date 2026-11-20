@@ -694,8 +694,10 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
       return leaf(i);
   // A chain step: the first arm (in the caller's order) one literal separates from the rest in the
   // context, so an if/else chain is single compares (104) and nested arms nest (158).
+  std::vector<unsigned> restricted;   // restrict(arms[live[k]], ctxt), made once for the three steps below
   for (unsigned i : live) {
     unsigned c = m.restrict(arms[i], ctxt);
+    restricted.push_back(c);
     if (literal(c)) {
       int n = node(c);
       int t = leaf(i);
@@ -709,14 +711,22 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
   // value arms, cq-95k8). The select on it nests a select tree per side; rule 9: nested arms nest,
   // never a conjunction flag for a pure select. The side of the first live arm is the true side.
   std::set<unsigned> sup;
+  for (unsigned c : restricted)
+    m.support(c, sup);
+  std::vector<unsigned> inCtxt;   // andOp(ctxt, arms[live[k]])
   for (unsigned i : live)
-    m.support(m.restrict(arms[i], ctxt), sup);
+    inCtxt.push_back(m.andOp(ctxt, arms[i]));
+  std::vector<std::optional<std::set<unsigned>>> inSup(inCtxt.size());   // the support of each, made when first read
   for (unsigned v : sup) {
-    unsigned lit = m.ithVar(v);
     bool pos = false, neg = false, splits = true;
-    for (unsigned i : live) {
-      unsigned a = m.andOp(ctxt, arms[i]);
-      bool p = m.andOp(a, lit) != Bdd::F, q = m.andOp(a, m.notOp(lit)) != Bdd::F;
+    for (size_t k = 0; k < inCtxt.size(); ++k) {
+      // a & lit != F and a & !lit != F, read off a without building either conjunction: both when a (not F) does not
+      // read v at all.
+      if (!inSup[k]) {
+        inSup[k].emplace();
+        m.support(inCtxt[k], *inSup[k]);
+      }
+      auto [q, p] = inSup[k]->count(v) ? m.sides(inCtxt[k], v) : std::pair<bool, bool>{true, true};
       if (p && q) {
         splits = false;
         break;
@@ -726,6 +736,7 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
     }
     if (!splits || !pos || !neg)
       continue;
+    unsigned lit = m.ithVar(v);
     unsigned cond = m.andOp(m.andOp(ctxt, arms[live[0]]), lit) != Bdd::F ? lit : m.notOp(lit);
     int n = node(cond);
     int t = buildSelect(out, arms, m.andOp(ctxt, cond));
@@ -737,7 +748,7 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
   // No literal separates the arms (an arm whose predicate is a compound condition of one branch, as
   // for a && b): the first live arm's condition in the context.
   unsigned i = live[0];
-  int n = node(m.restrict(arms[i], ctxt));
+  int n = node(restricted[0]);
   int t = leaf(i);
   int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(arms[i])));
   out[n].thenIdx = t;
@@ -746,7 +757,7 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
 }
 } // namespace
 
-std::vector<SelectNode> selectTree(ArrayRef<unsigned> arms) {
+static std::vector<SelectNode> buildSelectTree(ArrayRef<unsigned> arms) {
   Bdd &m = Bdd::get();
   unsigned ctxt = Bdd::F;
   for (unsigned a : arms)
@@ -757,6 +768,18 @@ std::vector<SelectNode> selectTree(ArrayRef<unsigned> arms) {
   if (buildSelect(out, arms, ctxt) != 0)
     internalError("pred: selectTree's root is not its first node");
   return out;
+}
+
+std::vector<SelectNode> selectTree(ArrayRef<unsigned> arms) {
+  // A function of the arms' nodes alone (canonical, never freed), asked again with the same arms for every carried
+  // value of a loop exit with many arms: the tree is built once per arm list.
+  static std::map<std::vector<unsigned>, std::vector<SelectNode>> memo;
+  std::vector<unsigned> key(arms.begin(), arms.end());
+  if (auto it = memo.find(key); it != memo.end())
+    return it->second;
+  std::vector<SelectNode> tree = buildSelectTree(arms);
+  memo.emplace(std::move(key), tree);
+  return tree;
 }
 
 std::optional<unsigned> negatedAtom(unsigned f, const std::function<bool(unsigned)> &ql) {

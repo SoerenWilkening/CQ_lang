@@ -133,7 +133,8 @@ llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Va
 // L's exit continues.
 // Returns the XOR of the flags of the noreturn arms of L's nest (hasNoreturnArm; nullptr when none), an exit rail: an edge
 // into such an arm is an exit edge of the K-loop too (CR rules 14, 16).
-llvm::Value *lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+// startsBound: the caller bound L's classical header phis to their starts just before (an exit arm's merge, rule 9).
+llvm::Value *lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip, bool startsBound = false);
 
 // cq-9kcq S11: as lowerClassicalInTrip, for a classically bounded L in a rolled K-trip: L is a sub-unit of the K-loop's
 // region (the caller adds it with Region::addSub). A trip-local L (loops-cutoff's tripLocalSub: its quantum values die in

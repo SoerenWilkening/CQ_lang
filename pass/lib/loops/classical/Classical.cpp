@@ -229,7 +229,8 @@ public:
   // enclosing loop, under that trip's rail `trip` (its effects controlled by it, a case-3 chain
   // seeded by it), on the classical path loops-cutoff branched on. Its reverse is deferred after the readers
   // of its exit values, guarded by "the loop's exit was passed" (the trip may skip the loop classically).
-  Value *runInTrip(Case c, Value *trip) {
+  Value *runInTrip(Case c, Value *trip, bool starts = false) {
+    startsBound = starts;
     outerTrip = trip;
     inTrip = true;
     run(c);
@@ -254,6 +255,7 @@ private:
   DenseMap<const BasicBlock *, BasicBlock *> obMap;
   Value *outerTrip = nullptr;
   bool inTrip = false;     // cq-h5uj: lowered inside a K-loop trip (runInTrip)
+  bool startsBound = false;   // the walker of an exit arm bound the merged starts of the header phis (lowerClassicalInTrip)
   Value *stopCur = nullptr;   // the stop rail at the builder (see the mint in lowerLoop), nullptr when this unit has none
   bool deferred = false;   // the outermost loop's reverse is an Uncompute deferred item   // while a sub-loop of a case-3 trip is walked: that trip's rail a_{j-1}
   bool tripLocal(Loop &sl, Loop &L);
@@ -1230,6 +1232,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (all_of(outsideP, [&](BasicBlock *u) { return p.getIncomingValueForBlock(u) == v0; }))
       return ctx.operand(v0);
     const bool q = isQ(&p);
+    // An exit arm's loop entered by several arm edges: the arm walk's rule 9 merge over its own edge flags.
+    if (outermost && startsBound)
+      return ctx.operand(&p);
     if (outermost) {
       if (!q) {
         Operand v = ctx.operand(&p);
@@ -1687,6 +1692,29 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             return true;
     return false;
   };
+  // r8 (CR rules 8, 14; SQLite isDate): the classical fact the classical branches of the trip establish at u. A classical
+  // conjunct of a block's predicate that comes from a quantum test (the false edge of `c || q`, one flag under rule 8; the C
+  // of `C && Q`, on which the trip builds no branch) is in its predicate but opens no classical region: the block's flow is
+  // the open flow, not an output block of its own, and its edge into a join is linearized (GSL gsl_cdf_tdist_Pinv).
+  DenseMap<const BasicBlock *, Pred> estMemo;
+  std::function<Pred(const BasicBlock *)> estFact = [&](const BasicBlock *u) -> Pred {
+    if (u == header || !L.contains(u))
+      return cfOf(ctx.preds().block(u));
+    if (Loop *n = subOf(u) ? subOf(u) : kunit(u); n && n->getHeader() != u)
+      return estFact(n->getHeader());
+    if (auto it = estMemo.find(u); it != estMemo.end())
+      return it->second;
+    Pred f = Pred::bottom();
+    for (const BasicBlock *p : fwdPreds(u)) {
+      Pred fp = estFact(p);
+      // An abort test runs its noreturn arm in the trip and leaves no branch (emitTerminator): it establishes nothing either.
+      const bool lin = (termQ(p->getTerminator()) && !(p == cxb && !mixedDs.empty())) || isAbortTest(p);
+      // A sub-loop's exit edge stands for the loop as a unit (its function-wide edge, as in edgeFact); a K-unit's holds
+      // wherever the unit ran.
+      f = f | (lin || kunit(p) ? fp : fp & cfOf(subOf(p) ? ctx.preds().edge(p, u) : exits::tripEdge(p, u)));
+    }
+    return estMemo[u] = f;
+  };
   std::function<EK(const BasicBlock *, const BasicBlock *)> edgeKindAt;
   // The form of an edge is one fact of the program, whichever block's walk asks: never read under a tail's assumption.
   edgeKind = [&](const BasicBlock *u, const BasicBlock *s) {
@@ -1727,8 +1755,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // join when s is also a quantum join).
         // (A tail block's flow here is its outside paths'.)
         auto tu = kTailPred.find(u);
-        const Pred uFact = tu != kTailPred.end() ? tu->second.classicalProjection(ctx.T, ctx.S) : cfOf(ctx.preds().block(u));
-        if (!(cfOf(ctx.preds().block(s)) & !uFact).isBottom()) {
+        const Pred uFact = tu != kTailPred.end() ? tu->second.classicalProjection(ctx.T, ctx.S) : estFact(u);
+        if (!(estFact(s) & !uFact).isBottom()) {
           // Quantum arms under one classical fact that meet at s (strtod's `if (i < 7) { q ? a : b; }`): the code of the
           // later arm runs in the same open block, so only the last arm walked leaves by the real edge; the earlier ones
           // are its linearized incomings (the mixed join).
@@ -1736,7 +1764,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           auto at = find(rpo, u);
           for (const BasicBlock *p : fwdPreds(s))
             if (p != u && !termQ(p->getTerminator()) && armed(p) && find(rpo, p) > at) {
-              const Pred pc = cfOf(ctx.preds().block(p));
+              const Pred pc = estFact(p);
               if ((pc & !uc).isBottom() && (uc & !pc).isBottom())
                 return EK::Linear;
             }
@@ -2326,6 +2354,54 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     else
       ctx.bindFields(&P, {o});
   };
+  // Rule 9: a phi of a reached arm block, entered by the edges ins of this evaluation: its incoming on the edge taken.
+  auto bindArmPhi = [&](ArmEval &ev, PHINode &P, BasicBlock *b, ArrayRef<unsigned> ins) {
+    const bool q = isQ(&P);
+    if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
+      noteUnbuilt("loops-classical: a composite phi of a case-3 loop's exit arm", &P);
+      return;
+    }
+    auto opOf = [&](unsigned i) {
+      Operand o = ctx.operand(P.getIncomingValue(i));
+      if (P.getType()->isPointerTy() && !o.handle && q)
+        o = Operand{ctx.B().CreatePtrToInt(o.v, Type::getInt64Ty(ctx.M.getContext())), false};
+      return o;
+    };
+    if (ins.size() == 1 ||
+        all_of(ins, [&](unsigned i) { return P.getIncomingValue(i) == P.getIncomingValue(ins[0]); })) {
+      Operand o = opOf(ins[0]);
+      rebindPhi(P, q ? Operand{asHandle(o, P.getType()), true} : o);
+      return;
+    }
+    if (!q) {
+      // Rule 9: a classical choice is a classical select over the edges' classical paths.
+      Operand o = opOf(ins.back());
+      if (o.handle)
+        internalError("loops-classical: a classical phi of an exit arm with a rail incoming", &P);
+      Value *r = o.v;
+      for (unsigned k = unsigned(ins.size()) - 1; k-- > 0;) {
+        Operand ok = opOf(ins[k]);
+        if (ok.handle)
+          internalError("loops-classical: a classical phi of an exit arm with a rail incoming", &P);
+        r = ctx.B().CreateSelect(creachEdge(ev, P.getIncomingBlock(ins[k]), b), ok.v, r);
+      }
+      rebindPhi(P, Operand{r, false});
+      return;
+    }
+    // A quantum phi (rule 9): its incoming on the edge taken, a select chain over the edges' flags.
+    RailType w = railOf(P.getType());
+    Value *acc = nullptr;
+    for (unsigned k = unsigned(ins.size()); k-- > 0;) {
+      unsigned i = ins[k];
+      Operand o = opOf(i);
+      if (!acc) {
+        acc = asHandle(o, P.getType());
+        continue;
+      }
+      acc = select(flagOfEdge(ev, P.getIncomingBlock(i), b), o, Operand{acc, true}, w);
+    }
+    rebindPhi(P, Operand{acc, true});
+  };
   // The exit arm under one evaluation's entry flags: every block some entered edge reaches, in the arm's topological
   // order, its phis rule 9's selects over the edges taken, its instructions under its flag, a loop of the arm one node
   // (rule 14 nested in this evaluation: its chain seeded by the block's flag). A block no entered edge reaches is no
@@ -2384,7 +2460,22 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           noteStop(exits::lowerNestedCutoff(ctx, *S, sf, segHook(), nullptr, this));
           followBuilder();
         } else {
-          noteStop(exits::lowerClassicalInTrip(ctx, *S, sf));
+          // cq (GMP hgcd2_jacobi): S entered from several arm blocks with different starts (fix-irreducible's guard): a
+          // header phi's start is their merge (rule 9), over this evaluation's edges, bound here for S's unit (startOf).
+          for (PHINode &P : b->phis()) {
+            sh.binds.erase(&P);
+            SmallVector<unsigned, 4> outside, ins;
+            for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
+              if (!S->contains(P.getIncomingBlock(i)))
+                outside.push_back(i);
+            if (all_of(outside, [&](unsigned i) { return P.getIncomingValue(i) == P.getIncomingValue(outside[0]); }))
+              continue;
+            for (unsigned i : outside)
+              if (flagOfEdge(ev, P.getIncomingBlock(i), b))
+                ins.push_back(i);
+            bindArmPhi(ev, P, b, ins);
+          }
+          noteStop(exits::lowerClassicalInTrip(ctx, *S, sf, /*startsBound=*/true));
           followBuilder();
         }
         for (PHINode *P : contPhis)
@@ -2401,51 +2492,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             ins.push_back(i);
         if (ins.empty())
           internalError("loops-classical: a phi of a reached exit arm block with no incoming in this evaluation", &P);
-        const bool q = isQ(&P);
-        if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
-          noteUnbuilt("loops-classical: a composite phi of a case-3 loop's exit arm", &P);
-          continue;
-        }
-        auto opOf = [&](unsigned i) {
-          Operand o = ctx.operand(P.getIncomingValue(i));
-          if (P.getType()->isPointerTy() && !o.handle && q)
-            o = Operand{ctx.B().CreatePtrToInt(o.v, Type::getInt64Ty(Cx)), false};
-          return o;
-        };
-        if (ins.size() == 1 ||
-            all_of(ins, [&](unsigned i) { return P.getIncomingValue(i) == P.getIncomingValue(ins[0]); })) {
-          Operand o = opOf(ins[0]);
-          rebindPhi(P, q ? Operand{asHandle(o, P.getType()), true} : o);
-          continue;
-        }
-        if (!q) {
-          // Rule 9: a classical choice is a classical select over the edges' classical paths.
-          Operand o = opOf(ins.back());
-          if (o.handle)
-            internalError("loops-classical: a classical phi of an exit arm with a rail incoming", &P);
-          Value *r = o.v;
-          for (unsigned k = unsigned(ins.size()) - 1; k-- > 0;) {
-            Operand ok = opOf(ins[k]);
-            if (ok.handle)
-              internalError("loops-classical: a classical phi of an exit arm with a rail incoming", &P);
-            r = ctx.B().CreateSelect(creachEdge(ev, P.getIncomingBlock(ins[k]), b), ok.v, r);
-          }
-          rebindPhi(P, Operand{r, false});
-          continue;
-        }
-        // A quantum phi (rule 9): its incoming on the edge taken, a select chain over the edges' flags.
-        RailType w = railOf(P.getType());
-        Value *acc = nullptr;
-        for (unsigned k = unsigned(ins.size()); k-- > 0;) {
-          unsigned i = ins[k];
-          Operand o = opOf(i);
-          if (!acc) {
-            acc = asHandle(o, P.getType());
-            continue;
-          }
-          acc = select(flagOfEdge(ev, P.getIncomingBlock(i), b), o, Operand{acc, true}, w);
-        }
-        rebindPhi(P, Operand{acc, true});
+        bindArmPhi(ev, P, b, ins);
       }
       // The arm's flag is the block's whole predicate here: its instructions run under it, its effects controlled by it.
       const Pred bq = qp(b);
@@ -4224,7 +4271,7 @@ template <typename Fn> auto underTripPaths(LoweringContext &ctx, const Loop &L, 
 }
 } // namespace
 
-Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
+Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip, bool startsBound) {
   Case c = classify(L, ctx.T, ctx.S);
   if (c == Case::QuantumExit)
     internalError("loops-classical: lowerClassicalInTrip of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
@@ -4240,7 +4287,8 @@ Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
       sh.binds.erase(&p);
   };
   for (BasicBlock *b : L.blocks())
-    forget(b);
+    if (!startsBound || b != L.getHeader())   // the caller bound the header phis' starts anew
+      forget(b);
   for (BasicBlock *b : SU.arm)
     forget(b);
   if (c == Case::ClassicalBoundQuantumExit && SU.cont &&
@@ -4248,7 +4296,7 @@ Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
     for (PHINode &p : SU.cont->phis())
       if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
         sh.binds.erase(&p);
-  return underTripPaths(ctx, L, [&] { return std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip); });
+  return underTripPaths(ctx, L, [&] { return std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip, startsBound); });
 }
 
 std::shared_ptr<rolled::Region> lowerClassicalSubInTrip(LoweringContext &ctx, Loop &L, Value *trip, BasicBlock *resetAt,

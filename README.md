@@ -318,13 +318,15 @@ Every function is also lowered on its own, with all arguments quantum and its ca
 | Project | Functions | Lower on their own | Open |
 |---|---|---|---|
 | GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | |
-| SQLite 3 (core) | 1,542 | 1,540 | 1 error (`isDate`), 1 over the 120 s limit (`sqlite3VdbeExec`) |
-| GLPK 5.0 (without the two minisat files) | 1,256 | 1,255 | 1 over the 120 s limit (`_glp_ios_driver`) |
-| GMP 6.3.0 (generic C) | 650 | 649 | 1 error (`__gmpn_hgcd2_jacobi`) |
+| SQLite 3 (core) | 1,542 | 1,542 | `sqlite3VdbeExec`, the bytecode interpreter, takes about 14 minutes; every other function is under 2 |
+| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | |
+| GMP 6.3.0 (generic C) | 650 | 650 | |
 
 "Lowers" means the pass produced a module that passes its structural verifier. The lowered
 libraries are not checked against the C programs: the checker runs programs, and the reduced cases
-under `experiments/repro-round*/` are what it has run.
+under `experiments/repro-round*/` are what it has run. Two of them are known faults:
+`repro-round8/asrt5.c` (a wrong result: an assert on a classical condition in the body of a loop with
+a quantum exit tested at its header) and `repro-round8/exitdead_leak.c` (a rail left live at exit).
 
 Gate counts come from the recommended backend's counting gate backend (`-lcq_gates_count`, results
 in the file named by `CQ_COUNT`), which counts gates, depth and qubits without building a circuit.

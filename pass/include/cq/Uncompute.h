@@ -20,7 +20,12 @@ using RailId = unsigned;
 enum class Role : uint8_t { Garbage, Seed, UserRegister, Result, Output, Measured, Frozen, Tape, Abort,
                             KeptOverflow, Escaped, KeptEntangled, Kept, Overtaken };
 // A2: a record is a template or a core gate (controlled copy, xorc).
-struct Record { llvm::CallInst *forward; std::variant<abi::TemplateSpec, abi::CoreSpec> spec; llvm::SmallVector<Operand, 3> ops; RailId out; };
+struct Record {
+  llvm::CallInst *forward; std::variant<abi::TemplateSpec, abi::CoreSpec> spec; llvm::SmallVector<Operand, 3> ops; RailId out;
+  // Moved, not copied, when the record vector grows (an aggregate still: the special members are only defaulted).
+  Record() = default; Record(const Record &) = default; Record(Record &&) noexcept = default;
+  Record &operator=(const Record &) = default; Record &operator=(Record &&) = default;
+};
 class Uncompute {
 public:
   Uncompute();

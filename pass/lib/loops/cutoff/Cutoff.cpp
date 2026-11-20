@@ -632,6 +632,42 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     return S && S->getHeader() != b;
   };
   std::function<const Pred &(BasicBlock *)> localOf;
+  // r8 (glpk glp_ios_driver; CR rules 14, 16, taint's dead-end rule cq-820w): an edge of a body block into a noreturn arm
+  // does not restrict its live siblings in the trip predicates; the share falls to the last successor that is neither a
+  // noreturn arm nor a dead end (`receiver`). The trip leaves on that edge instead: right after the block, q_j is narrowed
+  // by the edge's flag (lowerBlocks, abortEdges), as after a sub-loop with a noreturn arm (afterSub), and the arm runs
+  // under that flag. Every block, exit and arm flag is then the one the restricted predicates gave, without carrying
+  // every earlier abort test into every later block's predicate (78 asserts: thousands of BDD nodes per block). Only
+  // where no classical path through p is certain to abort (rule 8: such a path keeps its real branch) and never in the
+  // header test region (its evaluation leaves q_j as it found it).
+  // A body block whose edges into noreturn arms leave the trip right after it (lowerBlocks): with or without a receiver.
+  auto narrows = [&](BasicBlock *p) {
+    return L.contains(p) && !subLoopOf(p) && !(regionForm && region.count(p)) &&
+           any_of(successors(p), [&](BasicBlock *s) { return is_contained(U.abort, s); });
+  };
+  DenseMap<const BasicBlock *, BasicBlock *> receiverMemo;
+  auto receiver = [&](BasicBlock *p) -> BasicBlock * {
+    if (auto it = receiverMemo.find(p); it != receiverMemo.end())
+      return it->second;
+    BasicBlock *r = nullptr;
+    if (narrows(p)) {
+      for (BasicBlock *s : successors(p))
+        if (!is_contained(U.abort, s) && !is_contained(U.dead, s))
+          r = s;
+      if (r) {
+        Pred A = Pred::bottom();
+        for (BasicBlock *s : successors(p))
+          if (is_contained(U.abort, s))
+            A = A | edgeCond(p, s);
+        const Pred &Lp = localOf(p);
+        Pred c0 = Lp.classicalProjection(ctx.T, ctx.S), c1 = (Lp & !A).classicalProjection(ctx.T, ctx.S);
+        if (!((c0 & !c1) | (!c0 & c1)).isBottom())
+          r = nullptr;
+      }
+    }
+    receiverMemo[p] = r;
+    return r;
+  };
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       exits::Unit SU = exits::unitOf(*S);
@@ -640,6 +676,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (SU.cont != b)
         unimplemented("loops-cutoff: a nested K-loop with more than one exit block (cq-lgkx)", p->getTerminator());
       return local.find(S->getHeader())->second;   // the sub-loop as a unit always ends at its exit
+    }
+    if (!is_contained(U.abort, b) && receiver(p) == b) {
+      Pred others = Pred::bottom();
+      SmallPtrSet<BasicBlock *, 4> seen;
+      for (BasicBlock *s : successors(p))
+        if (s != b && !is_contained(U.abort, s) && seen.insert(s).second)
+          others = others | edgeCond(p, s);
+      return localOf(p) & !others;
     }
     return localOf(p) & edgeCond(p, b);
   };
@@ -1581,12 +1625,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.unc().recordCore(g, x, {Operand{f, true}, Operand{stopAcc, true}}, ctx.unc().idOf(stopAcc));
   };
   // q & !s for the sub-loop just lowered, when it has a noreturn arm.
-  auto afterSub = [&](Value *q) {
-    if (!stopped)
-      return q;
-    Value *s = stopped;
-    stopped = nullptr;
-    noteStop(s);
+  auto andNot = [&](Value *q, Value *s) {
     RailType i1{Kind::Int, 1};
     CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
     RailId id = ctx.unc().recordSeed(z);
@@ -1598,6 +1637,29 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.unc().recordCore(g, x, {Operand{s, true}, Operand{z, true}}, id);
     return andRail(q, z);
   };
+  auto afterSub = [&](Value *q) {
+    if (!stopped)
+      return q;
+    Value *s = stopped;
+    stopped = nullptr;
+    noteStop(s);
+    return andNot(q, s);
+  };
+  // A fresh rail holding the XOR of `terms` (exclusive flags: their OR).
+  auto xorRail = [&](ArrayRef<Value *> terms) {
+    RailType i1{Kind::Int, 1};
+    CallInst *n = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+    RailId id = ctx.unc().recordSeed(n);
+    abi::CoreSpec x{abi::Core::XorI1, i1};
+    for (Value *t : terms) {
+      CallInst *g = ctx.emitCore(x, {t, n});
+      ctx.unc().recordCore(g, x, {Operand{t, true}, Operand{n, true}}, id);
+    }
+    return static_cast<Value *>(n);
+  };
+  // r8 (receiver above): the flags of this evaluation's edges into noreturn arms from blocks with a receiver, each
+  // minted right after its block under q_j as it stood there; the arms read them (abortArms).
+  DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, Value *> abortEdge;
   // cq-jws5r (CR rule 8: "A purely classical condition is always a classical branch, also inside a clone"; NORTHSTAR
   // principle 2: a branch not taken emits no gates). A part of a trip copy (a block, a sub-loop's unit) whose trip-local
   // predicate lp has a classical condition runs under a real branch on it: g is lp with its quantum atoms quantified
@@ -1785,6 +1847,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   std::function<void(BasicBlock *, Value *, const Pred &)> lowerInsts;   // one block's non-phi instructions
   auto lowerBlocks = [&](Value *&q, const std::function<bool(const BasicBlock *)> &pick) {
     boundThisTrip.clear();
+    abortEdge.clear();
     for (BasicBlock *b : order) {
       if (!pick(b))
         continue;
@@ -1906,6 +1969,30 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
       lowerInsts(b, q, lpb);
       });
+      // r8: b's edges into noreturn arms leave the trip here (receiver). Also where they restrict b's live successors: in
+      // the region form the next header test reads q_j and the region's predicates only (asrt5: a classical assert of
+      // the body went on to the next trip).
+      if (narrows(b)) {
+        SmallVector<Value *, 2> taken;
+        SmallPtrSet<BasicBlock *, 4> seen;
+        for (BasicBlock *a : successors(b)) {
+          if (!is_contained(U.abort, a) || !seen.insert(a).second)
+            continue;
+          Pred e = local.find(b)->second & edgeCond(b, a);
+          if (e.isBottom())
+            continue;
+          Value *f = nullptr;
+          underClassical(e, {}, {}, {&f}, [&](const Pred &lp) {
+            f = conj(q, lp, b->getTerminator());
+            if (f == q)
+              f = xorRail({q});   // a rail of its own: q goes on narrowed
+          });
+          abortEdge[{b, a}] = f;
+          taken.push_back(f);
+        }
+        if (!taken.empty())
+          q = andNot(q, taken.size() == 1 ? taken.front() : xorRail(taken));
+      }
     }
   };
   // A loop of the exit arm runs once in the C program (after the trip that exits into the arm), but once per
@@ -2230,6 +2317,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // sub-loop's block is the sub-loop's own (its trips lower its arm).
   auto abortArms = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
     DenseMap<const BasicBlock *, Pred> abortLocal;
+    DenseMap<const BasicBlock *, Value *> armFlag;   // each arm block's flag in this evaluation
+    DenseSet<const BasicBlock *> armByEdges;
     auto srcPred = [&](const BasicBlock *u) -> std::optional<Pred> {
       if (L.contains(u)) {
         if (!pick(u) || subLoopOf(u))
@@ -2255,6 +2344,84 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       // |0> where the branch skips it.
       Value *f = nullptr;
       BasicBlock *before = ctx.B().GetInsertBlock();
+      // r8 (receiver): an arm entered on an edge whose flag lowerBlocks minted (q_j narrowed after it) runs under the XOR of
+      // its in-edges' flags (one path takes one edge), each edge's own: that flag, q_j & a restricted block's predicate & the
+      // edge, or an earlier arm block's flag & the edge. Its phis select on them. acc (over the unrestricted predicates)
+      // only gives the classical paths into the arm (a real branch, rule 8).
+      bool viaEdges = any_of(predecessors(b), [&](BasicBlock *p) {
+        return L.contains(p) ? pick(p) && !subLoopOf(p) && narrows(p) : armByEdges.count(p) != 0;
+      });
+      if (viaEdges) {
+        armByEdges.insert(b);
+        underClassical(acc, {b}, {}, {&f}, [&](const Pred &) {
+          DenseMap<const BasicBlock *, Value *> in;
+          SmallVector<Value *, 4> terms;
+          for (BasicBlock *p : predecessors(b)) {
+            if (in.count(p))
+              continue;
+            Value *t = nullptr;
+            if (L.contains(p)) {
+              if (!pick(p) || subLoopOf(p))
+                continue;
+              if (narrows(p)) {
+                t = abortEdge.lookup({p, b});
+              } else if (Pred e = local.find(p)->second & edgeCond(p, b); !e.isBottom()) {
+                t = conj(q, e, p->getTerminator());
+              }
+            } else if (Value *Fp = armFlag.lookup(p)) {
+              if (Pred e = edgeCond(p, b); !e.isBottom())
+                t = conj(Fp, e, p->getTerminator());
+            }
+            if (!t)
+              continue;
+            in[p] = t;
+            terms.push_back(t);
+          }
+          for (PHINode &P : b->phis()) {
+            if (!isQ(&P)) {
+              classicalPhi(P);
+              continue;
+            }
+            std::vector<std::pair<Value *, Operand>> arms;
+            for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
+              if (Value *t = in.lookup(P.getIncomingBlock(i)))
+                arms.push_back({t, ctx.operand(P.getIncomingValue(i))});
+            if (arms.empty())
+              internalError("loops-cutoff: a phi of a noreturn arm with no incoming in this evaluation", &P);
+            RailType w = railOf(P.getType());
+            auto asRail = [&](Operand v) {
+              if (v.handle)
+                return v;
+              bool ptr = v.v->getType()->isPointerTy();
+              return Operand{seedRail(ptr ? ctx.B().CreatePtrToInt(v.v, ctx.B().getInt64Ty()) : v.v,
+                                      ptr ? ctx.B().getInt64Ty() : P.getType()),
+                             true};
+            };
+            Operand r = asRail(arms.back().second);
+            for (size_t k = arms.size() - 1; k-- > 0;) {
+              Operand v = arms[k].second;
+              if (v.v == r.v)
+                continue;
+              if (!v.handle && v.v->getType()->isPointerTy())
+                v = Operand{ctx.B().CreatePtrToInt(v.v, ctx.B().getInt64Ty()), false};
+              abi::TemplateSpec sel;
+              sel.op = "select";
+              sel.w = w;
+              sel.shape = v.handle ? "" : "lh";
+              r = Operand{ctx.emitTemplate(sel, {Operand{arms[k].first, true}, v, r}), true};
+            }
+            set(&P, r);
+          }
+          f = xorRail(terms);
+          for (Instruction &I : *b)
+            if (!isa<PHINode>(I) && !I.isTerminator())
+              lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
+        });
+        armFlag[b] = f;
+        if (none_of(predecessors(b), [&](BasicBlock *p) { return abortLocal.count(p) != 0; }))
+          noteStop(f);
+        continue;
+      }
       underClassical(acc, {b}, {}, {&f}, [&](const Pred &lpb) {
       for (PHINode &P : b->phis()) {
         if (!isQ(&P)) {
@@ -2285,6 +2452,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (!isa<PHINode>(I) && !I.isTerminator())
           lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
       });
+      armFlag[b] = f;
       // An arm's later block is entered from its earlier ones: the flag of its entry is noted once.
       if (none_of(predecessors(b), [&](BasicBlock *p) { return abortLocal.count(p) != 0; }))
         noteStop(f);
