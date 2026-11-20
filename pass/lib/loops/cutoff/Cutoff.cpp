@@ -623,6 +623,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // Predicates local to one trip (relative to the header), over the body's own branch conditions.
   DenseMap<const BasicBlock *, Pred> local;
   auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdgeFactored(p, b); };
+  // r7 (glpk glp_ios_driver, glp_mir_gen): a block inside a sub-loop of the trip, other than its header, has a predicate only
+  // the sub-loop's own blocks read (and a latch of L inside one, cq-iaz30): the sub-loop is a unit, its exit taken where its
+  // header ran. Built over the sub-loop's inner exits that never rejoin it, that predicate grows with every inner loop
+  // (millions of BDD nodes), so it is made on demand (localOf) and not for every block of the trip.
+  auto inSub = [&](const BasicBlock *b) {
+    Loop *S = subLoopOf(b);
+    return S && S->getHeader() != b;
+  };
+  std::function<const Pred &(BasicBlock *)> localOf;
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       exits::Unit SU = exits::unitOf(*S);
@@ -632,13 +641,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         unimplemented("loops-cutoff: a nested K-loop with more than one exit block (cq-lgkx)", p->getTerminator());
       return local.find(S->getHeader())->second;   // the sub-loop as a unit always ends at its exit
     }
-    return local.find(p)->second & edgeCond(p, b);
+    return localOf(p) & edgeCond(p, b);
   };
-  for (BasicBlock *b : order) {
-    if (b == H) {
-      local.insert({b, Pred::top()});
-      continue;
-    }
+  auto predOfBlock = [&](BasicBlock *b) {
     Pred acc = Pred::bottom();
     for (BasicBlock *p : predecessors(b)) {
       if (!L.contains(p))
@@ -646,11 +651,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Loop *bl = A.LI.getLoopFor(b);
       if (bl && bl->getHeader() == b && bl->contains(p))
         continue;   // back edge of a sub-loop
-      if (!local.count(p))
+      if (!local.count(p) && !inSub(p))
         internalError("loops-cutoff: a predecessor after its successor in the trip order", p->getTerminator());
       acc = acc | contribution(p, b);
     }
-    local.insert({b, acc});
+    return acc;
+  };
+  localOf = [&](BasicBlock *b) -> const Pred & {
+    if (auto it = local.find(b); it != local.end())
+      return it->second;
+    Pred acc = predOfBlock(b);
+    return local.insert({b, acc}).first->second;
+  };
+  for (BasicBlock *b : order) {
+    if (b == H) {
+      local.insert({b, Pred::top()});
+      continue;
+    }
+    if (inSub(b))
+      continue;
+    local.insert({b, predOfBlock(b)});
   }
   Pred cont = Pred::bottom();   // body form: some back edge is taken
   // cq-iaz30 (CR rule 14): a latch inside a sub-loop whose exit edge is the back edge (sqlite exprAnalyzeOrTerm: the inner
@@ -664,7 +684,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (region.count(r))
         for (BasicBlock *s : successors(const_cast<BasicBlock *>(r)))
           if (L.contains(s) && !region.count(s))
-            regionCont = regionCont | (local.find(r)->second & edgeCond(const_cast<BasicBlock *>(r), s));
+            regionCont = regionCont | (localOf(const_cast<BasicBlock *>(r)) & edgeCond(const_cast<BasicBlock *>(r), s));
 
   // Values of the loop read after it, and the exit-block phis identified with a header phi.
   std::vector<PHINode *> hphis;
@@ -736,6 +756,25 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     qind.insert({h, std::move(qi)});
   }
   std::vector<std::pair<const Value *, PHINode *>> exitRebinds;   // body form: value -> its header phi
+  // CR rules 14, 16 (taint's dead-end rule, as loops-classical's noLiveQ): every quantum exit goes into a noreturn arm and
+  // every live exit is a classical test no quantum branch of the trip leads to. The trip that leaves for the continuation
+  // is then the one its classical tests give, so a classical value of the loop keeps its classical exit value there:
+  // taint reads it as classical after the loop (GMP mpn_mu_divappr_q), and no exit rail is made for it.
+  bool noLiveQ = !U.abort.empty();
+  for (BasicBlock *u : L.blocks()) {
+    if (none_of(successors(u), [&](BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); }))
+      continue;
+    const Instruction *t = u->getTerminator();
+    const Value *c = nullptr;
+    if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+      c = br->getCondition();
+    else if (auto *sw = dyn_cast<SwitchInst>(t))
+      c = sw->getCondition();
+    else if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      c = ib->getAddress();
+    if ((c && isQ(c)) || ctx.T.controlTainted(u, ctx.S))
+      noLiveQ = false;
+  }
   // CR rule 14 (f981c89): an affine induction (a classical header phi, taint) is not carried; when the
   // program reads its exit value after the loop, a rail seeded with the start advances by
   // select(q_j, rail + step, rail) for that read alone (never used in the loop).
@@ -822,6 +861,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;   // the last region evaluation holds it (frozen state)
       }
       PHINode *h = headerPhiWithNext(&I);
+      if (h && !isQ(h) && noLiveQ) {
+        exitRebinds.push_back({&I, h});   // its classical final state
+        continue;
+      }
       if (h && !isQ(h) && h->getType()->isIntegerTy())
         exitRail.insert({h, Operand{nullptr, false}});   // CR rule 14: an affine induction's exit value
       if (!h || (!isQ(h) && !exitRail.count(h))) {
@@ -941,6 +984,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           if (any_of(xaccs, [&](const XAcc &x) { return x.V == &I; }))
             continue;
+          if (noLiveQ && !isQ(&I))
+            continue;   // its classical exit value (noLiveQ above)
           xaccs.push_back(exitCapture(I));
         }
     for (BasicBlock *a : U.arm)
@@ -987,6 +1032,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                         "loop on an edge that does not exclude the loop (cq-uytx)",
                         &P);
         Value *v = P.getIncomingValue(i);
+        // r7 (rules 9, 14; GMP __gmpz_congruent_2exp_p): u in the exit arm, not the tail, of another quantum-exit loop that does
+        // not hold L in its own arm is that unit's: its value is one of its trips' rails, which never reaches here; that unit
+        // binds C's phi for its edge. (L nested in a classically bounded loop's arm, the phi forgotten for L's binding.)
+        if (ctx.bound(v) && !A.LI.getLoopFor(u))
+          if (any_of(A.LI.getLoopsInPreorder(), [&](Loop *O) {
+                if (O == &L || O->contains(H))
+                  return false;
+                exits::Unit OU = exits::unitOf(*O);
+                const Case oc = classify(*O, ctx.T, ctx.S);
+                return (oc == Case::QuantumExit || oc == Case::ClassicalBoundQuantumExit) && is_contained(OU.arm, u) &&
+                       !is_contained(OU.tail, u) && !is_contained(OU.arm, H);
+              }))
+            continue;
         if (!ctx.bound(v) || !predReadable(ctx, outsideEdge(u))) {
           const Loop *vl = A.LI.getLoopFor(u);
           // cq-iaz30 (rules 9, 14): u in the exit arm of another quantum-exit loop into C is that unit's, whether it is lowered
@@ -1289,9 +1347,18 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     SmallVector<PHINode *, 4> cBound;
     if (sc == Case::ClassicalBoundQuantumExit && SU.cont &&
         (SU.multi() || exits::liveExiting(S) != S.getLoopLatch() || !SU.abort.empty()))
-      for (PHINode &P : SU.cont->phis())
-        if (any_of(P.blocks(), inSub))
-          cBound.push_back(&P);
+      for (PHINode &P : SU.cont->phis()) {
+        if (!any_of(P.blocks(), inSub))
+          continue;
+        // A classical phi whose every incoming is one value from outside S's unit is that value wherever S exits:
+        // loops-classical leaves it to the code around S (GLPK mpl_fn_str2time's all-poison hub phis), the trip here.
+        const Value *v0 = P.getIncomingValue(0);
+        auto *vi = dyn_cast<Instruction>(v0);
+        if (!isQ(&P) && all_of(P.incoming_values(), [&](const Value *v) { return v == v0; }) &&
+            !(vi && inSub(vi->getParent())))
+          continue;
+        cBound.push_back(&P);
+      }
     // The values of S's unit read after it (a phi of the continuation on an edge from the unit included,
     // unless S binds that phi itself).
     SmallVector<Instruction *, 8> outs;
@@ -2309,7 +2376,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       for (BasicBlock *s : successors(l))
         if (liveEdge(s))
           e = e | edgeCond(l, s);
-      arms.push_back({local.find(l)->second & e, opOf(h->getIncomingValueForBlock(l))});
+      arms.push_back({localOf(l) & e, opOf(h->getIncomingValueForBlock(l))});
     }
     RailType w = railOf(h->getType());
     return Operand{selectChain(ctx, arms, w), true};
@@ -4055,19 +4122,44 @@ bool inTailLoopUnit(const Loop &L, const Unit &U, const BasicBlock *u, const Loo
   return false;
 }
 
-Pred tailPred(LoweringContext &ctx, const Loop &L, const Unit &U, const BasicBlock *b, const DominatorTree &DT) {
+static Pred tailPredIn(LoweringContext &ctx, const LoopInfo &LI, const Loop &L, const Unit &U, const BasicBlock *b,
+                       const DominatorTree &DT) {
   Pred acc = Pred::bottom();
   for (const BasicBlock *p : predecessors(b)) {
     if (L.contains(p) || DT.dominates(b, p))
       continue;   // the unit's own edge, or a back edge (a loop of the tail)
     if (is_contained(U.arm, p)) {
       if (is_contained(U.tail, p))
-        acc = acc | (tailPred(ctx, L, U, p, DT) & ctx.preds().edge(p, b));
+        acc = acc | (tailPredIn(ctx, LI, L, U, p, DT) & ctx.preds().edge(p, b));
       continue;   // an arm block not entered from outside: the unit's path
     }
-    acc = acc | ctx.preds().edge(p, b);
+    // cq-iaz30 for the tail (CR rules 9, 14; GLPK npp_sat_is_pack_ineq: two K-loops whose exit arms share a tail): an edge
+    // from another quantum-exit loop's unit (its loop or its exit arm) is that unit's, which merges it over its trips (its
+    // atoms are one trip's, unreadable after the loop); only that unit's own tail paths from outside it remain.
+    bool other = false;
+    for (const Loop *O : LI.getLoopsInPreorder()) {
+      if (O == &L || O->contains(L.getHeader()))
+        continue;
+      Unit OU = unitOf(*O);
+      if (!O->contains(p) && !is_contained(OU.arm, p))
+        continue;
+      const Case oc = classify(*O, ctx.T, ctx.S);
+      if (oc != Case::QuantumExit && oc != Case::ClassicalBoundQuantumExit)
+        continue;
+      if (is_contained(OU.tail, p))
+        acc = acc | (tailPredIn(ctx, LI, *O, OU, p, DT) & ctx.preds().edge(p, b));
+      other = true;
+      break;
+    }
+    if (!other)
+      acc = acc | ctx.preds().edge(p, b);
   }
   return acc;
+}
+
+Pred tailPred(LoweringContext &ctx, const Loop &L, const Unit &U, const BasicBlock *b, const DominatorTree &DT) {
+  LoopInfo LI(DT);
+  return tailPredIn(ctx, LI, L, U, b, DT);
 }
 
 BasicBlock *liveExiting(const Loop &L) {

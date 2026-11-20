@@ -259,7 +259,8 @@ private:
   DenseMap<const BasicBlock *, Loop *> tailOf;
   DenseMap<const BasicBlock *, Pred> tailPreds;
   DenseSet<const Loop *> tailCleared;
-  const Pred &tailPredOf(const BasicBlock *b);
+  Pred tailPredOf(const BasicBlock *b);
+  Pred tailEdge(const BasicBlock *u, const BasicBlock *b, const Loop &t);
   void tailMerge(PHINode &phi);
   DenseMap<const BasicBlock *, SmallVector<BasicBlock *, 2>> outEdges;
   DenseMap<const BasicBlock *, unsigned> outPreds;
@@ -494,9 +495,13 @@ void Walker::plan() {
     // lowers it with the loop, and the unit continues at the exits' join.
     loops::exits::Unit U = loops::exits::unitOf(*lp);
     for (BasicBlock *b : U.arm)
-      if (is_contained(U.tail, b))
-        tailOf[b] = lp;   // the walker's too (cq-h8y6)
-      else
+      if (is_contained(U.tail, b)) {
+        // r7 (rules 9, 14; GLPK glp_check_cnfsat): b also in the tail of a unit that itself lies in lp's tail is that unit's:
+        // the walker lowers b after that unit (its paths from outside are that unit's outside paths), not after lp's.
+        Loop *&t = tailOf[b];
+        if (!t || !is_contained(U.tail, t->getHeader()))
+          t = lp;   // the walker's too (cq-h8y6)
+      } else
         unitOf[b] = lp;
     for (BasicBlock *b : U.dead)
       unitOf[b] = lp;   // never run (UB to reach): nothing of it is lowered
@@ -1154,13 +1159,35 @@ Value *Walker::factoredMerge(PHINode &phi) {
 // reaches (the zero-trip guard): a classical phi over handles on the output edges, the unit's binding
 // on the unit's edge, on each other edge the one incoming its facts admit (a classical value seeded
 // where the edge leaves), recorded as a merge (rule 9 at a58c3a4).
-const Pred &Walker::tailPredOf(const BasicBlock *b) {
+Pred Walker::tailPredOf(const BasicBlock *b) {
   auto tp = tailPreds.find(b);
-  if (tp == tailPreds.end()) {
-    Loop *t = tailOf.lookup(b);
-    tp = tailPreds.insert({b, loops::exits::tailPred(ctx, *t, units.find(t)->second, b, DT)}).first;
-  }
-  return tp->second;
+  if (tp != tailPreds.end())
+    return tp->second;
+  Loop *t = tailOf.lookup(b);
+  Pred acc = Pred::bottom();
+  for (const BasicBlock *p : predecessors(b))
+    acc = acc | tailEdge(p, b, *t);
+  tailPreds.insert({b, acc});
+  return acc;
+}
+
+// The predicate of edge u -> b (b a tail block of t) on the paths the walker lowers b for: bottom on t's own paths (exits::tailPred).
+// r7 (rules 9, 14; GLPK glp_check_cnfsat, GMP __gmpz_congruent_2exp_p): when u and b lie in the exit arm of another unit N (t
+// in N's tail), N's own paths through u -> b are N's trips, never the walker's: the edge holds on N's outside paths into u only
+// (as exits::tailPred).
+Pred Walker::tailEdge(const BasicBlock *u, const BasicBlock *b, const Loop &t) {
+  const loops::exits::Unit &U = units.find(&t)->second;
+  if (t.contains(u) || DT.dominates(b, u) || (is_contained(U.arm, u) && !is_contained(U.tail, u)))
+    return Pred::bottom();   // the unit's own edge, or a back edge (a loop of the tail)
+  Loop *n = tailOf.lookup(u);
+  if (n && (n == &t || is_contained(units.find(n)->second.arm, b)))
+    return tailPredOf(u) & ctx.preds().edge(u, b);
+  if (Loop *o = unitOf.lookup(u); o && o != &t && is_contained(units.find(o)->second.arm, u) &&
+                                  is_contained(units.find(o)->second.arm, b))
+    return Pred::bottom();
+  if (is_contained(U.arm, u))
+    return loops::exits::tailPred(ctx, t, U, u, DT) & ctx.preds().edge(u, b);
+  return ctx.preds().edge(u, b);
 }
 
 // cq-h8y6 (rule 9 at a tail block, CR rule 14): a quantum phi of a unit's tail block on the outside paths merges
@@ -1177,14 +1204,9 @@ void Walker::tailMerge(PHINode &phi) {
     const BasicBlock *u = phi.getIncomingBlock(i);
     if (lp.contains(u) || DT.dominates(b, u) || !idx.count(u))
       continue;
-    Pred e = Pred::bottom();
-    if (is_contained(U.arm, u)) {
-      if (!tailOf.count(u))
-        continue;   // the unit's path
-      e = tailPredOf(u) & ctx.preds().edge(u, b);
-    } else {
-      e = ctx.preds().edge(u, b);
-    }
+    if (is_contained(U.arm, u) && !tailOf.count(u))
+      continue;   // the unit's path
+    Pred e = tailEdge(u, b, lp);
     if (e.isBottom())
       continue;
     const Value *v = phi.getIncomingValue(i);

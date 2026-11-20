@@ -146,6 +146,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -507,10 +508,16 @@ struct Uncompute::Impl {
     }
     return out;
   }
+  // r7: the rails whose handle is a phi or a select (syncPhiHits' only subjects), in rail order.
+  std::vector<RailId> phiRails;
+  void notePhiRail(RailId g) {
+    if (isa<PHINode>(rails[g].handle) || isa<SelectInst>(rails[g].handle))
+      phiRails.push_back(g);
+  }
   void syncPhiHits() {
     for (bool again = true; again;) {
       again = false;
-      for (RailId g = 0; g < rails.size(); ++g) {
+      for (RailId g : phiRails) {   // r7: in rail order, the only rails the test below can pass
         if (rails[g].hits.empty() || isMerge(g) ||
             !(isa<PHINode>(rails[g].handle) || isa<SelectInst>(rails[g].handle)))
           continue;
@@ -578,6 +585,7 @@ struct Uncompute::Impl {
     RailId id = rails.size();
     rails.emplace_back();
     rails.back().handle = h;
+    notePhiRail(id);
     rails.back().role = role;
     byHandle[h] = id;
     return id;
@@ -1033,9 +1041,18 @@ struct Uncompute::Impl {
     }
     auto visit = [&](auto &&f) {
       if (!only) {
-        for (RailId g = 0; g < rails.size(); ++g)
+        // r7 (glpk zlib_inflate): the rails that may hold a clean-up (withCleanup), in rail order: pruneOne is a no-op on
+        // every other rail, so this visits what a scan of every rail did, without the scan (one per emitMirror).
+        for (auto it = withCleanup.begin(); it != withCleanup.end();) {
+          RailId g = *it;
+          if (!rails[g].cleanup || rails[g].released) {
+            it = withCleanup.erase(it);
+            continue;
+          }
+          ++it;
           if (f(g))
             return;
+        }
         return;
       }
       for (RailId g : picked)
@@ -1068,6 +1085,7 @@ struct Uncompute::Impl {
         return;
     }
   }
+  std::set<RailId> withCleanup;       // r7: every rail given a clean-up (pruneCleanups drops the rails that lost it)
   mutable bool viaCleanups = false;   // garbageReads walks through a cleaned rail's clean-up (pruneCleanups' second phase)
   bool pruneOne(RailId g) {
     Rail &r = rails[g];
@@ -1952,6 +1970,7 @@ struct Uncompute::Impl {
       first = mark->getNextNode();
     }
     r.cleanup = std::move(saved);
+    withCleanup.insert(g);
     if (first)
       segOut->push_back({first, last, none});
     return last;
@@ -2187,7 +2206,9 @@ struct Uncompute::Impl {
       ++copies[g];
     std::vector<SmallVector<RailId, 4>> blockers(cands.size());
     for (unsigned i = 0; i < cands.size(); ++i) {
-      SmallVector<RailId, 4> rd = readersOf(cands[i]);
+      // r7: a caller that computed a candidate's readers with nothing changed since (emitMirror) hands them in.
+      auto known = readers ? readers->find(cands[i]) : decltype(readers->find(cands[i]))();
+      SmallVector<RailId, 4> rd = readers && known != readers->end() ? known->second : readersOf(cands[i]);
       for (RailId o : rd)
         if (pending(o) && !done(o, c))
           blockers[i].push_back(o);
@@ -3698,10 +3719,13 @@ struct Uncompute::Impl {
     }
   }
 
-  void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c) {
+  // `pre` (r7): the readers and itemReads already computed with nothing changed since, or null.
+  using ReadsMap = DenseMap<RailId, SmallVector<RailId, 4>>;
+  void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c, std::pair<ReadsMap, ReadsMap> *pre = nullptr) {
     // cq-g3h1i: dropBlocked and order read the same rails with nothing changed in between: each candidate's
     // readers and each reader's itemReads are computed once for both.
-    DenseMap<RailId, SmallVector<RailId, 4>> readers, reads;
+    std::pair<ReadsMap, ReadsMap> own;
+    auto &[readers, reads] = pre ? *pre : own;
     readsMemo = &reads;
     dropBlocked(cands, c, c.mode == Mode::Mirror, &readers);
     SmallVector<RailId, 16> ord = order(cands, &readers);
@@ -4175,6 +4199,7 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
     }
   }
   impl->rails[oldRail].cleanup = std::move(cl);
+  impl->withCleanup.insert(oldRail);
 }
 
 bool Uncompute::hasCleanup(RailId oldRail) const { return impl->rails[oldRail].cleanup.has_value(); }
@@ -4204,6 +4229,7 @@ void Uncompute::cleanupBijectiveUnder(RailId oldRail, Value *guard, const abi::T
     internalError("uncompute: cleanupBijectiveUnder of a rail with an unguarded clean-up", x.handle);
   if (!x.cleanup)
     x.cleanup = Impl::Cleanup{};
+  impl->withCleanup.insert(oldRail);
   Impl::Cleanup::Alt a{guard, inverse, SmallVector<Operand, 3>(ops.begin(), ops.end()), {}};
   for (const Operand &o : ops) {
     if (!o.handle)
@@ -4659,15 +4685,22 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
     // zeroes and frees every result, so the item's exit rail is the lead.
     if (I.rail(x, "recordDeferred").group != kNone)
       x = I.groups[I.rails[x].group].members.front();
-    Impl::Rail &rx = I.rail(x, "recordDeferred");
-    if (rx.ownedBy != di || rx.released || I.isMerge(x))
-      internalError("uncompute: recordDeferred: an exit rail that is not a pending rail of the item's scopes", rx.handle);
-    if (!is_contained(d.exits, x))
-      d.exits.push_back(x);
+    // cq-r7mrg (CR rules 9, 14): an exit rail that is a merge (a classical join of the trip's arms: the stop flag of a loop
+    // whose trip branches classically) names one of its arms at run time; the item's exit rails are those arms, which its
+    // reverse frees (readers of the merge reach them through names()).
+    for (RailId a : I.leaves(x)) {
+      Impl::Rail &rx = I.rail(a, "recordDeferred");
+      if (rx.ownedBy != di || rx.released)
+        internalError("uncompute: recordDeferred: an exit rail that is not a pending rail of the item's scopes",
+                      I.rails[x].handle);
+      if (!is_contained(d.exits, a))
+        d.exits.push_back(a);
+    }
   }
   RailId g = I.rails.size();
   I.rails.emplace_back();
   I.rails.back().handle = I.rails[d.exits.front()].handle;
+  I.notePhiRail(g);
   I.rails.back().deferred = di;
   d.pseudo = g;
   for (RailId r : reads) {
@@ -4773,17 +4806,24 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   }
   bool wasInMirror = I.inMirror;
   I.inMirror = true;
-  for (bool grew = true; grew;) {
-    grew = false;
-    for (unsigned k = 0; k < cands.size() && !grew; ++k)
-      for (RailId o : I.readersOf(cands[k]))
-        if (I.rails[o].deferred != kNone && I.resolvable(o) && !is_contained(cands, o)) {
+  // r7 (glpk zlib_inflate): one pass over a growing list adds the same readers in the same order as restarting the scan
+  // after each addition did (nothing changes in between), without the quadratic rescans. The readers and itemReads it
+  // computes are resolve's own first step (dropBlocked), with nothing changed in between: handed on.
+  std::pair<Impl::ReadsMap, Impl::ReadsMap> pre;
+  {
+    auto *was = I.readsMemo;
+    I.readsMemo = &pre.second;
+    DenseSet<RailId> inCands(cands.begin(), cands.end());
+    for (unsigned k = 0; k < cands.size(); ++k) {
+      SmallVector<RailId, 4> rd = I.readersOf(cands[k]);
+      for (RailId o : rd)
+        if (I.rails[o].deferred != kNone && I.resolvable(o) && inCands.insert(o).second)
           cands.push_back(o);
-          grew = true;
-          break;
-        }
+      pre.first.try_emplace(cands[k], std::move(rd));
+    }
+    I.readsMemo = was;
   }
-  I.resolve(cands, c);
+  I.resolve(cands, c, &pre);
   I.inMirror = wasInMirror;
 }
 

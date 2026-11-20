@@ -648,6 +648,37 @@ FnInfo &Analyzer::fn(const Function *F) {
         if (x == a || !pdom[a].test(x))   // x post-dominates s and not strictly A
           addParent(liveBlocks[x], A);
   }
+  // cq-rb96s (CR rule 14): control dependence inside one trip of each loop (a back edge ends the trip; DeadEnd.h
+  // tripPostDominated). A block on every path out of the loop, which the function's post-dominance puts above every
+  // branch of the body, runs only in the trips that reach it (GMP block_resieve: the only exit behind a quantum branch).
+  auto skipDead = [&](const BasicBlock *b) { return dead.isDeadEnd(b); };
+  for (const Loop *Lp : info->LI->getLoopsInPreorder()) {
+    const BasicBlock *H = Lp->getHeader();
+    auto hi = liveIdx.find(H);
+    for (const BasicBlock *X : Lp->blocks()) {
+      // Only a block that post-dominates the header in the function can differ (a path back to the header avoiding X
+      // would otherwise avoid it in the function as well).
+      auto xi = liveIdx.find(X);
+      if (X == H || hi == liveIdx.end() || xi == liveIdx.end() || !pdom[hi->second].test(xi->second))
+        continue;
+      auto pdt = taint_detail::tripPostDominated(*Lp, X, skipDead);
+      auto pd = [&](const BasicBlock *s) { return s == X || (s != H && pdt.count(s)); };
+      for (const BasicBlock *A : Lp->blocks()) {
+        if (A == X || dead.isDeadEnd(A))
+          continue;
+        bool some = false, all = true;
+        for (const BasicBlock *S : successors(A)) {
+          if (dead.isDeadEnd(S))
+            continue;
+          bool p = Lp->contains(S) && pd(S);
+          some |= p;
+          all &= p;
+        }
+        if (some && !all)
+          addParent(X, A);
+      }
+    }
+  }
   auto *raw = info.get();
   st.fns[F] = std::move(info);
   return *raw;
@@ -1108,6 +1139,26 @@ void Analyzer::computeCDT(SpecState &S) {
         if (Lp->getHeader() != BB && S.exitQ.count(Lp))
           if (auto hit = S.cdt.find(Lp->getHeader()); hit != S.cdt.end())
             fromHeader.append(hit->second.begin(), hit->second.end());
+      // Rule 14 (loops::classify): an exit edge into a noreturn arm (a dead end that is not a bare `unreachable`) is an
+      // exit of the loop, quantum when its exiting block's choice is: the loop is a K-loop and every trip, the header
+      // included, runs under the trip predicate (a non-pure callee there is the _ctl clone, rule 19). The dead-end rule
+      // above (cq-820w) drops that edge from control dependence, so the header takes the exiting block here.
+      if (const Loop *Lp = fi.LI->getLoopFor(BB); Lp && Lp->getHeader() == BB) {
+        SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exitEdges;
+        Lp->getExitEdges(exitEdges);
+        for (const auto &[A, X] : exitEdges) {
+          bool bare = isa<UnreachableInst>(X->getTerminator()) &&
+                      llvm::none_of(*X, [](const Instruction &I) { return isa<CallBase>(I); });
+          if (!fi.dead.isDeadEnd(X) || bare)
+            continue;
+          if (S.taintedTerm.count(A))
+            fromHeader.push_back(A);
+          if (auto ait = S.cdt.find(A); ait != S.cdt.end())
+            for (const BasicBlock *T : ait->second)
+              if (Lp->contains(T))
+                fromHeader.push_back(T);
+        }
+      }
       if (pit == fi.cdParents.end() && fromHeader.empty())
         continue;
       SmallVector<const BasicBlock *, 4> v(fromHeader);

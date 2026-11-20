@@ -14,6 +14,7 @@
 #include "cq/Common.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -118,6 +119,34 @@ inline bool abortsOnEveryPath(const llvm::Function &G, llvm::SmallPtrSetImpl<con
 inline bool abortsOnEveryPath(const llvm::Function &G) {
   llvm::SmallPtrSet<const llvm::Function *, 8> onStack;
   return abortsOnEveryPath(G, onStack);
+}
+
+// cq-rb96s (CR rule 14): post-dominance inside ONE TRIP of loop L. Each trip runs under its own predicate a_j, so a
+// back edge to L's header ends the trip like an exit edge: X post-dominates b in the trip when every path from b inside
+// L reaches X before it returns to the header or leaves L (successors `skip` names, dead ends, are never taken). A block
+// the function's post-dominance puts on every path (the loop's only way out lies behind a quantum branch, GMP
+// block_resieve) is then control dependent on that branch per trip. Greatest fixpoint: an inner cycle that never
+// leaves is no path out. Returns the blocks of L that X post-dominates in the trip (X included).
+template <class Skip>
+llvm::SmallPtrSet<const llvm::BasicBlock *, 16> tripPostDominated(const llvm::Loop &L, const llvm::BasicBlock *X,
+                                                                  Skip skip) {
+  llvm::SmallPtrSet<const llvm::BasicBlock *, 16> pd(L.block_begin(), L.block_end());
+  for (bool ch = true; ch;) {
+    ch = false;
+    for (const llvm::BasicBlock *b : L.blocks()) {
+      if (b == X || !pd.count(b))
+        continue;
+      bool all = true;
+      for (const llvm::BasicBlock *s : llvm::successors(b))
+        if (s != X && !skip(s) && (s == L.getHeader() || !pd.count(s)))
+          all = false;
+      if (!all) {
+        pd.erase(b);
+        ch = true;
+      }
+    }
+  }
+  return pd;
 }
 
 } // namespace cq::taint_detail

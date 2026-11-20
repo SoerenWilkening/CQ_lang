@@ -704,6 +704,46 @@ bool splitSharedNoreturnArms(Function &F) {
   return any;
 }
 
+// CR rule 14 "Irreducible control flow" (r7, GMP __gmpn_hgcd2_jacobi): fix-irreducible's guard block is a loop header entered
+// by a back edge from every block that went to one of the cycle's entries, so the natural loop it makes has several latches.
+// Its back edges meet at ONE block first (LoopSimplify's unique back-edge block, the same kind of rewrite as fix-irreducible
+// and unifyReturns): a phi of it per header phi carries the latches' incomings, and it branches to the header. A trip then
+// ends on one back edge (rule 14's "same chain"). Run on the functions fix-irreducible changed, before the final taint.
+bool oneBackEdge(Function &F) {
+  bool any = false;
+  for (bool changed = true; changed;) {
+    changed = false;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      SmallVector<BasicBlock *, 4> latches;
+      L->getLoopLatches(latches);
+      if (latches.size() < 2)
+        continue;
+      BasicBlock *H = L->getHeader();
+      BasicBlock *B = BasicBlock::Create(F.getContext(), H->getName() + ".cq.latch", &F, latches.back()->getNextNode());
+      // One incoming per edge (a latch whose terminator names H twice enters B twice).
+      SmallVector<BasicBlock *, 8> edges;
+      for (BasicBlock *p : predecessors(H))
+        if (L->contains(p))
+          edges.push_back(p);
+      for (PHINode &P : H->phis()) {
+        PHINode *N = PHINode::Create(P.getType(), edges.size(), P.getName() + ".be", B);
+        for (BasicBlock *p : edges)
+          N->addIncoming(P.getIncomingValueForBlock(p), p);
+        P.removeIncomingValueIf([&](unsigned i) { return L->contains(P.getIncomingBlock(i)); }, false);
+        P.addIncoming(N, B);
+      }
+      BranchInst::Create(H, B);
+      for (BasicBlock *p : latches)
+        p->getTerminator()->replaceSuccessorWith(H, B);
+      any = changed = true;
+      break;
+    }
+  }
+  return any;
+}
+
 // CR rule 14 (`continue`, `return` inside a K-loop, nested K-loops: "same chain"): a sub-loop whose live exits meet only
 // outside its parent (printf_core's overflow return from its literal scan) ends through ONE block of the parent, the same
 // kind of rewrite as fix-irreducible and unifyReturns: its live exit edges meet at a hub, phis of the hub carry the values
@@ -1565,6 +1605,10 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       trace("fix-irreducible: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PA);
+      if (oneBackEdge(*F)) {
+        trace("one back edge: changed @" + F->getName());
+        FAM.invalidate(*F, PreservedAnalyses::none());
+      }
     }
     // 2b. One return block per tainted function (unifyReturns), and the rounding intrinsics as the C17 calls
     // (rewriteRoundingIntrinsics), cq-jkq8.

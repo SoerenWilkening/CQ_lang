@@ -2126,10 +2126,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           // cq-vs1eo (rules 8, 9, 14): an incoming from the other quantum arm, not walked yet (no fact), whose value does
           // not exist here: that flow runs after this region, which rejoin() closes into a block of its own; s then
           // joins it with the region's value as linearized incomings. On u's real edge only the region's flow.
-          if (!factOf.count(pi) && !isa<Constant>(p.getIncomingValue(i)) && !ctx.bound(p.getIncomingValue(i)))
-            continue;
+          // r7: whatever its value (a literal, or one bound before: SQLite jsonExtractFunc), its edge's predicate reads that
+          // arm's atoms, lowered only when it is walked.
           if (!factOf.count(pi))
-            unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &p);
+            continue;
           Pred pf = factAt(pi);
           if ((uf & pf).isBottom())
             continue;
@@ -2995,15 +2995,44 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     for (auto &[phi, fields] : keep)
       sh.binds[phi].assign(fields.begin(), fields.end());
   };
+  // r7 (cq-vs1eo, rules 8, 9): a join entered by real edges and by linearized ones runs where its real edges enter it (its
+  // output block). When a rejoined region's edge into it holds where no real edge enters (the region was rejoined before the
+  // other quantum arm, whose own classical branch then leaves toward several joins), the join waits for a rejoin of the real
+  // edges too (rejoin), after which it is walked in the open flow.
+  auto linUncovered = [&](const BasicBlock *b) {
+    Pred real = Pred::bottom(), lin = Pred::bottom();
+    for (const BasicBlock *p : fwdPreds(b)) {
+      if (edgeKind(p, b) == EK::Real) {
+        // A sub-loop or K-unit is one node of the walk: its edge out is taken wherever it was walked.
+        Loop *node = subOf(p) ? subOf(p) : kunit(p);
+        const BasicBlock *at = node ? node->getHeader() : p;
+        auto it = factOf.find(at);
+        Pred fp = it == factOf.end() ? Pred::top() : it->second;
+        real = real | (node ? fp : fp & cfOf(exits::tripEdge(p, b)));
+      } else if (auto r = rejoinFact.find({p, b}); r != rejoinFact.end()) {
+        lin = lin | r->second;   // a rejoined region's edge: its flow went on from the rejoin block
+      }
+    }
+    return !(lin & !real).isBottom();
+  };
+  // A walked predecessor is walked with its sub-loop or K-unit, at that one's header (r7, SQLite isDate: a sub-loop's exit
+  // hub waits for the sub-loop).
+  auto pendingPred = [&](const BasicBlock *p) {
+    if (Loop *sl = subOf(p))
+      p = sl->getHeader();
+    else if (Loop *k = kunit(p))
+      p = k->getHeader();
+    return pendSet.count(p) != 0;
+  };
   auto mustWait = [&](BasicBlock *b) {
     if (Loop *t = kTail.lookup(b); t && (pendSet.count(t->getHeader()) || !walkedUnits.count(t)))
       return true;
     for (const BasicBlock *p : fwdPreds(b))
-      if (pendSet.count(p) && p != b)
+      if (p != b && pendingPred(p))
         return true;
     auto [anyReal, anyLin] = entryKinds(b);
     if (anyReal)
-      return cur != nullptr;
+      return cur != nullptr || (anyLin && linUncovered(b));
     if (!cur)
       return true;
     // Where b runs: where one of its walked predecessors ran and the edge's classical factor held.
@@ -3265,57 +3294,80 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // cq-a0x8d (glpk glp_analyze_bound): with an open flow, the same rejoin joins the flow too, where the region's edges and
   // the flow's fact together cover where w runs (`if (c) { if (q) W; }  if (d) { if (q2) W; } else S;`: c's arm already
   // flowed into d's test). The flow ends in R as well, with a |0> seed for each phi of s (s's edge is not its path: rules 7, 9).
-  auto rejoin = [&]() -> bool {
-    BasicBlock *w = nullptr;
-    for (BasicBlock *b : pending)
-      if (pendSet.count(b)) {
-        auto [anyReal, anyLin] = entryKinds(b);
-        if (!anyReal && anyLin && none_of(fwdPreds(b), [&](const BasicBlock *p) { return pendSet.count(p) != 0; })) {
-          w = b;
-          break;
+  // One region exit set: a pending join s, the walked blocks whose real edges into s the rejoin takes, and their facts.
+  struct RegionJoin {
+    BasicBlock *s;
+    SmallVector<BasicBlock *, 4> rs;
+    Pred f;
+  };
+  // The rejoin block R for the joins js: their region edges end in R, the open flow (if any) too; R's phis carry each join's
+  // phi values on its edges (a |0> seed, or a classical 0, on every other edge into R: that edge is not the join's path).
+  // single: one join, its fact the whole of R's (the flow's included); else each join's edges keep their own fact.
+  auto buildRejoin = [&](ArrayRef<RegionJoin> js, Pred f, bool single) {
+    BasicBlock *R = newBlock();
+    // The block each region edge enters R from: its own output block (one join), or a block of its own per output edge
+    // (several joins: one output block may leave for two of them, and each edge carries the |0>s of the other joins' phis).
+    // Two region edges may leave from one output block for one join (linearized arms walked in one flow): one output edge.
+    DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> via;
+    SmallVector<BasicBlock *, 4> edgeBlocks;
+    {
+      DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> perOut;
+      for (const RegionJoin &j : js)
+        for (BasicBlock *p : j.rs) {
+          BasicBlock *from = edgeFrom[{p, j.s}];
+          BasicBlock *&T = perOut[{from, j.s}];
+          if (!T) {
+            T = single ? R : newBlock();
+            from->getTerminator()->replaceSuccessorWith(ob(j.s), T);
+            if (!single)
+              edgeBlocks.push_back(T);
+          }
+          via[{p, j.s}] = single ? from : T;
         }
-      }
-    if (!w)
-      return false;
-    Pred need = Pred::bottom();
-    for (const BasicBlock *p : fwdPreds(w))
-      need = need | edgeFact(p, w);
-    for (BasicBlock *s : pending) {
-      if (!pendSet.count(s) || s == w)
-        continue;
-      SmallVector<BasicBlock *, 4> rs;
-      Pred f = cur ? curFact : Pred::bottom();
-      for (const BasicBlock *p : fwdPreds(s))
-        if (factOf.count(p) && !pendSet.count(p) && edgeKind(p, s) == EK::Real && edgeFrom.count({p, s}) && armed(p) &&
-            !kunit(p)) {
-          rs.push_back(const_cast<BasicBlock *>(p));
-          f = f | edgeFact(p, s);
-        }
-      if (rs.empty() || !(need & !f).isBottom())
-        continue;
-      BasicBlock *R = newBlock();
-      for (BasicBlock *p : rs)
-        edgeFrom[{p, s}]->getTerminator()->replaceSuccessorWith(ob(s), R);
-      rejoined.push_back(s);
-      // The open flow's trip predicate, stop rail and captures, and its |0> seed per phi of s.
-      BasicBlock *flow = cur ? ctx.B().GetInsertBlock() : nullptr;
-      SmallVector<Value *, 8> flowAt;
-      DenseMap<const PHINode *, Value *> flowSeed;
-      if (flow) {
-        flowAt.push_back(aCur);
-        flowAt.push_back(stopCur);
-        for (CPhi &cp : cphis)
-          flowAt.append(cp.run.begin(), cp.run.end());
-        for (PHINode &P : s->phis())
+    }
+    for (const RegionJoin &j : js)
+      rejoined.push_back(j.s);
+    // The open flow's trip predicate, stop rail and captures, and its |0> seed per phi of the joins.
+    BasicBlock *flow = cur ? ctx.B().GetInsertBlock() : nullptr;
+    SmallVector<Value *, 8> flowAt;
+    auto zeroOf = [&](PHINode &P) -> Value * {
+      return isQ(&P) ? seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), railOf(P.getType()))), railOf(P.getType()))
+                     : static_cast<Value *>(Constant::getNullValue(P.getType()));
+    };
+    DenseMap<const PHINode *, Value *> flowSeed;
+    if (flow) {
+      flowAt.push_back(aCur);
+      flowAt.push_back(stopCur);
+      for (CPhi &cp : cphis)
+        flowAt.append(cp.run.begin(), cp.run.end());
+      for (const RegionJoin &j : js)
+        for (PHINode &P : j.s->phis())
           if (!P.getType()->isAggregateType() && !P.getType()->isVectorTy())
-            flowSeed[&P] = isQ(&P) ? seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), railOf(P.getType()))),
-                                          railOf(P.getType()))
-                                   : static_cast<Value *>(Constant::getNullValue(P.getType()));
-        ctx.B().CreateBr(R);
-        cur = nullptr;
-      }
-      startSeg(R);
-      curFact = f;
+            flowSeed[&P] = zeroOf(P);
+      ctx.B().CreateBr(R);
+      cur = nullptr;
+    }
+    // r7 (cq-vs1eo, several joins): each edge's block is a segment of its own, entered on that edge only, where the |0> of
+    // every other join's phi is minted (that edge is not the other join's path: rules 7, 9).
+    DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> otherSeed;
+    for (BasicBlock *T : edgeBlocks) {
+      startSeg(T);
+      const BasicBlock *mine = nullptr;
+      for (const RegionJoin &j : js)
+        for (BasicBlock *p : j.rs)
+          if (via[{p, j.s}] == T)
+            mine = j.s;
+      for (const RegionJoin &j : js)
+        if (j.s != mine)
+          for (PHINode &P : j.s->phis())
+            if (!P.getType()->isAggregateType() && !P.getType()->isVectorTy())
+              otherSeed[{&P, T}] = zeroOf(P);
+      ctx.B().CreateBr(R);
+    }
+    startSeg(R);
+    curFact = f;
+    for (const RegionJoin &j : js) {
+      BasicBlock *s = j.s;
       for (PHINode &P : s->phis()) {
         const bool q = isQ(&P);
         if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
@@ -3325,7 +3377,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         SmallVector<std::pair<BasicBlock *, Operand>, 4> in;
         if (flow)
           in.push_back({flow, Operand{flowSeed.lookup(&P), q}});
-        for (BasicBlock *p : rs) {
+        for (BasicBlock *p : j.rs) {
           Operand o;
           if (auto e = edgeVal.find({&P, p}); e != edgeVal.end())
             o = Operand{e->second, true};
@@ -3337,8 +3389,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             else
               internalError("loops-classical: a classical incoming of a phi of handles with no edge seed", &P);
           }
-          in.push_back({edgeFrom[{p, s}], o});
+          in.push_back({via[{p, s}], o});
         }
+        for (BasicBlock *T : edgeBlocks)
+          if (Value *z = otherSeed.lookup({&P, T}))
+            in.push_back({T, Operand{z, q}});
         Operand v = in.front().second;
         if (any_of(in, [&](const auto &x) { return x.second.v != v.v; })) {
           PHINode *np = ctx.B().CreatePHI(q ? handleTy(ctx.M.getContext()) : P.getType(), unsigned(in.size()));
@@ -3352,41 +3407,100 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             ctx.unc().recordMerge(np);
           v = Operand{np, q};
         }
-        for (BasicBlock *p : rs)
+        for (BasicBlock *p : j.rs)
           rejoinVal[{&P, p}] = v;
       }
-      for (BasicBlock *p : rs)
-        rejoinFact[{p, s}] = f;
-      // The trip predicate and the stop rail at R: the region's, joined as at any classical join.
-      SmallVector<std::pair<DenseMap<const BasicBlock *, Value *> *, Value **>, 4> vars{{&aOut, &aCur}, {&stopOut, &stopCur}};
-      for (CPhi &cp : cphis)
-        for (unsigned f = 0; f < cp.run.size(); ++f)
-          vars.push_back({&cp.runOut[f], &cp.run[f]});
-      for (unsigned vi = 0; vi < vars.size(); ++vi) {
-        auto [outOf, var] = vars[vi];
-        if (!*var)
-          continue;
-        SmallVector<std::pair<BasicBlock *, Value *>, 4> in;
-        if (flow)
-          in.push_back({flow, flowAt[vi]});
-        for (BasicBlock *p : rs)
+      for (BasicBlock *p : j.rs)
+        rejoinFact[{p, s}] = single ? f : j.f;
+    }
+    // The trip predicate and the stop rail at R: the region's, joined as at any classical join.
+    SmallVector<std::pair<DenseMap<const BasicBlock *, Value *> *, Value **>, 4> vars{{&aOut, &aCur}, {&stopOut, &stopCur}};
+    for (CPhi &cp : cphis)
+      for (unsigned f = 0; f < cp.run.size(); ++f)
+        vars.push_back({&cp.runOut[f], &cp.run[f]});
+    for (unsigned vi = 0; vi < vars.size(); ++vi) {
+      auto [outOf, var] = vars[vi];
+      if (!*var)
+        continue;
+      SmallVector<std::pair<BasicBlock *, Value *>, 4> in;
+      if (flow)
+        in.push_back({flow, flowAt[vi]});
+      for (const RegionJoin &j : js)
+        for (BasicBlock *p : j.rs)
           if (Value *x = outOf->lookup(p))
-            in.push_back({edgeFrom[{p, s}], x});
-        if (in.empty())
-          continue;
-        *var = in.front().second;
-        if (all_of(in, [&](const auto &x) { return x.second == in.front().second; }))
-          continue;
-        PHINode *ph = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), unsigned(in.size()));
-        for (BasicBlock *pb : predecessors(R))
-          for (auto &[from, x] : in)
-            if (from == pb) {
-              ph->addIncoming(x, pb);
-              break;
-            }
-        ctx.unc().recordMerge(ph);
-        *var = ph;
+            in.push_back({via[{p, j.s}], x});
+      if (in.empty())
+        continue;
+      *var = in.front().second;
+      if (all_of(in, [&](const auto &x) { return x.second == in.front().second; }))
+        continue;
+      PHINode *ph = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), unsigned(in.size()));
+      for (BasicBlock *pb : predecessors(R))
+        for (auto &[from, x] : in)
+          if (from == pb) {
+            ph->addIncoming(x, pb);
+            break;
+          }
+      ctx.unc().recordMerge(ph);
+      *var = ph;
+    }
+  };
+  auto rejoin = [&]() -> bool {
+    BasicBlock *w = nullptr;
+    for (BasicBlock *b : pending)
+      if (pendSet.count(b)) {
+        auto [anyReal, anyLin] = entryKinds(b);
+        if (!anyReal && anyLin && none_of(fwdPreds(b), [&](const BasicBlock *p) { return pendSet.count(p) != 0; })) {
+          w = b;
+          break;
+        }
       }
+    // r7: with no open block, a join some linearized incoming of which holds where none of its real edges enters (mustWait)
+    // stands for w: the rejoin of the real edges lets it be walked in the open flow.
+    bool mixedW = false;
+    if (!w && !cur)
+      for (BasicBlock *b : pending)
+        if (pendSet.count(b) && none_of(fwdPreds(b), [&](const BasicBlock *p) { return p != b && pendingPred(p); })) {
+          auto [anyReal, anyLin] = entryKinds(b);
+          if (anyReal && anyLin && linUncovered(b)) {
+            w = b;
+            mixedW = true;
+            break;
+          }
+        }
+    if (!w)
+      return false;
+    Pred need = Pred::bottom();
+    for (const BasicBlock *p : fwdPreds(w))
+      need = need | edgeFact(p, w);
+    SmallVector<RegionJoin, 4> all;
+    Pred fAll = cur ? curFact : Pred::bottom();
+    for (BasicBlock *s : pending) {
+      if (!pendSet.count(s) || (s == w && !mixedW))
+        continue;
+      RegionJoin j{s, {}, Pred::bottom()};
+      for (const BasicBlock *p : fwdPreds(s))
+        if (factOf.count(p) && !pendSet.count(p) && edgeKind(p, s) == EK::Real && edgeFrom.count({p, s}) && armed(p) &&
+            !kunit(p)) {
+          j.rs.push_back(const_cast<BasicBlock *>(p));
+          j.f = j.f | edgeFact(p, s);
+        }
+      if (j.rs.empty())
+        continue;
+      Pred f = (cur ? curFact : Pred::bottom()) | j.f;
+      if (!mixedW && (need & !f).isBottom()) {
+        buildRejoin({j}, f, true);
+        return true;
+      }
+      fAll = fAll | j.f;
+      all.push_back(std::move(j));
+    }
+    // r7 (cq-vs1eo, SQLite isDate and jsonExtractFunc): no one join covers where w runs, but the region leaves toward several
+    // joins whose real edges together do (`if (q) { if (c) J1; else { if (q2) a; J2; } } else { if (d) J1; else J2; }`): one
+    // rejoin block for all of them, each join's edges keeping their own fact and values; the other arm's code then runs once
+    // in the flow from R, and each join takes the region's edges as linearized incomings (mixedEdge).
+    if ((all.size() > 1 || mixedW) && (need & !fAll).isBottom()) {
+      buildRejoin(all, fAll, false);
       return true;
     }
     return false;
@@ -3545,7 +3659,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
   if (!pendSet.empty())
     unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &*(*pendSet.begin())->begin());  if (cur)
-    internalError("loops-classical: the trip walk ended with an open block", latch->getTerminator());
+    internalError("loops-classical: the trip walk ended with an open block", latch ? latch->getTerminator() : header->getTerminator());
 
   // Back edges.
   {

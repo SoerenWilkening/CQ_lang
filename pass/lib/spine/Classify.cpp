@@ -413,10 +413,8 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
   };
 
   // Control dependence inside the loop: X depends on a quantum terminator of Y in the loop when X
-  // is reachable from a successor of Y without passing Y's in-loop post-dominator. Approximated
-  // exactly on the loop body by the standard post-dominator definition over the function.
-  Function &F = *L.getHeader()->getParent();
-  PostDominatorTree PDT(F);
+  // is reachable from a successor of Y without passing Y's in-loop post-dominator, post-dominance
+  // taken inside one trip (below).
   // A block that is only `unreachable` (no call before it, so not a noreturn exit) is never
   // taken: LLVM assumes so, and so do we (owner ruling, CLAUDE.md Domain; cq-s0pv, 131's switch
   // default). Such a successor is no path out of Y for control dependence.
@@ -431,18 +429,22 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
   // Control dependence of X on Y inside the loop: an edge of Y that leaves the loop is Y's own exit,
   // classified on its own, and does not make X's exit quantum (cq-hggf, 121: the classical exit
   // n + 1 == cap is reached only when the quantum exit s[n] == 0 is not taken).
-  auto postDomLive = [&](const BasicBlock *X, const BasicBlock *Y) {
-    for (const BasicBlock *s : successors(Y))
-      if (!deadEnd(s) && L.contains(s) && !(s == X || PDT.dominates(X, s)))
-        return false;
-    return true;
-  };
+  // cq-rb96s: post-dominance inside one trip (a back edge ends the trip), not the function's: a block on every path out
+  // of the loop still runs only in the trips that reach it (GMP block_resieve).
   auto controlQuantum = [&](const BasicBlock *X) {
+    auto pdt = taint_detail::tripPostDominated(L, X, deadEnd);
+    auto pd = [&](const BasicBlock *s) { return s == X || (s != L.getHeader() && pdt.count(s)); };
+    auto postDomLive = [&](const BasicBlock *Y) {
+      for (const BasicBlock *s : successors(Y))
+        if (!deadEnd(s) && L.contains(s) && !pd(s))
+          return false;
+      return true;
+    };
     for (const BasicBlock *Y : L.blocks()) {
       if (Y == X || !quantumTerm(Y))
         continue;
       for (const BasicBlock *s : successors(Y))
-        if (L.contains(s) && (s == X || PDT.dominates(X, s)) && !postDomLive(X, Y))
+        if (L.contains(s) && pd(s) && !postDomLive(Y))
           return true;
     }
     return false;
