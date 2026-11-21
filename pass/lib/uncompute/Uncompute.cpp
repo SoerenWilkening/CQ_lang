@@ -843,6 +843,26 @@ struct Uncompute::Impl {
   // region closeInvert closed last (resolveRegionMade reads it).
   SmallVector<RailId, 2> invertStart;
   RailId lastRegionStart = kNone;
+  // cq-i61ms: the first rail at or after g that is not released (rails.size() for none). A released rail is never pending
+  // again, so the scans that look for pending rails (every flush scanned every rail of the function) skip the released
+  // ones through this chain of forward links, shortened as it is walked.
+  mutable std::vector<RailId> nextLive;
+  RailId liveFrom(RailId g) const {
+    while (nextLive.size() <= rails.size())
+      nextLive.push_back(RailId(nextLive.size()));
+    RailId r = g;
+    while (r < rails.size() && (nextLive[r] != r || rails[r].released)) {
+      if (nextLive[r] == r)
+        nextLive[r] = r + 1;
+      r = nextLive[r];
+    }
+    for (RailId x = g; x != r && x < rails.size();) {
+      RailId n = nextLive[x];
+      nextLive[x] = r;
+      x = n;
+    }
+    return r;
+  }
   bool frozen(RailId g) const {
     return any_of(invertFrozen, [&](const DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s) { return s.count(g) != 0; });
   }
@@ -4528,7 +4548,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   Impl::Ctx c{Impl::Mode::Local, point, nullptr};
   BasicBlock *P = point->getParent();
   SmallVector<RailId, 16> cands, deferred;
-  for (RailId g = 0; g < I.rails.size(); ++g) {
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1)) {
     if (I.rails[g].ownedBy != kNone)
       continue; // F1: mirrored by its deferred item
     if (I.frozen(g))
@@ -4589,7 +4609,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
     SmallVector<RailId, 16> span;
     {
       Impl::ReachScope stable(*P->getParent());   // cq-i61ms: nothing changes the CFG while the candidates are chosen
-      for (RailId g = 0; g < I.rails.size(); ++g)
+      for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1))
         if (!I.frozen(g) && I.spanReady(g, point, live))
           span.push_back(g);
     }
@@ -4632,7 +4652,7 @@ void Uncompute::openInvert(Instruction *begin) {
   if (!begin || !begin->getParent())
     internalError("uncompute: openInvert needs an instruction in a block");
   DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s;
-  for (RailId g = 0; g < I.rails.size(); ++g)
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1))
     if (I.pending(g)) {
       SmallPtrSet<Instruction *, 8> &a = s[g];
       for (Instruction *x : I.anchors(g))
@@ -4892,7 +4912,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   // cq-4tkb4: nothing below changes the CFG until wrapLocal but a deferred item's placement (which suspends the cache).
   std::optional<Impl::ReachScope> reach;
   reach.emplace(*Rb->getParent());
-  for (RailId g = 0; g < I.rails.size(); ++g) {
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1)) {
     if (!I.resolvable(g) || I.done(g, c) || I.rails[g].ownedBy != kNone)
       continue;
     if (unsigned di = I.rails[g].deferred; di != kNone) {
@@ -5079,7 +5099,7 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   unsigned end = sc.open ? I.records.size() : sc.end;
   Impl::Ctx c{Impl::Mode::Mirror, nullptr, &B};
   SmallVector<RailId, 16> cands;
-  for (RailId g = 0; g < I.rails.size(); ++g) {
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1)) {
     unsigned cr = I.rails[g].creator;
     if (cr != kNone && cr >= sc.begin && cr < end && !sc.left.count(g) && I.resolvable(g))
       cands.push_back(g);
