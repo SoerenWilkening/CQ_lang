@@ -850,12 +850,38 @@ Value *seedOf(LoweringContext &ctx, Value *classical, RailType w) {
 // classical branches and switches, over the output values of the classical atoms involved (a
 // condition the decoder does not know contributes no fact, which is sound: a weaker fact restricts
 // less, and a predicate that still reads a rail that does not reach is a loud unimplemented).
+// cq-i61ms: the dominator tree of the output function, shared by the JoinRepairs made while its CFG stands (every
+// flag lowering made one, and built a tree of the whole function: sqlite3VdbeExec). Kept with the CFG it was built from,
+// the blocks in order with their successors: a tree of the same graph is the same tree.
+std::shared_ptr<DominatorTree> sharedDominatorTree(Function &F) {
+  struct Cache {
+    const Function *F = nullptr;
+    std::vector<const void *> sig;
+    std::shared_ptr<DominatorTree> dt;
+  };
+  static Cache *c = new Cache;   // never destroyed: the tree must not outlive the LLVMContext at exit
+  std::vector<const void *> sig;
+  for (BasicBlock &b : F) {
+    sig.push_back(&b);
+    if (const Instruction *t = b.getTerminator())
+      for (const BasicBlock *s : successors(t))
+        sig.push_back(s);
+    sig.push_back(nullptr);
+  }
+  if (c->dt && c->F == &F && c->sig == sig)
+    return c->dt;
+  c->F = &F;
+  c->sig = std::move(sig);
+  c->dt = std::make_shared<DominatorTree>(F);
+  return c->dt;
+}
+
 class JoinRepair {
   LoweringContext &ctx;
   Bdd &m = Bdd::get();
   std::shared_ptr<Oracle> O;
   std::function<bool(unsigned)> ql;
-  std::unique_ptr<DominatorTree> dt;
+  std::shared_ptr<DominatorTree> dt;
   std::unique_ptr<LoopInfo> li;
   std::unique_ptr<CycleInfo> ci;
   std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
@@ -865,7 +891,7 @@ class JoinRepair {
 
   DominatorTree &DT() {
     if (!dt)
-      dt = std::make_unique<DominatorTree>(ctx.out());
+      dt = sharedDominatorTree(ctx.out());
     return *dt;
   }
   LoopInfo &LI() {
