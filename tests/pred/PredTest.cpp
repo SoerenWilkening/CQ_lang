@@ -1673,7 +1673,73 @@ static void testComputedGoto() {
   modules.push_back(std::move(own));
 }
 
+// cq-ct59d: the join of a switch's cases, OR_k (case_k & (a_k | !b_k)), as a loop body's switch makes it, and
+// each case's flag below it. They are exact wherever at most one case holds, and their gates grow linearly in
+// the cases (they grew with the square: the flag of case k read every earlier case).
+static void testSwitchFlags() {
+  auto gatesFor = [](unsigned N) {
+    std::vector<Type *> params(1 + 2 * N + 8 * N + 8, Type::getInt32Ty(Ctx));
+    static std::vector<std::unique_ptr<Module>> mods;
+    mods.push_back(std::make_unique<Module>("sw", Ctx));
+    Function *Fn = Function::Create(FunctionType::get(Type::getVoidTy(Ctx), params, false),
+                                    GlobalValue::ExternalLinkage, "sw", *mods.back());
+    std::vector<Value *> a;
+    for (Argument &x : Fn->args())
+      a.push_back(&x);
+    std::vector<unsigned> e, c, d;
+    unsigned f = Bdd::F;
+    for (unsigned k = 0; k < N; ++k) {
+      e.push_back(atomVar(AtomKind::Eq, a[0], APInt(32, k)));
+      c.push_back(atomVar(AtomKind::Cond, a[1 + 2 * k]));
+      d.push_back(atomVar(AtomKind::Cond, a[2 + 2 * k]));
+      f = m.orOp(f, m.andOp(m.ithVar(e[k]), m.orOp(m.ithVar(c[k]), m.notOp(m.ithVar(d[k])))));
+    }
+    // Each case's own flag as a select tree asks for it, one materialize each: case k, its first condition
+    // false, and no earlier case's path to the join (that conjunct is false under case k).
+    std::vector<unsigned> fs = {f};
+    unsigned prefix = Bdd::F;
+    for (unsigned k = 0; k < N; ++k) {
+      fs.push_back(m.andOp(m.andOp(m.ithVar(e[k]), m.notOp(m.ithVar(c[k]))), m.notOp(prefix)));
+      prefix = m.orOp(prefix, m.andOp(m.ithVar(e[k]), m.orOp(m.ithVar(c[k]), m.notOp(m.ithVar(d[k])))));
+    }
+    unsigned total = 0;
+    for (unsigned g : fs) {
+      SimSink sink;
+      sink.pool = std::vector<Value *>(a.begin() + 1 + 2 * N, a.end());
+      Value *flag = materialize(g, sink, [](unsigned) { return true; });
+      total += unsigned(sink.gates.size());
+      std::mt19937 rng(7);
+      for (unsigned r = 0; r < 200; ++r) {
+        unsigned s = rng() % (N + 1);   // N: no case
+        unsigned bits = rng();
+        auto value = [&](unsigned var) {
+          for (unsigned k = 0; k < N; ++k) {
+            if (var == e[k])
+              return k == s;
+            if (var == c[k] || var == d[k])
+              return bool((bits >> ((2 * k + (var == d[k])) % 32)) & 1);
+          }
+          return false;
+        };
+        std::map<Value *, bool> st;
+        for (auto &[var, rail] : sink.atomRails)
+          st[rail] = value(var);
+        for (auto &[rail, node] : sink.seeds)
+          st[rail] = m.eval(node, value);
+        for (const SimGate &gt : sink.gates)
+          CHECK(apply(gt, st), "unknown gate kind");
+        CHECK(st[flag] == m.eval(g, value), "switch flag " << describe(g) << ", case " << s);
+      }
+    }
+    return total;
+  };
+  unsigned g8 = gatesFor(8), g16 = gatesFor(16);
+  CHECK(g16 <= 2 * g8 + 4, "switch flag gates linear in the cases: " << g8 << " at 8, " << g16 << " at 16");
+  outs() << "switch flags: " << g8 << " gates at 8 cases, " << g16 << " at 16\n";
+}
+
 int main() {
+  testSwitchFlags();
   testAlgebra();
   testComputedGoto();
   testExamples();

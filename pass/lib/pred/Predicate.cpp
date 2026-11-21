@@ -56,29 +56,15 @@ struct AtomRegistry {
   }
 };
 
-// cq-ewzri: a case atom of a switch (or computed goto) with at least kLargeSwitch destinations. Only their
-// groups leave creation order: below it the join's 2^cases nodes are affordable, and the order, so the
-// output, stays what it was.
-constexpr unsigned kLargeSwitch = 12;
-bool largeCase(const Atom &a) {
-  unsigned n = 0;
-  if (a.kind == AtomKind::Eq) {
-    for (const User *u : a.v->users())
-      if (const auto *si = dyn_cast<SwitchInst>(u); si && si->getCondition() == a.v)
-        n = std::max(n, si->getNumCases());
-  } else if (a.kind == AtomKind::Addr) {
-    for (const User *u : a.v->users())
-      if (const auto *ib = dyn_cast<IndirectBrInst>(u); ib && ib->getAddress() == a.v)
-        n = std::max(n, unsigned(computedGotoDestinations(*ib).size()));
-  }
-  return n >= kLargeSwitch;
-}
+// cq-ewzri, cq-ct59d: a case atom of a switch (or computed goto), whatever its number of cases: in creation
+// order the join of N cases has 2^N nodes, and the flags built from it 2^N gates.
+bool caseAtom(const Atom &a) { return a.kind == AtomKind::Eq || a.kind == AtomKind::Addr; }
 
 // The block predicate of the edge whose condition is being built (computePaths), else top.
 unsigned placementContext = Bdd::T;
 
-// cq-ewzri: a new atom's place in the variable order. Appended (creation order), except in a large switch's
-// case: when the deepest variable of the context is such a case atom (largeCase) or an atom placed into one's
+// cq-ewzri: a new atom's place in the variable order. Appended (creation order), except in a switch's
+// case: when the deepest variable of the context is a case atom (caseAtom) or an atom placed into one's
 // group, the new atom goes at the end of that group. Otherwise the case atoms of one switch, all made at once,
 // precede every condition inside the cases, and the join of the cases, OR_k (case_k & c_k), has a node
 // for every subset of the cases (sqlite3VdbeExec). The order changes the BDD's shape, never its function.
@@ -98,7 +84,7 @@ void placeNew(AtomRegistry &R, unsigned var) {
   unsigned root = d;
   while (R.parent[root] != Bdd::NoVar)
     root = R.parent[root];
-  if (!largeCase(R.atoms[root]))
+  if (!caseAtom(R.atoms[root]))
     return;
   unsigned end = R.last[d];
   m.placeAfter(var, end);
@@ -837,6 +823,11 @@ Pred Pred::eqAtom(const Value *scrutinee, const APInt &v) {
   return makePred(Bdd::get().ithVar(atomVar(AtomKind::Eq, scrutinee, v)));
 }
 
+bool pred_detail::exclusiveAtoms(const Atom &x, const Atom &y) {
+  return (x.kind == AtomKind::Eq && y.kind == AtomKind::Eq && x.v == y.v && x.c != y.c) ||
+         (x.kind == AtomKind::Addr && y.kind == AtomKind::Addr && x.v == y.v && x.bb != y.bb);
+}
+
 bool predsMeet(const Pred &a, const Pred &b) {
   Bdd &m = Bdd::get();
   unsigned f = m.andOp(nodeOf(a), nodeOf(b));
@@ -847,10 +838,7 @@ bool predsMeet(const Pred &a, const Pred &b) {
   std::vector<unsigned> eqs(sup.begin(), sup.end());
   for (size_t i = 0; i < eqs.size() && f != Bdd::F; ++i)
     for (size_t j = i + 1; j < eqs.size() && f != Bdd::F; ++j) {
-      const Atom &x = atomOf(eqs[i]), &y = atomOf(eqs[j]);
-      bool exclusive = (x.kind == AtomKind::Eq && y.kind == AtomKind::Eq && x.v == y.v && x.c != y.c) ||
-                       (x.kind == AtomKind::Addr && y.kind == AtomKind::Addr && x.v == y.v && x.bb != y.bb);
-      if (exclusive)
+      if (exclusiveAtoms(atomOf(eqs[i]), atomOf(eqs[j])))
         f = m.andOp(f, m.notOp(m.andOp(m.ithVar(eqs[i]), m.ithVar(eqs[j]))));
     }
   return f != Bdd::F;

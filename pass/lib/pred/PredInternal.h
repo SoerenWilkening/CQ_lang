@@ -79,6 +79,8 @@ unsigned atomVar(AtomKind, const llvm::Value *, const llvm::APInt &c = llvm::API
 // Rule 13: the Addr atom `address == blockaddress(dest)`.
 unsigned addrVar(const llvm::Value *address, const llvm::BasicBlock *dest);
 const Atom &atomOf(unsigned var);
+// Two case atoms of one switch (computed goto) on different cases: never both true.
+bool exclusiveAtoms(const Atom &, const Atom &);
 std::string describe(unsigned node);   // the formula with atoms named by their IR values
 
 // What compute() asks of taint. The production oracle forwards to TaintInfo for one Specialization
