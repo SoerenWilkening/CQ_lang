@@ -402,16 +402,9 @@ Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
     auto at = std::find(chain.begin(), chain.end(), c->getParent());   // the cheap test first
     if (at == chain.end() || !negates(*c, atom))
       continue;
-    if (c->getParent() == bb) {   // before pt
-      bool before = false;
-      for (auto it = bb->begin(); it != pt; ++it)
-        if (&*it == c) {
-          before = true;
-          break;
-        }
-      if (!before)
-        continue;
-    }
+    // before pt (cq-i61ms: by the order labels, not a scan of bb per user)
+    if (c->getParent() == bb && pt != bb->end() && !cq::comesBefore(c, &*pt))
+      continue;
     bool resolved = false;
     for (User *xu : c->users())
       if (auto *xc = dyn_cast<CallInst>(xu); xc && xc->getCalledFunction()) {
