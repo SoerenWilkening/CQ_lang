@@ -933,13 +933,15 @@ void finalize(Module &M) {
   defineTwins(M);
   exportRootClones(M);
   storeReceivedK(M);
+  // cq-i61ms: the kinds looked up once, not by name per instruction (a lowered module of millions of instructions).
+  LLVMContext &Cx = M.getContext();
+  const unsigned mintKinds[] = {Cx.getMDKindID("cq.mint"), Cx.getMDKindID("cq.mint.push"), Cx.getMDKindID("cq.mint.call"),
+                                Cx.getMDKindID("cq.mint.drop")};
   for (Function &F : M)
-    for (Instruction &I : instructions(F)) {
-      I.setMetadata("cq.mint", nullptr);
-      I.setMetadata("cq.mint.push", nullptr);
-      I.setMetadata("cq.mint.call", nullptr);
-      I.setMetadata("cq.mint.drop", nullptr);
-    }
+    for (Instruction &I : instructions(F))
+      if (I.hasMetadata())
+        for (unsigned k : mintKinds)
+          I.setMetadata(k, nullptr);
 
   SetVector<Function *> originals;
   for (Function *C : clones)
