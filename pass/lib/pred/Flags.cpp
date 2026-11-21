@@ -121,7 +121,8 @@ public:
     if (it != memo.end())
       return it->second;
     Value *r;
-    if (unsigned x = exclusive(n); x != n)
+    // A node that needs two cases of one scrutinee at once rewrites to false: no rail state reaches it, its flag is n's.
+    if (unsigned x = exclusive(n); x != n && !m.terminal(x))
       r = mat(x);
     else if (classical(n))
       r = sink.classicalSeed(n);
