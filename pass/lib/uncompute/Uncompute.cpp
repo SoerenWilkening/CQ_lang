@@ -1607,6 +1607,7 @@ struct Uncompute::Impl {
       }
     }
     std::vector<PHINode *> made;
+    SmallPtrSet<PHINode *, 32> madeSet;   // made's live members (cq-mmen6: a lookup, not a scan of made)
     std::vector<Instruction *> ops;   // and/xor made here
     DenseMap<BasicBlock *, Value *> startOf, endOf;
     SmallPtrSet<BasicBlock *, 8> busy;
@@ -1654,11 +1655,12 @@ struct Uncompute::Impl {
         return all_of(cp->blocks(), [&](BasicBlock *p) { return q->getBasicBlockIndex(p) >= 0; });
       };
       if (cp && cp->getParent() == b &&
-          (isa<Constant>(v) || (vp && vp->getParent() == b && is_contained(made, vp) && complete(vp)))) {
+          (isa<Constant>(v) || (vp && vp->getParent() == b && madeSet.count(vp) && complete(vp)))) {
         PHINode *np = PHINode::Create(I1, cp->getNumIncomingValues(), "cq.run");
         np->insertInto(b, b->begin());
         emitted.insert(np);
         made.push_back(np);
+        madeSet.insert(np);
         for (unsigned i = 0; i < cp->getNumIncomingValues(); ++i) {
           BasicBlock *p = cp->getIncomingBlock(i);
           if (int seen = np->getBasicBlockIndex(p); seen >= 0) {   // both edges of one branch into b: one value
@@ -1748,24 +1750,56 @@ struct Uncompute::Impl {
       phi->insertInto(b, b->begin());
       emitted.insert(phi);
       made.push_back(phi);
+      madeSet.insert(phi);
       startOf[b] = phi;
       for (BasicBlock *p : ps)
         phi->addIncoming(endV(p), p);
       return phi;
     };
     Value *r = applyIn(at->getParent(), at, at);
+    auto drop = [&](PHINode *&phi, Value *v) {
+      phi->replaceAllUsesWith(v);
+      if (r == phi)
+        r = v;
+      emitted.erase(phi);
+      madeSet.erase(phi);
+      phi->eraseFromParent();
+      phi = nullptr;
+    };
     // Fold trivial phis and drop unused ones, to a fixed point.
     for (bool changed = true; changed;) {
       changed = false;
+      // cq-mmen6: a phi whose incomings other than itself are one value v is v (v dominates every predecessor, so the
+      // block, unless v lies in the block itself: then the phi is v's value from the pass before). Every flag passing
+      // the join after a wrapped item block (X -> U -> C) has such a phi there; the rule below looks through made phis
+      // and so misses it wherever v is a made phi itself. To a fixed point first: it is cheap, and shortens those walks.
+      for (bool simple = true; simple;) {
+        simple = false;
+        for (PHINode *&phi : made) {
+          if (!phi)
+            continue;
+          Value *same = nullptr;
+          bool one = true;
+          for (Value *in : phi->incoming_values())
+            if (in != phi && in != same) {
+              one = !same;
+              if (!one)
+                break;
+              same = in;
+            }
+          auto *si = dyn_cast_or_null<Instruction>(same);
+          if (!one || !same || (si && si->getParent() == phi->getParent()))
+            continue;
+          drop(phi, same);
+          simple = changed = true;
+        }
+      }
       for (PHINode *&phi : made) {
         if (!phi)
           continue;
         bool dead = phi != r && all_of(phi->users(), [&](User *u) { return u == phi; });
         if (dead) {
-          phi->replaceAllUsesWith(PoisonValue::get(I1));
-          emitted.erase(phi);
-          phi->eraseFromParent();
-          phi = nullptr;
+          drop(phi, PoisonValue::get(I1));
           changed = true;
           continue;
         }
@@ -1779,7 +1813,7 @@ struct Uncompute::Impl {
           if (!seen.insert(q).second)
             continue;
           for (Value *in : q->incoming_values()) {
-            if (auto *qp = dyn_cast<PHINode>(in); qp && is_contained(made, qp)) {
+            if (auto *qp = dyn_cast<PHINode>(in); qp && madeSet.count(qp)) {
               work.push_back(qp);
               continue;
             }
@@ -1794,12 +1828,7 @@ struct Uncompute::Impl {
         }
         if (!trivial || !same)
           continue;
-        phi->replaceAllUsesWith(same);
-        if (r == phi)
-          r = same;
-        emitted.erase(phi);
-        phi->eraseFromParent();
-        phi = nullptr;
+        drop(phi, same);
         changed = true;
       }
     }
@@ -1815,10 +1844,7 @@ struct Uncompute::Impl {
         }
       for (PHINode *&phi : made)
         if (phi && phi != r && all_of(phi->users(), [&](User *u) { return u == phi; })) {
-          phi->replaceAllUsesWith(PoisonValue::get(I1));
-          emitted.erase(phi);
-          phi->eraseFromParent();
-          phi = nullptr;
+          drop(phi, PoisonValue::get(I1));
           changed = true;
         }
     }

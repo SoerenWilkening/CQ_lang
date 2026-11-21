@@ -2238,12 +2238,11 @@ void merge_unchosen_loop() {
                         "br label %J",
                         "br label %J",
                         "%cq.run6 = phi i1 [ %cq.run4, %P ], [ false, %Q ]",
-                        "%cq.run = phi i1 [ %cq.run4, %Q ], [ %cq.run4, %P ]",
                         "%m = phi i32 [ %b, %P ], [ %a, %Q ]",
                         "%cq.ch = phi i1 [ false, %P ], [ true, %Q ]",
                         "%r = call i32 @cqrt_measure_i32(i32 %m)",
                         "%cq.not = xor i1 %cq.ch, true",
-                        "%cq.run5 = and i1 %cq.run, %cq.not",
+                        "%cq.run5 = and i1 %cq.run4, %cq.not",   // cq-mmen6: the phi over %cq.run4 on both edges folded
                         "br i1 %d, label %H, label %X",
                         "br i1 %cq.run6, label %X.cq.arm, label %X.cq.after",
                         "call void @cqrt_free(i32 %a)",
