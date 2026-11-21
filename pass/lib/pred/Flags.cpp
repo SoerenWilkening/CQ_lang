@@ -91,6 +91,29 @@ public:
     return v;
   }
 
+  // cq-ct59d: n where at most one case atom of each switch (computed goto) holds, the only assignments its
+  // atoms' rails take. When n implies case atom e, the other cases of e's scrutinee are false wherever n
+  // holds: n is e & n[e = 1, its siblings = 0]. Without it a sub-flag under case k reads every other case
+  // (the derivative of a switch's join on a condition inside case k is case k & no earlier case's path),
+  // so a switch's flags grow with the square of its cases, or exponentially in creation order.
+  unsigned exclusive(unsigned n) {
+    if (m.terminal(n))
+      return n;
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    for (unsigned e : sup) {
+      const Atom &a = atomOf(e);
+      if ((a.kind != AtomKind::Eq && a.kind != AtomKind::Addr) || m.sides(n, e).first)
+        continue;
+      unsigned r = m.cofactor(n, e, true);
+      for (unsigned o : sup)
+        if (exclusiveAtoms(a, atomOf(o)))
+          r = m.cofactor(r, o, false);
+      return m.andOp(m.ithVar(e), r);
+    }
+    return n;
+  }
+
   Value *mat(unsigned n) {
     if (m.terminal(n))
       internalError("pred: a flag for a constant predicate");
@@ -98,7 +121,9 @@ public:
     if (it != memo.end())
       return it->second;
     Value *r;
-    if (classical(n))
+    if (unsigned x = exclusive(n); x != n)
+      r = mat(x);
+    else if (classical(n))
       r = sink.classicalSeed(n);
     else if (m.lo(n) == Bdd::F && m.hi(n) == Bdd::T)
       r = atomRail(m.var(n));
