@@ -13,11 +13,13 @@
 #include "cq/Verify.h"
 #include "cq/Order.h"
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "Roles.h"
@@ -813,10 +815,19 @@ private:
   // ---- unc-operand-mismatch ----
   void uncOperands() {
     std::map<std::string, std::vector<const CallBase *>> callsTo;
+    // cq-i61ms: the forward clone calls by (fn, mask, bounds, ctl), in program order, read once: the twins below
+    // looked them up by a scan of the whole function each (isForwardOf; sqlite3VdbeExec: minutes).
+    std::map<std::tuple<std::string, Mask, std::vector<uint64_t>, bool>, std::vector<const CallBase *>> fwdClones;
+    DenseMap<const CallBase *, unsigned> callIdx;
     for (const Instruction &I : instructions(F))
-      if (auto *CB = dyn_cast<CallBase>(&I))
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        unsigned n = callIdx.size();
+        callIdx[CB] = n;
         if (const Function *Callee = CB->getCalledFunction())
           callsTo[Callee->getName().str()].push_back(CB);
+        if (const Sig &S = Sigs.get(*CB); S.kind == Kind::Clone && !S.unc)
+          fwdClones[{S.clone->fn, S.clone->mask, S.clone->bounds, S.clone->ctl}].push_back(CB);
+      }
 
     for (const Instruction &I : instructions(F)) {
       auto *CB = dyn_cast<CallBase>(&I);
@@ -850,11 +861,17 @@ private:
       if (S.kind == Kind::Clone) {
         // Twin: (outs..., forward args..., old slot handles / snapshots...).
         bool matched = false;
+        // The calls isForwardOf accepts, in program order.
+        const abi::CloneSpec &Tw = *S.clone;
         std::vector<const CallBase *> Fwds;
-        for (const Instruction &J : instructions(F))
-          if (auto *JC = dyn_cast<CallBase>(&J))
-            if (isForwardOf(*JC, *S.clone))
-              Fwds.push_back(JC);
+        if (auto it = fwdClones.find({Tw.fn, Tw.mask, Tw.bounds, Tw.ctl}); it != fwdClones.end())
+          Fwds = it->second;
+        if (!Tw.ctl && Tw.bounds.empty() && !StringRef(Tw.mask).contains('1'))
+          if (auto it = callsTo.find(Tw.fn); it != callsTo.end()) {
+            Fwds.insert(Fwds.end(), it->second.begin(), it->second.end());
+            llvm::sort(Fwds, [&](const CallBase *a, const CallBase *b) { return callIdx[a] < callIdx[b]; });
+            Fwds.erase(std::unique(Fwds.begin(), Fwds.end()), Fwds.end());
+          }
         for (const CallBase *Fwd : Fwds) {
           for (unsigned k = 0; k + Fwd->arg_size() <= CB->arg_size() && !matched; ++k) {
             bool outsOk = true;
