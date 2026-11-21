@@ -2705,6 +2705,28 @@ bool stateRail(LoweringContext &ctx, const Value *h) {
          it->second->anchored.count(h);
 }
 
+void liveState(LoweringContext &ctx, function_ref<bool(const Instruction &)> lowered, std::vector<Value *> &out) {
+  auto it = states().find(&ctx.out());   // a lookup: no state is made for a function without one
+  if (it == states().end() || !it->second || !it->second->any || !it->second->orig)
+    return;
+  State &st = *it->second;
+  // The readers: every call (a constrained op, a <fenv.h> call, a clone call passing the mode or the environment, a
+  // measurement) and, where the state is read there (atEntryReturn, cloneExitFlags), a return. Last blocks first: a
+  // return is usually the nearest.
+  bool retReads = st.cloneBound || (ctx.S.isEntry() && accessesEnv(*ctx.S.F));
+  auto reads = [&](const Instruction &I) {
+    return (isa<CallBase>(I) || (retReads && isa<ReturnInst>(I))) && !lowered(I);
+  };
+  if (none_of(reverse(*st.orig), [&](const BasicBlock &BB) { return any_of(reverse(BB), reads); }))
+    return;
+  for (auto &kv : st.vars)
+    for (const DenseMap<BasicBlock *, Part> *m : {&kv.second.end, &kv.second.start})
+      for (auto &bp : *m)
+        for (Value *h : {bp.second.flags, bp.second.mode})
+          if (h)
+            out.push_back(h);   // order-free: flushBefore makes a set of them
+}
+
 const Value *pieceKey(LoweringContext &ctx, unsigned id) {
   State &st = state(ctx, &ctx.M);
   Instruction *&k = st.pieceKey[id & 1];

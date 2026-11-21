@@ -118,8 +118,11 @@ public:
   // Rule 16: the call of a bodiless callee is an effect entry of S (a format entry included). Every other call of a
   // bodiless callee in no other class of rule 16 is the ordinary host call or, listed, rule 27's.
   bool isEffectEntry(const llvm::CallBase &, const Specialization &) const;
-  // Rule 27: F has no body and a root list names it (its calls are its declared clone, whatever their arguments).
+  // Rule 27: F has no body and a root list names it (its calls with a rail among their actuals are its declared clone).
   bool listedRoot(const llvm::Function &) const;
+  // Rule 27 (owner ruling 2026-11-20): CB, in S, is a call of a listed function with a rail among its actuals: its declared
+  // clone. A call of one with every actual classical is the C symbol's, a host call (rule 16).
+  bool declaredCall(const llvm::CallBase &, const Specialization &) const;
   // Rule 27, library build: F has a body, is externally visible and a root list names it: its table clone, the _ctl
   // form and their twins are exported, so a module that only declares F reaches them by name.
   bool exportedRoot(const llvm::Function &) const;
@@ -143,4 +146,12 @@ private:
   friend TaintInfo computeTaint(llvm::Module &, const TaintOptions &);
 };
 TaintInfo computeTaint(llvm::Module &, const TaintOptions &);
+// Rule 27 (owner ruling 2026-11-20): the masks of the table clones a lowered library exports for a root of function type
+// FT, from the signature alone: one digit per scalar leaf of the fixed formals, then a variadic function's block digit 0.
+// At most 5 leaves: every mask; more: one mask per set of the leaf classes pointer, integer, floating point. The all-zero
+// mask is among them (spelled with _t it is a clone, not the own symbol).
+std::vector<Mask> tableMasks(llvm::FunctionType *FT);
+// ... and the one a declared clone's call takes: the fewest quantum digits covering `quantum` (one entry per scalar leaf
+// of the fixed formals, true where the actual is a rail); none true but blockRail (a variadic actual is a rail): all-ones.
+Mask declaredMask(llvm::FunctionType *FT, llvm::ArrayRef<bool> quantum, bool blockRail = false);
 }

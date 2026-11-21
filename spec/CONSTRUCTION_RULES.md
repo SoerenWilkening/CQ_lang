@@ -234,8 +234,8 @@ ptr @__cq_alloc(i64 size, i64 align)
 void @__cq_clone_register(ptr fn, ptr sig, ptr clone, ptr ctl, ptr unc, ptr ctl_unc)
                                   module constructor: one row of the process-wide clone table per function whose
                                   address is taken or that is externally visible: fn = its host address, sig = its
-                                  LLVM function type as a C string, then its table clone (§1.4) and that clone's
-                                  _ctl, _unc and _ctl_unc. The function's own symbol is never a row
+                                  LLVM function type as a C string, then its all-ones table clone (§1.4) and that
+                                  clone's _ctl, _unc and _ctl_unc. The function's own symbol is never a row
 ptr @__cq_clone_resolve(ptr fn, i32 kind)
                                   the row's clone for host address fn (kind 0 forward, 1 _ctl, 2 _unc, 3 _ctl_unc);
                                   null when fn has no row (host code; rule 19)
@@ -274,7 +274,7 @@ mask  := one digit per SCALAR formal of the function, LEFT TO RIGHT, after aggre
          block form and the plain-`ptr` form of a function with a `byval` formal (rule 26) are
          always spelled by this grammar, all-zero mask included; their own symbol keeps the C
          signature for host callers.
-_t     := the table clone (below).
+_t     := a table clone (below).
 _ctl   := the clone takes the block predicate as its FIRST parameter and applies it to everything
           that is not a template on SSA values: rotations, phases, bus accesses, tape and abort
           events, measurements (rule 19), the seed of a quantum-exit loop's chain (rule 14) and
@@ -335,12 +335,26 @@ run-time value of the one rolled body). It is compiler state like `@__cq_act_<fn
 no memory version change.
 
 **Table clones.** A clone reached without its body in view (a row of the clone table, §1.3, or a
-declared clone, rule 27) has ONE ABI, so that the call follows from the function's C signature
-alone. Its name is `__cq_q_<fn>_<mask>_t` with every mask digit 1 (a variadic function's block
-pointer keeps its digit 0) and no `_b` bounds. It takes every scalar formal as a handle, then the
-cutoff K as a classical `i32` (rule 27), and returns every scalar result as a handle (a
-classical result as a seed rail) and no extra result: it pushes the handles of the registers it
-minted (rule 19) on `cqrt_push`. Its `_unc` twin always exists and pops those handles. For a
+declared clone, rule 27) has an ABI that follows from the function's C signature and its mask
+alone. Its name is `__cq_q_<fn>_<mask>_t` with no `_b` bounds. Which masks exist follows from the
+C signature alone, so that a caller and a library built separately agree. Count the scalar formals
+after aggregate flattening, the variadic block excepted (its digit is always 0):
+- *Arrangements.* With at most 5 scalar formals every mask exists, the all-zero mask included
+  (`_t` makes it a clone, not the own symbol): 2^n masks. A function with no scalar formal has
+  the one mask `v`.
+- *Class arrangements.* With more than 5, the scalar formals fall into three classes: pointers;
+  integers (enums, `bool` and `char` included); floating point. A mask gives every formal of a
+  class the same digit: one mask per set of the classes the signature has, the empty set and the
+  full set included (at most 8).
+- *The row.* The clone-table row of a function (rule 19) is its all-ones mask (a variadic
+  function's block digit 0); every other table clone is reached by name only (rule 27).
+
+A table clone takes each scalar formal as its mask says: a digit 1 as a handle (a pointer: a
+handle to a 64-bit address rail), a digit 0 as the C-typed classical value (a pointer: the
+classical `ptr`; a variadic function's block), then the cutoff K as a classical `i32` (rule 27).
+It returns every scalar result as a handle (a classical result as a seed rail), whatever its
+mask, and no extra result: it pushes the handles of the registers it minted (rule 19) on
+`cqrt_push`. Its `_unc` twin always exists and pops those handles. For a
 function rule 18 gives no twin it does nothing else, and every result stays allocated (KEPT);
 otherwise it is rule 18's twin, frees the results it zeroes and leaves a FROZEN result (rule 19)
 allocated. The caller frees no result of a table clone. A result that is rule 19's controlled-copy
@@ -350,9 +364,10 @@ a predicate a `cq_measure` of a formal measures a kept copy, `t = alloc_<W>(0); 
 uncomputes and frees it as always; the outcome is classical and is returned as a seed rail like any classical
 result (211).
 `_t_ctl` and `_t_ctl_unc` take the predicate first; a table twin is `_unc([pred,] outs…, args…,
-K)`. A `_ctl` table clone whose body is only templates on SSA values computes unguarded and reads
+K)`, `args` exactly the forward's (classical ones as C values). Every table clone of a function
+shares its `@__cq_act_<fn>` counter and the module's `@__cq_k`. A `_ctl` table clone whose body is only templates on SSA values computes unguarded and reads
 its predicate only for the cut and for the seed of a loop chain. A call by name of a function whose body is in
-the module is never the table clone: it is the rule-18 clone of its mask, all-ones included.
+the module is never a table clone: it is the rule-18 clone of its mask, all-ones included.
 
 ## 2. Totalization table
 
@@ -1146,7 +1161,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     with `r` as its field under an `alloc_i1(true)` seed (rule 16) and then returns 0.
     **Function pointers.** A function pointer is the function's address (rule 21), a classical
     `ptr` or an address rail. Which functions it can denote is never analysed. Every module
-    and lowered library registers the table clone (§1.4) of each of its address-taken and
+    and lowered library registers the all-ones table clone (§1.4) of each of its address-taken and
     externally visible functions (`__cq_clone_register`, §1.3), and an indirect call is
     resolved from that table at run time. It is always a call of a table clone, with that
     ABI: the classical actuals are minted as seeds (rule 7), every result is a handle, and K
@@ -1438,36 +1453,67 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     input: the root lists of the lowered libraries the program links (shipped with their
     headers, §0; another translation unit of the program is such a library). A bodiless callee
     on no list is the host boundary (rule 16). A call from lowered code to a listed function is
-    a call of its declared clone, whatever its arguments: the compiler emits only declarations
-    of the clone and its twin, the link supplies the definitions, and a missing one is an
-    ordinary undefined-symbol error (no fallback to the original function). Injected source
-    has a body and is rule 18's. The declared clone is the table clone of §1.4, so that name
-    and call follow from the callee's C signature alone:
-    - *Call.* `__cq_q_<fn>_<1…1>_t(handles…, K)`. Every scalar actual is a handle (a
-      classical one a seed, rule 7; a classical pointer `alloc_i64` of its address); K is the
-      callee's K resolved as in §0 (for an indirect
-      call see rule 19). Every result is a handle. The call is a memory version change; its
-      twin `_unc(outs…, args…)` is called, and frees the results, as rule 19 says for a table
-      clone. Under a quantum predicate the call is `_t_ctl(pred, …)` and the results merge by
-      `select`. Default C calling convention, not `fastcc`.
+    a call of its declared clone when an actual is a rail (any scalar leaf of a fixed actual or,
+    for a variadic callee, any variadic actual) or when a cell can be QUANTUM (§1.3) at the call:
+    its inputs then arrive through memory. Otherwise (every actual classical and no cell can be
+    QUANTUM) the call is classical: it is the call of the function's own C symbol as it stands,
+    resolved at link time by the original library, and rule 16's like a call of an unlisted
+    function (an ordinary host call, or under a quantum predicate an effect entry; its result
+    classical where it is an ordinary host call). A cell can be QUANTUM at the call when the
+    module's code reached from a function's own symbol or a `-cq-roots` clone (not from a table
+    clone) has a store, swap, atomic or memory intrinsic whose value, address or length is a
+    rail or that a quantum predicate controls, a `realloc`, a block or `byval` copy holding a
+    rail, a rail saved into a fenv object, a call through a pointer, or a declared clone's call
+    with a rail actual, anywhere, before the call or not (no flow is analysed, and nothing is
+    known about which object an address lies in, rule 20); and always inside a table clone and
+    in a function a table clone reaches by name (its caller is not in view). The compiler emits
+    only declarations of the clone and its twin, the link supplies the definitions, and a
+    missing one is an ordinary undefined-symbol error (no fallback to the original function).
+    Injected source has a body and is rule 18's. The declared clone is a table clone of §1.4,
+    so that name and call follow from the callee's C signature and the call's arrangement alone:
+    - *Call.* `__cq_q_<fn>_<mask>_t(actuals…, K)`. Among the masks §1.4 gives the signature,
+      the call takes the one with the fewest quantum digits that has a 1 at every scalar actual
+      that is a rail: with at most 5 scalar formals the call's own arrangement, otherwise the
+      union of the classes that hold a rail; every actual classical, the all-zero mask. A
+      variadic call whose fixed actuals are all classical but a variadic actual is a rail takes
+      the all-ones mask (no mask covers its block otherwise). A classical actual at a digit 1 is
+      a seed (rule 7; a classical pointer `alloc_i64` of its address), at a digit 0 its C value;
+      a rail is never passed at a digit 0. A variadic callee's further actuals go into rule
+      16's block, passed as the classical `ptr` at the last digit 0. K is the callee's K
+      resolved as in §0 (for an indirect call see rule 19). Every result is a handle. The call
+      is a memory version change; its twin `_unc(outs…, args…)` is called, and frees the
+      results, as rule 19 says for a table clone. Under a quantum predicate the call is
+      `_t_ctl(pred, …)` of the same mask and the results merge by `select`. Default C calling
+      convention, not `fastcc`.
     - *Cutoff.* Inside the clone and its callees every quantum-exit loop runs min(K, B) trips
       and quantum-depth recursion is cut at K (rule 14); no K variant of a library exists. A
       callee reached by name receives K through `@__cq_k` (§1.4), one reached through the table
       as its K actual. Rule 6's per-trip clean holds in a loop the received K can cut as in
       any other: the cut is a classical exit of the chain (rule 14).
-    - *The table.* The same symbol is the row a function pointer reaches (rule 19); a declared
-      clone handed a function pointer calls back through the table.
+    - *The table.* The all-ones clone is the row a function pointer reaches (rule 19), keyed by
+      the original library's address of the function; a module that takes the address of a
+      listed function references that clone, so the link includes the library's row. A
+      declared clone handed a function pointer calls back through the table.
     - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body, named
       `__cq_q_asm_<h>_<1…1>_t`: `<h>` is the first 16 lowercase hex digits of the SHA-256 of
       the asm string as LLVM spells it (`$N` operands), a single NUL byte and the constraint
       string; the mask is over its operands in order. With only classical operands and no
       quantum predicate in scope it stays the asm (host bytes, §1.3); with a quantum operand,
       no outputs and a quantum predicate it is a rule-16 effect entry named by the asm string.
-    - *Library build.* The same compiler run over the library source with a list of roots:
-      each root's table clone, with its `_ctl` form and twins, is exported and registered;
-      calls inside the library are rule 18's and pass the received K down; each own symbol
-      serves host callers. Root lists and recommended K values are build inputs (a corpus example's list is
-      the `roots=` field of its `_tools/drivers.txt` line: 161, 190).
+    - *Library build.* The same compiler run over the library source with a list of roots (C
+      names; the masks follow from §1.4, nobody lists them): each root's table clones, one per
+      mask §1.4 gives its signature, with their `_ctl` forms and twins, are exported; the
+      all-ones one is registered (rule 19); calls inside the library are rule 18's and pass the
+      received K down. The lowered library defines no C symbol: a root's own body is internal
+      to it, a global of the library source is only declared, and the original library, linked
+      beside it, provides every C function and object (rule 20: one object at one host
+      address). So a program's classical call of a root, a host call or effect entry resolved
+      by name, and the address of a root all reach the original library's. A library that exports only the all-ones mask
+      does not serve a program built under this rule: its calls name masks the library does
+      not define (an ordinary link error), and the library is rebuilt. Root lists and
+      recommended K values are build inputs (a corpus example's list is the `roots=` field of
+      its `_tools/drivers.txt` line: 161, a rail and a classical actual, `_10_t`; 190, every
+      actual classical with rails stored in memory, `_00_t`).
 
     — 161, 190; a callback through the table and an inline asm owed (§8).
 

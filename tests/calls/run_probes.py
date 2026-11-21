@@ -373,9 +373,11 @@ CASES = [
     # by name; the _pure of k1's table clone calls the declared clones themselves (a declared clone has no _pure). "lower":
     # the checker's declared-clone stand-in for sin/atan2 differs from the C oracle's libm by a few ulp (reported, cq-m2ra9).
     ("libm_k", "k1", [f"-cq-roots={PROBES / 'libm_k.roots'}"], "lower",
-     [r"call i32 @__cq_q_sin_1_t\(i32 (%\w+), i32 53\)\n  (%\w+) = call i32 @cqrt_alloc_f64\(double %1\)\n"
-      r"  (%\w+) = call i32 @__cq_q_atan2_11_t\(i32 \1, i32 \2, i32 77\)",
-      r"call void @__cq_q_atan2_11_t_unc\(", r"call void @__cq_q_sin_1_t_unc\(",
+     # Rule 27 (owner 2026-11-20): atan2(x, y) with y classical is the arrangement 10, y its C value; k1's table clone,
+     # where y is a handle, calls atan2_11_t.
+     [r"call i32 @__cq_q_sin_1_t\(i32 (%\w+), i32 53\)\n"
+      r"  (%\w+) = call i32 @__cq_q_atan2_10_t\(i32 \1, double %1, i32 77\)",
+      r"call void @__cq_q_atan2_10_t_unc\(", r"call void @__cq_q_sin_1_t_unc\(", r"call i32 @__cq_q_atan2_11_t\(",
       r"define internal i32 @__cq_q_k1_11_t_pure\([^\n]*\{\n(?:[^\n]*\n)*?  %\w+ = call i32 @__cq_q_sin_1_t\("]),
     # cq-m8biu (owner ruling 2026-11-15, CR rules 14, 19): a callee holding a quantum-exit loop whose a_K is kept is a _ctl clone under a
     # quantum predicate (e1; e3 through a callee); a call-site bound B <= K keeps it unguarded (e2, _b3).
@@ -531,6 +533,13 @@ CASES = [
      [r"define internal fastcc i32 @__cq_q_g_1\(i32 %0\) unnamed_addr \{\n  %2 = load i32, ptr @__cq_k, align 4\n"
       r"  %3 = icmp eq i32 %2, -1\n  %4 = select i1 %3, i32 4, i32 %2\n  %5 = call i32 @__cq_q_ext_1_t\(i32 %0, i32 %4\)",
       r"call void @__cq_q_ext_1_t_unc\(i32 %5, i32 %0, i32 %4\)"]),
+    # Rule 27 (owner ruling 2026-11-20): a listed function called with every actual classical is its C call when nothing in
+    # the module can make a cell QUANTUM, and the all-zero declared clone when a rail is stored. "lower": as above.
+    ("declared_classical", "c", [f"-cq-roots={PROBES / 'declared_classical.roots'}"], "lower",
+     [r"tail call i64 @ext_sum\(ptr noundef nonnull @A, i64 noundef %\d+\)", r"\A(?![\s\S]*@__cq_q_ext_sum_00_t\()"]),
+    ("declared_classical_mem", "cm", [f"-cq-roots={PROBES / 'declared_classical.roots'}"], "lower",
+     [r"(%\d+) = call i32 @__cq_q_ext_sum_00_t\(ptr @A, i64 (%\d+), i32 4\)",
+      r"call void @__cq_q_ext_sum_00_t_unc\(i32 %\d+, ptr @A, i64 %\d+, i32 4\)"]),
 ]
 
 

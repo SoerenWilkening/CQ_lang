@@ -811,8 +811,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                   exits::liveExiting(L)->getTerminator());
   auto inUnit = [&](const BasicBlock *b) { return UX.contains(L, b); };
   // cq-j5mq: several classical exit edges into one exit block (a `break` on a classical test): each edge is a real
-  // branch to T. The exit block's phis are bound at T, over the edges.
-  const bool cx = !c3 && outermost && !exits::liveExiting(L);
+  // branch to T. The exit block's phis are bound at T, over the edges. Several live exit blocks are this form too when one
+  // block leaves for all of them (a classical switch; unifySubLoopExits' hub, GMP __gmpn_jacobi_base, cq-9ch5t): the edge
+  // into the exit arm runs the arm (c1Arm below), which no other form lowers for the unit's paths.
+  const bool cx = !c3 && outermost && (!exits::liveExiting(L) || UX.multi());
   // A sub-loop's classical edges are real branches to wherever they go, in its parent or out of the unit.
   if (outermost)
     unitExit = T;
@@ -3962,7 +3964,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               work.push_back(u);
           }
         }
-        if (isQ(P) && (!readersKeep(P) || (returned && !ctx.S.isEntry())))
+        // An entry's return of P itself copies out the walker's value of P (the unit's phi below, joined or not: Construct.cpp
+        // emitReturn, rule 14), and the copy escapes: P's rail is no output either (cq-9ch5t).
+        const bool retCopied = ctx.S.isEntry() && any_of(P->users(), [](const User *u) { return isa<ReturnInst>(u); });
+        if (isQ(P) && (!readersKeep(P) || (returned && !ctx.S.isEntry()) || retCopied))
           undone.insert(P);
       }
       for (PHINode *P : xphis) {

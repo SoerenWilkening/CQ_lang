@@ -32,6 +32,7 @@
 #include "cq/Aggregates.h"
 #include "cq/Bus.h"
 #include "cq/Effects.h"
+#include "cq/FenvCarry.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 
@@ -845,7 +846,10 @@ void Walker::planGuards() {
       BasicBlock *s = t->getSuccessor(k), *tg = oe->second[k];
       if (idx.lookup(s) <= idx.lookup(b))
         continue;   // a back edge of a purely classical loop
-      Pred f = tg == s ? outB & ctx.preds().edge(b, s).classicalFactor(ctx.T, ctx.S) : outB;
+      // cq-7prhl: an edge no path takes (-O1 branching again on a classical condition the path already fixed) has no
+      // facts: bottom, not outB (classicalFactor(bottom) is top).
+      const Pred &ep = ctx.preds().edge(b, s);
+      Pred f = ep.isBottom() ? Pred::bottom() : tg == s ? outB & ep.classicalFactor(ctx.T, ctx.S) : outB;
       add(tg, f);
       fact(b, tg, f);
     }
@@ -925,6 +929,8 @@ void Walker::maybeFlush(Instruction *term) {
   for (Value *h : liveLater)
     if (auto *hi = dyn_cast<Instruction>(h); hi && hi->getParent() == term->getParent())
       return;
+  // cq-9ea1d: the fenv state's rails a later read merges at a join (no binding names them).
+  fenv::liveState(ctx, [&](const Instruction &i) { return visited.count(&i) != 0; }, liveLater);
   ArrayRef<Value *> live(liveLater);
   ctx.unc().flushBefore(term, &live);
 }
@@ -2339,14 +2345,22 @@ void Walker::emitBlock(BasicBlock *b) {
               continue;
             Pred e = ctx.preds().edge(u, b);
             bool skip = false;
+            // cq-vbep9 (rules 9, 14): an edge that meets the unit's classical condition also holds on classical paths that
+            // skip the unit (a quantum guard the unit folded into its captures' start, GSL gsl_sf_hermite_prob_array_deriv's
+            // `nmax < 0 || m < 0` error return): there the unit's binding was never minted, so the edge's value is an arm
+            // under its predicate off that condition.
+            Pred off = Pred::bottom();
             for (auto &[lp, U] : units)
               if (U.cont == b && !U.contains(*lp, u)) {
                 std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
                 Pred cH = ctx.preds().block(lp->getHeader()).classicalFactor(ctx.T, ctx.S);
                 ctx.preds().assume(was, ctx.T, ctx.S);
                 skip |= (e & cH).isBottom();
+                off = off | (e & !cH);
               }
-            if (!skip || e.isBottom())
+            if (!skip)
+              e = off & !E;
+            if (e.isBottom())
               continue;
             E = E | e;
             arms.push_back({e, ctx.operand(phi.getIncomingValue(i))});

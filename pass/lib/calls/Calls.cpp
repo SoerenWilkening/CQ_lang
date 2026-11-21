@@ -703,8 +703,9 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
 
 
 
-// Rule 27: the declared clone of F for CB, the table clone of §1.4: __cq_q_<fn>_<1…1>_t[_ctl]([pred,] handles…, K), every
-// scalar actual a handle (a classical one a seed, a classical pointer alloc_i64 of its address), every result a handle,
+// Rule 27: the declared clone of F for CB, a table clone of §1.4: __cq_q_<fn>_<mask>_t[_ctl]([pred,] actuals…, K), the mask
+// the call's arrangement selects (a classical actual at a digit 1 a seed, a classical pointer alloc_i64 of its address; at a
+// digit 0 its C value), every result a handle,
 // the C calling convention. The call is a memory version change. Its twin frees the results (rule 19), called exactly
 // once at its rule-18 position; with no result right after the call.
 void emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function *Fp, Value *flag) {
@@ -715,14 +716,34 @@ void emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function *Fp, Value *f
     args.push_back(flag);
     ops.push_back(Operand{flag, true});
   }
-  std::string mask;
-  for (const Use &u : CB.args())
-    for (Operand o : actualFields(ctx, u.get())) {
-      o = seedActual(ctx, o);
-      mask.push_back('1');
-      args.push_back(o.v);
-      ops.push_back(o);
+  // Owner ruling 2026-11-20: the library exports the arrangements tableMasks gives Fp's C signature; the call takes the
+  // one with the fewest quantum digits covering its rails (declaredMask). A classical actual at a digit 0 crosses as its C
+  // value, at a digit 1 as a seed (rule 7). A variadic callee's further actuals go into rule 16's block, its digit 0.
+  FunctionType *CT = Fp->getFunctionType();
+  unsigned nFixed = CT->getNumParams();
+  if (CB.arg_size() < nFixed)
+    internalError("calls: a declared clone's call with fewer actuals than the callee's fixed formals", &CB);
+  SmallVector<Operand, 8> fields;
+  SmallVector<bool, 8> quantum;
+  for (unsigned i = 0; i < nFixed; ++i)
+    for (const Operand &o : actualFields(ctx, CB.getArgOperand(i))) {
+      fields.push_back(o);
+      quantum.push_back(o.handle);
     }
+  bool blockRail = false;   // rule 27: a variadic rail with every fixed actual classical takes the all-ones mask
+  for (unsigned i = nFixed; i < CB.arg_size(); ++i)
+    blockRail = blockRail || ctx.T.isQuantum(CB.getArgOperand(i), ctx.S);
+  std::string mask = declaredMask(CT, quantum, blockRail);
+  for (unsigned i = 0; i < fields.size(); ++i) {
+    Operand o = mask[i] == '1' ? seedActual(ctx, fields[i]) : fields[i];
+    args.push_back(o.v);
+    ops.push_back(o);
+  }
+  if (CT->isVarArg()) {
+    Value *block = variadicBlock(ctx, CB, nFixed);
+    args.push_back(block);
+    ops.push_back(Operand{block, false});
+  }
   Value *K = declaredK(ctx, *Fp, &CB);
   args.push_back(K);
   ops.push_back(Operand{K, false});
@@ -961,9 +982,15 @@ DenseMap<const Function *, unsigned> mintCounts;
 
 void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, const abi::CloneSpec &cs) {
   std::vector<TableRow> &rows = tableRows[&M];
-  auto it = find_if(rows, [&](const TableRow &r) { return r.fn == cs.fn; });
+  abi::CloneSpec fwd = cs;
+  fwd.ctl = false;
+  std::string fwdName = abi::name(fwd);
+  auto it = find_if(rows, [&](const TableRow &r) { return r.forward == fwdName; });
   if (it == rows.end()) {
     rows.push_back(TableRow{cs.fn, S.F->getFunctionType(), {}, {}});
+    // Every digit 1 but a variadic function's block digit: the clone of the function's row (§1.4).
+    StringRef digits = StringRef(cs.mask).drop_back(S.F->isVarArg() ? 1 : 0);
+    rows.back().registered = cs.mask == "v" || digits.find('0') == StringRef::npos;
     abi::CloneSpec f = cs;
     f.ctl = false;
     rows.back().forward = abi::name(f);

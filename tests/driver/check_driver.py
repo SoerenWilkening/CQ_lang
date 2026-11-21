@@ -24,12 +24,12 @@ Fails on any of:
               the entry and sample count, or cqcc's status differs from cqcheck user's own
   link        -c does not give an object, or an executable built with a --backend object prints a
               wrong value
-  library     rule 27 (cq-ywi8o): --cq-lib does not export exactly the root's own symbol and its table clone, _ctl
-              form and twins (a function off the list keeps its clones internal); a program naming the list does
+  library     rule 27 (cq-ywi8o): --cq-lib does not export exactly the root's table clones (every arrangement, rule
+              27), _ctl forms and twins, and no C symbol (a function off the list keeps its clones internal); a program naming the list does
               not call the declared clone, or still has an effect entry; program and library do not link, or the
               executable prints a wrong value; the program lowered against the library is not §6-equal to the C
               program of both sources; a listed name is injected from the bundle; a library of a bundle function
-              exports anything but its root's four clones, or does not key the row by the host's sin
+              exports anything but its root's table clones, or does not key the row by the host's sin
 
 Default corpus examples: a handful (the bead iterates on few); --examples NN_name... or --all for more.
 --manifest FILE (or CQ_BUNDLE_MANIFEST) tests against another bundle manifest than bundle/manifest.json.
@@ -482,12 +482,14 @@ def test_library(tmp):
     lib, lib_ll, lt = tmp / "libq.a", tmp / "libq.ll", tmp / "libq.tmp"
     r = cqcc("--cq-lib", "--cq-roots", roots, SRC / "qlib.c", "-o", lib)
     r2 = cqcc("--cq-lib", "-S", "--cq-roots", roots, SRC / "qlib.c", "-o", lib_ll, "--save-temps", lt)
-    clones = {"___cq_q_triple_1_t", "___cq_q_triple_1_t_ctl", "___cq_q_triple_1_t_unc", "___cq_q_triple_1_t_ctl_unc"}
+    # Rule 27 (owner 2026-11-20): one formal, both arrangements (masks 0 and 1), four forms each.
+    clones = {f"___cq_q_triple_{m}_t{k}" for m in "01" for k in ("", "_ctl", "_unc", "_ctl_unc")}
     got = nm_x(lib) if lib.exists() else set()
-    if r.returncode or r2.returncode or got != clones | {"_triple", "_bump"}:
+    # Owner ruling 2026-11-21: no C symbol (triple, bump): the original library, linked beside it, has them.
+    if r.returncode or r2.returncode or got != clones:
         fail("--cq-lib exports", r.stderr + r2.stderr + f" defined: {sorted(got)}")
     else:
-        ok("--cq-lib: the root's own symbol and its four table clones are exported, bump's clones are not")
+        ok("--cq-lib: the four forms of the root's table clones (masks 0, 1) are exported, no C symbol, bump's clones are not")
 
     prog_ll, pt = tmp / "quser.ll", tmp / "quser.tmp"
     r = cqcc("-S", "--cq-roots", roots, SRC / "qlib_user.c", "-o", prog_ll, "--save-temps", pt)
@@ -503,9 +505,11 @@ def test_library(tmp):
     else:
         ok("without the list the same call is rule 16's effect entry")
 
-    backend, exe = tmp / "toy_lib_backend.o", tmp / "qlib.exe"
+    backend, exe, native = tmp / "toy_lib_backend.o", tmp / "qlib.exe", tmp / "qlib_native.o"
     run([LLVM / "clang", "-c", SRC / "toy_lib_backend.c", "-o", backend])
-    r = cqcc(SRC / "qlib_main.c", SRC / "qlib_user.c", "--cq-roots", roots, lib, "--backend", backend, "-o", exe)
+    run([LLVM / "clang", "-O1", "-c", SRC / "qlib.c", "-o", native])   # the original library, linked after the lowered one
+    r = cqcc(SRC / "qlib_main.c", SRC / "qlib_user.c", "--cq-roots", roots, lib, "--backend", native, "--backend", backend,
+             "-o", exe)
     code = subprocess.run([str(exe)]).returncode if exe.exists() else None
     if r.returncode or code != 16:
         fail("executable with a lowered library", r.stderr + str(code))
@@ -544,12 +548,12 @@ def test_library(tmp):
             ok("without the list sin is injected from the bundle (rule 18)")
         r = cqcc("--cq-lib", "--cq-roots", sin_roots, "-o", tmp / "libqsin.a")
         got = nm_x(tmp / "libqsin.a") if (tmp / "libqsin.a").exists() else set()
-        want = {"___cq_q_sin_1_t", "___cq_q_sin_1_t_ctl", "___cq_q_sin_1_t_unc", "___cq_q_sin_1_t_ctl_unc"}
+        want = {f"___cq_q_sin_{m}_t{k}" for m in "01" for k in ("", "_ctl", "_unc", "_ctl_unc")}
         und = set(run([LLVM / "llvm-nm", "--undefined-only", "--format=just-symbols", tmp / "libqsin.a"], text=True).stdout.split())
         if r.returncode or got != want or "_sin" not in und:
             fail("--cq-lib from the bundle", r.stderr + f" defined: {sorted(got)}; _sin undefined: {'_sin' in und}")
         else:
-            ok("--cq-lib with no input takes sin from the bundle: its four clones exported, sin itself left to the host library")
+            ok("--cq-lib with no input takes sin from the bundle: its clones (masks 0, 1) exported, sin itself left to the host library")
 
 
 def test_host_link(tmp):

@@ -1,0 +1,15 @@
+FAIL --cq-lib exports:  defined: ['___cq_q_triple_0_t', '___cq_q_triple_0_t_ctl', '___cq_q_triple_0_t_ctl_unc', '___cq_q_triple_0_t_unc', '___cq_q_triple_1_t', '___cq_q_triple_1_t_ctl', '___cq_q_triple_1_t_ctl_unc', '___cq_q_triple_1_t_unc', '_bump']
+ok   a listed bodiless callee is a call of its declared clone and twin, no effect entry
+ok   without the list the same call is rule 16's effect entry
+FAIL executable with a lowered library: duplicate symbol '_bump' in:
+    /private/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq-lib-test.kf_tjte7/qlib_native.o
+    /private/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq-lib-test.kf_tjte7/libq.a[2](libq.o)
+ld: 1 duplicate symbols
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+cqcc: link of the lowered program failed (exit 1)
+None
+ok   the program lowered against the library is §6-equal to the C program of both sources
+ok   a listed sin is not injected from the bundle: its call is the declared clone
+ok   without the list sin is injected from the bundle (rule 18)
+ok   --cq-lib with no input takes sin from the bundle: its clones (masks 0, 1) exported, sin itself left to the host library
+2 failure(s)

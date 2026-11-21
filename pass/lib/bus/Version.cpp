@@ -112,9 +112,12 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
       if (hostCallee(*G)) {   // cq-pt57w: a stream call by name is rule 16's, its body never lifted
         if (formatEntry(*G))
           continue;
-        if (endsProgram(*CB, *G) && !T.listedRoot(*G))
+        bool declared = false;   // rule 27: a declared clone's call in some specialization (an all-classical one is a host call)
+        for (const Specialization &S : T.specializations())
+          declared = declared || (S.F == &F && T.declaredCall(*CB, S));
+        if (endsProgram(*CB, *G) && !declared)
           continue;
-        w |= hostCallWrites(*CB) || T.listedRoot(*G);
+        w |= hostCallWrites(*CB) || declared;
         for (const Specialization &S : T.specializations())
           if (S.F == &F && T.isEffectEntry(*CB, S))
             w = true;
@@ -209,9 +212,9 @@ bool versionChange(const TaintInfo &T, const Specialization &S, const Instructio
     // precedes are un-copied before it (99). A format entry is none.
     if (T.isEffectEntry(*CB, S) || formatEntry(*G))
       return false;
-    if (endsProgram(*CB, *G) && !T.listedRoot(*G))
+    if (endsProgram(*CB, *G) && !T.declaredCall(*CB, S))
       return false;
-    return hostCallWrites(*CB) || T.listedRoot(*G);
+    return hostCallWrites(*CB) || T.declaredCall(*CB, S);
   }
   return writesMemory(T, *G);
 }

@@ -61,6 +61,22 @@ bool orInto(Lanes &dst, const Lanes &src) {
   return dst != before;
 }
 
+// The scalar leaves of the fixed formals (rules 25, 26: struct and array elements, vector lanes, depth first).
+void fixedLeaves(Type *T, SmallVectorImpl<Type *> &out) {
+  if (auto *ST = dyn_cast<StructType>(T)) {
+    for (Type *E : ST->elements())
+      fixedLeaves(E, out);
+  } else if (auto *AT = dyn_cast<ArrayType>(T)) {
+    for (uint64_t k = 0; k < AT->getNumElements(); ++k)
+      fixedLeaves(AT->getElementType(), out);
+  } else if (auto *VT = dyn_cast<FixedVectorType>(T)) {
+    for (unsigned k = 0; k < VT->getNumElements(); ++k)
+      out.push_back(VT->getElementType());
+  } else {
+    out.push_back(T);
+  }
+}
+
 Lanes allLanes(unsigned n) {
   Lanes l(n);
   l.set();
@@ -351,6 +367,10 @@ private:
   // The host-resident object p reaches, else nullptr (rule 20: no pointer is otherwise resolved).
   const Value *hostObject(const Value *ptr);
   bool quantumScope(const BasicBlock *BB) const { return blockCT(BB) || cur->ctl; }
+  // Rule 27 (owner ruling 2026-11-20): can a cell be QUANTUM (§1.3) at a call in cur? Taint knows no cell's content, so
+  // per module: some code reached from a root that is no table clone has a store that can make a cell QUANTUM
+  // (quantumStore); and always inside a table clone or a callee reached by name from one (its caller is not in view).
+  bool quantumMemory() const { return st.quantumMemory || cur->table || cur->fromTable; }
   // Rule 24's test of a getelementptr index: a value of another function has no answer in this specialization.
   std::function<bool(const Value *)> ownTainted() {
     return [this](const Value *v) {
@@ -1944,6 +1964,9 @@ void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val) {
     return;   // rules 19, 24: a dead local, nothing
   cur->writesOuter = true;   // a bus store (rule 5)
   cur->anyQuantum = true;
+  // A rail stored, at an address rail, under a quantum predicate, or an atomic read-modify-write (a bus load's rail).
+  if (!SI || L(val).any() || L(ptr).any() || quantumScope(I.getParent()))
+    cur->quantumStore = true;
 }
 
 void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
@@ -1958,6 +1981,14 @@ void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
   }
   cur->writesOuter = true;
   cur->anyQuantum = true;
+  // A bus-to-bus copy of classical cells leaves them HOST; a QUANTUM source cell came from an earlier quantum store.
+  bool q = quantumScope(MI.getParent()) || L(MI.getLength()).any() || L(MI.getRawDest()).any();
+  if (auto *MS = dyn_cast<MemSetInst>(&MI))
+    q = q || L(MS->getValue()).any();
+  else
+    q = q || L(cast<MemTransferInst>(&MI)->getRawSource()).any();
+  if (q)
+    cur->quantumStore = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2020,6 +2051,9 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   if (plain) {
     cur->writesOuter = true;
     cur->anyQuantum = true;
+    for (Value *A : actualsIn)   // the block or byval copy holds a rail
+      if (L(A).any())
+        cur->quantumStore = true;
   }
   for (unsigned i = 0; i < actuals.size(); ++i) {
     Lanes l = L(actuals[i]);
@@ -2149,6 +2183,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
       if (bits) {
         cur->writesOuter = true;
         cur->anyQuantum = true;
+        cur->quantumStore = true;   // a mode or flags rail saved into memory
       }
       return;
     }
@@ -2163,6 +2198,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
       return false;
     cur->writesOuter = true;
     cur->anyQuantum = true;
+    cur->quantumStore = true;
     return true;
   };
   auto bit = [](bool b) { return uint8_t(b ? 1 : 0); };
@@ -2271,6 +2307,7 @@ void Analyzer::transferCall(CallBase &CB) {
       setL(&CB, allLanes(rn));
     cur->anyQuantum = true;
     cur->hasEffect = true;
+    cur->quantumStore = true;   // a table clone, whose stores are not in view (rule 27's quantumMemory)
     return;
   }
   if (isTheta(G)) {
@@ -2439,6 +2476,8 @@ void Analyzer::transferCall(CallBase &CB) {
   if ((ak & (AllocFnKind::Alloc | AllocFnKind::Realloc)) != AllocFnKind::Unknown) {
     setL(&CB, Lanes(rn));
     cur->anyQuantum = true;   // __cq_alloc (rule 16); realloc: and the rule-22 copy
+    if ((ak & AllocFnKind::Realloc) != AllocFnKind::Unknown)
+      cur->quantumStore = true;   // its copy's length is a rail
     return;
   }
   // setjmp and longjmp outside rule 24's pairing are host calls: a classical result, no gate and no tape entry
@@ -2502,6 +2541,8 @@ void Analyzer::transferCall(CallBase &CB) {
     cur->busLoad = true;
     cur->writesOuter = true;
     cur->anyQuantum = true;
+    if (L(actuals[0]).any() || L(actuals[1]).any() || quantumScope(CB.getParent()))
+      cur->quantumStore = true;
     return;
   }
   if (hostCallee(*G) && G->getName() == "raise" && actuals.size() == 1) {
@@ -2540,7 +2581,7 @@ void Analyzer::transferCall(CallBase &CB) {
     lift(CB, G, actuals, false);
     return;
   }
-  // A callee with no body or a stream call (rule 16; a listed one is rule 27's, whatever its arguments).
+  // A callee with no body or a stream call (rule 16; a listed one called with a rail is rule 27's).
   StringRef cname = G->getName();
   if (cname.starts_with("\x01_"))
     cname = cname.drop_front(2);
@@ -2548,14 +2589,22 @@ void Analyzer::transferCall(CallBase &CB) {
     transferFenvCall(CB, cname, actuals, rn);
     return;
   }
-  if (llvm::is_contained(st.opts.listed, cname)) {
-    declaredClone(CB, G, actuals);
-    return;
-  }
   bool qArg = false, ptrArg = false;
   for (Value *A : actuals) {
     qArg = qArg || L(A).any();
     ptrArg = ptrArg || A->getType()->isPtrOrPtrVectorTy();
+  }
+  // Rule 27 (owner ruling 2026-11-20): a listed function's call with a rail among its actuals (a variadic one's included)
+  // is its declared clone. With every actual classical it is one too, the all-zero mask's, where quantum data can be in
+  // memory at the call (quantumMemory); otherwise it is the C symbol's call, the original library's, and rule 16's below
+  // like any bodiless callee. An entry recorded before the call became a declared clone goes (the facts only rise).
+  if ((qArg || quantumMemory()) && llvm::is_contained(st.opts.listed, cname)) {
+    if (cur->effectEntries.erase(&CB))
+      st.changed = true;
+    if (qArg)
+      cur->quantumStore = true;   // the library's stores are not in view; an all-classical one adds no QUANTUM cell
+    declaredClone(CB, G, actuals);
+    return;
   }
   bool qPred = blockCT(CB.getParent()) || cur->ctl;
   // Pure: with classical arguments under a quantum predicate it is executed unguarded and merged (rule 9).
@@ -2595,8 +2644,9 @@ bool Analyzer::eventPrecedes(const CallBase &CB, bool inLowered) {
       for (SpecState *C : it->second)
         if (C->hasEventT)
           return true;
-    if (const Function *G = X.getCalledFunction(); G && G->isDeclaration() && llvm::is_contained(st.opts.listed, G->getName()))
-      return true;   // a declared clone counts
+    if (const Function *G = X.getCalledFunction();
+        G && G->isDeclaration() && llvm::is_contained(st.opts.listed, G->getName()) && cur->callees.count(&X))
+      return true;   // a declared clone counts (an all-classical call of a listed function is a host call, rule 27)
     if (!X.getCalledFunction() && !X.isInlineAsm())
       return true;   // an indirect callee counts
     return false;
@@ -2633,8 +2683,8 @@ void Analyzer::propagateEvents() {
         for (const Instruction &I : BB)
           if (auto *X = dyn_cast<CallBase>(&I)) {
             if (const Function *G = X->getCalledFunction()) {
-              if (G->isDeclaration() && llvm::is_contained(st.opts.listed, G->getName()))
-                ev = true;
+              if (G->isDeclaration() && llvm::is_contained(st.opts.listed, G->getName()) && S->callees.count(X))
+                ev = true;   // a declared clone's call (rule 27; an all-classical one is a host call)
             } else if (!X->isInlineAsm()) {
               ev = true;
             }
@@ -2648,6 +2698,48 @@ void Analyzer::propagateEvents() {
   if (any && !st.moduleHasEvent) {
     st.moduleHasEvent = true;
     st.changed = true;
+  }
+  // Rule 27 (quantumMemory): the specializations reached by name from a table clone, and whether code reached from a
+  // root that is no table clone has a quantum store (itself; its callees are specializations of their own).
+  {
+    SmallVector<SpecState *, 32> work, code;
+    for (auto &S : st.specs) {
+      if (S->table)
+        work.push_back(S.get());
+      else if (S->isRoot || (S->inPlace && (!S->F->hasLocalLinkage() || S->F->hasAddressTaken())))
+        code.push_back(S.get());
+    }
+    DenseSet<SpecState *> seen;
+    while (!work.empty()) {
+      SpecState *S = work.pop_back_val();
+      if (!seen.insert(S).second)
+        continue;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          if (!C->declared) {
+            if (!C->fromTable && !C->table) {
+              C->fromTable = true;
+              st.changed = true;
+            }
+            work.push_back(C);
+          }
+    }
+    seen.clear();
+    bool qm = false;
+    while (!code.empty()) {
+      SpecState *S = code.pop_back_val();
+      if (!seen.insert(S).second)
+        continue;
+      qm = qm || S->quantumStore;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          if (!C->table)
+            code.push_back(C);
+    }
+    if (qm && !st.quantumMemory) {
+      st.quantumMemory = true;
+      st.changed = true;
+    }
   }
   auto add = [&](const Function *F) {
     if (st.calledAfter.insert(F).second)
@@ -3133,6 +3225,7 @@ void Analyzer::resetAnalysis() {
   st.changed = false;
   st.calledAfter.clear();
   st.moduleHasEvent = false;
+  st.quantumMemory = false;
   st.fenvSaved.clear();
   cur = nullptr;
   localChanged = false;
@@ -3184,6 +3277,39 @@ void Analyzer::solve() {
       for (bool ctl : {false, true}) {
         SpecState *TC = getSpec(&F, all, tys, ctl, false, {}, {}, F.isVarArg(), /*table=*/true);
         TC->reachable = TC->isRoot = true;
+      }
+      // Rule 27 (owner ruling 2026-11-20): a root of the library build also exports the table clone of every other
+      // arrangement its C signature gives (tableMasks); a program's call takes the one covering its rails.
+      StringRef cn = F.getName();
+      if (cn.starts_with("\x01_"))
+        cn = cn.drop_front(2);
+      if (F.isDeclaration() || F.hasLocalLinkage() || !is_contained(st.opts.listed, cn))
+        continue;
+      for (const Mask &m : tableMasks(F.getFunctionType())) {
+        std::vector<Lanes> z;
+        unsigned d = 0;
+        bool ones = true;
+        for (Argument &A : F.args()) {
+          SmallVector<Type *, 4> ls;
+          fixedLeaves(A.getType(), ls);
+          Lanes l(lanesOf(A.getType()));
+          unsigned lane = 0;
+          for (Type *t : ls) {
+            unsigned n = lanesOf(t);
+            if (m[d] == '1')
+              l.set(lane, lane + n);
+            ones = ones && m[d] == '1';
+            lane += n;
+            ++d;
+          }
+          z.push_back(l);
+        }
+        if (ones)
+          continue;   // the row's clone above
+        for (bool ctl : {false, true}) {
+          SpecState *TC = getSpec(&F, z, tys, ctl, false, {}, {}, F.isVarArg(), /*table=*/true);
+          TC->reachable = TC->isRoot = true;
+        }
       }
     }
   }
@@ -3576,6 +3702,64 @@ void Analyzer::finish() {
 
 namespace cq {
 using namespace taintimpl;
+
+namespace {
+SmallVector<unsigned, 8> leafClasses(FunctionType *FT) {
+  SmallVector<Type *, 8> ls;
+  for (Type *P : FT->params())
+    fixedLeaves(P, ls);
+  SmallVector<unsigned, 8> c;
+  for (Type *t : ls)
+    c.push_back(t->isPointerTy() ? 0 : t->isFloatingPointTy() ? 2 : 1);   // pointer, integer (enum, bool, char), fp
+  return c;
+}
+constexpr unsigned kExactArrangements = 5;   // owner 2026-11-20: up to 5 scalar formals every mask is exported
+} // namespace
+
+std::vector<Mask> tableMasks(FunctionType *FT) {
+  SmallVector<unsigned, 8> c = leafClasses(FT);
+  std::string block = FT->isVarArg() ? "0" : "";
+  std::vector<Mask> out;
+  if (c.size() <= kExactArrangements) {
+    for (unsigned bits = 0; bits < (1u << c.size()); ++bits) {
+      Mask m;
+      for (unsigned i = 0; i < c.size(); ++i)
+        m += (bits >> (c.size() - 1 - i)) & 1 ? '1' : '0';
+      out.push_back(m + block);
+    }
+    return out;
+  }
+  unsigned present = 0;
+  for (unsigned k : c)
+    present |= 1u << k;
+  for (unsigned set = 0; set < 8; ++set) {
+    if (set & ~present)
+      continue;
+    Mask m;
+    for (unsigned k : c)
+      m += set >> k & 1 ? '1' : '0';
+    out.push_back(m + block);
+  }
+  return out;
+}
+
+Mask declaredMask(FunctionType *FT, ArrayRef<bool> quantum, bool blockRail) {
+  SmallVector<unsigned, 8> c = leafClasses(FT);
+  if (quantum.size() != c.size())
+    internalError("taint: declaredMask: one entry per scalar leaf of the fixed formals");
+  unsigned set = 0;
+  for (unsigned i = 0; i < c.size(); ++i)
+    if (quantum[i])
+      set |= 1u << c[i];
+  Mask m;
+  for (unsigned i = 0; i < c.size(); ++i)
+    m += (c.size() <= kExactArrangements ? quantum[i] : (set >> c[i] & 1)) ? '1' : '0';
+  // No fixed actual a rail but one in a variadic call's block: no mask covers it but by fixed digits, so it takes the
+  // all-ones one (rule 27).
+  if (!set && blockRail)
+    m.assign(c.size(), '1');
+  return FT->isVarArg() ? m + "0" : m;
+}
 
 // CR rule 8 (cq-4l9jj): pred factors a quantum branch condition on its Boolean function, and a classical literal one edge's
 // condition implies (`c && q` taken, `c || q` not taken) stays a classical branch around the quantum part. So for the
@@ -4306,6 +4490,11 @@ bool TaintInfo::listedRoot(const llvm::Function &F) const {
   return llvm::is_contained(needImpl(impl).opts.listed, n);
 }
 
+bool TaintInfo::declaredCall(const llvm::CallBase &CB, const Specialization &S) const {
+  const llvm::Function *F = CB.getCalledFunction();
+  return F && listedRoot(*F) && stateOf(needImpl(impl), S)->callees.count(&CB);
+}
+
 bool TaintInfo::exportedRoot(const llvm::Function &F) const {
   if (F.isDeclaration() || F.hasLocalLinkage())
     return false;
@@ -4360,8 +4549,17 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     C.table = P.table;
     C.rm = P.rm;
     if (P.F->isDeclaration()) {
-      // Rule 27: the declared clone is the table clone, every scalar actual a handle.
-      C.mask = std::string(P.mask.size(), '1');
+      // Rule 27: the declared clone is the table clone of the arrangement the call's rails select (owner 2026-11-20).
+      SmallVector<Type *, 8> ls;
+      for (Type *T : P.F->getFunctionType()->params())
+        fixedLeaves(T, ls);
+      SmallVector<bool, 8> q;
+      for (size_t i = 0; i < ls.size(); ++i)
+        q.push_back(i < P.mask.size() && P.mask[i] == '1');
+      bool blockRail = P.mask.size() > ls.size() && StringRef(P.mask).drop_front(ls.size()).contains('1');
+      C.mask = declaredMask(P.F->getFunctionType(), q, blockRail);
+      if (C.mask.empty())
+        C.mask = "v";
       C.table = true;
     }
     std::string n = abi::name(C);

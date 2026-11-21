@@ -256,7 +256,9 @@ struct Uncompute::Impl {
     SmallVector<unsigned, 4> readerRecs; // records with this rail among their reads
     SmallVector<RailId, 2> cleanupReaders; // rails whose rule 6 clean-up reads this rail
     std::optional<Cleanup> cleanup;
-    SmallPtrSet<const BasicBlock *, 2> exitsDone; // returns this rail was placed for
+    // The returns this rail was placed for: the return instruction, not its block (a later placement at the same return may
+    // move the return into a block of its own, placeDeferred's exit split, cq-vbep9).
+    SmallPtrSet<const Instruction *, 2> exitsDone;
     SmallVector<RailId, 2> arms;       // U1: non-empty iff this rail is a merge (its handle aliases one arm)
     SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
     unsigned group = kNone;            // U2: the call group this rail is a member of
@@ -2196,9 +2198,9 @@ struct Uncompute::Impl {
 
   // F1b: while a deferred item placed at a return emits its mirror, the items placed for that return
   // before it (a later POP on a bus the item writes) are done.
-  const BasicBlock *mirrorExit = nullptr;
+  const Instruction *mirrorExit = nullptr;
   bool done(RailId g, const Ctx &c) const {
-    return rails[g].released || (c.mode == Mode::Exit && rails[g].exitsDone.count(c.point->getParent())) ||
+    return rails[g].released || (c.mode == Mode::Exit && rails[g].exitsDone.count(c.point)) ||
            (c.mode == Mode::Mirror && mirrorExit && rails[g].exitsDone.count(mirrorExit));
   }
 
@@ -2439,7 +2441,7 @@ struct Uncompute::Impl {
             if (local)
               r.role = Role::Kept;
             else
-              r.exitsDone.insert(pos.bb);
+              r.exitsDone.insert(pos.bb->getTerminator());
             return;
           }
           // Kept on every path to pos: entangled (A4), or chosen by a keeper on each of them.
@@ -2497,7 +2499,7 @@ struct Uncompute::Impl {
       if (local)
         r.released = true;
       else
-        r.exitsDone.insert(pos.bb);
+        r.exitsDone.insert(pos.bb->getTerminator());
       return;
     }
     Instruction *last = end;
@@ -2507,7 +2509,7 @@ struct Uncompute::Impl {
     if (local)
       r.released = true;
     else
-      r.exitsDone.insert(pos.bb);
+      r.exitsDone.insert(pos.bb->getTerminator());
     if (guard && first != pos.before)
       wraps.push_back({g, first, end, cond});
   }
@@ -3659,7 +3661,7 @@ struct Uncompute::Impl {
       rails[x].role = Role::Garbage;
     }
     rails[g].released = true;
-    mirrorExit = c.mode == Mode::Exit ? c.point->getParent() : nullptr;
+    mirrorExit = c.mode == Mode::Exit ? c.point : nullptr;
     d.emit(B);
     mirrorExit = nullptr;
     for (auto [x, role] : keptExits)

@@ -22,6 +22,7 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/CycleInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -843,6 +844,7 @@ class JoinRepair {
   std::function<bool(unsigned)> ql;
   std::unique_ptr<DominatorTree> dt;
   std::unique_ptr<LoopInfo> li;
+  std::unique_ptr<CycleInfo> ci;
   std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
   std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *>, Value *> valueMemo;
   std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *, int, bool>, Value *> constMemo;
@@ -858,6 +860,13 @@ class JoinRepair {
       li = std::make_unique<LoopInfo>(DT());
     return *li;
   }
+  CycleInfo &CI() {
+    if (!ci) {
+      ci = std::make_unique<CycleInfo>();
+      ci->compute(ctx.out());
+    }
+    return *ci;
+  }
 
   // cq-03rdt (CR rules 5, 9, 14): a value read at `at` through a block b inside output loops that do not hold `at` (a
   // rolled loop's trip, one of its arms, read past the loop) is the same on every trip when everything it reads is
@@ -865,17 +874,40 @@ class JoinRepair {
   // enters it. Per-edge values built at a join inside the loop would mint one rail per trip, after the loop's records
   // were closed: nothing undoes or frees them. Null: b lies in no such loop, the loop has several entries, or a value
   // read is defined where the loop's header reaches without passing its entry (in the loop or after it).
+  // cq-vbep9: an irreducible output cycle (no loop of LoopInfo: a classical loop's reverse, entered where each exit of the
+  // forward loop left it) is such a loop too when every edge into it comes from one block.
   BasicBlock *loopEntry(BasicBlock *b, BasicBlock *at, ArrayRef<Value *> reads) {
     Loop *out = nullptr;
     for (Loop *L = LI().getLoopFor(b); L && !L->contains(at); L = L->getParentLoop())
       out = L;
     BasicBlock *E = out ? out->getLoopPredecessor() : nullptr;
+    const void *key = out;
+    SmallVector<BasicBlock *, 2> heads;
+    if (out) {
+      heads.push_back(out->getHeader());
+    } else {
+      const CycleInfo::CycleT *cy = nullptr;
+      for (const CycleInfo::CycleT *C = CI().getCycle(b); C && !C->contains(at); C = C->getParentCycle())
+        cy = C;
+      if (cy) {
+        key = cy;
+        for (BasicBlock *h : cy->getEntries()) {
+          heads.push_back(h);
+          for (BasicBlock *p : predecessors(h))
+            if (!cy->contains(p)) {
+              if (E && E != p)
+                return nullptr;
+              E = p;
+            }
+        }
+      }
+    }
     if (!E)
       return nullptr;
-    auto [it, fresh] = pastEntry.try_emplace(out);
+    auto [it, fresh] = pastEntry.try_emplace(key);
     if (fresh) {
-      SmallVector<BasicBlock *, 16> work{out->getHeader()};
-      it->second.insert(out->getHeader());
+      SmallVector<BasicBlock *, 16> work(heads.begin(), heads.end());
+      it->second.insert(heads.begin(), heads.end());
       while (!work.empty())
         for (BasicBlock *s : successors(work.pop_back_val()))
           if (s != E && it->second.insert(s).second)
@@ -886,7 +918,7 @@ class JoinRepair {
         return nullptr;
     return E;
   }
-  DenseMap<Loop *, SmallPtrSet<BasicBlock *, 32>> pastEntry;   // loopEntry: the blocks a header reaches avoiding its entry
+  DenseMap<const void *, SmallPtrSet<BasicBlock *, 32>> pastEntry;   // loopEntry: the blocks a header reaches avoiding its entry
 
   // cq-03rdt (CR rules 5, 14): an edge p -> J leaving output loops that do not hold J (one that loopEntry does not move:
   // the value depends on the trip). A flag or carried value built at p's end would be minted on every trip, after the
@@ -913,6 +945,7 @@ class JoinRepair {
         }
     }
     li.reset();
+    ci.reset();
     dt.reset();
     pastEntry.clear();
     return B;
@@ -1223,7 +1256,7 @@ class JoinRepair {
     if (pred_empty(J))
       internalError("pred: a predicate or merge arm reads a value minted where it does not reach the point, on a "
                     "path the walk took without running its block (Walker::next, cq-pfpy): " + read(),
-                    what);
+                    isa_and_nonnull<Instruction>(what) && cast<Instruction>(what)->getParent() ? what : U);
     return J;
   }
 
@@ -1566,15 +1599,18 @@ public:
         // value unchanged wherever c holds. The restriction dropping the atom is not enough (c may fix
         // it: carrying false for an atom c fixes true fires the gate under the wrong control):
         //   - c fixes the atom to b: carry b (it is the atom's value on every such path);
-        //   - c does not read the atom and the predicate agrees with its cofactor at b on c: carry b
-        //     (substitutions made on nested edges compose: each c is closed under its atom's change);
+        //   - the predicate agrees with its cofactor at b on c with the atom quantified out: carry b
+        //     (substitutions made on nested edges compose: each such set is closed under its atom's change).
+        //     cq-7prhl: c may read the atom without fixing it (an identical compare of another arm ties it
+        //     to that one's literal, SoftFloat f16_div with b classical); quantified out, it is still a
+        //     constant wherever the predicate does not depend on it;
         //   - otherwise the atom is needed here: carried by its real value (or further joins).
         unsigned var = unsigned(k.var), lit = m.ithVar(var);
-        std::set<unsigned> asup, csup;
+        std::set<unsigned> asup;
         m.support(a, asup);
-        m.support(c, csup);
+        unsigned free = m.exists(c, [&](unsigned v) { return v == var; });
         auto agrees = [&](bool b) {
-          return m.andOp(c, m.xorOp(k.node, m.cofactor(k.node, var, b))) == Bdd::F;
+          return m.andOp(free, m.xorOp(k.node, m.cofactor(k.node, var, b))) == Bdd::F;
         };
         if (c == Bdd::F) {
           unneeded = true;   // no path: never read
@@ -1584,9 +1620,9 @@ public:
           unneeded = one = true;
         } else if (m.andOp(c, lit) == Bdd::F) {
           unneeded = true;
-        } else if (!csup.count(var) && agrees(false)) {
+        } else if (agrees(false)) {
           unneeded = true;
-        } else if (!csup.count(var) && agrees(true)) {
+        } else if (agrees(true)) {
           unneeded = one = true;
         } else {
           unneeded = false;
@@ -1993,7 +2029,11 @@ Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
   Pred p = Pred::atom(c);
   auto read = [&](const Value *v) { return code ? addressAsInt(ctx, ctx.operand(v)) : ctx.operand(v); };
   std::pair<Pred, Operand> arms[] = {{p, read(sel.getTrueValue())}, {!p, read(sel.getFalseValue())}};
-  return selectChain(ctx, arms, mergeRail(sel.getType()));
+  // cq-7prhl (rule 9): the select is read only where its block runs, as a merge (lowerMerge): an operand minted in a
+  // classical arm is a don't-care on a classical path the block's predicate excludes (SoftFloat f64_mulAdd's exponent
+  // select after the c == 0 return, c classical).
+  return selectChainAt(ctx, arms, mergeRail(sel.getType()), nodeOf(storage(ctx.preds()).blocks.lookup(sel.getParent())),
+                       &sel);
 }
 
 // A br on a quantum condition is absorbed: the arms are linearized by the spine's walk and run under

@@ -46,5 +46,11 @@ const llvm::Value *pieceKey(LoweringContext &ctx, unsigned id);
 // cq-9kcq S12d (CR rules 6, 23): is h a rail the environment holds or held as its state (MODE, FLAGS, a saved part:
 // every such rail is anchored)? Rule 6 never cleans such a rail (fegetround's result is the MODE rail itself).
 bool stateRail(LoweringContext &ctx, const llvm::Value *h);
+// cq-9ea1d (CR rules 9, 23): the spine's arm flush (Uncompute::flushBefore with liveLater) asks which rails a later
+// instruction may still read. The state is read lazily, so a read after a classical join merges the values the state
+// held at the ends of that join's arms: while an instruction not lowered yet (lowered(I) false) may read the state,
+// every rail the state held at an output block's end or start is appended to `out`. Nothing when there is no state.
+void liveState(LoweringContext &ctx, llvm::function_ref<bool(const llvm::Instruction &)> lowered,
+               std::vector<llvm::Value *> &out);
 
 } // namespace cq::fenv

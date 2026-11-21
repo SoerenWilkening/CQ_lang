@@ -28,10 +28,21 @@ namespace {
   std::string msg;
   llvm::raw_string_ostream os(msg);
   os << prefix << what;
-  if (at)
+  const llvm::Function *in = nullptr;
+  if (auto *B = llvm::dyn_cast_or_null<llvm::BasicBlock>(at)) {
+    // A block: named, not printed whole.
+    os << "\n  at: block ";
+    B->printAsOperand(os, false);
+    in = B->getParent();
+  } else if (at) {
     os << "\n  at: " << *at;
-  if (auto *I = llvm::dyn_cast_or_null<llvm::Instruction>(at); I && I->getParent() && I->getFunction())
-    os << "\n  in: @" << I->getFunction()->getName();
+    if (auto *I = llvm::dyn_cast<llvm::Instruction>(at); I && I->getParent())
+      in = I->getFunction();
+    else if (auto *A = llvm::dyn_cast<llvm::Argument>(at))
+      in = A->getParent();
+  }
+  if (in)
+    os << "\n  in: @" << in->getName();
   if (file) {
     llvm::StringRef f(file);
     size_t p = f.find("pass/");

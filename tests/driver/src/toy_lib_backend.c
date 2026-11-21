@@ -9,6 +9,8 @@ int cqrt_alloc_i32(int v) { return fresh(v); }
 void cqrt_copy_i1(int a, int b) { rail[b] ^= rail[a]; }
 void cqrt_copy_i32(int a, int b) { rail[b] ^= rail[a]; }
 void cqrt_copy_i32_controlled(int c, int a, int b) { if (rail[c]) rail[b] ^= rail[a]; }
+void cqrt_xorc_i32(int h, int v) { rail[h] ^= v; }   /* triple_0_t's twin: its classical result out of the seed */
+void cqrt_xorc_i32_controlled(int c, int h, int v) { if (rail[c]) rail[h] ^= v; }
 void cqrt_free(int r) { (void)r; }
 int cqrt_measure_i32(int r) { return rail[r]; }
 void cqrt_push(int v) { stack[sp++] = v; }

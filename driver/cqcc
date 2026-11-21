@@ -35,19 +35,24 @@ Options:
   --cq-roots FILE      a root list (rule 27), one C function name per line, passed through to cq-lower; one list per
                        run. In a program, a listed function with no body in
                        the inputs is lowered code of a linked library: only its call is lowered, to the declared clone
-                       __cq_q_<fn>_<1..1>_t, and the bundle never supplies its body. A line that is a clone name
+                       __cq_q_<fn>_<mask>_t of the call's arrangement (rule 27), and the bundle never supplies its
+                       body. A call with every actual classical where no cell can be QUANTUM stays the C call (the
+                       original library's symbol, rule 16). A line that is a clone name
                        (CR §1.4) asks cq-lower for that clone as well.
   --cq-ext-roots FILE  the root list of another lowered library this build calls (repeatable): its functions are
                        calls of that library's clones, as --cq-roots names in a program; a --cq-lib build does not
                        export them and never takes their bodies from the bundle
   --cq-lib             build a lowered library: with --cq-roots, every listed function is a root. Its body comes from
-                       the inputs or, when they have none, from the bundle; its table clone, the _ctl form and their
-                       twins are exported. Output is an object (-c, the default), an archive when -o ends in .a, or
-                       IR (-S). Inputs are optional. A program names the same list and links the library. What the
-                       bundle supplies beside the roots (helpers, tables) is internal to the library; every external
-                       definition of the inputs stays external. A root the bundle supplies is a C library function:
-                       the library exports its four clones only, and the C name stays the host library's
-                       (-cq-host-roots to cq-lower); a root an input defines also exports its own symbol.
+                       the inputs or, when they have none, from the bundle; its table clones, one per argument
+                       arrangement the C signature gives (rule 27: every mask up to 5 scalar formals, else one per
+                       set of the classes pointer, integer, floating point), their _ctl forms and twins are
+                       exported. A library built before arrangements exports all-ones only: rebuild it. Output is an object (-c, the default), an archive when -o ends in .a, or
+                       IR (-S). Inputs are optional. A program names the same list and links the library, then the
+                       original (natively compiled) library, e.g. --backend libq.a --backend libnative.a (rule 27):
+                       the lowered library exports its table clones only and defines no C symbol. Every C function
+                       is the original's (a root's lowered body is internal, -cq-host-roots to cq-lower; its row is
+                       keyed by the original's address); every external global of the inputs is only declared, the
+                       original's object (rule 20); what the bundle supplies beside the roots is internal.
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
   --no-softfloat       do not link the compiler's float templates (softfloat/build/libqsoftfloat*.a, linked after
                        the backend when built): the backend then defines every cq_template_f* itself
@@ -579,10 +584,11 @@ def main(argv) -> int:
                                   + ", ".join(missing))
             # What the bundle supplied beside the roots is private to the library: a program that injects the same
             # helper, or a second library, defines its own copy and the link sees one symbol each.
-            # A root the bundle supplied is a C library function: the host library provides the C function itself,
-            # the lowered library only its clones (cq-lower keeps the lowered body under a module-internal name).
-            if root_stub:
-                o["kflags"].append("-cq-host-roots=" + ",".join(n for n, _ in root_stub))
+            # Rule 27 (owner ruling 2026-11-21): the original library is linked beside this one and provides every C
+            # function (a root the bundle supplied: the host's C library). The lowered library exports its clones only
+            # (cq-lower keeps a root's lowered body under a module-internal name).
+            if listed:
+                o["kflags"].append("-cq-host-roots=" + ",".join(listed))
             keep = work / "lib.exports.txt"
             keep.write_text("".join(n + "\n" for n in sorted({x.removeprefix("_") for x in own} | set(listed))))
             run([tool("opt"), "-S", "-passes=internalize", f"-internalize-public-api-file={keep}", linked, "-o", linked],
@@ -640,7 +646,12 @@ def main(argv) -> int:
                 print(" ".join(map(str, cmd)), file=sys.stderr, flush=True)
             env = dict(os.environ)
             if listed and not o["lib"]:
-                env["CQ_ROOTS_EXTRA"] = ",".join(filter(None, [env.get("CQ_ROOTS_EXTRA", ""), *listed]))
+                # Rule 27 (owner ruling 2026-11-20): a listed function the program calls only with classical actuals and no
+                # QUANTUM cell is its C symbol's call, rule 16's like an unlisted callee's: the checker's stand-in only for
+                # a name the lowered program calls through no host call or effect entry.
+                text = Path(low_ll).read_text()
+                stand = [n for n in listed if not re.search(rf'@\.cq\.effect\.{re.escape(n)}\b|call [^\n]*@"?(\\01_)?{re.escape(n)}"?\(', text)]
+                env["CQ_ROOTS_EXTRA"] = ",".join(filter(None, [env.get("CQ_ROOTS_EXTRA", ""), *stand]))
             status = subprocess.run([str(c) for c in cmd], cwd=ROOT / "checker", env=env).returncode
             if status != 0:
                 print(f"cqcc: --cq-check: cqcheck user exited {status}", file=sys.stderr)

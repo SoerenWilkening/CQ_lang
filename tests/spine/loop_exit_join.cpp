@@ -52,7 +52,7 @@ namespace cq::loops::rolled {
 class Region;
 } // namespace cq::loops::rolled
 namespace cq::loops::exits {
-llvm::Value *lowerClassicalInTrip(cq::LoweringContext &, llvm::Loop &, llvm::Value *) {
+llvm::Value *lowerClassicalInTrip(cq::LoweringContext &, llvm::Loop &, llvm::Value *, bool) {
   cq::internalError("test double: lowerClassicalInTrip");
   return nullptr;
 }

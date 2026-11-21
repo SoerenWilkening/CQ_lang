@@ -1,0 +1,72 @@
+== qmem native: 42 11 34
+exit 0
+-- new replay
+42 11 34
+   lowered library defines:  ___cq_q_evaluate_v_t ___cq_q_evaluate_v_t_ctl ___cq_q_evaluate_v_t_ctl_unc ___cq_q_evaluate_v_t_unc ___cq_q_sum_00_t ___cq_q_sum_00_t_ctl ___cq_q_sum_00_t_ctl_unc ___cq_q_sum_00_t_unc ___cq_q_sum_01_t ___cq_q_sum_01_t_ctl ___cq_q_sum_01_t_ctl_unc ___cq_q_sum_01_t_unc ___cq_q_sum_10_t ___cq_q_sum_10_t_ctl ___cq_q_sum_10_t_ctl_unc ___cq_q_sum_10_t_unc ___cq_q_sum_11_t ___cq_q_sum_11_t_ctl ___cq_q_sum_11_t_ctl_unc ___cq_q_sum_11_t_unc 
+   calls in main:
+   1 call i32 @__cq_q_evaluate_v_t(
+   2 call i32 @__cq_q_sum_00_t(
+   1 call void @__cq_q_evaluate_v_t_unc(
+   2 call void @__cq_q_sum_00_t_unc(
+== qclassic native: 30 8 15
+exit 0
+-- new replay
+30 8 15
+   lowered library defines:  ___cq_q_evaluate_v_t ___cq_q_evaluate_v_t_ctl ___cq_q_evaluate_v_t_ctl_unc ___cq_q_evaluate_v_t_unc ___cq_q_sum_00_t ___cq_q_sum_00_t_ctl ___cq_q_sum_00_t_ctl_unc ___cq_q_sum_00_t_unc ___cq_q_sum_01_t ___cq_q_sum_01_t_ctl ___cq_q_sum_01_t_ctl_unc ___cq_q_sum_01_t_unc ___cq_q_sum_10_t ___cq_q_sum_10_t_ctl ___cq_q_sum_10_t_ctl_unc ___cq_q_sum_10_t_unc ___cq_q_sum_11_t ___cq_q_sum_11_t_ctl ___cq_q_sum_11_t_ctl_unc ___cq_q_sum_11_t_unc 
+   calls in main:
+== qclassic3 native: exit 105
+-- new replay
+exit 105
+   lowered library defines:  ___cq_q_evaluate_v_t ___cq_q_evaluate_v_t_ctl ___cq_q_evaluate_v_t_ctl_unc ___cq_q_evaluate_v_t_unc ___cq_q_sum_00_t ___cq_q_sum_00_t_ctl ___cq_q_sum_00_t_ctl_unc ___cq_q_sum_00_t_unc ___cq_q_sum_01_t ___cq_q_sum_01_t_ctl ___cq_q_sum_01_t_ctl_unc ___cq_q_sum_01_t_unc ___cq_q_sum_10_t ___cq_q_sum_10_t_ctl ___cq_q_sum_10_t_ctl_unc ___cq_q_sum_10_t_unc ___cq_q_sum_11_t ___cq_q_sum_11_t_ctl ___cq_q_sum_11_t_ctl_unc ___cq_q_sum_11_t_unc 
+   calls in main:
+   1 call i64 @evaluate(
+   1 call i64 @sum(
+== qcount native: 11 34
+exit 0
+-- new replay
+11 34
+   lowered library defines:  ___cq_q_evaluate_v_t ___cq_q_evaluate_v_t_ctl ___cq_q_evaluate_v_t_ctl_unc ___cq_q_evaluate_v_t_unc ___cq_q_sum_00_t ___cq_q_sum_00_t_ctl ___cq_q_sum_00_t_ctl_unc ___cq_q_sum_00_t_unc ___cq_q_sum_01_t ___cq_q_sum_01_t_ctl ___cq_q_sum_01_t_ctl_unc ___cq_q_sum_01_t_unc ___cq_q_sum_10_t ___cq_q_sum_10_t_ctl ___cq_q_sum_10_t_ctl_unc ___cq_q_sum_10_t_unc ___cq_q_sum_11_t ___cq_q_sum_11_t_ctl ___cq_q_sum_11_t_ctl_unc ___cq_q_sum_11_t_unc 
+   calls in main:
+   2 call i32 @__cq_q_sum_00_t(
+   2 call void @__cq_q_sum_00_t_unc(
+== qcount new:build count
+0 0
+   lowered library defines:  ___cq_q_evaluate_v_t ___cq_q_evaluate_v_t_ctl ___cq_q_evaluate_v_t_ctl_unc ___cq_q_evaluate_v_t_unc ___cq_q_sum_00_t ___cq_q_sum_00_t_ctl ___cq_q_sum_00_t_ctl_unc ___cq_q_sum_00_t_unc ___cq_q_sum_01_t ___cq_q_sum_01_t_ctl ___cq_q_sum_01_t_ctl_unc ___cq_q_sum_01_t_unc ___cq_q_sum_10_t ___cq_q_sum_10_t_ctl ___cq_q_sum_10_t_ctl_unc ___cq_q_sum_10_t_unc ___cq_q_sum_11_t ___cq_q_sum_11_t_ctl ___cq_q_sum_11_t_ctl_unc ___cq_q_sum_11_t_unc 
+gates 40155 x 3687 cnot 19900 ccx 14200 ry 64 ry_ctl 0 rz 0 m 2304 depth 1234 qubits 947 
+== qcount ref:build-ref count
+   2 call i32 @__cq_q_sum_00_t(
+   2 call void @__cq_q_sum_00_t_unc(
+== va_prog native 17
+17
+   lowered library defines:  ___cq_q_vsum_000_t ___cq_q_vsum_000_t_ctl ___cq_q_vsum_000_t_ctl_unc ___cq_q_vsum_000_t_unc ___cq_q_vsum_010_t ___cq_q_vsum_010_t_ctl ___cq_q_vsum_010_t_ctl_unc ___cq_q_vsum_010_t_unc ___cq_q_vsum_100_t ___cq_q_vsum_100_t_ctl ___cq_q_vsum_100_t_ctl_unc ___cq_q_vsum_100_t_unc ___cq_q_vsum_110_t ___cq_q_vsum_110_t_ctl ___cq_q_vsum_110_t_ctl_unc ___cq_q_vsum_110_t_unc 
+   1 call i32 @__cq_q_vsum_100_t(
+   1 call void @__cq_q_vsum_100_t_unc(
+== va_prog2 native 17
+17
+   lowered library defines:  ___cq_q_vsum_000_t ___cq_q_vsum_000_t_ctl ___cq_q_vsum_000_t_ctl_unc ___cq_q_vsum_000_t_unc ___cq_q_vsum_010_t ___cq_q_vsum_010_t_ctl ___cq_q_vsum_010_t_ctl_unc ___cq_q_vsum_010_t_unc ___cq_q_vsum_100_t ___cq_q_vsum_100_t_ctl ___cq_q_vsum_100_t_ctl_unc ___cq_q_vsum_100_t_unc ___cq_q_vsum_110_t ___cq_q_vsum_110_t_ctl ___cq_q_vsum_110_t_ctl_unc ___cq_q_vsum_110_t_unc 
+   1 call i32 @__cq_q_vsum_110_t(
+   1 call void @__cq_q_vsum_110_t_unc(
+00000000000016f0 T ___cq_q_vsum_000_t
+0000000000001d50 T ___cq_q_vsum_000_t_ctl
+0000000000004d40 T ___cq_q_vsum_000_t_ctl_unc
+0000000000004d20 T ___cq_q_vsum_000_t_unc
+0000000000002690 T ___cq_q_vsum_010_t
+00000000000030d0 T ___cq_q_vsum_010_t_ctl
+0000000000004da0 T ___cq_q_vsum_010_t_ctl_unc
+0000000000004d80 T ___cq_q_vsum_010_t_unc
+0000000000003d00 T ___cq_q_vsum_100_t
+0000000000004390 T ___cq_q_vsum_100_t_ctl
+0000000000004e00 T ___cq_q_vsum_100_t_ctl_unc
+0000000000004de0 T ___cq_q_vsum_100_t_unc
+0000000000000000 T ___cq_q_vsum_110_t
+0000000000000a80 T ___cq_q_vsum_110_t_ctl
+0000000000004ce0 T ___cq_q_vsum_110_t_ctl_unc
+0000000000004cc0 T ___cq_q_vsum_110_t_unc
+== fptr native 8 4 1
+8 4 1
+   lowered library defines:  ___cq_q_evaluate_v_t ___cq_q_evaluate_v_t_ctl ___cq_q_evaluate_v_t_ctl_unc ___cq_q_evaluate_v_t_unc ___cq_q_sum_00_t ___cq_q_sum_00_t_ctl ___cq_q_sum_00_t_ctl_unc ___cq_q_sum_00_t_unc ___cq_q_sum_01_t ___cq_q_sum_01_t_ctl ___cq_q_sum_01_t_ctl_unc ___cq_q_sum_01_t_unc ___cq_q_sum_10_t ___cq_q_sum_10_t_ctl ___cq_q_sum_10_t_ctl_unc ___cq_q_sum_10_t_unc ___cq_q_sum_11_t ___cq_q_sum_11_t_ctl ___cq_q_sum_11_t_ctl_unc ___cq_q_sum_11_t_unc 
+   indirect calls in main:
+   4 @__cq_clone_resolve
+   row key in the lowered library:
+call void @__cq_clone_register(ptr @"\01_evaluate"
+call void @__cq_clone_register(ptr @"\01_sum"

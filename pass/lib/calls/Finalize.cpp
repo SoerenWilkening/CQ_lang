@@ -725,6 +725,12 @@ void defineTableClones(Module &M) {
       popsMints.insert(tu->getName().str());
     if (r.ctlPopsMints)
       popsMints.insert(tcu->getName().str());
+    if (!r.registered) {   // rule 27, owner 2026-11-20: another arrangement of a root, reached by name only
+      if (r.exported)
+        for (Function *f : {t, tc, tu, tcu})
+          exportedClones.push_back(f->getName().str());
+      continue;
+    }
     Constant *key = fn;
     if (r.exported && r.hostOwn) {
       // The C function is the host library's. This body keeps its name (every clone name reads back to it) but no
@@ -772,17 +778,28 @@ void exportRootClones(Module &M) {
     F->setLinkage(GlobalValue::ExternalLinkage);
     F->setDSOLocal(false);
   }
-  exportedClones.clear();
-  // A host root's clones by name followed its linkage when they were made; with its symbol gone they are this
-  // module's alone. Only the table clones above are what a program names.
-  if (!hostRootNames.empty())
-    for (Function &F : M) {
-      if (!isClone(F) || F.isDeclaration() || F.hasLocalLinkage())
-        continue;
-      std::optional<abi::CloneSpec> s = abi::parseClone(F.getName());
-      if (s && !s->table && hostRootNames.count(s->fn))
+  // Rule 27, library build (owner ruling 2026-11-21): the original library is linked beside this one and owns every C
+  // symbol. A function body here that is no exported table clone (a root's lowered own body included, made private
+  // above) is this module's alone; a global it defines is the original library's object, the one host address rule 20
+  // names, so here it is only declared. A compiler-made one (__cq_*) stays this module's.
+  if (!hostRootNames.empty()) {
+    for (Function &F : M)
+      if (!F.isDeclaration() && !F.hasLocalLinkage() && !is_contained(exportedClones, F.getName().str()))
         F.setLinkage(GlobalValue::InternalLinkage);
+    for (GlobalVariable &G : M.globals()) {
+      if (G.isDeclaration() || G.hasLocalLinkage() || G.getName().starts_with("llvm."))
+        continue;
+      if (G.getName().starts_with("__cq_")) {
+        G.setLinkage(GlobalValue::InternalLinkage);
+        continue;
+      }
+      G.setInitializer(nullptr);
+      G.setComdat(nullptr);
+      G.setLinkage(GlobalValue::ExternalLinkage);
+      G.setDSOLocal(false);
     }
+  }
+  exportedClones.clear();
   hostRootNames.clear();
 }
 
@@ -792,7 +809,8 @@ void defineTwins(Module &M) {
     changed = false;
     SmallVector<Function *, 8> todo;
     for (Function &F : M) {
-      if (!isClone(F) || !F.isDeclaration() || F.use_empty())
+      // An exported twin no row names (a root's other arrangement, rule 27) is defined although nothing here calls it.
+      if (!isClone(F) || !F.isDeclaration() || (F.use_empty() && !is_contained(exportedClones, F.getName().str())))
         continue;
       std::optional<abi::CloneSpec> s = abi::parseClone(F.getName());
       if (!s || !s->unc)

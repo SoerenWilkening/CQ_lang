@@ -143,6 +143,8 @@ struct SpecState {
   bool keptAK = false;     // transitively: a quantum-exit loop whose a_K is kept, B > K or no bound (rules 14, 19; cq-m8biu)
   bool hasNoreturn = false;   // a noreturn call on any path: an abort event once the clone takes a predicate (rule 19)
   bool hasEventT = false;
+  bool quantumStore = false;   // rule 27: a store that can make a cell QUANTUM (§1.3): a rail, an address rail, a predicate
+  bool fromTable = false;      // ... reached by name from a table clone (its caller is not in view)
   // Rule 16 noreturn, owner ruling 2026-11-14 (scope of Q7): this specialization is reached after an event on a path inside
   // the lowered code: a table clone (its caller is not in view, CR rule 16), or a call of it by name is preceded by an event
   // in its caller, or its caller is so reached (the least fixpoint). Never because its function is externally visible or
@@ -194,6 +196,7 @@ struct ImplState {
   // Rule 16: functions called after an event (the least fixpoint, by name), and whether the module has an event.
   llvm::DenseSet<const llvm::Function *> calledAfter;
   bool moduleHasEvent = false;
+  bool quantumMemory = false;   // rule 27: code reached from a root that is no table clone has a quantumStore
   // Rule 23: the concrete environment facts saved into each fenv_t / fexcept_t object (fegetenv,
   // feholdexcept, fegetexceptflag), joined over every save of the same specialization; an object never saved holds
   // none. Per specialization (cq-1bbg): a clone's quantum save never reaches the own symbol's object (principle 1).

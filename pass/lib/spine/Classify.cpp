@@ -322,9 +322,10 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     return Class::Signal;
   if (F->getName() == "raise" && CB.arg_size() == 1)
     return Class::Raise;
-  // Rule 27: a listed function is its declared clone, whatever its arguments. Rule 16: every other call the entry test
-  // of taint made an effect entry (a format entry for printf); the rest is the ordinary host call or pure.
-  if (T.listedRoot(*F))
+  // Rule 27: a listed function called with a rail is its declared clone (owner ruling 2026-11-20: with every actual
+  // classical it is the C symbol's call, a host call). Rule 16: every other call the entry test of taint made an effect
+  // entry (a format entry for printf); the rest is the ordinary host call or pure.
+  if (T.declaredCall(CB, S))
     return Class::Declared;
   return T.isEffectEntry(CB, S) ? Class::HostEffect : Class::Classical;
 }

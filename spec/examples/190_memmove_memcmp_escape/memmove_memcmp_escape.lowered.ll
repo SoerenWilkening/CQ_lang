@@ -11,8 +11,7 @@
 ; 0 seed, the |1> seed, and every trip rail (the n == j flag, the header predicate, the two byte load copies *l and
 ; *r (un-copied by the reverse loop under the header predicate they were loaded with), the byte-equality flag, both
 ; zexts, the difference, the trip's exit value, the result select, the next-trip predicate, all three trips'
-; included). escape: the two argument seeds of the declared clone (the address of a as an i64 seed, the classical 2),
-; freed after the twin (rule 7).
+; included).
 ; Kept: memmove_overlap: x and y (rotated; also the value rails of the kept stores a[0] = x, a[1] = y), the seeds 5
 ; and 6 (the value rails of the kept stores a[2] = 5, a[3] = 6, rule 7), the tape slots of those four stores; the 12
 ; byte load copies of the memmove (each the value rail of its kept byte store) and the tape slots of the 12 byte
@@ -59,12 +58,13 @@
 ; copy out with copy_i32 and uncomputes. The caller computes the sign from the copy, uncomputes the sign chain, calls
 ; the twin, frees the copy, then uncomputes the length chain.
 ; escape. a is a bus block of 8 bytes: a[0] = x and a[1] = x + 1 are kept i32 stores. ext_sink has no body in this
-; module and is listed by a lowered library the program links (a build input, rule 27), so the call is a call of its
-; DECLARED clone, the table clone __cq_q_ext_sink_11_t (§1.4): every scalar actual is a handle, the classical pointer
-; as alloc_i64 of its address and the classical 2 as alloc_i32(2) (seeds, rule 7), then K (4, the default) as a
-; classical i32; default C calling convention. The call is a memory version change. Its twin _t_unc(args..., K) is
-; called exactly once (rule 19), at its rule-18 position: the clone returns nothing, so right after the call; the
-; seeds are freed after it. After the call cell 0 is re-read by a bus load (-O1 keeps the load: ext_sink may write
+; module and is listed by a lowered library the program links (a build input, rule 27). Both actuals are classical,
+; but the module stores rails into memory (a[0] = x), so a cell can be QUANTUM at the call: its inputs arrive through
+; memory, and the call is a call of its DECLARED clone of the all-zero arrangement, the table clone
+; __cq_q_ext_sink_00_t (§1.4): the classical pointer and the classical 2 as their C values, then K (4, the default) as
+; a classical i32; default C calling convention. The call is a memory version change. Its twin _t_unc(args..., K) is
+; called exactly once (rule 19), at its rule-18 position: the clone returns nothing, so right after the call. After
+; the call cell 0 is re-read by a bus load (-O1 keeps the load: ext_sink may write
 ; it), and that load copy is measured. x + 1 is never uncomputed: it is the value rail of a kept store (rule 5).
 ; SPEC GAP: rule 19 places a table twin "at its rule-18 position", which rule 18 states only for a clone with results
 ; (after the results' last consumer). Construction followed: a clone with no results has its twin immediately after
@@ -188,15 +188,11 @@ define i32 @escape(i32 noundef %0, double noundef %1) {
   %8 = ptrtoint ptr %7 to i64    ; IR: %5 as its run-time address
   %9 = call i32 @cq_template_add_i32_hl(i32 %6, i32 1)    ; IR: %6 = add nsw i32 %4, 1
   call void @cqrt_qram_store_i32_hl(i32 %3, i64 %8, i32 %9)    ; IR: store i32 %6, ptr %5: a[1] = x + 1  [kept store: its slot and its value rail %6 stay (rule 5 sentence 3)]
-  %10 = call i32 @cqrt_alloc_i64(i64 %5)    ; IR: call @ext_sink(%3, 2): the classical pointer as a seed of its address (rule 27: every actual a handle)
-  %11 = call i32 @cqrt_alloc_i32(i32 2)    ; IR: call @ext_sink(%3, 2): the classical 2 as a seed (rule 7)
-  call void @__cq_q_ext_sink_11_t(i32 %10, i32 %11, i32 4)    ; IR: call void @ext_sink(ptr %3, i32 2): the declared (table) clone, two handles and K (rule 27); a memory version change  [K]
-  call void @__cq_q_ext_sink_11_t_unc(i32 %10, i32 %11, i32 4)    ; IR: its twin, exactly once (rule 19), right after the call (no results)  [K]  ; SPEC GAP: the twin position of a void table clone (header)
-  call void @cqrt_free(i32 %11)    ; IR: release the seed 2 (never written, rule 7)
-  call void @cqrt_free(i32 %10)    ; IR: release the address seed (never written, rule 7)
-  %12 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %5)    ; IR: %7 = load i32, ptr %3: a[0] re-read after the call  [a bus load: whatever the cell holds; measured, so never un-copied]
-  %13 = call i32 @cqrt_measure_i32(i32 %12)    ; IR: %8 = cq_measure_si32(%7)
-  ret i32 %13    ; IR: llvm.lifetime.end dropped (rule 16); ret i32 %8
+  call void @__cq_q_ext_sink_00_t(ptr %4, i32 2, i32 4)    ; IR: call void @ext_sink(ptr %3, i32 2): the declared (table) clone of the all-zero arrangement (every actual classical, a cell QUANTUM: rule 27), the C values and K; a memory version change  [K]
+  call void @__cq_q_ext_sink_00_t_unc(ptr %4, i32 2, i32 4)    ; IR: its twin, exactly once (rule 19), right after the call (no results)  [K]  ; SPEC GAP: the twin position of a void table clone (header)
+  %10 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %5)    ; IR: %7 = load i32, ptr %3: a[0] re-read after the call  [a bus load: whatever the cell holds; measured, so never un-copied]
+  %11 = call i32 @cqrt_measure_i32(i32 %10)    ; IR: %8 = cq_measure_si32(%7)
+  ret i32 %11    ; IR: llvm.lifetime.end dropped (rule 16); ret i32 %8
 }
 
 define internal fastcc i32 @__cq_q_memcmp_001_b3(ptr %0, ptr %1, i32 %2) {
@@ -398,10 +394,9 @@ define internal fastcc void @__cq_q_memcmp_001_b3_unc(i32 %0, ptr %1, ptr %2, i3
 
 declare i32 @__cq_mem()
 declare ptr @__cq_alloc(i64, i64)
-declare void @__cq_q_ext_sink_11_t(i32, i32, i32)
-declare void @__cq_q_ext_sink_11_t_unc(i32, i32, i32)
+declare void @__cq_q_ext_sink_00_t(ptr, i32, i32)
+declare void @__cq_q_ext_sink_00_t_unc(ptr, i32, i32)
 declare i32 @cqrt_alloc_i32(i32)
-declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
 declare i32 @cqrt_alloc_i8(i8)

@@ -37,7 +37,7 @@ native)
     mkdir -p "$B/native"
     "$LLVM/clang" -O1 $CFLAGS -c "$SF/cq/cqsf_inner.c" -o "$B/native/cqsf_inner.o"
     "$LLVM/clang" -O1 -c "$SF/cq/cqsf_roots.c" -o "$B/native/cqsf_roots.o"
-    # The INT_X roots, native, renamed cqsfn_* (a lowered library exports cqsf_* itself, the all-zero mask);
+    # The INT_X roots, native, renamed cqsfn_* (the lowered library's archive holds cqsf_* natively, build.sh lib);
     # the tests reach them through their entries cqsft_*.
     sed 's/@cqsf_/@cqsfn_/g' "$SF/cq/cqsf_roots_x.ll" > "$B/native/cqsf_roots_x.ll"
     "$LLVM/clang" -O1 -c -x ir "$B/native/cqsf_roots_x.ll" -o "$B/native/cqsf_roots_x.o"
@@ -65,6 +65,10 @@ lib)
         echo "lowered $n: $(wc -l < "$g") roots in $(( $(date +%s) - t0 ))s"
         objs="$objs $g.o"
     done
+    # The original library (CR rule 27): the roots compiled natively. A lowered library defines no C symbol; its
+    # clone-table rows are keyed by these.
+    "$LLVM/clang" -O1 -c -x ir "$B/$stem.O1.ll" -o "$B/$stem.native.o"
+    objs="$objs $B/$stem.native.o"
     shim=cqsf_shims; [ "$stem" = cqsf_f80 ] && shim=cqsf_shims_f80
     "$LLVM/clang" -O1 -c "$SF/cq/$shim.c" -o "$B/$shim.o"
     # The lowered modules register their table clones (__cq_clone_register, CR §1.3), a bundle host symbol.

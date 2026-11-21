@@ -60,6 +60,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/FixIrreducible.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
@@ -1762,6 +1763,27 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
+    // 5a. Rule 27 (owner ruling 2026-11-21): the address of a listed function taken here is the original library's, and the
+    // row a call through it reaches is the lowered library's, registered by that library's constructor. A reference to the
+    // all-ones clone links that library's object in although no call here names a clone of it.
+    // A library build (-cq-host-roots) declares the original's root only as its rows' key.
+    for (Function &F : M) {
+      if (!TO.hostRoots.empty() || !F.isDeclaration() || !Final.listedRoot(F) ||
+          !F.hasAddressTaken(nullptr, false, true, /*IgnoreLLVMUsed=*/true))
+        continue;
+      cq::abi::CloneSpec cs;
+      cs.fn = F.getName().str();
+      if (StringRef(cs.fn).starts_with("\x01_"))
+        cs.fn = cs.fn.substr(2);
+      cs.mask = cq::tableMasks(F.getFunctionType()).back();
+      if (cs.mask.empty())
+        cs.mask = "v";
+      cs.table = true;
+      FunctionCallee clone = M.getOrInsertFunction(cq::abi::name(cs), FunctionType::get(Type::getVoidTy(M.getContext()), false));
+      auto *ref = new GlobalVariable(M, PointerType::getUnqual(M.getContext()), true, GlobalValue::PrivateLinkage,
+                                     cast<Constant>(clone.getCallee()), "__cq_link." + cs.fn);
+      appendToCompilerUsed(M, {ref});
+    }
     // 5b. Owner rulings 2026-11-14 (scope of Q7; Q1): what does not come back ends there (endAtNoreturn).
     endAtNoreturn(M, wasNoreturn);
 

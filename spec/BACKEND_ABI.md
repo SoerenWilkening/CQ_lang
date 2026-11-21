@@ -699,7 +699,7 @@ it.
   gates. The compiler knows no candidate set of a pointer: the table supplies it at run time.
   - `register`: a module constructor adds one row per function whose address is taken or that is
     externally visible: `fn` its host address, `sig` its LLVM function type as a C string, then
-    its table clone (§3), that clone's `_ctl`, its `_unc` and its `_ctl_unc`.
+    its all-ones table clone (§3), that clone's `_ctl`, its `_unc` and its `_ctl_unc`.
   - `resolve`: the row's clone for the function at `fn` (`kind` 0 forward, 1 `_ctl`, 2 `_unc`,
     3 `_ctl_unc`), or null when `fn` has no row (host code).
   - `count`, `at`: the n registered addresses of function type `sig`, `i` < n in registration
@@ -1123,8 +1123,9 @@ calls the primitives above. The backend links clones and never implements them.
   rail has no twin (CR rule 18). No depth is passed: a re-entered `_ctl` clone counts its live activations
   in a module-internal global and is cut at K by a classical branch on entry (CR §1.4, rule 14).
 - **Table clone `_t`.** The form reached without the body in view: a row of the clone table
-  (§1.14) or a declared clone (rule 27). All-ones mask, no `_b` bounds, C calling convention.
-  Every result is an `i32` handle, a classical result a seed rail; the twin always exists,
+  (§1.14, always the all-ones mask) or a declared clone (rule 27, the mask of the call's
+  arrangement among those CR §1.4 gives the C signature). No `_b` bounds, C calling convention;
+  a digit 0 formal is its C-typed classical value, a digit 1 formal a handle. Every result is an `i32` handle, a classical result a seed rail; the twin always exists,
   pops the minted-register handles its clone pushed, for a no-twin function does nothing
   else (results KEPT), otherwise frees the results it zeroes and the
   caller frees none (CR §1.4). The clone and its twin take K as the last argument: a call by
@@ -1134,13 +1135,19 @@ calls the primitives above. The backend links clones and never implements them.
 
 Rule 27 is the only part that touches the link step:
 - A call from lowered code to a function with **no body** in the module that is on a lowered
-  library's root list is a call of its table clone, whatever its arguments. A call to an
-  unlisted one is an effect entry (§1.11) or an ordinary host call, as CR rule 16 says. The compiler emits only declarations; a missing definition
+  library's root list is a call of the table clone of the call's arrangement (CR §1.4, rule
+  27) when an actual is a rail or a cell can be QUANTUM at the call; otherwise, and for an
+  unlisted one, it is an effect entry (§1.11) or an ordinary host call, as CR rule 16 says (the
+  listed function's own C symbol, the original library's). The compiler emits only declarations; a missing definition
   is an ordinary undefined-symbol link error.
 - A lowered library is the same compiler run over library source with a list of root names. It
-  exports each root's table clone, `_ctl` and twins, and registers them (§1.14). A library that
-  calls back into the program (`qsort`, `bsearch`) must itself be lowered. Witnesses: 161
-  (`__cq_q_ext_fn_11_t` with the classical c as a seed, and K), 200 (a pointer as one scalar), 190.
+  exports each root's table clones (every arrangement CR §1.4 gives its signature), their `_ctl`
+  forms and twins, and registers the all-ones one (§1.14), keyed by the original library's
+  address of the function. It defines no C symbol: the original library, linked after it,
+  provides every C function and global, and a program's classical call reaches it. A library that calls back into the
+  program (`qsort`, `bsearch`) must itself be lowered. Witnesses: 161 (`__cq_q_ext_fn_10_t`
+  with the classical c as its C value, and K), 200 (a pointer as one scalar), 190
+  (`__cq_q_ext_sink_00_t`, every actual classical, rails stored in memory).
 
 ---
 
