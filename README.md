@@ -221,14 +221,20 @@ cqcc prog.c --cq-roots libm.roots -L. -lqm -lmybackend     # prog's calls go to 
 - `--cq-lib` takes the bodies of the roots from its input files, or from the bundle when no input
   defines them. Your own library works the same way: `cqcc --cq-lib --cq-roots my.roots my.c -o
   libmy.a`.
-- A library of standard C functions holds only their quantum versions. The classical `cos` stays
-  the host C library's.
+- A lowered library holds only quantum versions (`__cq_q_*`) and defines no C symbol. The original
+  library is linked after it and provides every C function and global: for standard C functions that
+  is the host C library, for your own library its ordinary build (`-lqmy -lmy`).
+- Each function is exported once per arrangement of classical and quantum arguments: every
+  arrangement for a function with at most 5 scalar arguments, and for a wider one the arrangements
+  by class (pointers, integers, floating point, each class classical or quantum as a whole). A call
+  takes the exported version with the fewest quantum arguments that covers its quantum ones, so a
+  classical pointer or size stays classical.
+- A call in a program with no quantum data at all is left as it is and runs the original function.
 - In the program, a listed function is never lowered from source. A function that is not on the
   list is handled as before.
 - The loop cutoff K is passed at every call, so one compiled library serves every K.
-- A call into a lowered library passes every argument as a quantum register, classical ones
-  included. That costs more per call than a copy specialised to the call, in exchange for not
-  lowering the library again.
+- The arrangements make a library larger and slower to build: the C standard library has 1,524
+  exported versions for its 387 functions.
 
 To lower standard library functions, `cqcc` needs their bodies: build the whole-library bundle
 first (the five commands above, about 3 minutes) and keep `CQ_BUNDLE_MANIFEST` set. Then, for
@@ -312,28 +318,37 @@ that link against the precompiled C standard library and SoftFloat. Nothing in a
 and the standard library is not recompiled per project. Sources, builds and lowered archives are not
 in the repository; each project's `build_lib.sh` fetches and builds them.
 
-Every function is also lowered on its own, with all arguments quantum and its callees as calls
-(`experiments/per_function.sh`), so one failure does not hide another:
+Every function is also lowered on its own, under every arrangement of classical and quantum arguments
+a library exports and with its callees as calls (`experiments/per_function.sh`), so one failure does
+not hide another:
 
-| Project | Functions | Lower on their own | Open |
+| Project | Functions | Lower on their own | Notes |
 |---|---|---|---|
-| GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | |
-| SQLite 3 (core) | 1,542 | 1,542 | `sqlite3VdbeExec`, the bytecode interpreter, takes about 14 minutes; every other function is under 2 |
-| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | |
-| GMP 6.3.0 (generic C) | 650 | 650 | |
+| C standard library (musl) | 387 | 387, as the lowered library | 1,524 exported versions |
+| SoftFloat (the float templates) | 855 | 855, as two lowered libraries | |
+| GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | 2.4 GB of archives |
+| SQLite 3 (core) | 1,542 | 1,542 | 8 take more than 2 minutes; `sqlite3VdbeExec`, the bytecode interpreter, 42 |
+| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | `_glp_zlib_inflate` takes 21 minutes |
+| GMP 6.3.0 (generic C) | 650 | 650 | `__gmpn_div_q` takes 6 minutes |
 | [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | |
 | [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | |
+
+The libraries and sweeps were built while the pass fixes for the arrangements came in, so not every
+row was produced by the final pass; the functions and libraries that had failed were rebuilt with it.
 
 "Lowers" means the pass produced a module that passes its structural verifier. The lowered
 libraries are not checked against the C programs: the checker runs programs, and the reduced cases
 under `experiments/repro-round*/` are what it has run. Two of them are known faults:
 `repro-round8/asrt5.c` (a wrong result: an assert on a classical condition in the body of a loop with
 a quantum exit tested at its header) and `repro-round8/exitdead_leak.c` (a rail left live at exit).
+A third is in SoftFloat: `fma` with only some operands quantum lowers to a version that reads an
+invalid register (`experiments/arrangements/partial/fma_q1.linked.ll`); no float template calls it.
 
 A function whose body is in the program is lowered once per mix of classical and quantum arguments
-it is called with, so ABC and Game of Life are also lowered under every such mix except all-classical
-(`experiments/mask_sweep.sh`): ABC 171 of 171 arrangements (`encode_move`, 7 arguments, 127 of them),
-Game of Life 79 of 79. Each needed one source change. ABC's argument-less functions are declared `f()`,
+it is called with. ABC and Game of Life were also lowered that way, one generated program per mix
+except all-classical (`experiments/mask_sweep.sh`, run before the library arrangements existed): ABC
+171 of 171 (`encode_move`, 7 arguments, 127 of them), Game of Life 79 of 79. Each needed one source
+change. ABC's argument-less functions are declared `f()`,
 which C17 reads as unprototyped; they now say `(void)`. Game of Life's display loop `while (1)` has no
 exit; it is now a loop of 1000 generations.
 
@@ -341,7 +356,8 @@ Gate counts come from the recommended backend's counting gate backend (`-lcq_gat
 in the file named by `CQ_COUNT`), which counts gates, depth and qubits without building a circuit.
 The drivers in `experiments/gsl/easy/` call one GSL function from precompiled, all-quantum GSL with
 one `double` built from two qubits, at the default loop cutoff 4. These numbers are preliminary:
-they were taken on intermediate builds of the pass and are not validated.
+they were taken on intermediate builds of the pass, before the argument arrangements (every argument
+was passed as a quantum register), and are not validated.
 
 | GSL call | Gates |
 |---|---|
