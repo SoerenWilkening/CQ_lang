@@ -1160,21 +1160,72 @@ struct Uncompute::Impl {
   // in the order it lists them (it depends on the list alone). Kept per list within a readsMemo session.
   using BfsMemo = std::map<std::vector<RailId>, SmallVector<RailId, 8>>;
   mutable BfsMemo *bfsMemo = nullptr;
+  // cq-i61ms: within emitMirror's session (nothing is placed) its callers read only the pending readers. A candidate
+  // that is not pending, owned by no deferred item and no deferred item's exit stays itself and is not pending: it is
+  // dropped before its itemReads, and from the memoized walk's list. The exit rails of every deferred item, or null
+  // outside such a session.
+  mutable const DenseSet<RailId> *pendingReadersOnly = nullptr;
+  bool mayReadPending(RailId o) const {
+    return pending(o) || rails[o].ownedBy != kNone || pendingReadersOnly->count(o);
+  }
+  // cq-i61ms: a set of rails as a stamp per rail (the walks below insert thousands of rails per call, a hash set's
+  // cost). Each live RailSet holds its own array from a pool; a new set takes a fresh stamp.
+  struct Marks {
+    std::vector<unsigned> v;
+    unsigned stamp = 0;
+  };
+  mutable std::vector<std::unique_ptr<Marks>> markPool;
+  mutable unsigned marksInUse = 0;
+  class RailSet {
+    const Impl &I;
+    Marks &m;
+
+  public:
+    explicit RailSet(const Impl &impl) : I(impl), m(take(impl)) {
+      if (++m.stamp == 0) {
+        std::fill(m.v.begin(), m.v.end(), 0);
+        m.stamp = 1;
+      }
+    }
+    template <typename R> RailSet(const Impl &impl, const R &init) : RailSet(impl) {
+      for (RailId x : init)
+        insert(x);
+    }
+    ~RailSet() { --I.marksInUse; }
+    RailSet(const RailSet &) = delete;
+    RailSet &operator=(const RailSet &) = delete;
+    // true when x was not in the set
+    bool insert(RailId x) {
+      if (x >= m.v.size())
+        m.v.resize(std::max<size_t>(x + 1, I.rails.size()), 0);
+      if (m.v[x] == m.stamp)
+        return false;
+      m.v[x] = m.stamp;
+      return true;
+    }
+
+  private:
+    static Marks &take(const Impl &impl) {
+      if (impl.marksInUse == impl.markPool.size())
+        impl.markPool.push_back(std::make_unique<Marks>());
+      return *impl.markPool[impl.marksInUse++];
+    }
+  };
   SmallVector<RailId, 8> targetCands(ArrayRef<RailId> roots) const {
     SmallVector<RailId, 8> cand;
     SmallVector<RailId, 4> targets(roots.begin(), roots.end());
-    SmallDenseSet<RailId, 16> candSet, targetSet(roots.begin(), roots.end());
+    RailSet candSet(*this), targetSet(*this, roots);
     for (unsigned i = 0; i < targets.size(); ++i)
       for (RailId n : names(targets[i])) {
         for (unsigned rec : rails[n].readerRecs) {
-          if (candSet.insert(info[rec].item).second)
+          if (candSet.insert(info[rec].item))
             cand.push_back(info[rec].item);
           if (!isCreator(info[rec].kind))
-            if (RailId x = records[rec].out; x < rails.size() && targetSet.insert(x).second)
+            if (RailId x = records[rec].out; x < rails.size() && targetSet.insert(x))
               targets.push_back(x);
         }
         for (RailId o : rails[n].cleanupReaders)
-          if (candSet.insert(o).second)
+          if (candSet.insert(o))
             cand.push_back(o);
       }
     return cand;
@@ -1207,17 +1258,17 @@ struct Uncompute::Impl {
     // turn, a rail another such write reads): those items read g too (itemReads), so they are candidates.
     SmallVector<RailId, 4> targets;
     // cq-g3h1i: membership through a set beside each list (a rail many records read has many candidates).
-    SmallDenseSet<RailId, 16> candSet, targetSet;
+    RailSet candSet(*this), targetSet(*this);
     auto addCands = [&](RailId n) {
       for (unsigned rec : rails[n].readerRecs) {
-        if (candSet.insert(info[rec].item).second)
+        if (candSet.insert(info[rec].item))
           cand.push_back(info[rec].item);
         if (!isCreator(info[rec].kind))
-          if (RailId t = records[rec].out; t < rails.size() && targetSet.insert(t).second)
+          if (RailId t = records[rec].out; t < rails.size() && targetSet.insert(t))
             targets.push_back(t);
       }
       for (RailId o : rails[n].cleanupReaders)
-        if (candSet.insert(o).second)
+        if (candSet.insert(o))
           cand.push_back(o);
     };
     for (RailId n : ns)
@@ -1228,20 +1279,43 @@ struct Uncompute::Impl {
       // listed skipped.
       std::vector<RailId> key(targets.begin(), targets.end());
       auto it = bfsMemo->find(key);
-      if (it == bfsMemo->end())
-        it = bfsMemo->emplace(std::move(key), targetCands(targets)).first;
+      if (it == bfsMemo->end()) {
+        SmallVector<RailId, 8> tc = targetCands(targets);
+        if (pendingReadersOnly)
+          llvm::erase_if(tc, [&](RailId o) { return !mayReadPending(o); });
+        it = bfsMemo->emplace(std::move(key), std::move(tc)).first;
+      }
       for (RailId o : it->second)
-        if (candSet.insert(o).second)
+        if (candSet.insert(o))
           cand.push_back(o);
     } else {
       for (unsigned i = 0; i < targets.size(); ++i)
         for (RailId n : names(targets[i]))
           addCands(n);
     }
+    // The rail that reads in o's place: o, or the deferred item that undoes it (below).
+    auto readerOf = [&](RailId o) {
+      // F1: a reader owned by a deferred item not yet placed is undone by that item.
+      if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
+        o = defs[di].pseudo;
+      // Rule 14: an exit rail of a deferred loop is undone by that loop's reverse: that item is the reader.
+      if (!pendingReadersOnly || pendingReadersOnly->count(o))
+        for (const Deferred &d : defs)
+          if (d.pseudo != g && !rails[d.pseudo].released && is_contained(d.exits, o) && !is_contained(d.exits, g)) {
+            o = d.pseudo;
+            break;
+          }
+      return o;
+    };
     SmallVector<RailId, 4> out;
     for (RailId o : cand) {
       if (o == g)
         continue;
+      if (pendingReadersOnly) {
+        RailId m = readerOf(o);
+        if (m == g || !pending(m))
+          continue;
+      }
       if (readsMemo) {
         auto [it, fresh] = readsMemo->try_emplace(o);
         if (fresh)
@@ -1252,15 +1326,7 @@ struct Uncompute::Impl {
       } else if (!itemReadsAny(o, ns)) {
         continue;
       }
-      // F1: a reader owned by a deferred item not yet placed is undone by that item.
-      if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
-        o = defs[di].pseudo;
-      // Rule 14: an exit rail of a deferred loop is undone by that loop's reverse: that item is the reader.
-      for (const Deferred &d : defs)
-        if (d.pseudo != g && !rails[d.pseudo].released && is_contained(d.exits, o) && !is_contained(d.exits, g)) {
-          o = d.pseudo;
-          break;
-        }
+      o = readerOf(o);
       if (o != g && !is_contained(out, o))
         out.push_back(o);
     }
@@ -3811,8 +3877,18 @@ struct Uncompute::Impl {
     readsMemo = &reads;
     BfsMemo bfs;
     bfsMemo = &bfs;
+    // cq-i61ms: dropBlocked reads the pending readers, order those among the candidates: with every candidate pending,
+    // only the pending readers count (emitMirror's own are such already).
+    DenseSet<RailId> exitRails;
+    const DenseSet<RailId> *wasPending = pendingReadersOnly;
+    if (!pre && all_of(cands, [&](RailId g) { return pending(g); })) {
+      for (const Deferred &d : defs)
+        exitRails.insert(d.exits.begin(), d.exits.end());
+      pendingReadersOnly = &exitRails;
+    }
     dropBlocked(cands, c, c.mode == Mode::Mirror, &readers);
     SmallVector<RailId, 16> ord = order(cands, &readers);
+    pendingReadersOnly = wasPending;
     readsMemo = nullptr;
     bfsMemo = nullptr;
     for (RailId g : ord)
@@ -4915,6 +4991,13 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
     Impl::BfsMemo bfs;
     I.readsMemo = &pre.second;
     I.bfsMemo = &bfs;
+    // cq-i61ms: what reads these readers (the loop below, then resolve's dropBlocked and order over the candidates, all
+    // pending) reads their pending ones only.
+    DenseSet<RailId> exitRails;
+    for (const Impl::Deferred &d : I.defs)
+      exitRails.insert(d.exits.begin(), d.exits.end());
+    auto *wasPending = I.pendingReadersOnly;
+    I.pendingReadersOnly = &exitRails;
     DenseSet<RailId> inCands(cands.begin(), cands.end());
     for (unsigned k = 0; k < cands.size(); ++k) {
       SmallVector<RailId, 4> rd = I.readersOf(cands[k]);
@@ -4925,6 +5008,7 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
     }
     I.readsMemo = was;
     I.bfsMemo = wasBfs;
+    I.pendingReadersOnly = wasPending;
   }
   I.resolve(cands, c, &pre);
   I.inMirror = wasInMirror;
