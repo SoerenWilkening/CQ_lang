@@ -384,8 +384,28 @@ bool keeps(const CallInst &c, const Value *a, const Value *x, unsigned &atomFlip
 
 } // namespace
 
+// cq-i61ms: does some call negate atom (negates)? Such a call calls one of the three symbols below (parseTemplate takes
+// only the canonical spelling, and xor and the compares never take _lh); a check of their calls spares the scan of the
+// atom's users (thousands of gates on a path condition: sqlite3VdbeExec) where none does.
+static bool anyNegation(const Value *atom, const Module &M) {
+  for (const char *pred : {"", "eq", "ne"}) {
+    abi::TemplateSpec s;
+    s.op = *pred ? "icmp" : "xor";
+    s.pred = pred;
+    s.w = RailType{Kind::Int, 1};
+    s.shape = "hl";
+    if (const Function *f = M.getFunction(abi::name(s, false)))
+      for (const User *u : f->users())
+        if (auto *c = dyn_cast<CallInst>(u); c && negates(*c, atom))
+          return true;
+  }
+  return false;
+}
+
 Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
   if (!atom || !bb)
+    return nullptr;
+  if (!anyNegation(atom, *bb->getModule()))
     return nullptr;
   // The blocks that run, once and in this order, before bb on every path into it.
   SmallVector<BasicBlock *, 8> chain{bb};
