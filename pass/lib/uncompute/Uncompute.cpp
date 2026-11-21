@@ -3475,6 +3475,11 @@ struct Uncompute::Impl {
   // edge's source stay valid).
   void placeDeferred(RailId g, const Ctx &c) {
     ReachSuspend cfgChanges;   // cq-4tkb4: its split, and the reverse loop its emitter builds
+    // cq-i61ms: the reachability questions between those changes, answered by a cache while the CFG stands (reset
+    // before each change).
+    std::optional<ReachScope> stable;
+    if (c.mode != Mode::Mirror)
+      stable.emplace(*c.point->getFunction());
     Rail &r = rails[g];
     Deferred &d = defs[r.deferred];
     SmallVector<Instruction *, 12> as = deferredAnchors(d);
@@ -3494,6 +3499,7 @@ struct Uncompute::Impl {
       // Rule 14: a loop in a scope being mirrored (a loop of a classical exit's arm): its reverse runs here, after the
       // scope's readers of its exit rails and before the rails its seed reads.
       r.released = true;
+      stable.reset();
       d.emit(*c.mirror);
       for (RailId x : d.exits)
         if (!rails[x].released && !keptRole(rails[x].role))
@@ -3579,12 +3585,14 @@ struct Uncompute::Impl {
       if (!S) {
         // cq-4lqy: X branches on: the reverse runs on every path leaving it, in a fresh block N that takes
         // X's terminator (X -> N -> X's successors).
+        stable.reset();
         BasicBlock *N = BasicBlock::Create(X->getContext(), "", X->getParent(), X->getNextNode());
         N->splice(N->end(), X, X->getTerminator()->getIterator());
         emitted.insert(BranchInst::Create(N, X));
         for (BasicBlock *sb : successors(N))
           sb->replacePhiUsesWith(X, N);
         S = N;
+        stable.emplace(*X->getParent());
       }
       if (beforeOrIn(d, S))
         internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
@@ -3625,11 +3633,13 @@ struct Uncompute::Impl {
     BasicBlock *P = pos.bb;
     Function *F = P->getParent();
     LLVMContext &C = F->getContext();
+    stable.reset();
     BasicBlock *H = BasicBlock::Create(C, "", F, P);
     H->splice(H->end(), P, P->begin(), pos.before->getIterator());
     for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
       if (pr != H)
         pr->getTerminator()->replaceSuccessorWith(P, H);
+    stable.emplace(*F);
     IRBuilder<> B(H);
     for (auto [x, role] : keptExits) {
       // The copy is taken where the loop exits (the one block outside the region its blocks branch
@@ -3688,6 +3698,7 @@ struct Uncompute::Impl {
     }
     rails[g].released = true;
     mirrorExit = c.mode == Mode::Exit ? c.point : nullptr;
+    stable.reset();
     d.emit(B);
     mirrorExit = nullptr;
     for (auto [x, role] : keptExits)
@@ -4366,13 +4377,18 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   if (!liveLater) {
     // cq-k0v13 (rules 14, 18): the tape is one stack: items ready at one point run last loop first (order()'s ties).
     // To a fixed point: an item may wait for an older reader.
+    // cq-i61ms: the readiness questions are answered by a reachability cache while no item is placed.
+    std::optional<Impl::ReachScope> stable;
     for (bool progress = true; progress;) {
       progress = false;
       for (RailId g : reverse(deferred)) {
+        if (!stable)
+          stable.emplace(*P->getParent());
         if (!I.resolvable(g) || !I.deferredLocalReady(g, point))
           continue;
         if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
           continue;
+        stable.reset();
         I.place(g, c);
         progress = true;
       }
@@ -4390,17 +4406,25 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   for (bool progress = true; progress;) {
     progress = false;
     SmallVector<RailId, 16> span;
-    for (RailId g = 0; g < I.rails.size(); ++g)
-      if (!I.frozen(g) && I.spanReady(g, point, live))
-        span.push_back(g);
+    {
+      Impl::ReachScope stable(*P->getParent());   // cq-i61ms: nothing changes the CFG while the candidates are chosen
+      for (RailId g = 0; g < I.rails.size(); ++g)
+        if (!I.frozen(g) && I.spanReady(g, point, live))
+          span.push_back(g);
+    }
     I.dropBlocked(span, c, false);
     for (RailId g : I.order(span))
       if (I.resolvable(g)) {
         I.placeSpan(g, point);
         progress = true;
       }
+    std::optional<Impl::ReachScope> stable;   // cq-i61ms: as above, until an item is placed
     for (RailId g = I.rails.size(); g-- > 0;) {   // cq-k0v13: last loop first, as above
-      if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
+      if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g))
+        continue;
+      if (!stable)
+        stable.emplace(*P->getParent());
+      if (!I.deferredLocalReady(g, point, true))
         continue;
       if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
         continue;
@@ -4411,6 +4435,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
             return any_of(I.names(x), [&](RailId n) { return live.count(n) != 0; });
           }))
         continue;
+      stable.reset();
       I.place(g, c);
       progress = true;
     }
