@@ -557,7 +557,7 @@ rev:
   RailId r = f.T("r", "hh");
   f.U.closeScope(s);
   f.U.setRole(r, Role::Measured);
-  ArrayRef<Record> recs = f.U.scopeRecords(s);
+  SmallVector<Record, 4> recs = to_vector<4>(f.U.scopeRecords(s));
   if (recs.size() != 3 || recs[0].forward != f.I("p") || recs[1].forward != f.I("q") || recs[2].forward != f.I("r")) {
     ++failures;
     errs() << "FAIL scope_mirror_order: scopeRecords\n";
@@ -607,8 +607,8 @@ define i32 @f(i32 %a0, double %th) {
   RailId res = f.T("res", "hh");
   f.U.closeScope(so);
   f.U.setRole(res, Role::Measured);
-  if (f.U.scopeRecords(so).size() != 4 || f.U.scopeRecords(si).size() != 2 ||
-      f.U.scopeRecords(si)[0].forward != f.I("q")) {
+  SmallVector<Record, 4> outer = to_vector<4>(f.U.scopeRecords(so)), inner = to_vector<4>(f.U.scopeRecords(si));
+  if (outer.size() != 4 || inner.size() != 2 || inner[0].forward != f.I("q")) {
     ++failures;
     errs() << "FAIL scope_nested: scopeRecords\n";
   }

@@ -298,7 +298,7 @@ struct Uncompute::Impl {
     DenseSet<RailId> left = {};   // leaveScope: rails the scope's time span holds and its region does not
   };
 
-  std::vector<Record> records;
+  std::deque<Record> records;   // cq-i61ms: a deque: growth never moves the records
   std::vector<RecInfo> info;
   std::deque<Rail> rails;   // a deque: growth never copies the rails (Rail is not nothrow-movable)
   DenseMap<const Value *, RailId> byHandle;
@@ -5028,12 +5028,12 @@ void Uncompute::closeScope(unsigned s) {
   impl->scopes[s].open = false;
 }
 
-ArrayRef<Record> Uncompute::scopeRecords(unsigned s) const {
+iterator_range<std::deque<Record>::const_iterator> Uncompute::scopeRecords(unsigned s) const {
   if (s >= impl->scopes.size())
     internalError("uncompute: no scope " + std::to_string(s));
   const Impl::Scope &sc = impl->scopes[s];
   unsigned end = sc.open ? impl->records.size() : sc.end;
-  return ArrayRef<Record>(impl->records).slice(sc.begin, end - sc.begin);
+  return make_range(impl->records.cbegin() + sc.begin, impl->records.cbegin() + end);
 }
 
 void Uncompute::leaveScope(unsigned s, const BasicBlock *head) {
