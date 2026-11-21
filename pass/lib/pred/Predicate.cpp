@@ -732,9 +732,28 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
     return n;
   }
   // No literal separates the arms (an arm whose predicate is a compound condition of one branch, as
-  // for a && b): the first live arm's condition in the context.
-  unsigned i = live[0];
-  int n = node(restricted[0]);
+  // for a && b): the live arm whose condition in the context has the fewest nodes, the first of those.
+  // cq-ct59d: a value one switch case writes meets the old value of every other case; the old value's
+  // condition reads every case, the case's own two atoms.
+  auto size = [&](unsigned f) {
+    std::set<unsigned> seen;
+    std::vector<unsigned> work{f};
+    while (!work.empty()) {
+      unsigned x = work.back();
+      work.pop_back();
+      if (!m.terminal(x) && seen.insert(x).second) {
+        work.push_back(m.lo(x));
+        work.push_back(m.hi(x));
+      }
+    }
+    return seen.size();
+  };
+  size_t best = 0, bestSize = size(restricted[0]);
+  for (size_t k = 1; k < live.size(); ++k)
+    if (size_t s = size(restricted[k]); s < bestSize)
+      best = k, bestSize = s;
+  unsigned i = live[best];
+  int n = node(restricted[best]);
   int t = leaf(i);
   int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(arms[i])));
   out[n].thenIdx = t;
@@ -878,6 +897,7 @@ PathPredicates::PathPredicates() : impl(std::make_shared<Impl>()) {}
 void PathPredicates::compute(Function &F, const LoopInfo &LI, const TaintInfo &T, const Specialization &S,
                              Value *entryFlag) {
   auto O = taintOracle(T, S);
+  impl->minted.clear();
   computePaths(*impl, F, LI, *O, entryFlag);
 }
 

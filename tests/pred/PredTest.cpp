@@ -1736,6 +1736,35 @@ static void testSwitchFlags() {
   unsigned g8 = gatesFor(8), g16 = gatesFor(16);
   CHECK(g16 <= 2 * g8 + 4, "switch flag gates linear in the cases: " << g8 << " at 8, " << g16 << " at 16");
   outs() << "switch flags: " << g8 << " gates at 8 cases, " << g16 << " at 16\n";
+
+  // A node reading two cases of one scrutinee at once (sqlite3VdbeExec) is false wherever at most one case holds;
+  // the rewrite folds it to a constant, so its flag is the node's own, exact on every assignment.
+  {
+    std::vector<Type *> params(16, Type::getInt32Ty(Ctx));
+    static Module mod("two", Ctx);
+    Function *Fn = Function::Create(FunctionType::get(Type::getVoidTy(Ctx), params, false),
+                                    GlobalValue::ExternalLinkage, "two", mod);
+    std::vector<Value *> a;
+    for (Argument &x : Fn->args())
+      a.push_back(&x);
+    unsigned e0 = atomVar(AtomKind::Eq, a[0], APInt(32, 0)), e1 = atomVar(AtomKind::Eq, a[0], APInt(32, 1)),
+             q = atomVar(AtomKind::Cond, a[1]);
+    unsigned f = m.andOp(m.andOp(m.ithVar(e0), m.ithVar(e1)), m.ithVar(q));
+    SimSink sink;
+    sink.pool = std::vector<Value *>(a.begin() + 2, a.end());
+    Value *flag = materialize(f, sink, [](unsigned) { return true; });
+    for (unsigned r = 0; r < 8; ++r) {
+      auto value = [&](unsigned var) { return bool((r >> (var == e0 ? 0 : var == e1 ? 1 : 2)) & 1); };
+      std::map<Value *, bool> st;
+      for (auto &[var, rail] : sink.atomRails)
+        st[rail] = value(var);
+      for (auto &[rail, node] : sink.seeds)
+        st[rail] = m.eval(node, value);
+      for (const SimGate &g : sink.gates)
+        CHECK(apply(g, st), "unknown gate kind");
+      CHECK(st[flag] == m.eval(f, value), "two-case flag, row " << r);
+    }
+  }
 }
 
 int main() {

@@ -78,7 +78,14 @@ public:
     auto it = atoms.find(v);
     if (it != atoms.end())
       return it->second;
-    return atoms[v] = sink.atomRail(v);
+    AtomKind k = atomOf(v).kind;
+    if (k != AtomKind::Eq && k != AtomKind::Addr)
+      return atoms[v] = sink.atomRail(v);   // the IR value's own rail
+    if (Value *x = sink.reusable(m.ithVar(v)))
+      return atoms[v] = x;
+    Value *r = sink.atomRail(v);   // a case's equality, minted here
+    sink.minted(m.ithVar(v), r);
+    return atoms[v] = r;
   }
 
   // The latest quantum-like atom of n: the innermost condition, so a nested predicate is its parent's
@@ -120,12 +127,16 @@ public:
     auto it = memo.find(n);
     if (it != memo.end())
       return it->second;
+    if (Value *x = sink.reusable(n))
+      return memo[n] = x;
     Value *r;
     // A node that needs two cases of one scrutinee at once rewrites to false: no rail state reaches it, its flag is n's.
     if (unsigned x = exclusive(n); x != n && !m.terminal(x))
       r = mat(x);
-    else if (classical(n))
+    else if (classical(n)) {
       r = sink.classicalSeed(n);
+      sink.minted(n, r);
+    }
     else if (m.lo(n) == Bdd::F && m.hi(n) == Bdd::T)
       r = atomRail(m.var(n));
     else if (Value *x = m.lo(n) == Bdd::T && m.hi(n) == Bdd::F && ql(m.var(n)) ? sink.liveNegation(m.var(n)) : nullptr)
@@ -133,6 +144,7 @@ public:
     else {
       r = sink.alloc0();
       into(r, n);
+      sink.minted(n, r);
     }
     return memo[n] = r;
   }
@@ -779,6 +791,30 @@ public:
     CallInst *free = ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {t});
     for (Value *r : held)
       ctx.unc().noteUse(ctx.unc().idOf(r), free);
+  }
+
+  // A rail minted for node earlier in this block, not yet uncomputed: it holds node's function of the atoms' SSA
+  // values, which is what a fresh flag would hold. Not where atoms are carried (`over`: other values).
+  Value *reusable(unsigned node) override {
+    if (over)
+      return nullptr;
+    auto &minted = storage(ctx.preds()).minted;
+    auto it = minted.find(node);
+    if (it == minted.end())
+      return nullptr;
+    auto *I = dyn_cast_or_null<Instruction>(static_cast<Value *>(it->second));
+    BasicBlock *U = ctx.B().GetInsertBlock();
+    BasicBlock::iterator pt = ctx.B().GetInsertPoint();
+    if (!I || I->getParent() != U || (pt != U->end() && (&*pt == I || !cq::comesBefore(I, &*pt))))
+      return nullptr;
+    if (!ctx.unc().recorded(I) || !ctx.unc().liveRole(ctx.unc().idOf(I)))
+      return nullptr;
+    return I;
+  }
+
+  void minted(unsigned node, Value *rail) override {
+    if (!over)
+      storage(ctx.preds()).minted[node] = rail;
   }
 
   Value *liveNegation(unsigned var) override {
