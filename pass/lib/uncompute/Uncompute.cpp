@@ -3053,8 +3053,9 @@ struct Uncompute::Impl {
     armItems.clear();
     // cq-jws5r: every item block is split off by now and the carries below add phis only, so one dominator tree and one
     // order of the blocks serve them all (a function with noted classical arms has an item block per arm-local rail).
+    // cq-tfieo: also with no noted arm; without them every carry walked and numbered the CFG afresh (slirp tcp_input).
     CfgFacts facts;
-    if (!armJoins.empty() && !made.empty()) {
+    if (!made.empty()) {
       facts.DT = std::make_unique<DominatorTree>(F);
       unsigned k = 0;
       for (scc_iterator<Function *> it = scc_begin(&F); !it.isAtEnd(); ++it, ++k)
