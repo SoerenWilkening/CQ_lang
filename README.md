@@ -328,6 +328,7 @@ not hide another:
 | GMP 6.3.0 (generic C) | 650 | 650 | 2 min | `__gmpn_div_q` takes 10 s |
 | [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | 2 s | |
 | [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | 1 s | |
+| [TinyEMU](https://github.com/dearchap/tinyemu) 2018-09-23, a RISC-V system emulator | 581 | 581, as four lowered libraries | 4 min | the 128-bit RISC-V interpreter takes 44 s on its own |
 
 The times are for the whole project on one x86-64 Mac with the current pass: the libraries as built, the
 other projects as the sweep over their functions, six at a time with a limit of 2 minutes per function.
@@ -340,6 +341,18 @@ under `experiments/repro-round*/` are what it has run. Two of them are known fau
 a quantum exit tested at its header) and `repro-round8/exitdead_leak.c` (a rail left live at exit).
 A third is in SoftFloat: `fma` with only some operands quantum lowers to a version that reads an
 invalid register (`experiments/arrangements/partial/fma_q1.linked.ll`); no float template calls it.
+
+TinyEMU (`experiments/tinyemu/`: `build.sh`, then `build_lib.sh`) is the whole emulator without SDL and
+the network filesystem: the RISC-V CPU at 32, 64 and 128 bits, its software floating point, the PC and
+virtio devices and the SLIRP network stack. Its sources are unchanged; `compat/` supplies the Linux
+headers macOS lacks. It is lowered as four libraries, one per RISC-V CPU width and one for the rest,
+which call each other through `--cq-ext-roots`; a program (`drv.c`, one `add_sf64` on a quantum operand)
+links them with TinyEMU's ordinary build, the lowered C library and the backend, and runs. Three softfp
+functions (`add_sf64` in every rounding mode, `mul_sf32`, `sqrt_sf32`) pass the checker against the C
+program on about 2,300 samples each (`spot.c`). The POSIX functions and system calls TinyEMU calls
+outside the C library are effect entries (rule 16), classical calls the backend performs; with a
+quantum argument the backend defers them and the program reads 0 as their result. `POSIX.md` has the
+details.
 
 A function whose body is in the program is lowered once per mix of classical and quantum arguments
 it is called with. ABC and Game of Life were also lowered that way, one generated program per mix

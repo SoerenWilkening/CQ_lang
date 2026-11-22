@@ -1,6 +1,6 @@
 #!/bin/sh
-# per_function.sh <linked.ll> <outdir> [plugin]: lowers every function of a module on its own, as a library root with all
-# arguments quantum, and lists the pass errors by site. Every other function of the module and libc are named as
+# per_function.sh <linked.ll> <outdir> [plugin]: lowers every function of a module on its own, as a library root: its table clones under every argument
+# arrangement (rule 27), and lists the pass errors by site. Every other function of the module and libc are named as
 # lowered-library roots, so a call stays a call and one function's error does not hide another's.
 # 6 at a time, 120 s each.
 set -eu

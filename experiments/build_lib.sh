@@ -31,6 +31,6 @@ for g in ctype locale string multibyte stdlib time math stdio complex; do
     "$ROOT/driver/cqcc" --cq-lib --cq-roots "$ROOT/bundle/roots/$g.roots" -o libq_$g.tmp.a
     mv libq_$g.tmp.a libq_$g.a
 done
-libtool -static -o libqc.a libq_*.a
+libtool -static -o libqc.a $(for g in ctype locale string multibyte stdlib time math stdio complex; do echo libq_$g.a; done)
 cat "$ROOT"/bundle/roots/*.roots > libc.roots
 echo "== done $(date +%H:%M:%S)"; ls -la libqc.a libc.roots backend/*.a
