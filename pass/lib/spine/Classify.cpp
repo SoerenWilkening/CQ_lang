@@ -522,12 +522,13 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
     return !readsOutcome(c, seen);
   };
 
-  bool anyQuantum = false, classicalBound = false;
+  bool anyQuantum = false, classicalBound = false, anyExit = false;
   for (BasicBlock *X : exiting) {
     const Instruction *t = X->getTerminator();
     // An exit only into dead ends is never taken (131's switch default): no exit of the loop.
     if (all_of(successors(X), [&](const BasicBlock *s) { return L.contains(s) || deadEnd(s); }))
       continue;
+    anyExit = true;
     bool internal = controlQuantum(X);
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional()) {
       bool exitOnTrue = !L.contains(br->getSuccessor(0));
@@ -562,6 +563,10 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
         classicalBound = true;
     }
   }
+  // cq-hmxd5, CR rule 14 "No live exit": a loop with no exit edge at all (a quantum body; a pure classical one is no unit)
+  // runs K trips and then abort_i1 on its seed: the K-loop's frozen chain (loops-cutoff).
+  if (!anyExit)
+    return Case::QuantumExit;
   if (!anyQuantum)
     return Case::ClassicalBound;
   return classicalBound ? Case::ClassicalBoundQuantumExit : Case::QuantumExit;
