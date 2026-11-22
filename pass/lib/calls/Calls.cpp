@@ -542,6 +542,60 @@ Value *variadicBlock(LoweringContext &ctx, CallBase &CB, unsigned fixed) {
   return block;
 }
 
+// cq-729s6 (CR §1.4, rule 26): a field taint reads as classical of an integer actual the caller holds as one rail
+// (x & 1 into a formal unpacked at bytes): the bits `need` of v recomputed classically, along taint's lane rules
+// (Taint.cpp transferBinary / transferCast / transferSelect), from the classical values they come from. Bits outside
+// `need` are 0.
+Value *classicalBits(LoweringContext &ctx, const Value *v, const APInt &need, const Value *at) {
+  using namespace PatternMatch;
+  IRBuilder<> &B = ctx.B();
+  if (need.isZero())
+    return ConstantInt::get(v->getType(), 0);
+  if (!spine::isQ(ctx, v)) {
+    Operand o = ctx.operand(v);
+    if (o.handle)
+      internalError("calls: a classical value bound to a rail", at);
+    return o.v;
+  }
+  unsigned W = need.getBitWidth();
+  auto *I = dyn_cast<Instruction>(v);
+  const APInt *C;
+  auto ev = [&](unsigned k, const APInt &m) { return classicalBits(ctx, I->getOperand(k), m, at); };
+  if (I && (I->getOpcode() == Instruction::And || I->getOpcode() == Instruction::Or ||
+            I->getOpcode() == Instruction::Xor)) {
+    // The bits a literal operand fixes (and 0, or 1) do not read the other operand.
+    APInt m = need;
+    if (match(I->getOperand(1), m_APInt(C)))
+      m = I->getOpcode() == Instruction::And ? need & *C : I->getOpcode() == Instruction::Or ? need & ~*C : need;
+    return B.CreateBinOp(Instruction::BinaryOps(I->getOpcode()), ev(0, m), ev(1, m));
+  }
+  if (I && match(I, m_Shl(m_Value(), m_APInt(C))) && C->ult(W))
+    return B.CreateShl(ev(0, need.lshr(*C)), *C);
+  if (I && (match(I, m_LShr(m_Value(), m_APInt(C))) || match(I, m_AShr(m_Value(), m_APInt(C)))) && C->ult(W)) {
+    APInt m = need.shl(*C);
+    unsigned c = unsigned(C->getZExtValue());
+    if (I->getOpcode() == Instruction::AShr && !need.extractBits(c, W - c).isZero())
+      m.setBit(W - 1);   // the bits shifted in are the sign's
+    return B.CreateBinOp(Instruction::BinaryOps(I->getOpcode()), ev(0, m), ConstantInt::get(v->getType(), *C));
+  }
+  if (I && (isa<ZExtInst>(I) || isa<SExtInst>(I)) && I->getType()->isIntegerTy()) {
+    unsigned M = I->getOperand(0)->getType()->getIntegerBitWidth();
+    APInt m = need.trunc(M);
+    if (isa<SExtInst>(I) && !need.extractBits(W - M, M).isZero())
+      m.setBit(M - 1);
+    return B.CreateCast(Instruction::CastOps(I->getOpcode()), ev(0, m), v->getType());
+  }
+  if (I && isa<TruncInst>(I) && I->getType()->isIntegerTy())
+    return B.CreateTrunc(ev(0, need.zext(I->getOperand(0)->getType()->getIntegerBitWidth())), v->getType());
+  if (isa_and_nonnull<SelectInst>(I))
+    return B.CreateSelect(ev(0, APInt(1, 1)), ev(1, need), ev(2, need));
+  if (I && isa<FreezeInst>(I))
+    return ev(0, need);
+  internalError("calls: a field of a rail actual whose mask digit is classical, through an instruction taint "
+                "keeps whole",
+                at);
+}
+
 CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &S, Value *flag,
                         ArrayRef<unsigned> argMap = {}) {
   // C1: formal k takes CB's operand argMap[k] (identity when argMap is empty).
@@ -584,6 +638,12 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       internalError("calls: an actual with another field count than its formal", &CB);
     for (unsigned k = 0; k < leaves.size(); ++k) {
       Operand o = leaves[k];
+      if (!fs[i].q[k] && o.handle && fs[i].cuts.size() > 2) {
+        // Taint's lanes keep this field classical though the actual is held as a rail (cq-729s6).
+        unsigned lo = fs[i].cuts[k], hi = fs[i].cuts[k + 1], W = fs[i].cuts.back();
+        Value *bits = classicalBits(ctx, a, APInt::getBitsSet(W, lo, hi), &CB);
+        o = Operand{ctx.B().CreateTrunc(ctx.B().CreateLShr(bits, lo), fs[i].leaves[k]), false};
+      }
       bool seeded = fs[i].q[k] && !o.handle;
       if (fs[i].q[k])
         o = seedActual(ctx, o);
