@@ -52,6 +52,13 @@ add_test(NAME loops-cutoff-widened
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/guard_cover_ir.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/join_units.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-1jev3 (CR rule 14 nested K-loops; TinyEMU main's getopt loop): a sub-loop whose exits meet only through the outer
+# back edge or past the outer loop, and its noreturn arm reading the inner trip's values; each entry §6-checked.
+add_test(NAME loops-cutoff-nest-exits
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/nest_exits.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/nest_exits_ir.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq S21 (CR rules 14, 26): a vector of a quantum-exit K-loop's header test region read by its body, carried by the
 # rolled trip one field per header phi; with a mutant (field 1 carried as field 0).
 add_test(NAME loops-cutoff-aggregate

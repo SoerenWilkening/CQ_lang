@@ -767,8 +767,10 @@ bool unifySubLoopExits(Function &F) {
       for (BasicBlock *x : U.live)
         targets.push_back(x);
       // Several live exits whose common post-dominator lies outside the parent: no join within the parent's trip, so the
-      // exit arm would run through the parent's own back edge (twoway_strstr's inner match scan).
-      if (!U.multi() || P->contains(U.cont))
+      // exit arm would run through the parent's own back edge (twoway_strstr's inner match scan). Likewise where they meet
+      // only at the parent's header (an exit that is the parent's back edge, TinyEMU main's getopt loop, cq-1jev3): the
+      // sub-loop would take the parent's carried values as its continuation's phis.
+      if (!U.multi() || (P->contains(U.cont) && U.cont != P->getHeader()))
         continue;
       // The live exit edges, one (from, to) per pair.
       SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> edges;
@@ -824,23 +826,6 @@ bool unifySubLoopExits(Function &F) {
                 P.removeIncomingValue(u, /*DeletePHIIfEmpty=*/false);
           P.addIncoming(h, E);
         }
-      // Later readers of the loop's values.
-      for (size_t k = 0; k < outs.size(); ++k) {
-        Instruction *I = outs[k];
-        PHINode *h = PHINode::Create(I->getType(), edges.size(), I->getName() + ".hub");
-        h->insertInto(E, E->begin());
-        for (size_t e = 0; e < edges.size(); ++e)
-          h->addIncoming(reaches[k][e] ? static_cast<Value *>(I) : PoisonValue::get(I->getType()), from[e]);
-        for (Use &us : make_early_inc_range(I->uses())) {
-          auto *ui = cast<Instruction>(us.getUser());
-          if (ui != h && !S->contains(ui) && ui->getParent() != E) {
-            if (auto *ph = dyn_cast<PHINode>(ui); ph && ph->getParent() != E)
-              if (S->contains(ph->getIncomingBlock(us)))
-                continue;   // the incoming of an edge inside the loop: a phi the loop itself owns
-            us.set(h);
-          }
-        }
-      }
       // Which edge came in: a branch for two targets, a switch for more.
       if (targets.size() == 2) {
         PHINode *w = PHINode::Create(Type::getInt1Ty(C), edges.size(), "cq.which");
@@ -858,6 +843,28 @@ bool unifySubLoopExits(Function &F) {
         SwitchInst *sw = SwitchInst::Create(w, targets.back(), targets.size() - 1, E);
         for (size_t i = 0; i + 1 < targets.size(); ++i)
           sw->addCase(ConstantInt::get(Type::getInt32Ty(C), i), targets[i]);
+      }
+      // Later readers of the loop's values: those the hub dominates once the edges meet there. A reader the loop reaches
+      // without the hub (a noreturn arm of the sub-loop, TinyEMU main's getopt usage(), cq-1jev3) keeps the value itself.
+      DominatorTree DTE(F);
+      for (size_t k = 0; k < outs.size(); ++k) {
+        Instruction *I = outs[k];
+        PHINode *h = PHINode::Create(I->getType(), edges.size(), I->getName() + ".hub");
+        h->insertAfter(&*E->begin());   // after cq.which, as before the dominance test
+        for (size_t e = 0; e < edges.size(); ++e)
+          h->addIncoming(reaches[k][e] ? static_cast<Value *>(I) : PoisonValue::get(I->getType()), from[e]);
+        for (Use &us : make_early_inc_range(I->uses())) {
+          auto *ui = cast<Instruction>(us.getUser());
+          if (ui != h && !S->contains(ui) && ui->getParent() != E) {
+            auto *ph = dyn_cast<PHINode>(ui);
+            if (ph && ph->getParent() != E && S->contains(ph->getIncomingBlock(us)))
+              continue;   // the incoming of an edge inside the loop: a phi the loop itself owns
+            if (DTE.dominates(E, ph ? ph->getIncomingBlock(us) : ui->getParent()))
+              us.set(h);
+          }
+        }
+        if (h->use_empty())
+          h->eraseFromParent();
       }
       changed = any = true;
       break;   // the loops changed: LoopInfo again
