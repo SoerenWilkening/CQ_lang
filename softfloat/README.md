@@ -210,9 +210,9 @@ reference is the CR row (the report names each):
   compared samples each), about 45 s a root. `_Float16` and `__bf16` operands enter as quantum 16-bit
   patterns (CQ.h has no forms for them).
 
-- `build.sh lib`: the 673 default roots lower with no pass error in 17 groups, 1 min 40 s in all
-  (a 15.2 MB archive); `build.sh lib cqsf_f80.roots`: 171 roots in 5 groups,
-  182 roots, 36 s (5.2 MB).
+- `build.sh lib`: the 673 default roots lower with no pass error in 17 groups, 4 min in all
+  (a 57.4 MB archive); `build.sh lib cqsf_f80.roots`: 182 roots in 5 groups,
+  1 min 15 s (17.8 MB).
   The lowered modules call no float template (only `bitcast` between fN and iN) and no `cqrt_qram_*`;
   the mode and the flags never touch memory. Their templates: integer add, sub, mul, udiv, and, or,
   xor, shl, lshr, ashr, icmp, select, zext, sext, trunc, abs, smax, umax, usub_sat, ctlz, fshl,
