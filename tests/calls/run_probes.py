@@ -40,6 +40,10 @@ CASES = [
     ("packed_phi_const_arm", "e", [], "pass", []),
     ("packed_phi_whole_read", "e", [], "pass", []),
     ("packed_phi_field_arm", "e", [], "pass", []),
+    # cq-729s6 (§1.4, rule 26): a field taint keeps classical of an actual held as one rail (x & 1, an xor with a classical
+    # upper part, a select on a classical condition) is passed as its classical value.
+    ("field_classical_of_rail", "e", [], "pass", [r"call fastcc i32 @__cq_q_g_10_b1\(i32 %\d+, i24 0\)",
+                                                  r"call fastcc i32 @__cq_q_g_10\(i32 %\d+, i24 %\d+\)"]),
     # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
     # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
     # by name, through a defined noreturn callee.
