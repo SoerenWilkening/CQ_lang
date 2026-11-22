@@ -404,6 +404,14 @@ static void testAlgebra() {
   CHECK(classicalFactorNode(N(Or(g, q)), O) == N(g) && quantumPartNode(N(Or(g, q)), O) == N(q),
         "!(g | q) factors as !g & !q");
   CHECK(isClassicalNode(g, O) && !isClassicalNode(q, O), "classification");
+
+  // meets(a, b[, neg]) is a & b (a & !b) != F, over every pair of a few small functions (cq-m16f6).
+  std::vector<unsigned> fs{Bdd::F, Bdd::T, g, q, N(g), A(g, q), Or(g, q), N(Or(g, q)), m.xorOp(g, q)};
+  for (unsigned x : fs)
+    for (unsigned y : fs) {
+      CHECK(m.meets(x, y) == (m.andOp(x, y) != Bdd::F), "meets " << x << " " << y);
+      CHECK(m.meets(x, y, true) == (m.andOp(x, N(y)) != Bdd::F), "meets !" << x << " " << y);
+    }
 }
 
 // ---- 2./3. path predicates and chains on the examples ----

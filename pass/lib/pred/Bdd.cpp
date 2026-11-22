@@ -5,6 +5,7 @@
 #include <string>
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 
 namespace cq::pred_detail {
 
@@ -176,6 +177,33 @@ std::pair<bool, bool> Bdd::sides(unsigned f, unsigned v) {
   } walk{*this, v, lv, stamp};
   unsigned r = walk.go(f);
   return {(r & 1) != 0, (r & 2) != 0};
+}
+
+bool Bdd::meets(unsigned a, unsigned b, bool negB) {
+  // A walk over node pairs that makes no node; a pair found unsatisfiable is not walked again.
+  const unsigned bad = negB ? T : F;   // the terminal of b whose side is false
+  struct Walk {
+    Bdd &m;
+    unsigned bad;
+    llvm::DenseSet<uint64_t> dead;
+    bool go(unsigned a, unsigned b) {
+      if (a == F || b == bad)
+        return false;
+      if (m.terminal(a) || m.terminal(b))   // the other is a non-terminal or the good side: satisfiable
+        return true;
+      uint64_t key = (uint64_t(a) << 32) | b;
+      if (dead.count(key))
+        return false;
+      unsigned ta = m.top(a), tb = m.top(b);
+      unsigned a0 = ta <= tb ? m.lo(a) : a, a1 = ta <= tb ? m.hi(a) : a;
+      unsigned b0 = tb <= ta ? m.lo(b) : b, b1 = tb <= ta ? m.hi(b) : b;
+      if (go(a0, b0) || go(a1, b1))
+        return true;
+      dead.insert(key);
+      return false;
+    }
+  } walk{*this, bad, {}};
+  return walk.go(a, b);
 }
 
 unsigned Bdd::restrict(unsigned f, unsigned c) {

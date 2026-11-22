@@ -655,8 +655,10 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
 }
 
 namespace {
-// One level of selectTree over the arms live in ctxt; returns the node's index in out.
-int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned ctxt) {
+// One level of selectTree over the arms live in ctxt; returns the node's index in out. in[i] is arms[i] & ctxt.
+// cq-m16f6: ctxt is the union of the arms under the conditions above, which for a loop's latches can be far larger
+// than any arm; every test but restrict reads the in[i], each within its arm.
+int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned ctxt, ArrayRef<unsigned> in) {
   Bdd &m = Bdd::get();
   auto literal = [&](unsigned n) { return !m.terminal(n) && m.terminal(m.lo(n)) && m.terminal(m.hi(n)); };
   auto leaf = [&](unsigned i) {
@@ -667,16 +669,22 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
     out.push_back(SelectNode{cond, -1, -1, -1});
     return int(out.size() - 1);
   };
+  auto below = [&](unsigned cond) {   // buildSelect in ctxt & cond
+    std::vector<unsigned> sub;
+    for (unsigned x : in)
+      sub.push_back(m.andOp(x, cond));
+    return buildSelect(out, arms, m.andOp(ctxt, cond), sub);
+  };
   std::vector<unsigned> live;
   for (unsigned i = 0; i < arms.size(); ++i)
-    if (m.andOp(ctxt, arms[i]) != Bdd::F)
+    if (in[i] != Bdd::F)
       live.push_back(i);
   if (live.empty())
     internalError("pred: merge arms do not cover the merge's predicate");
   // An arm taken on every path of the context is the complement arm (innermost); the others are
-  // unreachable here and dropped.
+  // unreachable here and dropped. ctxt & !arm == F: every live arm's part of the context lies within arm.
   for (unsigned i : live)
-    if (m.andOp(ctxt, m.notOp(arms[i])) == Bdd::F)
+    if (all_of(live, [&](unsigned j) { return j == i || !m.meets(in[j], arms[i], /*negB=*/true); }))
       return leaf(i);
   // A chain step: the first arm (in the caller's order) one literal separates from the rest in the
   // context, so an if/else chain is single compares (104) and nested arms nest (158).
@@ -687,7 +695,7 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
     if (literal(c)) {
       int n = node(c);
       int t = leaf(i);
-      int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(arms[i])));
+      int e = below(m.notOp(arms[i]));
       out[n].thenIdx = t;
       out[n].elseIdx = e;
       return n;
@@ -701,7 +709,7 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
     m.support(c, sup);
   std::vector<unsigned> inCtxt;   // andOp(ctxt, arms[live[k]])
   for (unsigned i : live)
-    inCtxt.push_back(m.andOp(ctxt, arms[i]));
+    inCtxt.push_back(in[i]);
   std::vector<std::optional<std::set<unsigned>>> inSup(inCtxt.size());   // the support of each, made when first read
   for (unsigned v : sup) {
     bool pos = false, neg = false, splits = true;
@@ -723,10 +731,10 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
     if (!splits || !pos || !neg)
       continue;
     unsigned lit = m.ithVar(v);
-    unsigned cond = m.andOp(m.andOp(ctxt, arms[live[0]]), lit) != Bdd::F ? lit : m.notOp(lit);
+    unsigned cond = m.meets(inCtxt[0], lit) ? lit : m.notOp(lit);
     int n = node(cond);
-    int t = buildSelect(out, arms, m.andOp(ctxt, cond));
-    int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(cond)));
+    int t = below(cond);
+    int e = below(m.notOp(cond));
     out[n].thenIdx = t;
     out[n].elseIdx = e;
     return n;
@@ -755,7 +763,7 @@ int buildSelect(std::vector<SelectNode> &out, ArrayRef<unsigned> arms, unsigned 
   unsigned i = live[best];
   int n = node(restricted[best]);
   int t = leaf(i);
-  int e = buildSelect(out, arms, m.andOp(ctxt, m.notOp(arms[i])));
+  int e = below(m.notOp(arms[i]));
   out[n].thenIdx = t;
   out[n].elseIdx = e;
   return n;
@@ -770,7 +778,7 @@ static std::vector<SelectNode> buildSelectTree(ArrayRef<unsigned> arms) {
   if (ctxt == Bdd::F)
     internalError("pred: a merge none of whose arms can be taken");
   std::vector<SelectNode> out;
-  if (buildSelect(out, arms, ctxt) != 0)
+  if (buildSelect(out, arms, ctxt, arms) != 0)   // each arm lies within the union
     internalError("pred: selectTree's root is not its first node");
   return out;
 }

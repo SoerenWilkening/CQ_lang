@@ -49,6 +49,8 @@ public:
   // Whether f holds for some assignment with v false (first) and with v true (second): f & !v != F and f & v != F,
   // without making either conjunction.
   std::pair<bool, bool> sides(unsigned f, unsigned v);
+  // Whether a & b (a & !b when negB) is satisfiable, without making the conjunction (cq-m16f6).
+  bool meets(unsigned a, unsigned b, bool negB = false);
   // Existential quantification over every variable `pick` selects.
   unsigned exists(unsigned f, const std::function<bool(unsigned)> &pick);
   // Coudert-Madre restrict: a function that agrees with f wherever c holds, with support within f's.
