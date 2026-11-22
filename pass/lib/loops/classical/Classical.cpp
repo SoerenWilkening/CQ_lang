@@ -906,6 +906,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     BasicBlock *u, *x, *Y;
     BasicBlock *end = nullptr;                      // where that segment leaves for T
     DenseMap<const PHINode *, Operand> contVal;     // case 1: C's phis on this edge
+    std::vector<SmallVector<Value *, 2>> res;       // case 3: each cphi's res on this edge
   };
   SmallVector<ArmExit, 2> armExits;
   BasicBlock *tgtFrom = nullptr;                    // the block whose terminator is being emitted
@@ -1048,8 +1049,15 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           cxArm = x;
     // The loops of the exit arm (Exits.h): each unit one node of the arm. armUnit: its blocks and its own arm's -> it.
     buildArmUnits();
-    if (cxArm)
-      armExits.emplace_back(cxb, cxArm, newBlock());
+    // cq-zueka: a classical switch at cxb may leave into the arm by several exit blocks (TinyEMU main's getopt loop): an arm
+    // exit per edge, each with its own res, which T joins (cq-2xl5's join below).
+    if (cxArm && !is_contained(UX.live, cxArm))
+      armExits.emplace_back(cxb, cxArm, newBlock());   // a noreturn arm's (rule 14 "No live exit")
+    else if (cxArm)
+      for (BasicBlock *x : successors(cxb))
+        if (!L.contains(x) && x != UX.cont && is_contained(UX.live, x) &&
+            none_of(armExits, [&](const ArmExit &e) { return e.x == x; }))
+          armExits.emplace_back(cxb, x, newBlock());
     // cq-iaz30 (CR rule 14 case 3 with rule 8): a classical bound tested mid-trip (gsl_min_find_bracket: `i == max` before the
     // latch's quantum test; broyden_iterate: the mixed test `q && i < 9 && q'`) into C leaves where the trip stands at it, as a
     // classical exit test besides the bound does (cq-2xl5): its res is made at its branch (extraRes: the trip predicate there
@@ -1591,7 +1599,19 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     Pred f = it == factOf.end() ? Pred::top() : it->second;
     if (Loop *k = kunit(p); k && kunit(b) != k)
       return f;
-    return f & cfOf(ctx.preds().edge(p, b));
+    // cq-zueka (CR rule 8): a classical terminator's edge is a real branch, taken exactly where its condition holds, also a
+    // disjunction (several switch cases into b), which the factor of the edge's predicate (its classical literals) drops under
+    // a quantum arm: the edge's classical projection is its fact.
+    const Pred e = ctx.preds().edge(p, b);
+    const Instruction *t = p->getTerminator();
+    const Value *c = nullptr;
+    if (auto *sw = dyn_cast<SwitchInst>(t))
+      c = sw->getCondition();
+    else if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      c = ib->getAddress();
+    else if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+      c = br->getCondition();
+    return f & (c && !isQ(c) && !e.isBottom() ? e.classicalProjection(ctx.T, ctx.S) : cfOf(e));
   };
   // The phis of a K-unit's continuation that the unit bound (their value where the unit ran), and the
   // output block each unit's flow leaves from with the edge that stands for its exits (real form).
@@ -3768,6 +3788,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             c[f] = select(g, fv[f], Operand{c[f], true}, cp.rails[f]);
         }
       cp.res.assign(c.begin(), c.end());
+      ax.res.push_back(cp.res);
     }
     if (!mx && UX.cont)
       for (PHINode &P : UX.cont->phis()) {
@@ -3822,7 +3843,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   DenseSet<const Value *> fat;
   // cq-2xl5: with classical exit tests besides the bound, T joins each exit edge's res (a phi per field), and the reverse
   // starts at the segment of the edge taken (exitIndex, as cq-j5mq's).
-  if (!extraExits.empty()) {
+  const bool multiArm = mx && armExits.size() > 1;
+  if (!extraExits.empty() || multiArm) {
     LLVMContext &Cx = ctx.M.getContext();
     SmallVector<std::pair<BasicBlock *, const std::vector<SmallVector<Value *, 2>> *>, 4> from;
     std::vector<SmallVector<Value *, 2>> bound;
@@ -3832,12 +3854,15 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       auto ef = edgeFrom.find({u, UX.cont});
       return ef == edgeFrom.end() ? nullptr : ef->second;
     };
-    if (BasicBlock *lb = midCxb ? nullptr : leave(cxb))
+    if (BasicBlock *lb = midCxb || multiArm ? nullptr : leave(cxb))
       from.push_back({lb, &bound});
     for (ExtraExit &xx : extraExits)
       if (BasicBlock *lb = leave(xx.u))
         from.push_back({lb, &xx.res});
-    if (!T || cxArm || !armExits.empty() ||
+    if (multiArm)
+      for (ArmExit &ax : armExits)
+        from.push_back({ax.end, &ax.res});
+    if (!T || (!multiArm && (cxArm || !armExits.empty())) ||
         any_of(predecessors(T), [&](BasicBlock *p) { return none_of(from, [&](const auto &e) { return e.first == p; }); })) {
       noteUnbuilt("loops-classical: a case-3 loop with several classical exit tests whose exit edges do not all enter "
                   "its continuation from the trip",
