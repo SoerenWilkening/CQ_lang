@@ -4077,12 +4077,15 @@ bool Unit::contains(const Loop &L, const BasicBlock *b) const {
 
 // cq-fi2wc: the nearest block every path from each of xs to a return passes, paths into a dead end (no return reachable)
 // set aside; nullptr when there is none. Iterative post-dominator sets over the blocks that reach a return.
-static BasicBlock *nearestPostDomPastDeadEnds(Function &F, ArrayRef<BasicBlock *> xs) {
+// cq-1jev3: a block of `ends` ends a path as a return does (an enclosing loop's header: the end of its trip).
+static BasicBlock *nearestPostDomPastDeadEnds(Function &F, ArrayRef<BasicBlock *> xs,
+                                              const SmallPtrSetImpl<const BasicBlock *> &ends = SmallPtrSet<const BasicBlock *, 1>()) {
+  auto isEnd = [&](const BasicBlock *b) { return isa<ReturnInst>(b->getTerminator()) || ends.count(b); };
   DenseMap<const BasicBlock *, unsigned> idx;
   std::vector<BasicBlock *> alive;
   SmallVector<BasicBlock *, 16> work;
   for (BasicBlock &b : F)
-    if (isa<ReturnInst>(b.getTerminator())) {
+    if (isEnd(&b)) {
       idx[&b] = alive.size();
       alive.push_back(&b);
       work.push_back(&b);
@@ -4099,14 +4102,14 @@ static BasicBlock *nearestPostDomPastDeadEnds(Function &F, ArrayRef<BasicBlock *
   const unsigned n = alive.size();
   std::vector<BitVector> pd(n, BitVector(n, true));
   for (unsigned i = 0; i < n; ++i)
-    if (isa<ReturnInst>(alive[i]->getTerminator())) {
+    if (isEnd(alive[i])) {
       pd[i].reset();
       pd[i].set(i);
     }
   for (bool changed = true; changed;) {
     changed = false;
     for (unsigned i = 0; i < n; ++i) {   // found order, from the returns backwards: mostly successors first
-      if (isa<ReturnInst>(alive[i]->getTerminator()))
+      if (isEnd(alive[i]))
         continue;
       BitVector v(n, true);
       for (BasicBlock *s : successors(alive[i]))
@@ -4214,6 +4217,30 @@ Unit unitOf(const Loop &L) {
   // over the paths that reach a return.
   if (!c)
     c = nearestPostDomPastDeadEnds(F, U.live);
+  // cq-1jev3 (CR rule 14, nested loops): C lies on every exit's way on, never past the loop itself. Where an exit reaches the
+  // post-dominator only through the loop again (an exit that is an enclosing loop's back edge; in an enclosing loop with no
+  // exit LLVM's post-dominators run through the loop), the exits meet at the end of the enclosing trip: C is the nearest
+  // block every path passes up to a return or an enclosing loop's header (that header when they meet only there).
+  auto onWay = [&](BasicBlock *x) {
+    SmallVector<BasicBlock *, 8> work{x};
+    SmallPtrSet<BasicBlock *, 8> seen{x};
+    while (!work.empty()) {
+      BasicBlock *b = work.pop_back_val();
+      if (b == c)
+        return true;
+      for (BasicBlock *s : successors(b))
+        if (!L.contains(s) && seen.insert(s).second)
+          work.push_back(s);
+    }
+    return false;
+  };
+  if (c && L.getParentLoop() && !all_of(U.live, onWay)) {
+    SmallPtrSet<const BasicBlock *, 4> heads;
+    for (Loop *P = L.getParentLoop(); P; P = P->getParentLoop())
+      heads.insert(P->getHeader());
+    if (BasicBlock *t = nearestPostDomPastDeadEnds(F, U.live, heads))
+      c = t;
+  }
   if (!c)
     unimplemented("loops-cutoff: a rule-14 loop whose live exits have no common post-dominator (cq-0dvv)",
                   U.live.front()->getTerminator());
