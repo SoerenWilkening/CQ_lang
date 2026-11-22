@@ -48,6 +48,12 @@ private:
 // Does p read every atom of lit (lit's support within p's)?
 bool predReads(const Pred &p, const Pred &lit);
 bool predsMeet(const Pred &a, const Pred &b);
+// No two of ps meet (predsMeet), tested pairwise; a pair whose parts imply distinct cases of one switch is settled
+// without predsMeet's conjunction per pair of case atoms (cq-m16f6).
+bool predsExclusive(llvm::ArrayRef<Pred> ps);
+// u (the union of parts) as a union of parts no two of which meet (predsMeet), each reading only atoms u reads: the
+// parts with the other atoms quantified away (exists), those that meet merged, in order of first part (cq-m16f6).
+std::vector<Pred> exclusiveParts(const Pred &u, llvm::ArrayRef<Pred> parts);
 struct EdgePreds { llvm::SmallVector<std::pair<const llvm::BasicBlock *, Pred>, 4> succ; };
 class PathPredicates {
 public:

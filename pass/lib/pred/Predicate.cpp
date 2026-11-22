@@ -855,20 +855,101 @@ bool pred_detail::exclusiveAtoms(const Atom &x, const Atom &y) {
          (x.kind == AtomKind::Addr && y.kind == AtomKind::Addr && x.v == y.v && x.bb != y.bb);
 }
 
+std::vector<Pred> exclusiveParts(const Pred &u, ArrayRef<Pred> parts) {
+  Bdd &m = Bdd::get();
+  std::set<unsigned> sup;
+  m.support(nodeOf(u), sup);
+  std::vector<Pred> in;
+  for (const Pred &p : parts)
+    if (unsigned n = m.exists(nodeOf(p), [&](unsigned v) { return !sup.count(v); }); n != Bdd::F)
+      in.push_back(makePred(n));
+  // Union-find over the parts that meet; a class's part is the union of its members.
+  std::vector<unsigned> rep(in.size());
+  for (unsigned i = 0; i < rep.size(); ++i)
+    rep[i] = i;
+  std::function<unsigned(unsigned)> find = [&](unsigned i) { return rep[i] == i ? i : rep[i] = find(rep[i]); };
+  if (!predsExclusive(in))
+    for (unsigned i = 0; i < in.size(); ++i)
+      for (unsigned j = i + 1; j < in.size(); ++j)
+        if (find(i) != find(j) && predsMeet(in[i], in[j]))
+          rep[std::max(find(i), find(j))] = std::min(find(i), find(j));
+  std::vector<Pred> out;
+  std::vector<int> at(in.size(), -1);
+  for (unsigned i = 0; i < in.size(); ++i) {
+    unsigned r = find(i);
+    if (at[r] < 0) {
+      at[r] = int(out.size());
+      out.push_back(in[i]);
+    } else {
+      out[at[r]] = out[at[r]] | in[i];
+    }
+  }
+  return out;
+}
+
+bool predsExclusive(ArrayRef<Pred> ps) {
+  Bdd &m = Bdd::get();
+  // Per part, the case atoms it implies.
+  std::vector<SmallVector<unsigned, 4>> implied(ps.size());
+  for (size_t i = 0; i < ps.size(); ++i) {
+    unsigned f = nodeOf(ps[i]);
+    std::set<unsigned> sup;
+    m.support(f, sup);
+    for (unsigned v : sup)
+      if (caseAtom(atomOf(v)) && !m.meets(f, m.ithVar(v), /*negB=*/true))
+        implied[i].push_back(v);
+  }
+  for (size_t i = 0; i < ps.size(); ++i)
+    for (size_t j = i + 1; j < ps.size(); ++j) {
+      if (!m.meets(nodeOf(ps[i]), nodeOf(ps[j])))
+        continue;
+      if (any_of(implied[i], [&](unsigned x) {
+            return any_of(implied[j], [&](unsigned y) { return exclusiveAtoms(atomOf(x), atomOf(y)); });
+          }))
+        continue;
+      if (predsMeet(ps[i], ps[j]))
+        return false;
+    }
+  return true;
+}
+
 bool predsMeet(const Pred &a, const Pred &b) {
   Bdd &m = Bdd::get();
   unsigned f = m.andOp(nodeOf(a), nodeOf(b));
   if (f == Bdd::F)
     return false;
-  std::set<unsigned> sup;
-  m.support(f, sup);
-  std::vector<unsigned> eqs(sup.begin(), sup.end());
-  for (size_t i = 0; i < eqs.size() && f != Bdd::F; ++i)
-    for (size_t j = i + 1; j < eqs.size() && f != Bdd::F; ++j) {
-      if (exclusiveAtoms(atomOf(eqs[i]), atomOf(eqs[j])))
-        f = m.andOp(f, m.notOp(m.andOp(m.ithVar(eqs[i]), m.ithVar(eqs[j]))));
+  // A path of f to true on which no two case atoms of one switch hold (exclusiveAtoms); an atom off the path is false.
+  // cq-m16f6: a walk, not a conjunction per pair of case atoms. `held`: the case atom that holds per switch on the path
+  // so far (sorted by var), interned; a (node, held) found to have no such path is not walked again.
+  std::map<std::vector<unsigned>, unsigned> heldIds;
+  std::set<std::pair<unsigned, unsigned>> dead;
+  std::vector<unsigned> held;
+  std::function<bool(unsigned)> go = [&](unsigned n) -> bool {
+    if (n == Bdd::F)
+      return false;
+    if (n == Bdd::T)
+      return true;
+    unsigned id = heldIds.try_emplace(held, unsigned(heldIds.size())).first->second;
+    if (dead.count({n, id}))
+      return false;
+    if (go(m.lo(n)))
+      return true;
+    unsigned v = m.var(n);
+    const Atom &x = atomOf(v);
+    bool ok = !caseAtom(x) || none_of(held, [&](unsigned h) { return exclusiveAtoms(atomOf(h), x); });
+    if (ok) {
+      std::vector<unsigned> saved = held;
+      if (caseAtom(x))
+        held.insert(std::lower_bound(held.begin(), held.end(), v), v);
+      bool r = go(m.hi(n));
+      held = std::move(saved);
+      if (r)
+        return true;
     }
-  return f != Bdd::F;
+    dead.insert({n, id});
+    return false;
+  };
+  return go(f);
 }
 
 Pred Pred::operator&(const Pred &o) const { return makePred(Bdd::get().andOp(nodeOf(*this), nodeOf(o))); }
