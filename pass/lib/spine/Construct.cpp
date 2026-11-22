@@ -423,9 +423,16 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
     // without dominating them (y joins a classical arm not containing x and a quantum edge out of the
     // arm that contains x: 169's __divdc3 block %45, reached from %35's classical false edge and from
     // %37's quantum false edge inside the true arm).
+    // cq-zueka: y must lie in another arm of that branch than x (an edge of it reaching y and not x); a branch above both
+    // whose one arm holds x and y alike leaves them to the classical branch inside that arm, which excludes y here
+    // (TinyEMU fma_sf32: x and y the two sides of a classical test in the quantum branch's one arm).
     for (unsigned q = 0; q < i; ++q)
       if (reach[q].test(i) && reach[q].test(j) && isQuantumTerm(ctx, L[q]->getTerminator()) &&
-          !(unitOf.count(L[q]) && unitOf.lookup(L[q])->getHeader() != L[q]))
+          !(unitOf.count(L[q]) && unitOf.lookup(L[q])->getHeader() != L[q]) &&
+          any_of(successors(L[q]), [&](const BasicBlock *t) {
+            auto ti = idx.find(t);
+            return ti != idx.end() && ti->second > q && reach[ti->second].test(j) && !reach[ti->second].test(i);
+          }))
         return y;
   }
   return const_cast<BasicBlock *>(s);
