@@ -393,6 +393,7 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
   const Loop *pure = s && xl && pureHeaders.count(xl->getHeader()) ? xl->getOutermostLoop() : nullptr;
   if (pure && pure->contains(s))
     return const_cast<BasicBlock *>(s);
+  std::optional<bool> xDead;   // computed once, only when the cq-v11y rule below needs it
   for (unsigned j = i + 1; j < L.size(); ++j) {
     BasicBlock *y = L[j];
     if (s ? y == s : is_contained(successors(x), y))
@@ -426,13 +427,17 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
     // cq-zueka: y must lie in another arm of that branch than x (an edge of it reaching y and not x); a branch above both
     // whose one arm holds x and y alike leaves them to the classical branch inside that arm, which excludes y here
     // (TinyEMU fma_sf32: x and y the two sides of a classical test in the quantum branch's one arm).
+    // cq-us8cz (rules 8, 16): not when x is a dead end. Its path ends, so that classical test excludes y only on a path
+    // that never reaches the join; the walk still has to run y before the join reads y's values (TinyEMU
+    // i440fx_read_data: x an `unreachable` side, y its live sibling).
     for (unsigned q = 0; q < i; ++q)
       if (reach[q].test(i) && reach[q].test(j) && isQuantumTerm(ctx, L[q]->getTerminator()) &&
           !(unitOf.count(L[q]) && unitOf.lookup(L[q])->getHeader() != L[q]) &&
-          any_of(successors(L[q]), [&](const BasicBlock *t) {
+          ((xDead ? *xDead : *(xDead = taint_detail::DeadEnds(F).isDeadEnd(x))) ||
+           any_of(successors(L[q]), [&](const BasicBlock *t) {
             auto ti = idx.find(t);
             return ti != idx.end() && ti->second > q && reach[ti->second].test(j) && !reach[ti->second].test(i);
-          }))
+          })))
         return y;
   }
   return const_cast<BasicBlock *>(s);
