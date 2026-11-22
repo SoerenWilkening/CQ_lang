@@ -75,8 +75,9 @@ translator of the IR. A call never returns before its gates are appended in prog
   only values cross the ABI (`alloc`, `measure`, literals). The quantum-angle ladder (§1.5) is the
   one place where bit weights matter.
 - **Widths.** The integer widths a backend must provide are those the corpus and the lowered
-  float library (§2.12) use, currently `i1 i6 i7 i8 i16 i17 i24 i31 i32 i48 i64 i80 i100 i128
-  i200`; the core gates (§1) also take the float tokens `f16 bf16 f32 f64 f80`. This bullet is
+  float library (§2.12) use, and those the lowered experiment programs use (TinyEMU: `i14 i15 i50
+  i63 i112`, widths the compiler narrows a value to), currently `i1 i6 i7 i8 i14 i15 i16 i17 i24
+  i31 i32 i48 i50 i63 i64 i80 i100 i112 i128 i200`; the core gates (§1) also take the float tokens `f16 bf16 f32 f64 f80`. This bullet is
   the one definition of that list: CR carries no copy. `bswap` exists only where W is a multiple
   of 16 (§2.8). Any `N ≥ 1` is legal (CR §1.1), so implement templates generically in W: a width
   outside the list is an undefined symbol at link time until it is added here.
