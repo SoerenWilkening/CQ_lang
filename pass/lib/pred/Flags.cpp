@@ -1564,10 +1564,26 @@ public:
     // cq-us8cz (rule 9): with no join above to carry n's atoms over, n is a constant wherever the point's facts hold
     // when they exclude n or its complement, also only by the exclusive cases of one switch (predsMeet; TinyEMU
     // csr_read: a later case's quantum edge read on the path of an earlier case, whose block the walk did not run).
-    if (noJoinAbove(U))
+    // A point whose facts contradict the care set is reached on no path the flag is needed on (either constant serves).
+    if (noJoinAbove(U)) {
+      unsigned c = m.andOp(care, factsAt(U));
       for (unsigned k : {Bdd::F, Bdd::T})
-        if (!predsMeet(makePred(k == Bdd::F ? n : m.notOp(n)), makePred(care)))
+        if (!predsMeet(makePred(k == Bdd::F ? n : m.notOp(n)), makePred(c)))
           return CtxSink(ctx).classicalSeed(k);
+      // Each atom those facts fix (a case of a switch whose other case they hold, TinyEMU csr_read) has its value in n:
+      // the rest of n agrees with n wherever they hold, and may read only atoms that reach the point.
+      std::set<unsigned> sup;
+      m.support(n, sup);
+      unsigned r = n;
+      for (unsigned v : sup) {
+        if (!predsMeet(makePred(m.ithVar(v)), makePred(c)))
+          r = m.cofactor(r, v, false);
+        else if (!predsMeet(makePred(m.notOp(m.ithVar(v))), makePred(c)))
+          r = m.cofactor(r, v, true);
+      }
+      if (r != n)
+        return flagAt(r, care, U, pt, what);
+    }
     BasicBlock *J = joinAbove(U, what, [&] { return "the predicate " + describe(n); });
     if (BasicBlock *E = loopEntry(J, U, atomValues(n)))
       return flagAt(n, care, E, E->getTerminator()->getIterator(), what);   // cq-03rdt
@@ -1658,8 +1674,10 @@ public:
     // over (the entry's own classical arm, a unit there reading a binding an earlier unit made in the other
     // arm: wcsrtombs' loops into one join). Its don't-care: a |0> seed here, or the null value (rule 7).
     // cq-us8cz: the facts at the point narrow the care set, and they may exclude the arm only by the exclusive cases of
-    // one switch (predsMeet; TinyEMU csr_read: an earlier case's path reaching the join of a later case's arm).
-    if (k.var < 0 && noJoinAbove(U) && !predsMeet(makePred(k.node), makePred(pointCare(k.care, U)))) {
+    // one switch (predsMeet; TinyEMU csr_read: an earlier case's path reaching the join of a later case's arm). When they
+    // contradict the care set, no path the value is needed on reaches the point (a classically infeasible edge: a case of
+    // a switch on the value an enclosing switch already fixed to another case).
+    if (k.var < 0 && noJoinAbove(U) && !predsMeet(makePred(k.node), makePred(m.andOp(k.care, factsAt(U))))) {
       Type *ty = handle ? irTypeOf(ctx.M.getContext(), w) : v->getType();
       if (!handle)
         return Constant::getNullValue(ty);
