@@ -1561,6 +1561,13 @@ public:
         return sink.classicalSeed(n);   // rule 7: a rail holding the constant
       return materialize(n, sink, ql);
     }
+    // cq-us8cz (rule 9): with no join above to carry n's atoms over, n is a constant wherever the point's facts hold
+    // when they exclude n or its complement, also only by the exclusive cases of one switch (predsMeet; TinyEMU
+    // csr_read: a later case's quantum edge read on the path of an earlier case, whose block the walk did not run).
+    if (noJoinAbove(U))
+      for (unsigned k : {Bdd::F, Bdd::T})
+        if (!predsMeet(makePred(k == Bdd::F ? n : m.notOp(n)), makePred(care)))
+          return CtxSink(ctx).classicalSeed(k);
     BasicBlock *J = joinAbove(U, what, [&] { return "the predicate " + describe(n); });
     if (BasicBlock *E = loopEntry(J, U, atomValues(n)))
       return flagAt(n, care, E, E->getTerminator()->getIterator(), what);   // cq-03rdt
@@ -1650,7 +1657,9 @@ public:
     // Rule 9: a merge arm the point's classical facts exclude, at a point with no join above it to carry it
     // over (the entry's own classical arm, a unit there reading a binding an earlier unit made in the other
     // arm: wcsrtombs' loops into one join). Its don't-care: a |0> seed here, or the null value (rule 7).
-    if (k.var < 0 && m.andOp(k.node, k.care) == Bdd::F && noJoinAbove(U)) {
+    // cq-us8cz: the facts at the point narrow the care set, and they may exclude the arm only by the exclusive cases of
+    // one switch (predsMeet; TinyEMU csr_read: an earlier case's path reaching the join of a later case's arm).
+    if (k.var < 0 && noJoinAbove(U) && !predsMeet(makePred(k.node), makePred(pointCare(k.care, U)))) {
       Type *ty = handle ? irTypeOf(ctx.M.getContext(), w) : v->getType();
       if (!handle)
         return Constant::getNullValue(ty);
