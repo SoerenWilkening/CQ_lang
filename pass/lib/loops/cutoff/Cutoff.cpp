@@ -875,6 +875,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (!L.contains(at) || (isa<PHINode>(ui) && !L.contains(ui->getParent())))
           outside = true;
       }
+      // cq-hmxd5 (CR rule 14 "No live exit"): with no live exit nothing runs after the loop; a reader outside it is in a
+      // noreturn arm, which runs per trip on that trip's values, or in a dead end.
+      if (U.live.empty())
+        outside = false;
       if (!outside)
         continue;
       if (regionForm) {

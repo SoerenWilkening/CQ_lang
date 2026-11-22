@@ -35,7 +35,7 @@ add_test(NAME loops-cutoff-widened
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_cfg.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/latches.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/latches_ir.O1.ll 
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exits.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/entries_ir.O1.ll
-          ${CMAKE_CURRENT_SOURCE_DIR}/probes/noexit.O1.ll 
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/noexit.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/noexit_loop.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/b_bound_pos.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/arm_loop.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/bus_kloop.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/bounded_two_exits.O1.ll
