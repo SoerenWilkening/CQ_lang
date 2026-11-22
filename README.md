@@ -304,8 +304,8 @@ Time spent in the lowering, on one x86-64 Mac:
 | What | Functions | Time | Result |
 |---|---|---|---|
 | The C standard library, all nine root lists | 387 | 3 min | `libqc.a`, 79 MB |
-| SoftFloat, `float`, `double`, `_Float16`, `__bf16` | 673 | 1 min 40 s | `libqsoftfloat.a`, 15.2 MB |
-| SoftFloat, `long double` | 182 | 36 s | `libqsoftfloat_f80.a`, 5.2 MB |
+| SoftFloat, `float`, `double`, `_Float16`, `__bf16` | 673 | 4 min | `libqsoftfloat.a`, 57.4 MB |
+| SoftFloat, `long double` | 182 | 1 min 15 s | `libqsoftfloat_f80.a`, 17.8 MB |
 
 ## Experiments on existing C projects
 
