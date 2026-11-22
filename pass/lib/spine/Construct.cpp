@@ -2690,6 +2690,8 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
 
   Value *entryFlag = nullptr;
   SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
+  // cq-pjjml: a packed formal with no quantum field is joined into one classical iN, code that needs the entry block.
+  SmallVector<std::tuple<Argument *, SmallVector<unsigned, 4>, SmallVector<Operand, 4>>, 1> classicalPacked;
   if (S.isEntry()) {
     // Rule 19 (193): an entry returning an unmeasured quantum value returns its handle. The return
     // type stays the C one when it is an integer of 32 bits or more (the handle as is or
@@ -2765,7 +2767,10 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
             ctx.unc().recordExternal(P, Role::UserRegister);
           ops.push_back(Operand{P, q});
         }
-        spine::bindPacked(ctx, A, cuts, ops);
+        if (none_of(ops, [](const Operand &o) { return o.handle; }))
+          classicalPacked.push_back({A, cuts, ops});   // joined in the entry block (below)
+        else
+          spine::bindPacked(ctx, A, cuts, ops);
         continue;
       }
       if (p + fm.size() > C->arg_size())
@@ -2825,6 +2830,8 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   LoopInfo LI(DT);
   ctx.preds().compute(F, LI, T, S, entryFlag);
   ctx.B().SetInsertPoint(BasicBlock::Create(M.getContext(), "", sh.out));
+  for (auto &[A, cuts, ops] : classicalPacked)
+    spine::bindPacked(ctx, A, cuts, ops);
   // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
   // value of its own type, rebuilt from its leaves (struct and array fields, vector lanes, in order).
   for (auto &[A, ops] : classicalComposites) {
