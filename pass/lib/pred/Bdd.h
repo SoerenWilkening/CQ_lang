@@ -84,9 +84,18 @@ private:
   unsigned top(unsigned n) { return terminal(n) ? NoVar : level(var(n)); }   // NoVar: below every variable
   std::vector<Node> nodes;
   std::vector<unsigned> lvl, order;   // var -> level, level -> var
-  // cofMemo: cofactor results keyed {f, v, val}; like iteMemo it stays valid when a variable is placed (node numbers
-  // are canonical and a hit means the walk already made every node it would make).
-  std::unordered_map<Key3, unsigned, Hash3> unique, iteMemo, cofMemo;
+  // cq-4fojl: the unique table is open addressing over node numbers (0, never a key, is an empty slot), and ite's
+  // memo is a direct-mapped cache that a collision overwrites: a miss only walks again and finds every node it makes
+  // in the unique table, so node numbers are the same as with an exact memo. Both grow with the node count (the cache
+  // to a quarter of it: a larger one saved no time on TinyEMU's interpreters).
+  std::vector<unsigned> uniq;
+  struct IteEntry { unsigned f, g, h, r; };   // f == 0: empty (ite never memoizes a terminal f)
+  std::vector<IteEntry> iteCache;
+  void growUnique();
+  void growIteCache();
+  // cofMemo: cofactor results keyed {f, v, val}; like the ite cache it stays valid when a variable is placed (node
+  // numbers are canonical and a hit means the walk already made every node it would make).
+  std::unordered_map<Key3, unsigned, Hash3> cofMemo;
   // cq-g3h1i: per-walk marks of cofactor and support: seenAt[n] == stamp says n was visited by the current walk
   // (memoVal[n]: cofactor's result for it).
   mutable std::vector<unsigned> seenAt, memoVal;

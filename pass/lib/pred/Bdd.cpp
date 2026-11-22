@@ -17,6 +17,8 @@ Bdd &Bdd::get() {
 Bdd::Bdd() {
   nodes.push_back({NoVar, F, F});   // false
   nodes.push_back({NoVar, T, T});   // true
+  growUnique();
+  growIteCache();
 }
 
 void Bdd::append(unsigned v) {
@@ -47,14 +49,40 @@ unsigned Bdd::mk(unsigned v, unsigned l, unsigned h) {
   if (l == h)
     return l;
   place(v);
-  Key3 k{v, l, h};
-  auto it = unique.find(k);
-  if (it != unique.end())
-    return it->second;
+  if ((nodes.size() + 1) * 4 > uniq.size() * 3)
+    growUnique();
+  const size_t mask = uniq.size() - 1;
+  size_t i = Hash3()(Key3{v, l, h}) & mask;
+  for (; uniq[i]; i = (i + 1) & mask) {
+    const Node &o = nodes[uniq[i]];
+    if (o.var == v && o.lo == l && o.hi == h)
+      return uniq[i];
+  }
   unsigned n = unsigned(nodes.size());
   nodes.push_back({v, l, h});
-  unique.emplace(k, n);
+  uniq[i] = n;
   return n;
+}
+
+void Bdd::growUnique() {
+  std::vector<unsigned> t(std::max<size_t>(uniq.size() * 2, 1024), 0u);
+  const size_t mask = t.size() - 1;
+  for (unsigned n = 2; n < nodes.size(); ++n) {
+    size_t i = Hash3()(Key3{nodes[n].var, nodes[n].lo, nodes[n].hi}) & mask;
+    while (t[i])
+      i = (i + 1) & mask;
+    t[i] = n;
+  }
+  uniq.swap(t);
+}
+
+void Bdd::growIteCache() {
+  std::vector<IteEntry> t(std::max<size_t>(iteCache.size() * 2, 1024), IteEntry{0, 0, 0, 0});
+  const size_t mask = t.size() - 1;
+  for (const IteEntry &e : iteCache)
+    if (e.f)
+      t[Hash3()(Key3{e.f, e.g, e.h}) & mask] = e;
+  iteCache.swap(t);
 }
 
 unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
@@ -111,10 +139,13 @@ unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
     return g;
   if (g == T && h == F)
     return f;
-  Key3 k{f, g, h};
-  auto it = iteMemo.find(k);
-  if (it != iteMemo.end())
-    return it->second;
+  if (iteCache.size() * 4 < nodes.size())
+    growIteCache();
+  {
+    const IteEntry &e = iteCache[Hash3()(Key3{f, g, h}) & (iteCache.size() - 1)];
+    if (e.f == f && e.g == g && e.h == h)
+      return e.r;
+  }
   unsigned lv = std::min({top(f), top(g), top(h)}), v = order[lv];
   auto co = [&](unsigned x, bool b) {
     if (terminal(x) || var(x) != v)
@@ -124,7 +155,9 @@ unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
   unsigned r0 = ite(co(f, false), co(g, false), co(h, false));
   unsigned r1 = ite(co(f, true), co(g, true), co(h, true));
   unsigned r = mk(v, r0, r1);
-  iteMemo.emplace(k, r);
+  if (iteCache.size() * 4 < nodes.size())
+    growIteCache();
+  iteCache[Hash3()(Key3{f, g, h}) & (iteCache.size() - 1)] = IteEntry{f, g, h, r};
   return r;
 }
 
