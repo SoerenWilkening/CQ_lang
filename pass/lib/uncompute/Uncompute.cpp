@@ -298,7 +298,7 @@ struct Uncompute::Impl {
     DenseSet<RailId> left = {};   // leaveScope: rails the scope's time span holds and its region does not
   };
 
-  std::vector<Record> records;
+  std::deque<Record> records;   // cq-i61ms: a deque: growth never moves the records
   std::vector<RecInfo> info;
   std::deque<Rail> rails;   // a deque: growth never copies the rails (Rail is not nothrow-movable)
   DenseMap<const Value *, RailId> byHandle;
@@ -843,6 +843,26 @@ struct Uncompute::Impl {
   // region closeInvert closed last (resolveRegionMade reads it).
   SmallVector<RailId, 2> invertStart;
   RailId lastRegionStart = kNone;
+  // cq-i61ms: the first rail at or after g that is not released (rails.size() for none). A released rail is never pending
+  // again, so the scans that look for pending rails (every flush scanned every rail of the function) skip the released
+  // ones through this chain of forward links, shortened as it is walked.
+  mutable std::vector<RailId> nextLive;
+  RailId liveFrom(RailId g) const {
+    while (nextLive.size() <= rails.size())
+      nextLive.push_back(RailId(nextLive.size()));
+    RailId r = g;
+    while (r < rails.size() && (nextLive[r] != r || rails[r].released)) {
+      if (nextLive[r] == r)
+        nextLive[r] = r + 1;
+      r = nextLive[r];
+    }
+    for (RailId x = g; x != r && x < rails.size();) {
+      RailId n = nextLive[x];
+      nextLive[x] = r;
+      x = n;
+    }
+    return r;
+  }
   bool frozen(RailId g) const {
     return any_of(invertFrozen, [&](const DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s) { return s.count(g) != 0; });
   }
@@ -1160,24 +1180,170 @@ struct Uncompute::Impl {
   // in the order it lists them (it depends on the list alone). Kept per list within a readsMemo session.
   using BfsMemo = std::map<std::vector<RailId>, SmallVector<RailId, 8>>;
   mutable BfsMemo *bfsMemo = nullptr;
+  // cq-i61ms: within emitMirror's session (nothing is placed) its callers read only the pending readers. A candidate
+  // that is not pending, owned by no deferred item and no deferred item's exit stays itself and is not pending: it is
+  // dropped before its itemReads, and from the memoized walk's list. The exit rails of every deferred item, or null
+  // outside such a session.
+  mutable const DenseSet<RailId> *pendingReadersOnly = nullptr;
+  bool mayReadPending(RailId o) const {
+    if (pending(o) || pendingReadersOnly->count(o))
+      return true;
+    // readersOf's mapping: a reader owned by a deferred item may read as that item (then, if it is an exit, as another)
+    unsigned di = rails[o].ownedBy;
+    return di != kNone && (pending(defs[di].pseudo) || pendingReadersOnly->count(defs[di].pseudo));
+  }
+  // cq-i61ms: a set of rails as a stamp per rail (the walks below insert thousands of rails per call, a hash set's
+  // cost). Each live RailSet holds its own array from a pool; a new set takes a fresh stamp.
+  struct Marks {
+    std::vector<unsigned> v;
+    unsigned stamp = 0;
+  };
+  mutable std::vector<std::unique_ptr<Marks>> markPool;
+  mutable unsigned marksInUse = 0;
+  class RailSet {
+    const Impl &I;
+    Marks &m;
+
+  public:
+    explicit RailSet(const Impl &impl) : I(impl), m(take(impl)) {
+      if (++m.stamp == 0) {
+        std::fill(m.v.begin(), m.v.end(), 0);
+        m.stamp = 1;
+      }
+    }
+    template <typename R> RailSet(const Impl &impl, const R &init) : RailSet(impl) {
+      for (RailId x : init)
+        insert(x);
+    }
+    ~RailSet() { --I.marksInUse; }
+    RailSet(const RailSet &) = delete;
+    RailSet &operator=(const RailSet &) = delete;
+    // true when x was not in the set
+    bool insert(RailId x) {
+      if (x >= m.v.size())
+        m.v.resize(std::max<size_t>(x + 1, I.rails.size()), 0);
+      if (m.v[x] == m.stamp)
+        return false;
+      m.v[x] = m.stamp;
+      return true;
+    }
+
+  private:
+    static Marks &take(const Impl &impl) {
+      if (impl.marksInUse == impl.markPool.size())
+        impl.markPool.push_back(std::make_unique<Marks>());
+      return *impl.markPool[impl.marksInUse++];
+    }
+  };
   SmallVector<RailId, 8> targetCands(ArrayRef<RailId> roots) const {
     SmallVector<RailId, 8> cand;
     SmallVector<RailId, 4> targets(roots.begin(), roots.end());
-    SmallDenseSet<RailId, 16> candSet, targetSet(roots.begin(), roots.end());
+    RailSet candSet(*this), targetSet(*this, roots);
     for (unsigned i = 0; i < targets.size(); ++i)
       for (RailId n : names(targets[i])) {
         for (unsigned rec : rails[n].readerRecs) {
-          if (candSet.insert(info[rec].item).second)
+          if (candSet.insert(info[rec].item))
             cand.push_back(info[rec].item);
           if (!isCreator(info[rec].kind))
-            if (RailId x = records[rec].out; x < rails.size() && targetSet.insert(x).second)
+            if (RailId x = records[rec].out; x < rails.size() && targetSet.insert(x))
               targets.push_back(x);
         }
         for (RailId o : rails[n].cleanupReaders)
-          if (candSet.insert(o).second)
+          if (candSet.insert(o))
             cand.push_back(o);
       }
     return cand;
+  }
+
+  // cq-i61ms: within a pendingReadersOnly session, the candidates targetCands lists from one target (as a set, those
+  // mayReadPending admits), per target. The walks of one session overlap along chains of in-place writes (sqlite3VdbeExec:
+  // each target reached about 45 times), so each target's list is the union of its own readers and its successors'
+  // lists, made once: Tarjan over the targets graph (a cycle of in-place writes shares one list).
+  struct ClosureMemo {
+    DenseMap<RailId, unsigned> listOf;   // target -> its strongly connected component's list
+    std::vector<std::vector<RailId>> lists;
+  };
+  mutable ClosureMemo *closureMemo = nullptr;
+  SmallVector<RailId, 4> targetSuccs(RailId t) const {
+    SmallVector<RailId, 4> s;
+    for (RailId n : names(t))
+      for (unsigned rec : rails[n].readerRecs)
+        if (!isCreator(info[rec].kind))
+          if (RailId x = records[rec].out; x < rails.size())
+            s.push_back(x);
+    return s;
+  }
+  const std::vector<RailId> &targetClosure(RailId t0) const {
+    ClosureMemo &M = *closureMemo;
+    if (auto it = M.listOf.find(t0); it != M.listOf.end())
+      return M.lists[it->second];
+    DenseMap<RailId, unsigned> index, low;
+    std::vector<RailId> stack;
+    DenseSet<RailId> onStack;
+    struct Frame {
+      RailId t;
+      SmallVector<RailId, 4> succ;
+      unsigned i;
+    };
+    std::vector<Frame> dfs;
+    unsigned counter = 0;
+    auto push = [&](RailId t) {
+      index[t] = low[t] = counter++;
+      stack.push_back(t);
+      onStack.insert(t);
+      dfs.push_back({t, targetSuccs(t), 0});
+    };
+    push(t0);
+    while (!dfs.empty()) {
+      if (dfs.back().i < dfs.back().succ.size()) {
+        RailId x = dfs.back().succ[dfs.back().i++];
+        if (M.listOf.count(x))
+          continue;   // a component already listed
+        if (!index.count(x)) {
+          push(x);
+          continue;
+        }
+        if (onStack.count(x))
+          low[dfs.back().t] = std::min(low[dfs.back().t], index[x]);
+        continue;
+      }
+      RailId t = dfs.back().t;
+      dfs.pop_back();
+      if (!dfs.empty())
+        low[dfs.back().t] = std::min(low[dfs.back().t], low[t]);
+      if (low[t] != index[t])
+        continue;
+      SmallVector<RailId, 8> members;
+      for (RailId m = kNone; m != t;) {
+        m = stack.back();
+        stack.pop_back();
+        onStack.erase(m);
+        members.push_back(m);
+      }
+      std::vector<RailId> list;
+      RailSet seen(*this);
+      auto add = [&](RailId o) {
+        if (seen.insert(o) && mayReadPending(o))
+          list.push_back(o);
+      };
+      for (RailId m : members)
+        for (RailId n : names(m)) {
+          for (unsigned rec : rails[n].readerRecs)
+            add(info[rec].item);
+          for (RailId o : rails[n].cleanupReaders)
+            add(o);
+        }
+      for (RailId m : members)
+        for (RailId x : targetSuccs(m))
+          if (auto it = M.listOf.find(x); it != M.listOf.end())
+            for (RailId o : M.lists[it->second])
+              add(o);
+      unsigned li = unsigned(M.lists.size());
+      M.lists.push_back(std::move(list));
+      for (RailId m : members)
+        M.listOf[m] = li;
+    }
+    return M.lists[M.listOf.find(t0)->second];
   }
 
   // Rails whose item reads g, directly or through a merge that may name g (U1).
@@ -1207,41 +1373,71 @@ struct Uncompute::Impl {
     // turn, a rail another such write reads): those items read g too (itemReads), so they are candidates.
     SmallVector<RailId, 4> targets;
     // cq-g3h1i: membership through a set beside each list (a rail many records read has many candidates).
-    SmallDenseSet<RailId, 16> candSet, targetSet;
+    RailSet candSet(*this), targetSet(*this);
     auto addCands = [&](RailId n) {
       for (unsigned rec : rails[n].readerRecs) {
-        if (candSet.insert(info[rec].item).second)
+        if (candSet.insert(info[rec].item))
           cand.push_back(info[rec].item);
         if (!isCreator(info[rec].kind))
-          if (RailId t = records[rec].out; t < rails.size() && targetSet.insert(t).second)
+          if (RailId t = records[rec].out; t < rails.size() && targetSet.insert(t))
             targets.push_back(t);
       }
       for (RailId o : rails[n].cleanupReaders)
-        if (candSet.insert(o).second)
+        if (candSet.insert(o))
           cand.push_back(o);
     };
     for (RailId n : ns)
       addCands(n);
-    if (bfsMemo && !targets.empty()) {
+    if (closureMemo && !targets.empty()) {
+      // cq-i61ms: the walk's candidates per target, shared by every walk through it (their order does not matter where
+      // only the pending readers are read).
+      for (RailId t : targets)
+        for (RailId o : targetClosure(t))
+          if (candSet.insert(o))
+            cand.push_back(o);
+    } else if (bfsMemo && !targets.empty()) {
       // The walk from the targets is the same for every rail with the same targets (in place writes into one rail):
       // within a readsMemo session (nothing changes) it is made once. Its candidates follow g's own, those already
       // listed skipped.
       std::vector<RailId> key(targets.begin(), targets.end());
       auto it = bfsMemo->find(key);
-      if (it == bfsMemo->end())
-        it = bfsMemo->emplace(std::move(key), targetCands(targets)).first;
+      if (it == bfsMemo->end()) {
+        SmallVector<RailId, 8> tc = targetCands(targets);
+        if (pendingReadersOnly)
+          llvm::erase_if(tc, [&](RailId o) { return !mayReadPending(o); });
+        it = bfsMemo->emplace(std::move(key), std::move(tc)).first;
+      }
       for (RailId o : it->second)
-        if (candSet.insert(o).second)
+        if (candSet.insert(o))
           cand.push_back(o);
     } else {
       for (unsigned i = 0; i < targets.size(); ++i)
         for (RailId n : names(targets[i]))
           addCands(n);
     }
+    // The rail that reads in o's place: o, or the deferred item that undoes it (below).
+    auto readerOf = [&](RailId o) {
+      // F1: a reader owned by a deferred item not yet placed is undone by that item.
+      if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
+        o = defs[di].pseudo;
+      // Rule 14: an exit rail of a deferred loop is undone by that loop's reverse: that item is the reader.
+      if (!pendingReadersOnly || pendingReadersOnly->count(o))
+        for (const Deferred &d : defs)
+          if (d.pseudo != g && !rails[d.pseudo].released && is_contained(d.exits, o) && !is_contained(d.exits, g)) {
+            o = d.pseudo;
+            break;
+          }
+      return o;
+    };
     SmallVector<RailId, 4> out;
     for (RailId o : cand) {
       if (o == g)
         continue;
+      if (pendingReadersOnly) {
+        RailId m = readerOf(o);
+        if (m == g || !pending(m))
+          continue;
+      }
       if (readsMemo) {
         auto [it, fresh] = readsMemo->try_emplace(o);
         if (fresh)
@@ -1252,15 +1448,7 @@ struct Uncompute::Impl {
       } else if (!itemReadsAny(o, ns)) {
         continue;
       }
-      // F1: a reader owned by a deferred item not yet placed is undone by that item.
-      if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
-        o = defs[di].pseudo;
-      // Rule 14: an exit rail of a deferred loop is undone by that loop's reverse: that item is the reader.
-      for (const Deferred &d : defs)
-        if (d.pseudo != g && !rails[d.pseudo].released && is_contained(d.exits, o) && !is_contained(d.exits, g)) {
-          o = d.pseudo;
-          break;
-        }
+      o = readerOf(o);
       if (o != g && !is_contained(out, o))
         out.push_back(o);
     }
@@ -1607,6 +1795,7 @@ struct Uncompute::Impl {
       }
     }
     std::vector<PHINode *> made;
+    SmallPtrSet<PHINode *, 32> madeSet;   // made's live members (cq-mmen6: a lookup, not a scan of made)
     std::vector<Instruction *> ops;   // and/xor made here
     DenseMap<BasicBlock *, Value *> startOf, endOf;
     SmallPtrSet<BasicBlock *, 8> busy;
@@ -1654,11 +1843,12 @@ struct Uncompute::Impl {
         return all_of(cp->blocks(), [&](BasicBlock *p) { return q->getBasicBlockIndex(p) >= 0; });
       };
       if (cp && cp->getParent() == b &&
-          (isa<Constant>(v) || (vp && vp->getParent() == b && is_contained(made, vp) && complete(vp)))) {
+          (isa<Constant>(v) || (vp && vp->getParent() == b && madeSet.count(vp) && complete(vp)))) {
         PHINode *np = PHINode::Create(I1, cp->getNumIncomingValues(), "cq.run");
         np->insertInto(b, b->begin());
         emitted.insert(np);
         made.push_back(np);
+        madeSet.insert(np);
         for (unsigned i = 0; i < cp->getNumIncomingValues(); ++i) {
           BasicBlock *p = cp->getIncomingBlock(i);
           if (int seen = np->getBasicBlockIndex(p); seen >= 0) {   // both edges of one branch into b: one value
@@ -1748,24 +1938,56 @@ struct Uncompute::Impl {
       phi->insertInto(b, b->begin());
       emitted.insert(phi);
       made.push_back(phi);
+      madeSet.insert(phi);
       startOf[b] = phi;
       for (BasicBlock *p : ps)
         phi->addIncoming(endV(p), p);
       return phi;
     };
     Value *r = applyIn(at->getParent(), at, at);
+    auto drop = [&](PHINode *&phi, Value *v) {
+      phi->replaceAllUsesWith(v);
+      if (r == phi)
+        r = v;
+      emitted.erase(phi);
+      madeSet.erase(phi);
+      phi->eraseFromParent();
+      phi = nullptr;
+    };
     // Fold trivial phis and drop unused ones, to a fixed point.
     for (bool changed = true; changed;) {
       changed = false;
+      // cq-mmen6: a phi whose incomings other than itself are one value v is v (v dominates every predecessor, so the
+      // block, unless v lies in the block itself: then the phi is v's value from the pass before). Every flag passing
+      // the join after a wrapped item block (X -> U -> C) has such a phi there; the rule below looks through made phis
+      // and so misses it wherever v is a made phi itself. To a fixed point first: it is cheap, and shortens those walks.
+      for (bool simple = true; simple;) {
+        simple = false;
+        for (PHINode *&phi : made) {
+          if (!phi)
+            continue;
+          Value *same = nullptr;
+          bool one = true;
+          for (Value *in : phi->incoming_values())
+            if (in != phi && in != same) {
+              one = !same;
+              if (!one)
+                break;
+              same = in;
+            }
+          auto *si = dyn_cast_or_null<Instruction>(same);
+          if (!one || !same || (si && si->getParent() == phi->getParent()))
+            continue;
+          drop(phi, same);
+          simple = changed = true;
+        }
+      }
       for (PHINode *&phi : made) {
         if (!phi)
           continue;
         bool dead = phi != r && all_of(phi->users(), [&](User *u) { return u == phi; });
         if (dead) {
-          phi->replaceAllUsesWith(PoisonValue::get(I1));
-          emitted.erase(phi);
-          phi->eraseFromParent();
-          phi = nullptr;
+          drop(phi, PoisonValue::get(I1));
           changed = true;
           continue;
         }
@@ -1779,7 +2001,7 @@ struct Uncompute::Impl {
           if (!seen.insert(q).second)
             continue;
           for (Value *in : q->incoming_values()) {
-            if (auto *qp = dyn_cast<PHINode>(in); qp && is_contained(made, qp)) {
+            if (auto *qp = dyn_cast<PHINode>(in); qp && madeSet.count(qp)) {
               work.push_back(qp);
               continue;
             }
@@ -1794,12 +2016,7 @@ struct Uncompute::Impl {
         }
         if (!trivial || !same)
           continue;
-        phi->replaceAllUsesWith(same);
-        if (r == phi)
-          r = same;
-        emitted.erase(phi);
-        phi->eraseFromParent();
-        phi = nullptr;
+        drop(phi, same);
         changed = true;
       }
     }
@@ -1815,10 +2032,7 @@ struct Uncompute::Impl {
         }
       for (PHINode *&phi : made)
         if (phi && phi != r && all_of(phi->users(), [&](User *u) { return u == phi; })) {
-          phi->replaceAllUsesWith(PoisonValue::get(I1));
-          emitted.erase(phi);
-          phi->eraseFromParent();
-          phi = nullptr;
+          drop(phi, PoisonValue::get(I1));
           changed = true;
         }
     }
@@ -3449,6 +3663,11 @@ struct Uncompute::Impl {
   // edge's source stay valid).
   void placeDeferred(RailId g, const Ctx &c) {
     ReachSuspend cfgChanges;   // cq-4tkb4: its split, and the reverse loop its emitter builds
+    // cq-i61ms: the reachability questions between those changes, answered by a cache while the CFG stands (reset
+    // before each change).
+    std::optional<ReachScope> stable;
+    if (c.mode != Mode::Mirror)
+      stable.emplace(*c.point->getFunction());
     Rail &r = rails[g];
     Deferred &d = defs[r.deferred];
     SmallVector<Instruction *, 12> as = deferredAnchors(d);
@@ -3468,6 +3687,7 @@ struct Uncompute::Impl {
       // Rule 14: a loop in a scope being mirrored (a loop of a classical exit's arm): its reverse runs here, after the
       // scope's readers of its exit rails and before the rails its seed reads.
       r.released = true;
+      stable.reset();
       d.emit(*c.mirror);
       for (RailId x : d.exits)
         if (!rails[x].released && !keptRole(rails[x].role))
@@ -3553,12 +3773,14 @@ struct Uncompute::Impl {
       if (!S) {
         // cq-4lqy: X branches on: the reverse runs on every path leaving it, in a fresh block N that takes
         // X's terminator (X -> N -> X's successors).
+        stable.reset();
         BasicBlock *N = BasicBlock::Create(X->getContext(), "", X->getParent(), X->getNextNode());
         N->splice(N->end(), X, X->getTerminator()->getIterator());
         emitted.insert(BranchInst::Create(N, X));
         for (BasicBlock *sb : successors(N))
           sb->replacePhiUsesWith(X, N);
         S = N;
+        stable.emplace(*X->getParent());
       }
       if (beforeOrIn(d, S))
         internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
@@ -3599,11 +3821,13 @@ struct Uncompute::Impl {
     BasicBlock *P = pos.bb;
     Function *F = P->getParent();
     LLVMContext &C = F->getContext();
+    stable.reset();
     BasicBlock *H = BasicBlock::Create(C, "", F, P);
     H->splice(H->end(), P, P->begin(), pos.before->getIterator());
     for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
       if (pr != H)
         pr->getTerminator()->replaceSuccessorWith(P, H);
+    stable.emplace(*F);
     IRBuilder<> B(H);
     for (auto [x, role] : keptExits) {
       // The copy is taken where the loop exits (the one block outside the region its blocks branch
@@ -3662,6 +3886,7 @@ struct Uncompute::Impl {
     }
     rails[g].released = true;
     mirrorExit = c.mode == Mode::Exit ? c.point : nullptr;
+    stable.reset();
     d.emit(B);
     mirrorExit = nullptr;
     for (auto [x, role] : keptExits)
@@ -3774,8 +3999,21 @@ struct Uncompute::Impl {
     readsMemo = &reads;
     BfsMemo bfs;
     bfsMemo = &bfs;
+    // cq-i61ms: dropBlocked reads the pending readers, order those among the candidates: with every candidate pending,
+    // only the pending readers count (emitMirror's own are such already).
+    DenseSet<RailId> exitRails;
+    const DenseSet<RailId> *wasPending = pendingReadersOnly;
+    ClosureMemo closures, *wasClosures = closureMemo;
+    if (!pre && all_of(cands, [&](RailId g) { return pending(g); })) {
+      for (const Deferred &d : defs)
+        exitRails.insert(d.exits.begin(), d.exits.end());
+      pendingReadersOnly = &exitRails;
+      closureMemo = &closures;
+    }
     dropBlocked(cands, c, c.mode == Mode::Mirror, &readers);
     SmallVector<RailId, 16> ord = order(cands, &readers);
+    pendingReadersOnly = wasPending;
+    closureMemo = wasClosures;
     readsMemo = nullptr;
     bfsMemo = nullptr;
     for (RailId g : ord)
@@ -4310,7 +4548,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   Impl::Ctx c{Impl::Mode::Local, point, nullptr};
   BasicBlock *P = point->getParent();
   SmallVector<RailId, 16> cands, deferred;
-  for (RailId g = 0; g < I.rails.size(); ++g) {
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1)) {
     if (I.rails[g].ownedBy != kNone)
       continue; // F1: mirrored by its deferred item
     if (I.frozen(g))
@@ -4340,13 +4578,18 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   if (!liveLater) {
     // cq-k0v13 (rules 14, 18): the tape is one stack: items ready at one point run last loop first (order()'s ties).
     // To a fixed point: an item may wait for an older reader.
+    // cq-i61ms: the readiness questions are answered by a reachability cache while no item is placed.
+    std::optional<Impl::ReachScope> stable;
     for (bool progress = true; progress;) {
       progress = false;
       for (RailId g : reverse(deferred)) {
+        if (!stable)
+          stable.emplace(*P->getParent());
         if (!I.resolvable(g) || !I.deferredLocalReady(g, point))
           continue;
         if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
           continue;
+        stable.reset();
         I.place(g, c);
         progress = true;
       }
@@ -4364,17 +4607,25 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   for (bool progress = true; progress;) {
     progress = false;
     SmallVector<RailId, 16> span;
-    for (RailId g = 0; g < I.rails.size(); ++g)
-      if (!I.frozen(g) && I.spanReady(g, point, live))
-        span.push_back(g);
+    {
+      Impl::ReachScope stable(*P->getParent());   // cq-i61ms: nothing changes the CFG while the candidates are chosen
+      for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1))
+        if (!I.frozen(g) && I.spanReady(g, point, live))
+          span.push_back(g);
+    }
     I.dropBlocked(span, c, false);
     for (RailId g : I.order(span))
       if (I.resolvable(g)) {
         I.placeSpan(g, point);
         progress = true;
       }
+    std::optional<Impl::ReachScope> stable;   // cq-i61ms: as above, until an item is placed
     for (RailId g = I.rails.size(); g-- > 0;) {   // cq-k0v13: last loop first, as above
-      if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
+      if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g))
+        continue;
+      if (!stable)
+        stable.emplace(*P->getParent());
+      if (!I.deferredLocalReady(g, point, true))
         continue;
       if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
         continue;
@@ -4385,6 +4636,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
             return any_of(I.names(x), [&](RailId n) { return live.count(n) != 0; });
           }))
         continue;
+      stable.reset();
       I.place(g, c);
       progress = true;
     }
@@ -4400,7 +4652,7 @@ void Uncompute::openInvert(Instruction *begin) {
   if (!begin || !begin->getParent())
     internalError("uncompute: openInvert needs an instruction in a block");
   DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s;
-  for (RailId g = 0; g < I.rails.size(); ++g)
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1))
     if (I.pending(g)) {
       SmallPtrSet<Instruction *, 8> &a = s[g];
       for (Instruction *x : I.anchors(g))
@@ -4660,7 +4912,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   // cq-4tkb4: nothing below changes the CFG until wrapLocal but a deferred item's placement (which suspends the cache).
   std::optional<Impl::ReachScope> reach;
   reach.emplace(*Rb->getParent());
-  for (RailId g = 0; g < I.rails.size(); ++g) {
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1)) {
     if (!I.resolvable(g) || I.done(g, c) || I.rails[g].ownedBy != kNone)
       continue;
     if (unsigned di = I.rails[g].deferred; di != kNone) {
@@ -4796,12 +5048,12 @@ void Uncompute::closeScope(unsigned s) {
   impl->scopes[s].open = false;
 }
 
-ArrayRef<Record> Uncompute::scopeRecords(unsigned s) const {
+iterator_range<std::deque<Record>::const_iterator> Uncompute::scopeRecords(unsigned s) const {
   if (s >= impl->scopes.size())
     internalError("uncompute: no scope " + std::to_string(s));
   const Impl::Scope &sc = impl->scopes[s];
   unsigned end = sc.open ? impl->records.size() : sc.end;
-  return ArrayRef<Record>(impl->records).slice(sc.begin, end - sc.begin);
+  return make_range(impl->records.cbegin() + sc.begin, impl->records.cbegin() + end);
 }
 
 void Uncompute::leaveScope(unsigned s, const BasicBlock *head) {
@@ -4847,7 +5099,7 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   unsigned end = sc.open ? I.records.size() : sc.end;
   Impl::Ctx c{Impl::Mode::Mirror, nullptr, &B};
   SmallVector<RailId, 16> cands;
-  for (RailId g = 0; g < I.rails.size(); ++g) {
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1)) {
     unsigned cr = I.rails[g].creator;
     if (cr != kNone && cr >= sc.begin && cr < end && !sc.left.count(g) && I.resolvable(g))
       cands.push_back(g);
@@ -4864,6 +5116,16 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
     Impl::BfsMemo bfs;
     I.readsMemo = &pre.second;
     I.bfsMemo = &bfs;
+    // cq-i61ms: what reads these readers (the loop below, then resolve's dropBlocked and order over the candidates, all
+    // pending) reads their pending ones only.
+    DenseSet<RailId> exitRails;
+    for (const Impl::Deferred &d : I.defs)
+      exitRails.insert(d.exits.begin(), d.exits.end());
+    auto *wasPending = I.pendingReadersOnly;
+    I.pendingReadersOnly = &exitRails;
+    Impl::ClosureMemo closures;
+    auto *wasClosures = I.closureMemo;
+    I.closureMemo = &closures;
     DenseSet<RailId> inCands(cands.begin(), cands.end());
     for (unsigned k = 0; k < cands.size(); ++k) {
       SmallVector<RailId, 4> rd = I.readersOf(cands[k]);
@@ -4874,6 +5136,8 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
     }
     I.readsMemo = was;
     I.bfsMemo = wasBfs;
+    I.pendingReadersOnly = wasPending;
+    I.closureMemo = wasClosures;
   }
   I.resolve(cands, c, &pre);
   I.inMirror = wasInMirror;

@@ -131,20 +131,27 @@ template <class Skip>
 llvm::SmallPtrSet<const llvm::BasicBlock *, 16> tripPostDominated(const llvm::Loop &L, const llvm::BasicBlock *X,
                                                                   Skip skip) {
   llvm::SmallPtrSet<const llvm::BasicBlock *, 16> pd(L.block_begin(), L.block_end());
-  for (bool ch = true; ch;) {
-    ch = false;
-    for (const llvm::BasicBlock *b : L.blocks()) {
-      if (b == X || !pd.count(b))
-        continue;
-      bool all = true;
-      for (const llvm::BasicBlock *s : llvm::successors(b))
-        if (s != X && !skip(s) && (s == L.getHeader() || !pd.count(s)))
-          all = false;
-      if (!all) {
-        pd.erase(b);
-        ch = true;
+  // cq-i61ms: by a worklist (a removed block re-checks its predecessors), not passes over the loop until none drops:
+  // the same greatest fixpoint, linear in the loop's edges.
+  auto fails = [&](const llvm::BasicBlock *b) {
+    for (const llvm::BasicBlock *s : llvm::successors(b))
+      if (s != X && !skip(s) && (s == L.getHeader() || !pd.count(s)))
+        return true;
+    return false;
+  };
+  llvm::SmallVector<const llvm::BasicBlock *, 32> work;
+  for (const llvm::BasicBlock *b : L.blocks())
+    if (b != X && fails(b))
+      work.push_back(b);
+  for (const llvm::BasicBlock *b : work)
+    pd.erase(b);
+  while (!work.empty()) {
+    const llvm::BasicBlock *b = work.pop_back_val();
+    for (const llvm::BasicBlock *p : llvm::predecessors(b))
+      if (p != X && pd.count(p) && fails(p)) {
+        pd.erase(p);
+        work.push_back(p);
       }
-    }
   }
   return pd;
 }

@@ -432,7 +432,17 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
   // n + 1 == cap is reached only when the quantum exit s[n] == 0 is not taken).
   // cq-rb96s: post-dominance inside one trip (a back edge ends the trip), not the function's: a block on every path out
   // of the loop still runs only in the trips that reach it (GMP block_resieve).
+  // cq-i61ms: the loop's blocks with a quantum terminator, read once (not per exiting block).
+  std::optional<SmallVector<const BasicBlock *, 8>> quantumYs;
   auto controlQuantum = [&](const BasicBlock *X) {
+    if (!quantumYs) {
+      quantumYs.emplace();
+      for (const BasicBlock *Y : L.blocks())
+        if (quantumTerm(Y))
+          quantumYs->push_back(Y);
+    }
+    if (quantumYs->empty() || (quantumYs->size() == 1 && quantumYs->front() == X))
+      return false;
     auto pdt = taint_detail::tripPostDominated(L, X, deadEnd);
     auto pd = [&](const BasicBlock *s) { return s == X || (s != L.getHeader() && pdt.count(s)); };
     auto postDomLive = [&](const BasicBlock *Y) {
@@ -441,8 +451,8 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
           return false;
       return true;
     };
-    for (const BasicBlock *Y : L.blocks()) {
-      if (Y == X || !quantumTerm(Y))
+    for (const BasicBlock *Y : *quantumYs) {
+      if (Y == X)
         continue;
       for (const BasicBlock *s : successors(Y))
         if (L.contains(s) && pd(s) && !postDomLive(Y))

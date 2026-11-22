@@ -221,6 +221,16 @@ unsigned patternPeriod(const CallBase &CB) {
 }
 
 void restoreHostPatterns(Module &M) {
+  // cq-i61ms: the scan below in module order only when some memcpy carries a pattern (a lowered module of millions of
+  // instructions usually has none).
+  bool any = false;
+  for (Function &D : M)
+    if (D.getIntrinsicID() == Intrinsic::memcpy || D.getIntrinsicID() == Intrinsic::memcpy_inline)
+      for (User *U : D.users())
+        if (auto *C = dyn_cast<MemCpyInst>(U); C && patternPeriod(*C))
+          any = true;
+  if (!any)
+    return;
   SmallVector<MemCpyInst *, 4> tagged;
   for (Function &F : M)
     for (Instruction &I : instructions(F))

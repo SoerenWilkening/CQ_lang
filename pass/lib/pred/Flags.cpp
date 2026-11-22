@@ -78,7 +78,14 @@ public:
     auto it = atoms.find(v);
     if (it != atoms.end())
       return it->second;
-    return atoms[v] = sink.atomRail(v);
+    AtomKind k = atomOf(v).kind;
+    if (k != AtomKind::Eq && k != AtomKind::Addr)
+      return atoms[v] = sink.atomRail(v);   // the IR value's own rail
+    if (Value *x = sink.reusable(m.ithVar(v)))
+      return atoms[v] = x;
+    Value *r = sink.atomRail(v);   // a case's equality, minted here
+    sink.minted(m.ithVar(v), r);
+    return atoms[v] = r;
   }
 
   // The latest quantum-like atom of n: the innermost condition, so a nested predicate is its parent's
@@ -91,15 +98,45 @@ public:
     return v;
   }
 
+  // cq-ct59d: n where at most one case atom of each switch (computed goto) holds, the only assignments its
+  // atoms' rails take. When n implies case atom e, the other cases of e's scrutinee are false wherever n
+  // holds: n is e & n[e = 1, its siblings = 0]. Without it a sub-flag under case k reads every other case
+  // (the derivative of a switch's join on a condition inside case k is case k & no earlier case's path),
+  // so a switch's flags grow with the square of its cases, or exponentially in creation order.
+  unsigned exclusive(unsigned n) {
+    if (m.terminal(n))
+      return n;
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    for (unsigned e : sup) {
+      const Atom &a = atomOf(e);
+      if ((a.kind != AtomKind::Eq && a.kind != AtomKind::Addr) || m.sides(n, e).first)
+        continue;
+      unsigned r = m.cofactor(n, e, true);
+      for (unsigned o : sup)
+        if (exclusiveAtoms(a, atomOf(o)))
+          r = m.cofactor(r, o, false);
+      return m.andOp(m.ithVar(e), r);
+    }
+    return n;
+  }
+
   Value *mat(unsigned n) {
     if (m.terminal(n))
       internalError("pred: a flag for a constant predicate");
     auto it = memo.find(n);
     if (it != memo.end())
       return it->second;
+    if (Value *x = sink.reusable(n))
+      return memo[n] = x;
     Value *r;
-    if (classical(n))
+    // A node that needs two cases of one scrutinee at once rewrites to false: no rail state reaches it, its flag is n's.
+    if (unsigned x = exclusive(n); x != n && !m.terminal(x))
+      r = mat(x);
+    else if (classical(n)) {
       r = sink.classicalSeed(n);
+      sink.minted(n, r);
+    }
     else if (m.lo(n) == Bdd::F && m.hi(n) == Bdd::T)
       r = atomRail(m.var(n));
     else if (Value *x = m.lo(n) == Bdd::T && m.hi(n) == Bdd::F && ql(m.var(n)) ? sink.liveNegation(m.var(n)) : nullptr)
@@ -107,6 +144,7 @@ public:
     else {
       r = sink.alloc0();
       into(r, n);
+      sink.minted(n, r);
     }
     return memo[n] = r;
   }
@@ -384,8 +422,28 @@ bool keeps(const CallInst &c, const Value *a, const Value *x, unsigned &atomFlip
 
 } // namespace
 
+// cq-i61ms: does some call negate atom (negates)? Such a call calls one of the three symbols below (parseTemplate takes
+// only the canonical spelling, and xor and the compares never take _lh); a check of their calls spares the scan of the
+// atom's users (thousands of gates on a path condition: sqlite3VdbeExec) where none does.
+static bool anyNegation(const Value *atom, const Module &M) {
+  for (const char *pred : {"", "eq", "ne"}) {
+    abi::TemplateSpec s;
+    s.op = *pred ? "icmp" : "xor";
+    s.pred = pred;
+    s.w = RailType{Kind::Int, 1};
+    s.shape = "hl";
+    if (const Function *f = M.getFunction(abi::name(s, false)))
+      for (const User *u : f->users())
+        if (auto *c = dyn_cast<CallInst>(u); c && negates(*c, atom))
+          return true;
+  }
+  return false;
+}
+
 Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
   if (!atom || !bb)
+    return nullptr;
+  if (!anyNegation(atom, *bb->getModule()))
     return nullptr;
   // The blocks that run, once and in this order, before bb on every path into it.
   SmallVector<BasicBlock *, 8> chain{bb};
@@ -402,16 +460,9 @@ Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
     auto at = std::find(chain.begin(), chain.end(), c->getParent());   // the cheap test first
     if (at == chain.end() || !negates(*c, atom))
       continue;
-    if (c->getParent() == bb) {   // before pt
-      bool before = false;
-      for (auto it = bb->begin(); it != pt; ++it)
-        if (&*it == c) {
-          before = true;
-          break;
-        }
-      if (!before)
-        continue;
-    }
+    // before pt (cq-i61ms: by the order labels, not a scan of bb per user)
+    if (c->getParent() == bb && pt != bb->end() && !cq::comesBefore(c, &*pt))
+      continue;
     bool resolved = false;
     for (User *xu : c->users())
       if (auto *xc = dyn_cast<CallInst>(xu); xc && xc->getCalledFunction()) {
@@ -742,6 +793,30 @@ public:
       ctx.unc().noteUse(ctx.unc().idOf(r), free);
   }
 
+  // A rail minted for node earlier in this block, not yet uncomputed: it holds node's function of the atoms' SSA
+  // values, which is what a fresh flag would hold. Not where atoms are carried (`over`: other values).
+  Value *reusable(unsigned node) override {
+    if (over)
+      return nullptr;
+    auto &minted = storage(ctx.preds()).minted;
+    auto it = minted.find(node);
+    if (it == minted.end())
+      return nullptr;
+    auto *I = dyn_cast_or_null<Instruction>(static_cast<Value *>(it->second));
+    BasicBlock *U = ctx.B().GetInsertBlock();
+    BasicBlock::iterator pt = ctx.B().GetInsertPoint();
+    if (!I || I->getParent() != U || (pt != U->end() && (&*pt == I || !cq::comesBefore(I, &*pt))))
+      return nullptr;
+    if (!ctx.unc().recorded(I) || !ctx.unc().liveRole(ctx.unc().idOf(I)))
+      return nullptr;
+    return I;
+  }
+
+  void minted(unsigned node, Value *rail) override {
+    if (!over)
+      storage(ctx.preds()).minted[node] = rail;
+  }
+
   Value *liveNegation(unsigned var) override {
     if (overridden(var))
       return nullptr;
@@ -837,12 +912,38 @@ Value *seedOf(LoweringContext &ctx, Value *classical, RailType w) {
 // classical branches and switches, over the output values of the classical atoms involved (a
 // condition the decoder does not know contributes no fact, which is sound: a weaker fact restricts
 // less, and a predicate that still reads a rail that does not reach is a loud unimplemented).
+// cq-i61ms: the dominator tree of the output function, shared by the JoinRepairs made while its CFG stands (every
+// flag lowering made one, and built a tree of the whole function: sqlite3VdbeExec). Kept with the CFG it was built from,
+// the blocks in order with their successors: a tree of the same graph is the same tree.
+std::shared_ptr<DominatorTree> sharedDominatorTree(Function &F) {
+  struct Cache {
+    const Function *F = nullptr;
+    std::vector<const void *> sig;
+    std::shared_ptr<DominatorTree> dt;
+  };
+  static Cache *c = new Cache;   // never destroyed: the tree must not outlive the LLVMContext at exit
+  std::vector<const void *> sig;
+  for (BasicBlock &b : F) {
+    sig.push_back(&b);
+    if (const Instruction *t = b.getTerminator())
+      for (const BasicBlock *s : successors(t))
+        sig.push_back(s);
+    sig.push_back(nullptr);
+  }
+  if (c->dt && c->F == &F && c->sig == sig)
+    return c->dt;
+  c->F = &F;
+  c->sig = std::move(sig);
+  c->dt = std::make_shared<DominatorTree>(F);
+  return c->dt;
+}
+
 class JoinRepair {
   LoweringContext &ctx;
   Bdd &m = Bdd::get();
   std::shared_ptr<Oracle> O;
   std::function<bool(unsigned)> ql;
-  std::unique_ptr<DominatorTree> dt;
+  std::shared_ptr<DominatorTree> dt;
   std::unique_ptr<LoopInfo> li;
   std::unique_ptr<CycleInfo> ci;
   std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
@@ -852,7 +953,7 @@ class JoinRepair {
 
   DominatorTree &DT() {
     if (!dt)
-      dt = std::make_unique<DominatorTree>(ctx.out());
+      dt = sharedDominatorTree(ctx.out());
     return *dt;
   }
   LoopInfo &LI() {

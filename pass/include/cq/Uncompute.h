@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -9,6 +10,7 @@
 #include "cq/Common.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
@@ -152,7 +154,8 @@ public:
   // cq-rb96s: a rule-14 region flushes its trip (its back edges cut) between these: only a deferred item hosted by one of
   // `segScopes` (a sub-unit of the trip) is placed meanwhile; any other would run once per trip.
   void beginTripFlush(llvm::ArrayRef<unsigned> segScopes); void endTripFlush();
-  llvm::ArrayRef<Record> scopeRecords(unsigned) const;
+  // cq-i61ms: the records live in a deque (growth moved millions of them): a range, not an ArrayRef.
+  llvm::iterator_range<std::deque<Record>::const_iterator> scopeRecords(unsigned) const;
   // Is a mirror being emitted? A deferred reverse placed in one runs in the scope's own reverse, under no guard of its own.
   bool mirroring() const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);

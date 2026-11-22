@@ -28,6 +28,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/ValueHandle.h"
 #include "llvm/IR/Instructions.h"
 
 namespace llvm { class LoopInfo; }
@@ -53,6 +54,9 @@ struct PathPredicates::Impl {
   Pred assumedClassical = Pred::top();
   unsigned assumedId = 0;
   std::map<std::tuple<unsigned, const llvm::BasicBlock *, const llvm::BasicBlock *>, Pred> underAssumed;
+  // cq-ct59d: the rail last minted for a node (a flag, a classical seed, a switch case's equality), for
+  // GateSink::reusable.
+  std::map<unsigned, llvm::WeakVH> minted;
 };
 
 namespace pred_detail {
@@ -79,6 +83,8 @@ unsigned atomVar(AtomKind, const llvm::Value *, const llvm::APInt &c = llvm::API
 // Rule 13: the Addr atom `address == blockaddress(dest)`.
 unsigned addrVar(const llvm::Value *address, const llvm::BasicBlock *dest);
 const Atom &atomOf(unsigned var);
+// Two case atoms of one switch (computed goto) on different cases: never both true.
+bool exclusiveAtoms(const Atom &, const Atom &);
 std::string describe(unsigned node);   // the formula with atoms named by their IR values
 
 // What compute() asks of taint. The production oracle forwards to TaintInfo for one Specialization
@@ -151,6 +157,11 @@ public:
   // atom, is an existing live i1 rail holding that Boolean function when there is one (the rail of
   // xor v, true / icmp eq v, false), so no fresh rail is minted. nullptr: mint as usual.
   virtual llvm::Value *liveNegation(unsigned var) { return nullptr; }
+  // cq-ct59d: a rail an earlier flag synthesis minted for node (minted), still holding it at the insertion
+  // point, else nullptr. Every merge of a join reads the same arm conditions; minted afresh per merge, a
+  // join of V merges over N cases costs V * N gates and case equalities.
+  virtual llvm::Value *reusable(unsigned node) { return nullptr; }
+  virtual void minted(unsigned node, llvm::Value *rail) {}
 };
 llvm::Value *materialize(unsigned node, GateSink &, const std::function<bool(unsigned)> &quantumLikeVar);
 // Rule 8's X bracket inside a compound flag (cq-rdux, 137). The flag's gates take a negated
