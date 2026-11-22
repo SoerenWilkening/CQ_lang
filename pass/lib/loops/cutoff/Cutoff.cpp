@@ -717,18 +717,41 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     local.insert({b, predOfBlock(b)});
   }
   Pred cont = Pred::bottom();   // body form: some back edge is taken
+  std::vector<Pred> contParts, regionParts;   // cont and regionCont as unions of their edges' predicates (cq-m16f6)
   // cq-iaz30 (CR rule 14): a latch inside a sub-loop whose exit edge is the back edge (sqlite exprAnalyzeOrTerm: the inner
   // scan's `if (!p) continue outer`) is that sub-loop's exit; as a unit the sub-loop always ends there (contribution). Its
   // exit test's atom is a rail of the sub-loop's rolled trip, which does not reach the end of this trip.
-  for (BasicBlock *l : latches)
-    cont = cont | contribution(l, H);
+  for (BasicBlock *l : latches) {
+    Pred c = contribution(l, H);
+    cont = cont | c;
+    // A plain latch's contribution is its block predicate (the union of its incoming edges') and its back edge's
+    // condition: one part per incoming edge, so a latch many paths join is no one large flag (cq-m16f6).
+    bool plain = l != H && !subLoopOf(l) && (is_contained(U.abort, H) || receiver(l) != H);
+    if (!plain) {
+      contParts.push_back(c);
+      continue;
+    }
+    SmallPtrSet<BasicBlock *, 8> seen;
+    for (BasicBlock *p : predecessors(l)) {
+      Loop *bl = A.LI.getLoopFor(l);
+      if (!L.contains(p) || (bl && bl->getHeader() == l && bl->contains(p)) || !seen.insert(p).second)
+        continue;   // predOfBlock's edges
+      if (Pred e = contribution(p, l) & edgeCond(l, H); !e.isBottom())
+        contParts.push_back(e);
+    }
+  }
   Pred regionCont = Pred::bottom();                               // region form
   if (regionForm)
-    for (const BasicBlock *r : L.blocks())   // the loop's order: a first edgeCond may number an atom
-      if (region.count(r))
-        for (BasicBlock *s : successors(const_cast<BasicBlock *>(r)))
-          if (L.contains(s) && !region.count(s))
-            regionCont = regionCont | (localOf(const_cast<BasicBlock *>(r)) & edgeCond(const_cast<BasicBlock *>(r), s));
+    for (const BasicBlock *r : L.blocks()) {   // the loop's order: a first edgeCond may number an atom
+      if (!region.count(r))
+        continue;
+      SmallPtrSet<const BasicBlock *, 8> seen;   // a switch lists a successor once per case
+      for (BasicBlock *s : successors(const_cast<BasicBlock *>(r)))
+        if (L.contains(s) && !region.count(s) && seen.insert(s).second) {
+          regionParts.push_back(localOf(const_cast<BasicBlock *>(r)) & edgeCond(const_cast<BasicBlock *>(r), s));
+          regionCont = regionCont | regionParts.back();
+        }
+    }
 
   // Values of the loop read after it, and the exit-block phis identified with a header phi.
   std::vector<PHINode *> hphis;
@@ -1661,6 +1684,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     return static_cast<Value *>(n);
   };
+  // q & flag(E) for E the union of parts (cq-m16f6). Pairwise exclusive parts (the edges of one trip into a block): the
+  // XOR of their flags, each a flag of its own small predicate; the union of many such edges can be a far larger BDD
+  // than all of them together (riscv_cpu_interp_x32: 138 edges of at most 118 nodes, a union of 228k).
+  auto unionFlag = [&](Value *q, const Pred &E, ArrayRef<Pred> parts, const Instruction *at) -> Value * {
+    // predsExclusive: case atoms of one switch exclude each other, as their rails do.
+    bool exclusive = parts.size() > 1 && !E.isTop() && predsExclusive(parts);
+    if (!exclusive)
+      return conj(q, E, at);
+    SmallVector<Value *, 16> terms;
+    for (const Pred &p : parts)
+      if (!p.isBottom())
+        terms.push_back(ctx.preds().flag(ctx, p));
+    return andRail(q, xorRail(terms));
+  };
   // r8 (receiver above): the flags of this evaluation's edges into noreturn arms from blocks with a receiver, each
   // minted right after its block under q_j as it stood there; the arms read them (abortArms).
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, Value *> abortEdge;
@@ -2230,9 +2267,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerInsts(b, q, lpb);
       });
     }
+    // cq-m16f6: q & E per key of E's parts, shared by the phis whose E is made of the same parts.
+    std::map<std::vector<std::pair<const BasicBlock *, bool>>, Value *> exitFlags;
     for (CPhi &cp : cphis) {
       std::vector<std::pair<Pred, Operand>> arms;
       Pred E = Pred::bottom();
+      std::vector<Pred> parts;   // E is their union
+      std::vector<std::pair<const BasicBlock *, bool>> key;   // each part: an edge from u, or the arm of loop header u
+      auto addPart = [&](const Pred &p, std::pair<const BasicBlock *, bool> k) {
+        if (is_contained(key, k))
+          return;   // a phi lists a block once per edge (a switch's cases into one block): one part
+        parts.push_back(p);
+        key.push_back(k);
+      };
       int nestedArm = -1;
       for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
         BasicBlock *u = cp.P->getIncomingBlock(i);
@@ -2241,6 +2288,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (Loop *S = nestedTailOwner(u); S && armBound.count(cp.P))
           if (auto it = armLocal.find(S->getHeader()); it != armLocal.end() && !it->second.isBottom()) {
             E = E | it->second;
+            addPart(it->second, {S->getHeader(), true});
             if (nestedArm < 0) {
               nestedArm = int(arms.size());
               arms.push_back({it->second, ctx.operand(cp.P)});
@@ -2255,6 +2303,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (e.isBottom())
           continue;
         E = E | e;
+        addPart(e, {u, false});
         // Rule 14: a K-loop of the arm exits into C too and bound P over all its exit edges this evaluation: one
         // arm, under the predicate of reaching its header, whichever of its exit edges was taken.
         if (!L.contains(u) && (subLoopOf(u) || (nestedArmOwner(u) && !nestedTailOwner(u))) && armBound.count(cp.P)) {
@@ -2272,7 +2321,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       RailType w = railOf(cp.P->getType());
       Value *v = selectChain(ctx, arms, w);
-      Value *f = conj(q, E, U.cont->getFirstNonPHI());
+      Value *&f = exitFlags[key];
+      if (!f)
+        f = unionFlag(q, E, parts, U.cont->getFirstNonPHI());
       abi::TemplateSpec sel;
       sel.op = "select";
       sel.w = w;
@@ -3196,10 +3247,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       return st;
     };
     // One test of the chain: go is the predicate of going on; `between` runs after its operands are read (the advance).
-    auto test = [&](Value *qin, const Pred &go, const Instruction *tat, const std::function<void()> &between) -> Value * {
+    auto test = [&](Value *qin, const Pred &go, ArrayRef<Pred> parts, const Instruction *tat,
+                    const std::function<void()> &between) -> Value * {
       Pred Cc = go.isBottom() ? Pred::top() : go.classicalFactor(ctx.T, ctx.S);
       if (Cc.isTop()) {
-        Value *qn = conj(qin, go, tat);
+        Value *qn = unionFlag(qin, go, parts, tat);
         between();
         return qn;
       }
@@ -3234,7 +3286,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     BasicBlock *Lt, *back;
     Value *j1;
     if (!regionForm || bodyExits) {
-      qn = test(qc, cont, latch->getTerminator(), adv);
+      qn = test(qc, cont, contParts, latch->getTerminator(), adv);
     } else {
       advance(qc);
       Value *qr = qc;
@@ -3244,7 +3296,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         capture(qr, inRegion);
       if (qr != qc)
         internalError("loops-cutoff: the header test region changed the trip predicate in the rolled trip", at);
-      qn = test(qc, regionCont, at, none);
+      qn = test(qc, regionCont, regionParts, at, none);
     }
     Lt = B.GetInsertBlock();
     j1 = B.CreateAdd(j, ConstantInt::get(i32, 1));
@@ -3263,7 +3315,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         capture(qr, inRegion);
       if (qr != qn)
         internalError("loops-cutoff: the header test region changed the trip predicate in the rolled trip", at);
-      qn = test(qn, regionCont, at, none);
+      qn = test(qn, regionCont, regionParts, at, none);
       back = B.GetInsertBlock();
       B.CreateBr(Hd);
     }

@@ -1883,8 +1883,22 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
   Bdd &m = Bdd::get();
   JoinRepair R(ctx);
   // Inner selects first (the true side's, then the false side's), each node's select after both.
-  // ctxt: the conjunction of the tree conditions above node k (where its select is read).
-  std::function<Operand(int, unsigned)> emit = [&](int k, unsigned ctxt) -> Operand {
+  // ctxt: the arms' union and the tree conditions above node k (where its select is read). cq-m16f6: made only where
+  // read; the union of a loop's many latch edges can be far larger than any arm.
+  std::vector<unsigned> above;
+  std::optional<unsigned> all;
+  auto ctxtHere = [&] {
+    if (!all) {
+      all = Bdd::F;
+      for (unsigned n : nodes)
+        all = m.orOp(*all, n);
+    }
+    unsigned ctxt = *all;
+    for (unsigned c : above)
+      ctxt = m.andOp(ctxt, c);
+    return ctxt;
+  };
+  std::function<Operand(int)> emit = [&](int k) -> Operand {
     const SelectNode &nd = tree[k];
     if (nd.arm >= 0) {
       const Operand &op = arms[nd.arm].second;
@@ -1893,11 +1907,15 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
       return R.operandHere(op, w, nodes[nd.arm], care, what);   // cq-2p1p: an arm minted in a classical arm
     }
     unsigned c = nd.cond;
-    Operand tv = emit(nd.thenIdx, m.andOp(ctxt, c)), fv = emit(nd.elseIdx, m.andOp(ctxt, m.notOp(c)));
+    above.push_back(c);
+    Operand tv = emit(nd.thenIdx);
+    above.back() = m.notOp(c);
+    Operand fv = emit(nd.elseIdx);
+    above.pop_back();
     Value *cond;
     if (!R.nodeReachesHere(c)) {
       // cq-2p1p: per-edge flags of the condition, a don't-care outside this select's context.
-      cond = R.flagHere(c, m.andOp(care, ctxt), what);
+      cond = R.flagHere(c, m.andOp(care, ctxtHere()), what);
     } else if (auto g = negatedAtom(c, ql)) {
       // Selecting on NOT g is selecting on g with the arms swapped.
       CtxSink sink(ctx);
@@ -1918,10 +1936,7 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
   // cq-03rdt: selectTree restricts each condition to the arms' union (buildSelect's context), so outside it a
   // condition says nothing and no arm is chosen there: the select is read only inside it, and a flag of a condition
   // is a don't-care outside (a caller's arms on one classical side only, read where the other side also passes).
-  unsigned all = Bdd::F;
-  for (unsigned n : nodes)
-    all = m.orOp(all, n);
-  return emit(0, all).v;
+  return emit(0).v;
 }
 } // namespace
 
