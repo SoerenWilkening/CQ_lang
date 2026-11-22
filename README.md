@@ -318,19 +318,20 @@ Every function is also lowered on its own, under every arrangement of classical 
 a library exports and with its callees as calls (`experiments/per_function.sh`), so one failure does
 not hide another:
 
-| Project | Functions | Lower on their own | Notes |
-|---|---|---|---|
-| C standard library (musl) | 387 | 387, as the lowered library | 1,524 exported versions |
-| SoftFloat (the float templates) | 855 | 855, as two lowered libraries | |
-| GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | 2.4 GB of archives |
-| SQLite 3 (core) | 1,542 | 1,542 | `sqlite3VdbeExec`, the bytecode interpreter, takes 95 s |
-| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | `_glp_zlib_inflate` takes 19 s |
-| GMP 6.3.0 (generic C) | 650 | 650 | `__gmpn_div_q` takes 10 s |
-| [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | |
-| [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | |
+| Project | Functions | Lower on their own | Time | Notes |
+|---|---|---|---|---|
+| C standard library (musl) | 387 | 387, as the lowered library | 3 min | 1,524 exported versions |
+| SoftFloat (the float templates) | 855 | 855, as two lowered libraries | 5 min | |
+| GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | 10 min for the first 21 sub-libraries | 2.4 GB of archives; `fft` takes 2 min 44 s |
+| SQLite 3 (core) | 1,542 | 1,542 | 12 min | 5 take more than 2 minutes; `sqlite3VdbeExec`, the bytecode interpreter, takes 95 s on its own |
+| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | 4 min | `_glp_zlib_inflate` takes 19 s |
+| GMP 6.3.0 (generic C) | 650 | 650 | 2 min | `__gmpn_div_q` takes 10 s |
+| [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | 2 s | |
+| [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | 1 s | |
 
-The libraries and sweeps were built while the pass fixes for the arrangements came in, so not every
-row was produced by the final pass; the functions and libraries that had failed were rebuilt with it.
+The times are for the whole project on one x86-64 Mac with the current pass: the libraries as built, the
+other projects as the sweep over their functions, six at a time with a limit of 2 minutes per function.
+The GSL archives and the functions over that limit were last built in full with an earlier pass.
 
 "Lowers" means the pass produced a module that passes its structural verifier. The lowered
 libraries are not checked against the C programs: the checker runs programs, and the reduced cases
