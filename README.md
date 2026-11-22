@@ -249,28 +249,24 @@ Lowering time and archive size per list, measured on one x86-64 Mac:
 
 | Root list | Functions | Time | Archive |
 |---|---|---|---|
-| `math.roots` | 171 | 5 min 30 s | 5.1 MB |
-| `time.roots` | 11 | 1 min 40 s | 8.1 MB |
-| `stdlib.roots` | 32 | 1 min 30 s | 3.6 MB |
-| `multibyte.roots` | 17 | 30 s | 2.4 MB |
-| `string.roots` | 39 | 15 s | 1.2 MB |
-| `ctype.roots` | 32 | 10 s | 0.4 MB |
-| `locale.roots` | 6 | 7 s | 0.3 MB |
-| `complex.roots` | 66 | 9 min 40 s | 1.6 MB |
-| `stdio.roots` (the `sprintf` and `sscanf` families) | 13 | 9 min | 29.7 MB |
-
-For a few functions a library takes seconds: `cos`, `sin`, `exp` and `cbrt` together lower in 14 s
-into 0.3 MB.
+| `math.roots` | 171 | 21 s | 13.7 MB |
+| `time.roots` | 11 | 8 s | 8.5 MB |
+| `stdlib.roots` | 32 | 9 s | 7.7 MB |
+| `multibyte.roots` | 17 | 15 s | 19.5 MB |
+| `string.roots` | 39 | 6 s | 5.3 MB |
+| `ctype.roots` | 32 | 3 s | 0.6 MB |
+| `locale.roots` | 6 | 3 s | 0.6 MB |
+| `complex.roots` | 66 | 1 min 34 s | 4.5 MB |
+| `stdio.roots` (the `sprintf` and `sscanf` families) | 13 | 18 s | 18.3 MB |
 
 All nine lists together are the standard library as one archive, linked with one `-l`. Lower each
-list on its own (one module per list; all 387 functions in a single module do not finish in an
-hour) and combine the results, about 29 minutes in total:
+list on its own (one module per list) and combine the results, about 3 minutes in total:
 
 ```sh
 for g in math complex string stdlib stdio ctype multibyte time locale; do
     cqcc --cq-lib --cq-roots bundle/roots/$g.roots -o libq_$g.a
 done
-libtool -static -o libqc.a libq_*.a              # 52 MB, one archive
+libtool -static -o libqc.a libq_*.a              # 79 MB, one archive
 cat bundle/roots/*.roots > libc.roots
 cqcc prog.c --cq-roots libc.roots -L. -lqc -lmybackend
 ```
@@ -307,7 +303,7 @@ Time spent in the lowering, on one x86-64 Mac:
 
 | What | Functions | Time | Result |
 |---|---|---|---|
-| The C standard library, all nine root lists | 387 | 29 min | `libqc.a`, 52 MB |
+| The C standard library, all nine root lists | 387 | 3 min | `libqc.a`, 79 MB |
 | SoftFloat, `float`, `double`, `_Float16`, `__bf16` | 673 | 1 min 40 s | `libqsoftfloat.a`, 15.2 MB |
 | SoftFloat, `long double` | 182 | 36 s | `libqsoftfloat_f80.a`, 5.2 MB |
 
@@ -327,9 +323,9 @@ not hide another:
 | C standard library (musl) | 387 | 387, as the lowered library | 1,524 exported versions |
 | SoftFloat (the float templates) | 855 | 855, as two lowered libraries | |
 | GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | 2.4 GB of archives |
-| SQLite 3 (core) | 1,542 | 1,542 | 8 take more than 2 minutes; `sqlite3VdbeExec`, the bytecode interpreter, 42 |
-| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | `_glp_zlib_inflate` takes 21 minutes |
-| GMP 6.3.0 (generic C) | 650 | 650 | `__gmpn_div_q` takes 6 minutes |
+| SQLite 3 (core) | 1,542 | 1,542 | `sqlite3VdbeExec`, the bytecode interpreter, takes 95 s |
+| GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | `_glp_zlib_inflate` takes 19 s |
+| GMP 6.3.0 (generic C) | 650 | 650 | `__gmpn_div_q` takes 10 s |
 | [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | |
 | [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | |
 
