@@ -1687,9 +1687,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // q & flag(E) for E the union of parts (cq-m16f6). Pairwise exclusive parts (the edges of one trip into a block): the
   // XOR of their flags, each a flag of its own small predicate; the union of many such edges can be a far larger BDD
   // than all of them together (riscv_cpu_interp_x32: 138 edges of at most 118 nodes, a union of 228k).
-  auto unionFlag = [&](Value *q, const Pred &E, ArrayRef<Pred> parts, const Instruction *at) -> Value * {
-    // predsExclusive: case atoms of one switch exclude each other, as their rails do.
-    bool exclusive = parts.size() > 1 && !E.isTop() && predsExclusive(parts);
+  // within: the parts may read atoms E does not (the edges of one trip into the exit block, whose atoms are this trip's).
+  // Otherwise (a latch's incoming edges) such an atom is quantified away: its rail need not be live where E is read (ksub:
+  // both sides of a quantum branch after a classical sub-loop join at the latch, the branch's condition cancelling), and
+  // parts that then meet are merged.
+  auto unionFlag = [&](Value *q, const Pred &E, ArrayRef<Pred> given, const Instruction *at, bool within) -> Value * {
+    std::vector<Pred> parts;
+    if (given.size() > 1 && !E.isTop()) {
+      if (!within)
+        parts = exclusiveParts(E, given);
+      else if (predsExclusive(given))   // case atoms of one switch exclude each other, as their rails do
+        parts.assign(given.begin(), given.end());
+    }
+    bool exclusive = parts.size() > 1;
     if (!exclusive)
       return conj(q, E, at);
     SmallVector<Value *, 16> terms;
@@ -2323,7 +2333,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Value *v = selectChain(ctx, arms, w);
       Value *&f = exitFlags[key];
       if (!f)
-        f = unionFlag(q, E, parts, U.cont->getFirstNonPHI());
+        f = unionFlag(q, E, parts, U.cont->getFirstNonPHI(), true);
       abi::TemplateSpec sel;
       sel.op = "select";
       sel.w = w;
@@ -3251,7 +3261,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                     const std::function<void()> &between) -> Value * {
       Pred Cc = go.isBottom() ? Pred::top() : go.classicalFactor(ctx.T, ctx.S);
       if (Cc.isTop()) {
-        Value *qn = unionFlag(qin, go, parts, tat);
+        Value *qn = unionFlag(qin, go, parts, tat, false);
         between();
         return qn;
       }

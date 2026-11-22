@@ -855,6 +855,38 @@ bool pred_detail::exclusiveAtoms(const Atom &x, const Atom &y) {
          (x.kind == AtomKind::Addr && y.kind == AtomKind::Addr && x.v == y.v && x.bb != y.bb);
 }
 
+std::vector<Pred> exclusiveParts(const Pred &u, ArrayRef<Pred> parts) {
+  Bdd &m = Bdd::get();
+  std::set<unsigned> sup;
+  m.support(nodeOf(u), sup);
+  std::vector<Pred> in;
+  for (const Pred &p : parts)
+    if (unsigned n = m.exists(nodeOf(p), [&](unsigned v) { return !sup.count(v); }); n != Bdd::F)
+      in.push_back(makePred(n));
+  // Union-find over the parts that meet; a class's part is the union of its members.
+  std::vector<unsigned> rep(in.size());
+  for (unsigned i = 0; i < rep.size(); ++i)
+    rep[i] = i;
+  std::function<unsigned(unsigned)> find = [&](unsigned i) { return rep[i] == i ? i : rep[i] = find(rep[i]); };
+  if (!predsExclusive(in))
+    for (unsigned i = 0; i < in.size(); ++i)
+      for (unsigned j = i + 1; j < in.size(); ++j)
+        if (find(i) != find(j) && predsMeet(in[i], in[j]))
+          rep[std::max(find(i), find(j))] = std::min(find(i), find(j));
+  std::vector<Pred> out;
+  std::vector<int> at(in.size(), -1);
+  for (unsigned i = 0; i < in.size(); ++i) {
+    unsigned r = find(i);
+    if (at[r] < 0) {
+      at[r] = int(out.size());
+      out.push_back(in[i]);
+    } else {
+      out[at[r]] = out[at[r]] | in[i];
+    }
+  }
+  return out;
+}
+
 bool predsExclusive(ArrayRef<Pred> ps) {
   Bdd &m = Bdd::get();
   // Per part, the case atoms it implies.
