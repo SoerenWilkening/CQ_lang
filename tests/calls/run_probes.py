@@ -44,6 +44,9 @@ CASES = [
     # upper part, a select on a classical condition) is passed as its classical value.
     ("field_classical_of_rail", "e", [], "pass", [r"call fastcc i32 @__cq_q_g_10_b1\(i32 %\d+, i24 0\)",
                                                   r"call fastcc i32 @__cq_q_g_10\(i32 %\d+, i24 %\d+\)"]),
+    # cq-pjjml (§1.4, rule 26): a _ctl clone whose packed formal has no quantum field joins its classical fields in its own
+    # entry block (the join was emitted at the previous function's insertion point: a cross-function operand).
+    ("packed_classical_ctl", "e", [], "pass", [r"define internal fastcc void @__cq_q_g_00_ctl\(i32 %0, i8 %1, i8 %2\)"]),
     # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
     # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
     # by name, through a defined noreturn callee.
