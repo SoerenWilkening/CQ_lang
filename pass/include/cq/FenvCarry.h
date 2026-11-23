@@ -9,7 +9,8 @@
 //
 //   1. At the end of the loop's entry block E (the builder there, before the branch to the header H):
 //        pieces = fenv::loopCarried(ctx, L)
-//      names every piece of the state some trip of L may change, each with its value at E as a rail (an empty FLAGS
+//      names every piece of the state some trip of L may change (its blocks, and `trip`: the blocks outside L lowered
+//      with each trip, the unit's exit arm and noreturn arms, CR rule 14), each with its value at E as a rail (an empty FLAGS
 //      becomes alloc_i32(0), a classical MODE alloc_i32 of the host mode, both made at the builder).
 //   2. In H: one phi over handles per piece, E's incoming the piece's init (carried: noteCarried, as every other carried
 //      handle phi), then fenv::bindPiece(ctx, id, phi) so the trip reads the phi.
@@ -39,7 +40,8 @@ struct CarriedPiece {
   llvm::Value *init;   // the piece's rail at the builder's point (step 1)
 };
 
-std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const llvm::Loop &L);
+std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const llvm::Loop &L,
+                                      llvm::ArrayRef<llvm::BasicBlock *> trip = {});
 llvm::Value *pieceNow(LoweringContext &ctx, unsigned id);
 void bindPiece(LoweringContext &ctx, unsigned id, llvm::Value *h);
 const llvm::Value *pieceKey(LoweringContext &ctx, unsigned id);

@@ -1407,7 +1407,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
   // cq-v1fu, cq-03rdt (CR rules 14, 23; cq/FenvCarry.h step 1): every piece of the environment a trip may change, its rail at
   // the entry. The reverse reads it as it reads a quantum header phi's initial rail.
-  std::vector<fenv::CarriedPiece> fenvPieces = fenv::loopCarried(ctx, L);
+  SmallVector<BasicBlock *, 8> perTrip(UX.arm.begin(), UX.arm.end());   // cq-6zudr: lowered with each trip
+  perTrip.append(UX.abort.begin(), UX.abort.end());
+  std::vector<fenv::CarriedPiece> fenvPieces = fenv::loopCarried(ctx, L, perTrip);
   if (outermost)
     for (const fenv::CarriedPiece &pc : fenvPieces)
       externalInits.push_back(pc.init);

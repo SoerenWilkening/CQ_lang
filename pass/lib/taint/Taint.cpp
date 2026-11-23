@@ -608,6 +608,8 @@ FnInfo &Analyzer::fn(const Function *F) {
       while (!work.empty()) {
         const BasicBlock *X = work.pop_back_val();
         addParent(X, A);
+        if (!is_contained(info->tripArms[Lp->getHeader()], X))
+          info->tripArms[Lp->getHeader()].push_back(X);
         for (const BasicBlock *Y : successors(X))
           if (!inLoopAround(Y) && seen.insert(Y).second)
             work.push_back(Y);
@@ -2973,6 +2975,8 @@ void Analyzer::analyze(SpecState &S) {
       fenvCur = BB->isEntryBlock() ? fenvstate::kIdentity : 0;
       for (const BasicBlock *Pr : predecessors(BB))
         fenvCur |= S.fenvOut.lookup(Pr);
+      for (const BasicBlock *Ar : fi.tripArms.lookup(BB))
+        fenvCur |= S.fenvOut.lookup(Ar);
       // cq-ndwfr, cq-c07bk (rules 8, 9, 23): in a function with a quantum branch the spine emits the blocks along one
       // walk L, the arms of a quantum branch one after another, a block whose classical factor is not established
       // entered from the block before it in L behind a classical guard (spine/Construct.cpp). eff-fenv's state is

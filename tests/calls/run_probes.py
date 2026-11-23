@@ -51,6 +51,15 @@ CASES = [
     # (classical here), not the exit value's over-taint. A plain callee and a variadic one.
     ("loop_exit_call_result", "e", [], "pass", [r"call i32 @__cq_q_f_1"]),
     ("loop_exit_call_result", "ev", [], "pass", [r"call i32 @__cq_q_ve_"]),
+    # cq-6zudr (rules 14, 16, 23): a rule-14 loop's noreturn arm, lowered with the loop, changes the flags: the loop carries
+    # them (fenv::loopCarried over the arm) and taint's loop header joins the arm's state. e failed on taint (fetestexcept
+    # classical); en (TinyCC's parse_operand: no live exit, the arm in each trip) merged the trip's flags after the loop's
+    # reverse had freed them (recordMerge). "lower": the §6 run fails on g's clone raising into the host flags (cq-dmlhn,
+    # ec too on main).
+    ("fenv_loop_noreturn_arm", "e", [], "lower", [r"%cq\.fenv\d* = phi i32"]),
+    ("fenv_loop_noreturn_arm", "en", [], "lower", [r"%cq\.fenv\d* = phi i32"]),
+    ("fenv_loop_noreturn_arm", "eq", [], "lower", []),
+    ("fenv_loop_noreturn_arm", "ec", [], "lower", []),
     # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
     # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
     # by name, through a defined noreturn callee.

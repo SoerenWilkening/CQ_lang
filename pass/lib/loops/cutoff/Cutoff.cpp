@@ -2996,7 +2996,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     BasicBlock *E = B.GetInsertBlock();
     // cq-9kcq S12c: every piece of the environment a trip may change, its rail at E (step 1 of cq/FenvCarry.h)
-    std::vector<fenv::CarriedPiece> pieces = fenv::loopCarried(ctx, L);
+    SmallVector<BasicBlock *, 8> perTrip(U.arm.begin(), U.arm.end());   // cq-6zudr: lowered with each trip
+    perTrip.append(U.abort.begin(), U.abort.end());
+    std::vector<fenv::CarriedPiece> pieces = fenv::loopCarried(ctx, L, perTrip);
     BasicBlock *Hd = BasicBlock::Create(Cx, "", &ctx.out());
     BasicBlock *Xb = nullptr;
     if (zeroGuard) {

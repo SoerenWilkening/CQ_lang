@@ -54,6 +54,10 @@ struct FnInfo {
   cq::taint_detail::DeadEnds dead;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
   std::vector<const llvm::BasicBlock *> rpo;
+  // CR rules 14, 16, 23 (cq-6zudr): per loop header, the blocks of the noreturn arms its exit edges lead to. The loop
+  // module lowers them inside each trip (fenv::loopCarried), so the environment they leave reaches the next trip and the
+  // loop's continuation: the header joins their state.
+  llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 4>> tripArms;
   // The spine's walk order L (spine/Construct.cpp Walker::plan: reverse post-order, successors visited last to first),
   // the order in which a quantum branch's arms are linearized (rules 8, 9; cq-ndwfr).
   llvm::DenseMap<const llvm::BasicBlock *, unsigned> walk;

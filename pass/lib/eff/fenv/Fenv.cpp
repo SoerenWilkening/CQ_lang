@@ -2642,14 +2642,17 @@ Value *cloneExitFlags(LoweringContext &ctx, ReturnInst &ret) {
 // instruction of L may change it: FLAGS by a raising op, a <fenv.h> call that writes the flags, a call of a body that holds
 // or changes the environment (a clone carrying it returns the new flags, E1) or an indirect call in a function that
 // accesses the environment; MODE by an instruction that writes the mode.
-std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const Loop &L) {
+std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const Loop &L, ArrayRef<BasicBlock *> trip) {
   std::vector<CarriedPiece> out;
   const Instruction *at = L.getHeader()->getTerminator();
   if (!at || at->getFunction() != ctx.S.F)
     return out;
   bool flags = false, mode = false;
   bool envFn = accessesEnv(*ctx.S.F);
-  for (const BasicBlock *bb : L.blocks())
+  // cq-6zudr: the exit and noreturn arms run per trip too (a get_tok_str before a noreturn _tcc_error).
+  SmallVector<const BasicBlock *, 16> blocks(L.blocks());
+  blocks.append(trip.begin(), trip.end());
+  for (const BasicBlock *bb : blocks)
     for (const Instruction &I : *bb) {
       flags |= writesFlags(I);
       mode |= writesMode(I);
