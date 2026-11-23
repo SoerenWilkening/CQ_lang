@@ -19,6 +19,12 @@ Position spot_pos;
 static StateInfo spot_st;
 static int spot_init = (Bitboards::init(), Position::init(),
     spot_pos.set("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3", false, &spot_st), 0);
+// The engine's tables and the state are statics of native code here, which no lowered module registers (BACKEND_ABI
+// 1.10, Objects); in a fully lowered program the defining module does it. The native program has no registry.
+extern "C" void __cq_object(long long, long long) __attribute__((weak));
+static int spot_reg = !__cq_object ? 0 :
+    (__cq_object((long long) RookMagics[0].attacks, 0x19000 * 8), __cq_object((long long) BishopMagics[0].attacks, 0x1480 * 8),
+     __cq_object((long long) &spot_st, sizeof spot_st), 0);
 #else
 #if SPOT == 4 // uci.h brings numa.h's dynamically initialized SYSTEM_THREADS_NB: only where the check needs it
 #include "uci.h"
