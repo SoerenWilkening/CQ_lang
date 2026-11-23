@@ -1199,6 +1199,8 @@ def lead_type(s: str) -> Tuple[str, str]:
                         i += 1
                     return s[:i + 1], s[i + 1:].strip()
         unimplemented(f"unbalanced type in {s!r}")
+    if m := re.match(r'%"[^"]*"', s):  # a quoted type name may hold spaces: %"class.A::(anonymous namespace)::B"
+        return m.group(0), s[m.end():].lstrip(",").strip()
     t, _, rest = s.partition(" ")
     return t.rstrip(","), rest
 
