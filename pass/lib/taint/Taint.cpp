@@ -3028,12 +3028,13 @@ void Analyzer::analyze(SpecState &S) {
     // A value defined in a loop with a tainted exit and read after it is the select-merged carried
     // value (rule 14): L() reads it as quantum in any reader outside the loop (exitRead). The
     // reader's result is quantum too, also where V is a pointer or the reader reads it through
-    // addresses computed after the loop (the load of an address evaluated per trip, 121), or the
-    // reader's transfer does not pass operand lanes to its result (a call). A pointer is an integer (rule 21): a
-    // pointer exit value and an address computed from it are rails too. Several returns chosen by a tainted branch
-    // merge their values. A cq_measure_* reader is the exception (cq-3v36): "a cq_measure in an exit arm runs once,
-    // after the K trips, on the arm's value merged across the trips" (rule 14) and its outcome is classical (rule 2);
-    // only inside a _ctl clone is it a rail (rule 19, transferCall).
+    // addresses computed after the loop (the load of an address evaluated per trip, 121). A pointer is an integer
+    // (rule 21): a pointer exit value and an address computed from it are rails too. Several returns chosen by a
+    // tainted branch merge their values. A call reader is the exception (cq-to6xa): transferCall reads its actuals
+    // through exitRead and decides its result, as the lowering binds it (a clone's result lanes, rule 18; an effect
+    // entry's or a declared clone's rail; __cq_alloc's classical address, rule 16; a cq_measure_*, cq-3v36: "a
+    // cq_measure in an exit arm runs once, after the K trips, on the arm's value merged across the trips" (rule 14),
+    // classical (rule 2) but inside a _ctl clone, rule 19).
     for (const BasicBlock *BB : fi.rpo)
       for (const Loop *Lp = fi.LI->getLoopFor(BB); Lp; Lp = Lp->getParentLoop()) {
         if (!S.exitQ.count(Lp))
@@ -3056,7 +3057,7 @@ void Analyzer::analyze(SpecState &S) {
                   continue;
                 }
                 if (!Lp->contains(UI) && !UI->getType()->isVoidTy()) {
-                  if (auto *MC = dyn_cast<CallBase>(UI); MC && isMeasure(MC->getCalledFunction()) && !cur->ctl)
+                  if (isa<CallBase>(UI))
                     continue;
                   if (!UI->getType()->isPointerTy())
                     setL(UI, allLanes(lanesOf(UI->getType())));
