@@ -59,6 +59,13 @@ add_test(NAME loops-cutoff-nest-exits
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/nest_exits.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/nest_exits_ir.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-qesnu (CR rule 14 case 3, rules 7, 9; TinyCC _tcc_backtrace): a case-3 sub-loop whose classical exit reaches its
+# continuation only through its tail, the tail's edge carrying the open flow's linearized paths.
+add_test(NAME loops-cutoff-sub-tail
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/sub_tail_ir.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-6wzf3 (CR rule 14, TinyCC tcc_assemble_internal): a quantum-exit sub-loop inside another's exit arm.
 add_test(NAME loops-cutoff-arm-subloop
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
