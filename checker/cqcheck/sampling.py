@@ -1599,8 +1599,7 @@ class Instrumenter:
             if s.startswith("@llvm.global_ctors ="):
                 # the module's static constructors run from __cqd_globals, after the runtime is set up and the
                 # globals registered (Darwin runs them before the runtime's own constructor), in priority order
-                ents = re.findall(r"\{\s*i32\s+(\d+),\s*ptr\s+(@(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))", s)
-                self.ctors = [f for _, f in sorted(ents, key=lambda e: int(e[0]))]
+                self.ctors = D.take_ctors(s + "\n")[1]
                 i += 1
                 continue
             if s.startswith("define "):
@@ -3321,7 +3320,8 @@ def drop_subst_out_of_domain(g: "Gen", pc: Dict[str, dict], spec: DriverSpec, ex
     sub_idx = [i for i, sm in enumerate(g.samples) if "subst" in sm]
     if not sub_idx:
         return
-    runs = oracle.run_samples(o1, spec, [g.samples[i] for i in sub_idx])
+    # only the notes are read: trip mode, which writes no outputs (a program's large globals, per sample)
+    runs = oracle.run_samples(o1, spec, [g.samples[i] for i in sub_idx], trips_only=True)
     bad = {i for i, r in zip(sub_idx, runs) if any(n in ("oob-load", "oob-store") for n in r.notes)}
     # A substituted site fed by one argument and reached once (cq-lvkq) is the plain sample with that
     # argument at the substituted value: the probe judges its domain (107: x even makes b + 2, one

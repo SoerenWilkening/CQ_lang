@@ -727,6 +727,10 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         # the named outputs' reader joins after the instrumentation: its uses of the globals' addresses
         # are no escape of the program's (rule 2's collapse reads them), and its accesses no program access
         inst = (d / "prog.inst.ll").read_text()
+        # the module's static constructors run from cqo_rt.c's run_batch, after the runtime is set up (Darwin runs
+        # them before the runtime's own constructors) and inside the batch, where their output is the setup's
+        inst, ctors = drivers.take_ctors(inst)
+        inst += "define void @__cqo_module_ctors() {\nentry:\n" + "".join(f"  call void {f}()\n" for f in ctors) + "  ret void\n}\n"
         inst += drivers.out_globals_ir(text, inst, "__cqo_out_globals", "__cqo_out_mem", "__cqo_out_object")
         # the same objects by address alone, for a sample that ends before its outputs (BEFORE_CALL)
         (d / "prog.inst.ll").write_text(inst + drivers.out_globals_ir(text, inst, "__cqo_out_table", "__cqo_out_object",

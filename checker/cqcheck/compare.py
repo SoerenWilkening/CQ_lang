@@ -2208,19 +2208,24 @@ def _memory(rr: RunResult, against: str) -> Tuple[Dict[Tuple[str, int], int], Di
     addr_of = {o["name"]: _int(o["addr"]) for o in out.get("objects", [])}
     cells: Dict[Tuple[str, int], int] = {}
     words: Dict[Tuple[str, int], Any] = {}
+    spans = table[0] + table[1]
+    lo_all = min((lo for lo, _, _ in spans), default=0)
+    hi_all = max((hi for _, hi, _ in spans), default=-1)
     for m in out.get("mem", []):
         name, off, n = m["name"], int(m.get("off", 0)), _mem_bytes(m)
-        val = _int(m["v"]) or 0
+        # the bytes once: a shift of the whole value per byte is quadratic in a large object (a 800 KB table)
+        b = ((_int(m["v"]) or 0) & ((1 << (8 * n)) - 1)).to_bytes(n, "little")
         base = _int(m["addr"]) if "addr" in m else addr_of.get(name)
         if base is not None:
             base += off
         for i in range(n):
-            cells[(name, off + i)] = (val >> (8 * i)) & 0xFF
+            cells[(name, off + i)] = b[i]
             if base is not None and (base + i) % 8 == 0 and i + 8 <= n:
-                word = (val >> (8 * i)) & ((1 << 64) - 1)
-                tok = _addr_token(word, table, against)
-                if tok != word:
-                    words[(name, off + i)] = tok
+                word = int.from_bytes(b[i:i + 8], "little")
+                if lo_all <= word <= hi_all:     # outside every object and region it reads as itself
+                    tok = _addr_token(word, table, against)
+                    if tok != word:
+                        words[(name, off + i)] = tok
     return cells, words
 
 
@@ -2233,11 +2238,15 @@ def _memory_reasons(k: str, o: RunResult, r: RunResult, against: str) -> List[st
         co[(name, off)], cr[(name, off)] = wo[(name, off)], wr[(name, off)]
     if co == cr:
         return []
-    names = sorted({n for n, _ in co} | {n for n, _ in cr})
+    by_o: Dict[str, Dict[int, Any]] = {}
+    by_r: Dict[str, Dict[int, Any]] = {}
+    for (n, i), v in co.items():
+        by_o.setdefault(n, {})[i] = v
+    for (n, i), v in cr.items():
+        by_r.setdefault(n, {})[i] = v
     why = []
-    for name in names:
-        po = {i: v for (n, i), v in co.items() if n == name}
-        pr = {i: v for (n, i), v in cr.items() if n == name}
+    for name in sorted(by_o.keys() | by_r.keys()):
+        po, pr = by_o.get(name, {}), by_r.get(name, {})
         if not po or not pr:
             why.append(f"sample {k}: memory output {name} exists only on the "
                        f"{'our' if po else 'other'} side (CR §6 item 1)")
