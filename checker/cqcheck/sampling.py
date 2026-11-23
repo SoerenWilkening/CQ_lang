@@ -956,7 +956,7 @@ def split_type(s: str) -> Tuple[str, str]:
                 depth -= 1
                 if depth == 0:
                     return s[:i + 1], s[i + 1:].strip()
-    m = re.match(r"([^\s,]+)", s)
+    m = re.match(r'(%"[^"]*"|[^\s,]+)', s)  # a quoted type name may hold spaces: %"class.A::(anonymous namespace)::B"
     t = m.group(1)
     return t, s[len(t):].strip()
 
