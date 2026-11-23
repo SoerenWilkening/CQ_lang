@@ -1,20 +1,31 @@
 // spot.cpp: Stockfish functions on a quantum argument; the exit code is the measured result. -DSPOT=n picks the check,
 // -DV=v the basis value under the rotation (angle 0: the replay backend keeps it), -DNATIVE the plain C++ program.
+// -DSETUP is the classical setup, compiled natively into both builds: a static constructor fills spot_pos before main.
+// It is not in the lowered module because rule 27 has no flow: once main makes a declared-clone call with a rail actual,
+// every listed call in the module, Bitboards::init, Position::init and Position::set before cq_theta included, is a
+// declared clone (cq-or1sa).
 #define CQ_NO_NEW
 #ifdef NATIVE
 template <class T> void cq_theta(T *, double) {}
 template <class T> T cq_measure(T x) { return x; }
-#else
+#elif !defined(SETUP)
 #include "cq.hpp"
 #endif
 #include "bitboard.h"
 #include "position.h"
-#include "uci.h"
 using namespace Stockfish;
+#ifdef SETUP
+Position spot_pos;
+static StateInfo spot_st;
+static int spot_init = (Bitboards::init(), Position::init(),
+    spot_pos.set("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3", false, &spot_st), 0);
+#else
+#if SPOT == 4 // uci.h brings numa.h's dynamically initialized SYSTEM_THREADS_NB: only where the check needs it
+#include "uci.h"
+#endif
+extern Position spot_pos;
 int main() {
-    Bitboards::init(); Position::init();
-    Position pos; StateInfo st;
-    pos.set("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3", false, &st);
+    Position &pos = spot_pos;
     unsigned char k = V; cq_theta(&k, 0.0);
 #if SPOT == 1   // header code over the engine's magic tables: queen attacks from a quantum square
     long r = popcount(attacks_bb<QUEEN>(Square(k & 63), pos.pieces()));
@@ -29,3 +40,4 @@ int main() {
 #endif
     return (int)cq_measure(r);
 }
+#endif
