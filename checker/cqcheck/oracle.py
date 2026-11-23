@@ -787,7 +787,7 @@ def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),
         (d / "driver.c").write_text(src)
         env = dict(os.environ, CQO_AT_END="1", CQO_ENTRIES=",".join(entries))
         _run([_tool("clang"), "-target", triple, "-std=gnu17", "-O1", "-w", f"-fpass-plugin={plugin}",
-              str(d / "driver.c"), str(prog_o), str(prog_o.parent / "fx.o"), str(rt), "-o", str(d / "prog")],
+              str(d / "driver.c"), str(prog_o), str(prog_o.parent / "fx.o"), str(rt), "-lc++", "-o", str(d / "prog")],
              "compiling, instrumenting and linking the driver", env=env)
 
     d = _atomic_dir(_build_root() / "exe" / f"{Path(o1).stem}-{key}", fill)

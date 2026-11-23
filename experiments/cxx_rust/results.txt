@@ -1,0 +1,80 @@
+a01_template PASS
+a02_class PASS
+a03_virtual rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (40 reasons)
+a04_virtual_quantum_select rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (37 reasons)
+a05_lambda_algorithm PASS
+a06_std_sort rc=3 checked | 
+a07_vector PASS
+a08_vector_quantum_index PASS
+a09_string PASS
+a10_string_ops rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (40 reasons)
+a11_map rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (38 reasons)
+a12_map_quantum_key PASS
+a13_unordered_map_quantum_key rc=2 checked | cqcheck user: ERROR: RuntimeError: cq: unimplemented: chk-drivers: 00_user_f: the C oracle reports loops ['_ZNSt3__112__hash_tableINS_17__hash_value_typeIi
+a14_optional_variant PASS
+a15_unique_ptr_list PASS
+a16_shared_ptr PASS
+a20_function TIMEOUT
+a21_matrix_constexpr PASS
+a22_recursion_tree TIMEOUT
+a23_bst_quantum_search PASS
+a24_float PASS
+a25_complex PASS
+a26_bitset PASS
+a27_grover PASS
+a28_dynamic_cast PASS
+a29_coroutine PASS
+a30_priority_queue PASS
+a31_new_under_quantum PASS
+a32_push_under_quantum PASS
+a33_static_local PASS
+a34_multiple_inheritance rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (38 reasons)
+a35_memptr PASS
+a36_iostream rc=2 checked | 
+a37_sha_like PASS
+a38_ranges rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (1 reasons)
+a39_deque_list PASS
+a40_vector_at PASS
+b01_generic_gcd PASS
+b02_struct_ops PASS
+b03_trait_object rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (40 reasons)
+b04_trait_object_quantum_select rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (37 reasons)
+b05_iterators PASS
+b06_sort PASS
+b07_vec rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (1 reasons)
+b08_array_quantum_index PASS
+b09_bounds_check_quantum PASS
+b10_string PASS
+b11_string_chars rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (1 reasons)
+b12_btreemap rc=2 checked | cqcheck user: ERROR: RuntimeError: cq: unimplemented: chk-drivers: 00_user_f: the C oracle reports loops ['_ZN5alloc11collections5btree3map25BTreeMap$LT$K$C$V$C$A$GT$6inser
+b13_btreemap_quantum_key rc=2 checked | cqcheck user: ERROR: RuntimeError: cq: unimplemented: chk-drivers: 00_user_f: the C oracle reports loops ['_ZN5alloc11collections5btree3map25BTreeMap$LT$K$C$V$C
+b14_hashmap_quantum_key rc=2 checked | cqcheck user: ERROR: RuntimeError: cq: unimplemented: chk-drivers: probe of vector constant <16 x i8> <i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7
+b15_option_result_question PASS
+b16_enum_match PASS
+b17_box_list rc=1 checked | cqcheck user: FAIL: the lowered program differs from the C program (1 reasons)
+b18_rc_refcell PASS
+b19_closures PASS
+b20_const_generic_matrix PASS
+b21_u128 PASS
+b22_checked_saturating PASS
+b23_bits PASS
+b24_float_cast rc=1 pass-failed | LLVM ERROR: cq: internal error: spine: calls::classify: an intrinsic the C pipeline does not emit, with a quantum operand
+b25_float_newton PASS
+b26_slice_binary_search PASS
+b27_grover PASS
+b28_chunks_zip_windows PASS
+b29_panic_explicit PASS
+b30_unwrap_quantum PASS
+b31_fmt TIMEOUT
+b32_vec_push_quantum PASS
+b33_box_quantum_arm PASS
+b34_vecdeque_heap PASS
+b35_sha_mix PASS
+b36_async PASS
+b37_overflow_default PASS
+b38_matches_tuple_swap PASS
+b39_dp_lcs PASS
+b40_atomic_mutex rc=2 checked | cqcheck user: ERROR: RuntimeError: cq: unimplemented: chk-drivers: 00_user_f: probe build failed (probe.ll):
+EXC=1 a17_throw_classical rc=1 pass-failed | LLVM ERROR: cq: internal error: taint: IR the pinned pipeline cannot emit (CR §0, rule 25): an instruction C on x86-64 at -O1 never produces (invoke/landin
+EXC=1 a18_throw_quantum rc=1 pass-failed | LLVM ERROR: cq: internal error: taint: IR the pinned pipeline cannot emit (CR §0, rule 25): an instruction C on x86-64 at -O1 never produces (invoke/landingp
+EXC=1 a19_raii_call rc=1 pass-failed | LLVM ERROR: cq: internal error: taint: IR the pinned pipeline cannot emit (CR §0, rule 25): an instruction C on x86-64 at -O1 never produces (invoke/landingpad/r
