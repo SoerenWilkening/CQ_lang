@@ -627,7 +627,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         _sh([CLANG, "-std=c17", "-O1", "-w", "-target", triple, "-I", str(RT_DIR), "-c", str(e), "-o", str(o)])
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "lowered.steps.ll", str(driver_obj(dll, triple)), "stubs.ll",
-         "-Wl,-U,___cqe_out_mem", "-lm", "-lc++", "-o", "prog"], cwd=tmp)
+         "-Wl,-U,___cqe_out_mem", "-Wl,-U,_cqrt_qram_object", "-lm", "-lc++", "-o", "prog"], cwd=tmp)
 
 
 def driver_ll(drv: str, triple: str) -> Path:
@@ -1324,7 +1324,7 @@ _CTL_MEASURE = re.compile(r"@cqrt_copy_\w+_controlled\(i32 [^,]+, i32 [^,]+, i32
 _MEASURED_RAIL = re.compile(r"@cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
 # Callees that are none of rule 18's reasons for no twin by themselves (the bus stores and effect entries among
 # cqrt_* are read separately); a callee with no body, a declared clone included, is a host call.
-_NEUTRAL_CALLEE = re.compile(r"^(cq_template_|cqrt_|__cq_mem$|__cq_mints_push$|__cq_clone_|__cq_free$|llvm\.)")
+_NEUTRAL_CALLEE = re.compile(r"^(cq_template_|cqrt_|__cq_mem$|__cq_object$|__cq_mints_push$|__cq_clone_|__cq_free$|llvm\.)")
 
 
 def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:

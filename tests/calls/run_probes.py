@@ -154,7 +154,7 @@ CASES = [
     # parameter (a registered callee; abs, which has no row: rule 16's host boundary), functions nothing calls by name, and
     # escaping functions of several shapes. ep itself is not driven: the checker passes a data object as its pointer.
     ("fnptr_global_table", "gt", [], "pass", [
-        r"@llvm\.global_ctors = appending global \[1 x \{ i32, ptr, ptr \}\] \[\{ i32, ptr, ptr \} \{ i32 65535, ptr @__cq_register, ptr null \}\]",
+        r"@llvm\.global_ctors = appending global \[\d x \{ i32, ptr, ptr \}\] \[\{ i32, ptr, ptr \} \{ i32 65535, ptr @__cq_register, ptr null \}[\],]",
         r"call void @__cq_clone_register\(ptr @inc, ptr @\.cq\.sig[.\d]*, ptr @__cq_q_inc_1_t, ptr @__cq_q_inc_1_t_ctl, ptr @__cq_q_inc_1_t_unc, ptr @__cq_q_inc_1_t_ctl_unc\)",
         r"call void @__cq_clone_register\(ptr @dbl, ", r"@__cq_clone_count\(ptr @\.cq\.sig\)", r"@__cq_clone_at\(ptr @\.cq\.sig, "]),
     ("fnptr_callback_lib", "cb", [], "pass", [

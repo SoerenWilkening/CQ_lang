@@ -1793,6 +1793,34 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     }
     // 5b. Owner rulings 2026-11-14 (scope of Q7; Q1): what does not come back ends there (endAtNoreturn).
     endAtNoreturn(M, wasNoreturn);
+    // 5c. BACKEND_ABI §1.10, Objects: one constructor registers every sized global the module defines or declares, in
+    // global order. The pass's own (`.cq.*`, `__cq*`: signatures, effect names, counters, __cq_sig) are never the
+    // object of a quantum address and are left out.
+    {
+      const DataLayout &DL = M.getDataLayout();
+      SmallVector<GlobalVariable *, 16> objs;
+      for (GlobalVariable &G : M.globals()) {
+        StringRef n = G.getName();
+        if (G.isThreadLocal() || G.hasExternalWeakLinkage() || n.starts_with("llvm.") ||
+            G.getSection() == "llvm.metadata" || n.starts_with(".cq.") || n.starts_with("__cq") ||
+            !G.getValueType()->isSized() || DL.getTypeAllocSize(G.getValueType()).getKnownMinValue() == 0)
+          continue;
+        objs.push_back(&G);
+      }
+      if (!objs.empty()) {
+        LLVMContext &C = M.getContext();
+        Type *i64 = Type::getInt64Ty(C);
+        Function *ctor = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage,
+                                          "__cq_objects", &M);
+        IRBuilder<> B(BasicBlock::Create(C, "", ctor));
+        FunctionCallee reg = cq::abi::declareHost(M, cq::abi::Host::Object);
+        for (GlobalVariable *G : objs)
+          B.CreateCall(reg, {ConstantExpr::getPtrToInt(G, i64),
+                             ConstantInt::get(i64, DL.getTypeAllocSize(G->getValueType()).getFixedValue())});
+        B.CreateRetVoid();
+        appendToGlobalCtors(M, ctor, 65535);
+      }
+    }
 
     // CR rule 13 (b137e75): a lowered computed goto compares its address with blockaddress constants, which a
     // clone (or another lowered function) may take of another function's block. The textual IR names such a

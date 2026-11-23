@@ -777,6 +777,7 @@ llvm::FunctionCallee declareHost(llvm::Module &M, Host f) {
   case Host::CloneResolve: return declareChecked(M, "__cq_clone_resolve", llvm::FunctionType::get(p, {p, i32}, false));
   case Host::CloneCount: return declareChecked(M, "__cq_clone_count", llvm::FunctionType::get(i32, {p}, false));
   case Host::CloneAt: return declareChecked(M, "__cq_clone_at", llvm::FunctionType::get(p, {p, i32}, false));
+  case Host::Object: return declareChecked(M, "__cq_object", llvm::FunctionType::get(v, {i64, i64}, false));
   }
   llvm_unreachable("cq: host symbols are the enum's");
 }
