@@ -77,7 +77,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 - **Widths.** The integer widths a backend must provide are those the corpus and the lowered
   float library (§2.12) use, and those the lowered experiment programs use (widths the compiler
   narrows a value to; TinyEMU: `i14 i15 i50 i63 i112`, TinyCC: `i3 i4 i5 i13 i28 i29 i33 i40
-  i43 i56`), currently `i1 i3 i4 i5 i6 i7 i8 i13 i14 i15 i16 i17 i24 i28 i29 i31 i32 i33 i40 i43 i48
+  i43 i56`, Stockfish: `i10 i26`), currently `i1 i3 i4 i5 i6 i7 i8 i10 i13 i14 i15 i16 i17 i24 i26 i28 i29 i31 i32 i33 i40 i43 i48
   i50 i56 i63 i64 i80 i100 i112 i128 i200`; the core gates (§1) also take the float tokens `f16 bf16 f32 f64 f80`. This bullet is
   the one definition of that list: CR carries no copy. `bswap` exists only where W is a multiple
   of 16 (§2.8). Any `N ≥ 1` is legal (CR §1.1), so implement templates generically in W: a width
