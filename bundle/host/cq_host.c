@@ -6,6 +6,9 @@
  *   int64_t __cq_sig[65]                       one cell per signal number: the registered handler's address (rule 16)
  *   void *__cq_alloc(int64_t size, int64_t align)   size zeroed bytes at that alignment, never reused, size as an
  *                                              i64 in the 8 bytes before the result. Nothing frees it.
+ *   void __cq_object(int64_t addr, int64_t size)    BACKEND_ABI §1.10 Objects: forwards to the backend's
+ *                                              cqrt_qram_object when the link has one, else nothing. A weak import:
+ *                                              on Mach-O the link needs -Wl,-U,_cqrt_qram_object (cqcc, run.py pass it).
  *   void __cq_clone_register(fn, sig, clone, ctl, unc, ctl_unc), void *__cq_clone_resolve(fn, kind),
  *   int32_t __cq_clone_count(sig), void *__cq_clone_at(sig, i)    the process-wide clone table; sig by string
  *
@@ -24,6 +27,7 @@
 #include <unistd.h>
 
 int32_t cqrt_qram_alloc_i8(int32_t n);
+extern void cqrt_qram_object(int64_t addr, int64_t size) __attribute__((weak_import));
 
 /* ---- the bus ---- */
 
@@ -32,6 +36,14 @@ int32_t __cq_mem(void) {
   if (!m)
     m = cqrt_qram_alloc_i8(0);
   return m;
+}
+
+/* ---- objects ---- */
+
+/* Idempotent and never withdrawn: a block the checker's shot restore puts back needs no new registration. */
+void __cq_object(int64_t addr, int64_t size) {
+  if (size > 0 && cqrt_qram_object)
+    cqrt_qram_object(addr, size);
 }
 
 /* ---- signals ---- */
@@ -78,6 +90,7 @@ void *__cq_alloc(int64_t size, int64_t align) {
   char *p = (char *)(((uintptr_t)top + 8 + a - 1) & ~(uintptr_t)(a - 1));
   memcpy(p - 8, &size, 8);
   top = p + n;
+  __cq_object((int64_t)(uintptr_t)p, size);
   return p;
 }
 
