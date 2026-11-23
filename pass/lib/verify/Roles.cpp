@@ -212,6 +212,9 @@ const Sig &SigCache::get(const CallBase &CB) {
     S.unc = S.clone->unc;
     if (S.unc)
       S.fwd = name.drop_back(4).str();
+  } else if (name == "__cq_unbound") {
+    S.roles.push_back(Role::Read);   // CR rule 20: the one host function an address rail is passed to
+    S.res = Res::None;
   }
   if (S.kind == Kind::Template && S.roles.size() != nargs)
     malformed(CB, "@" + name + " takes " + Twine(S.roles.size()) + " operands by its spelling, declared with " +
