@@ -1469,7 +1469,8 @@ def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
     - rule 19: the call of an own symbol's rail result (escaped, never freed);
     - rule 18: the results of a by-name clone on rule 18's no-twin list (_no_twin_clones) with no `_unc` in the module,
       its {res, flags} struct included (a clone that loads is kept per call, overtaken_twin_module);
-    - §1.4: the results of a table clone on that list whose twin is the pop-only form ("every result stays allocated").
+    - §1.4: the results of a table clone on that list whose twin is the pop-only form ("every result stays allocated");
+    - rules 19 and 26: the rail leaves of an own symbol's aggregate result, at its returns.
     A callee with a twin is not touched, and neither is a clone off the list with no twin (its twin's call was
     lost): a result that should be zeroed and is not stays a leak, as does anything else the clone left live."""
     bodies = {m.group(1): m.group(2) for m in _FN_BODY.finditer(text)}
@@ -1487,6 +1488,10 @@ def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
             keep.add(f)
     own = {f for f in handle_fns if not f.startswith("__cq_q_")
            and not re.search(rf"(?m)^(?:define|declare)\b[^@\n]*@\"?{re.escape(f)}_unc\"?\(", text)}
+    # rules 19 and 26 (cq-87ijm): an own symbol's aggregate result is the struct of its leaves, each rail leaf escaped and
+    # never freed; it is marked at the own symbol's returns (_ret_handles leaves a classical leaf alone)
+    keep |= {f for f in bodies if not f.startswith("__cq_q_") and f + "_unc" not in bodies
+             and re.search(rf"(?m)^define\b[^@\n]*\}} @\"?{re.escape(f)}\"?\(", text)}
     if not keep and not own:
         return text
     out, used, cur, nkept = [], False, None, 0
