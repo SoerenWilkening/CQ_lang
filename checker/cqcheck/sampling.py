@@ -2121,7 +2121,7 @@ def _ld_command(objs: Sequence[str], out: str) -> List[str]:
         with tempfile.TemporaryDirectory(prefix="cqd-ld-") as d:
             o = Path(d) / "cqd_in.o"
             o.write_bytes(b"")
-            r = subprocess.run([str(LLVM_BIN / "clang"), "-###", "-target", "x86_64-apple-macosx", str(o), "-lm",
+            r = subprocess.run([str(LLVM_BIN / "clang"), "-###", "-target", "x86_64-apple-macosx", str(o), "-lm", "-lc++",
                                 "-o", "cqd_out"], capture_output=True, text=True)
             jobs = [ln for ln in r.stderr.splitlines() if ln.startswith(" \"")]
             cmd = shlex.split(jobs[-1]) if jobs else []

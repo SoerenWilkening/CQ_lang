@@ -627,7 +627,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         _sh([CLANG, "-std=c17", "-O1", "-w", "-target", triple, "-I", str(RT_DIR), "-c", str(e), "-o", str(o)])
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "lowered.steps.ll", str(driver_obj(dll, triple)), "stubs.ll",
-         "-Wl,-U,___cqe_out_mem", "-lm", "-o", "prog"], cwd=tmp)
+         "-Wl,-U,___cqe_out_mem", "-lm", "-lc++", "-o", "prog"], cwd=tmp)
 
 
 def driver_ll(drv: str, triple: str) -> Path:
