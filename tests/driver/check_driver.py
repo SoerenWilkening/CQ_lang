@@ -12,8 +12,7 @@ Fails on any of:
               nothing of the bundle (identity) is relinked
   identity    a TU with no taint is not byte-identical to opt with no passes on the module cqcc gave the
               pass, or (one TU) to opt -S of clang -O1 -S -emit-llvm -include CQ.h output
-  K           -cq-k / -cq-k-default do not reach the pass, or K = 0 (owner ruling Q2 of 2026-11-15, CR §0) is
-              rejected or its K-loop runs a trip, or a
+  K           -cq-k / -cq-k-default do not reach the pass, or a
               CQ_K line's constant is missing from the pass input or output (same TU), or, in a program of several
               TUs, a line is not bound by C scope before the link (CR §0, cq-z9vt): another TU's line does not reach
               the function it names; the defining TU's line does not win, or without one the largest other line;
@@ -248,10 +247,8 @@ def test_k(tmp):
             fail(f"K {flag} reaches the pass ({src})", r.stderr)
         else:
             ok(f"K {flag} reaches the pass ({src}): its usage error, nothing emitted")
-    # K = 0 is legal (owner ruling Q2 of 2026-11-15, CR §0): accepted on a tainted and an untainted module, and the
-    # K-loop of f runs no trip (at K 3 it runs 3)
-    for src, flag, want in (("kunit_def_noline.c", "-cq-k=f=0", [0]), ("kunit_def_noline.c", "-cq-k-default=0", [0]),
-                            ("kunit_def_noline.c", "-cq-k=f=3", [3]), ("classical.c", "-cq-k-default=0", None)):
+    # the K-loop of f runs K trips (K > 0: owner 2026-11-23, CR §0)
+    for src, flag, want in (("kunit_def_noline.c", "-cq-k=f=3", [3]), ("classical.c", "-cq-k-default=1", None)):
         out = tmp / f"k0.{Path(src).stem}.{flag[1:].replace('=', '_')}.ll"
         r = cqcc("-S", SRC / src, flag, "-o", out)
         tag = f"K {flag} ({src})"
@@ -368,39 +365,6 @@ def test_k_units(tmp):
             fail(tag, f"the clones {mks} allocate at K2 {ks}, want [100, 200] one each")
         else:
             ok(f"{tag}: K2 100 and 200")
-
-    # CQ_K(f, 0) (owner ruling Q2 of 2026-11-15, CR §0: K = 0 is a K): the defining unit's 0 wins over another unit's 3,
-    # and a static's own 0 is its K next to a static of the same name at 3; each lowered as the one-unit lowering at its
-    # K, the K-loop at 0 running no trip, in both link orders
-    r0 = {"f0": fn_body(low("ref.f0", SRC / "kunit_def_noline.c", "-cq-k=f=0")[0] or "", "f"),
-          "h0": fn_body(low("ref.h0", SRC / "kunit_st0.c", "-cq-k=helper=0")[0] or "", "__cq_q_helper_1"),
-          "h3": fn_body(low("ref.h3r", SRC / "kunit_st3.c", "-cq-k=helper=3")[0] or "", "__cq_q_helper_1")}
-    if not all(r0.values()) or len(set(r0.values())) != len(r0):
-        fail("CQ_K units, K 0", "the one-unit references are missing or do not tell the K apart")
-    else:
-        for order in (["kunit_def0.c", "kunit_use3.c"], ["kunit_use3.c", "kunit_def0.c"]):
-            text, err = low("f0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order])
-            if text is None:
-                continue
-            tag = f"CQ_K units, the defining unit's 0 wins over another's 3 ({' '.join(order)})"
-            if fn_body(text, "f") != r0["f0"] or k_trips(text, "f") != [0]:
-                fail(tag, f"f is not lowered at K 0 (trips {k_trips(text, 'f')})")
-            elif not warn.search(err):
-                fail(tag, "no warning on the differing lines")
-            else:
-                ok(f"{tag}: K 0, no trip, warned")
-        for order in (["kunit_st0.c", "kunit_st3.c"], ["kunit_st3.c", "kunit_st0.c"]):
-            text, err = low("st0." + "-".join(Path(s).stem for s in order), *[SRC / s for s in order])
-            if text is None:
-                continue
-            tag = f"CQ_K units, a static's own 0 next to a static of its name at 3 ({' '.join(order)})"
-            h0, h3 = helper_of(text, "entry0"), helper_of(text, "entry3")
-            if h0 != r0["h0"] or h3 != r0["h3"] or k_trips(h0 or "", "__cq_q_helper_1") != [0]:
-                fail(tag, "the helper of entry0 is not lowered at K 0, or that of entry3 not at 3")
-            elif "warning" in err:
-                fail(tag, "a warning for statics, which never conflict")
-            else:
-                ok(f"{tag}: 0 (no trip) and 3")
 
     # a function no unit defines externally keeps its constants (K and K2); a static's own lines become its
     # attributes; a static with no line is marked "none" so the constant of its name does not reach it

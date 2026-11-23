@@ -45,11 +45,7 @@ example §7 lists as regeneration owed is not normative for the construction it 
   value, lines tagged `[K]`). A lowered library ships a header of `CQ_K` lines with its defaults,
   included like `CQ.h`; its declared clones (rule 27) receive K as a classical run-time argument.
   A loop whose exit reads a value loaded from the bus is a K-loop like any other (rule 14).
-  K is an unsigned 32-bit value with no lower bound. K = 0 is legal: no trip runs, `a_K` is the
-  predicate of reaching trip 0 (the test before the first body; the seed itself in a
-  test-at-bottom loop), every carried value keeps its entry value, and every `_ctl` activation
-  of a function that has a depth counter (§1.4: one on a call cycle by name, or with a table
-  clone) is cut, the first included, whether or not it would re-enter anything.
+  K is an unsigned 32-bit value greater than 0. K = 0 is not a K: nothing is defined for it.
   The function of a loop is the one that holds it in the `-O1` IR: a loop clang inlined into
   `g` resolves its K as a loop of `g` (K2 likewise).
   In a program of several translation units a `CQ_K(f, k)` line names the `f` of its own unit
@@ -842,10 +838,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       recursion with no quantum predicate in scope does not, so up to K bodies run under a
       quantum predicate and the overflow predicate is the conjunction of K+1 arm predicates.
       The count is per function and the test is `d < K` for every function that has a counter,
-      so for K of 1 or more a call chain that re-enters nothing is never cut, and at K = 0 its
-      first `_ctl` activation is cut like any other (a table clone that is not recursive
-      included: no body of a counted function runs under a quantum predicate, §0; the
-      reference of §6 makes the same cut); a recursion entered under a quantum predicate is cut at K whatever
+      so a call chain that re-enters nothing is never cut (K > 0, §0); a recursion entered
+      under a quantum predicate is cut at K whatever
       decides its depth (the user raises K). Every activation has its own rails by the host
       recursion and its own bus-resident locals by `__cq_alloc`. Clone and twin are rule 18's
       like any other; the twin makes the same cut, and its cut activation mints nothing and calls no gate; a table twin still
