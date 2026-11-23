@@ -1845,7 +1845,9 @@ Operand reachingOperand(LoweringContext &ctx, const Operand &op, RailType w, con
   return R.operandHere(op, w, nodeOf(arm), nodeOf(care), nullptr);
 }
 
-Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) {
+Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) { return flag(ctx, p, Pred::top()); }
+
+Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p, const Pred &care) {
   unsigned n = nodeOf(p);
   if (n == Bdd::T)
     return nullptr;
@@ -1859,7 +1861,7 @@ Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) {
   {
     JoinRepair R(ctx);   // cq-2p1p: an atom minted in a classical arm that does not reach the point
     if (!R.nodeReachesHere(n))
-      return R.flagHere(n, Bdd::T, nullptr);
+      return R.flagHere(n, nodeOf(care), nullptr);
   }
   std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
   CtxSink sink(ctx);

@@ -446,7 +446,16 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
       internalError("spine: a compare of non-scalar operands reached lowerOpcode (rule 3::lowerCompare)", &I);
     Operand x = ctx.operand(cmp->getOperand(0)), y = ctx.operand(cmp->getOperand(1));
     if (!x.handle && !y.handle) {
-      spine::bindOperand(ctx, &I, Operand{spine::copyClassical(ctx, I), false});
+      Instruction *n = spine::copyClassical(ctx, I);
+      // cq-dhwdv: quantum with both operands classical by taint (a condition read after its quantum-exit loop, rule 3
+      // "Loops") is a seed of its classical value (rule 7); otherwise an operand was measured (rule 2 collapse).
+      if (spine::isQ(ctx, &I) && !spine::isQ(ctx, cmp->getOperand(0)) && !spine::isQ(ctx, cmp->getOperand(1))) {
+        CallInst *s = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {n});
+        ctx.unc().recordSeed(s);
+        spine::bindOperand(ctx, &I, Operand{s, true});
+        return;
+      }
+      spine::bindOperand(ctx, &I, Operand{n, false});
       return;
     }
     CmpInst::Predicate p = cmp->getPredicate();
