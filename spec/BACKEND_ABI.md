@@ -443,7 +443,10 @@ circuit.
     registrations. Lowered code never calls it directly. It is reached through the bundle symbol
     `void @__cq_object(i64 addr, i64 size)` (classical host C), which forwards to the backend's
     `cqrt_qram_object` when the link has one and does nothing otherwise. Two callers:
-    1. `__cq_alloc` registers every block it returns, at the size it was asked for (so `malloc`,
+    1. `__cq_alloc` registers every block it returns, at the size it was asked for and together
+       with the 8-byte size header before it: the object is `[p − 8, p + size)`, because `realloc`
+       loads the header through the block's pointer (CR rule 16). Consecutive blocks may then touch;
+       they stay separate objects (so `malloc`,
        `calloc`, `aligned_alloc`, `realloc`'s new block, a bus-resident `alloca` and a VLA; an
        allocation whose size is a rail is one object of K2 bytes, CR §0). Sizes are run-time
        values. A block is never freed or reused, so no object is ever withdrawn.

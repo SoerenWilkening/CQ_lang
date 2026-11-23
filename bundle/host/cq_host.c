@@ -99,7 +99,8 @@ void *__cq_alloc(int64_t size, int64_t align) {
   char *p = (char *)(((uintptr_t)top + 8 + a - 1) & ~(uintptr_t)(a - 1));
   memcpy(p - 8, &size, 8);
   top = p + n;
-  __cq_object((int64_t)(uintptr_t)p, size);
+  /* the object includes the size header: realloc loads it through the block's pointer (CR rule 16) */
+  __cq_object((int64_t)(uintptr_t)p - 8, size + 8);
   return p;
 }
 
