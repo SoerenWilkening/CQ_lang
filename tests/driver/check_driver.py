@@ -580,6 +580,23 @@ def test_host_link(tmp):
         ok("--cq-roots reaches cq-lower")
 
 
+def test_cxx(tmp):
+    """A C++ unit: clang++ with driver/cq.hpp, the checker on it, and one module with a C unit."""
+    out = tmp / "kfun_cxx.ll"
+    r = cqcc("-S", SRC / "kfun_cxx.cpp", "--cq-check", "--cq-entry", "add_t", "--cq-samples", "16", "-o", out)
+    if r.returncode or not out.exists():
+        fail("C++ unit", (r.stdout + r.stderr).strip()[-600:])
+    else:
+        ok("C++ unit, entry add_t: §6-equal under --cq-check")
+    obj = tmp / "qcxx.o"
+    r = cqcc("-c", SRC / "qmain.c", SRC / "kfun_cxx.cpp", "-o", obj)
+    nm = run([LLVM / "llvm-nm", obj], text=True).stdout if obj.exists() else ""
+    if r.returncode or not re.search(r"T _main\b", nm) or not re.search(r"T _add_q\b", nm):
+        fail("C and C++ units in one object", r.stderr + nm)
+    else:
+        ok("-c: a C main and a C++ unit in one object")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", default=str(ROOT / "build" / "pass" / "libCQLower.so"))
@@ -605,6 +622,7 @@ def main():
         test_check(tmp)
         test_plain(tmp)
         test_link(tmp)
+        test_cxx(tmp)
         test_library(tmp)
         test_host_link(tmp)
     print(f"\n{len(failures)} failure(s)")

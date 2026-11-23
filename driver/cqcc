@@ -15,6 +15,8 @@ Usage: cqcc [options] inputs...
 
 Inputs, by suffix:
   .c .i              compiled with clang -O1 -include CQ.h (one translation unit each)
+  .cpp .cc .cxx      compiled with clang++ -O1 -fno-exceptions -include driver/cq.hpp (CQ.h's surface as overloads);
+                     the pass has no lowering for invoke/landingpad, so -fexceptions is an internal error at a throw
   .ll .bc            an -O1 IR unit, linked as given (e.g. a corpus name.O1.ll)
   .o .a .dylib .so   handed to the final link only (executable output)
 
@@ -119,6 +121,8 @@ PLUGIN = Path(os.environ.get("CQ_PLUGIN", str(BUILD_DIR / "pass" / "libCQLower.s
 MANIFEST = Path(os.environ.get("CQ_BUNDLE_MANIFEST", str(ROOT / "bundle" / "manifest.json"))).resolve()
 
 C_SUFFIXES = {".c", ".i"}
+CXX_SUFFIXES = {".cpp", ".cc", ".cxx"}
+CXX_HEADER = Path(__file__).resolve().parent / "cq.hpp"
 IR_SUFFIXES = {".ll", ".bc"}
 LINK_SUFFIXES = {".o", ".a", ".dylib", ".so", ".tbd"}
 HOST_SOURCE = ROOT / "bundle" / "host" / "cq_host.c"
@@ -251,8 +255,8 @@ def parse_args(argv):
         raise usage("--cq-samples expects a count")
     for p in o["inputs"]:
         suf = p.suffix
-        if suf not in C_SUFFIXES | IR_SUFFIXES | LINK_SUFFIXES:
-            raise usage(f"{p}: unknown input kind (expected .c .i .ll .bc .o .a .dylib .so .tbd)")
+        if suf not in C_SUFFIXES | CXX_SUFFIXES | IR_SUFFIXES | LINK_SUFFIXES:
+            raise usage(f"{p}: unknown input kind (expected .c .i .cpp .cc .cxx .ll .bc .o .a .dylib .so .tbd)")
         if not p.exists():
             raise usage(f"{p}: no such file")
     if o["mode"] != "exe" and any(p.suffix in LINK_SUFFIXES for p in o["inputs"]):
@@ -499,6 +503,14 @@ def main(argv) -> int:
                      src, "-o", ll], f"clang -O1 {src}")
                 units.append(ll)
                 unit_names.append(src.name)
+            elif src.suffix in CXX_SUFFIXES:
+                # shortcut: a -std= flag goes to every unit, so it cannot be given to a mix of C and C++ inputs; split
+                # the cflags per language when a program needs that.
+                ll = work / f"unit{i}.{src.stem}.ll"
+                run([tool("clang++"), "-O1", *tflags, "-fno-exceptions", "-include", CXX_HEADER, *o["cflags"], "-S",
+                     "-emit-llvm", src, "-o", ll], f"clang++ -O1 {src}")
+                units.append(ll)
+                unit_names.append(src.name)
             elif src.suffix in IR_SUFFIXES:
                 units.append(src)
                 unit_names.append(src.name)
@@ -628,7 +640,8 @@ def main(argv) -> int:
             # backend defines itself is the backend's and the library supplies the rest.
             floats = [p for p in FLOAT_LIBS if p.exists()] if o["softfloat"] else []
             run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-x", "ir", lowered, "-x", "none",
-                 *objs, *o["backend"], *floats, "-o", staged], "link of the lowered program")
+                 *objs, *o["backend"], *floats, *(["-lc++"] if any(p.suffix in CXX_SUFFIXES for p in o["inputs"]) else []),
+                 "-o", staged], "link of the lowered program")
 
         # 5. --cq-check: the C-oracle check of cq-w1-usercheck on this program.
         status = 0

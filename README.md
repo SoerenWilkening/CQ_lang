@@ -274,8 +274,10 @@ cqcc prog.c --cq-roots libc.roots -L. -lqc -lmybackend
 ## C++ and Rust
 
 The pass reads LLVM IR, not C, so a C++ or Rust program compiled to IR by its own compiler goes through the
-same lowering. `cqcc` takes the `.ll` file; it does not run `clang++` or `rustc` itself yet.
-[`experiments/cxx_rust/`](experiments/cxx_rust/) has the user surface for both (`cq.hpp`: overloads in place of
+same lowering. `cqcc` compiles `.cpp`, `.cc` and `.cxx` inputs itself, with `clang++ -O1 -fno-exceptions` and
+`driver/cq.hpp` in place of `CQ.h`, also mixed with C units in one program. A Rust program is compiled to a
+`.ll` file first (`experiments/cxx_rust/rust.sh`), which `cqcc` takes.
+[`experiments/cxx_rust/`](experiments/cxx_rust/) has the user surface for Rust and the test helpers for both (`driver/cq.hpp`: overloads in place of
 `_Generic`; `cq.rs`: a trait over the `cq_theta_*` functions), the build scripts and 40 one-function programs
 per language, each run through the checker against its own unlowered program (`run.sh`, 40 samples, K = 8;
 `results.txt`).
