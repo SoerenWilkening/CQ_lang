@@ -3048,7 +3048,13 @@ void Analyzer::analyze(SpecState &S) {
           while (!work.empty()) {
             const Instruction *D = work.pop_back_val();
             for (const User *U : D->users())
-              if (auto *UI = dyn_cast<Instruction>(U))
+              if (auto *UI = dyn_cast<Instruction>(U)) {
+                // cq-dhwdv: a terminator's condition read after the loop is one atom of the path predicates, which
+                // are keyed by the value, not the read: the value itself is quantum (rule 3 "Loops"; over-taint, §0).
+                if (UI->isTerminator() && !Lp->contains(UI) && terminatorCondition(UI) == D) {
+                  setL(D, allLanes(lanesOf(D->getType())));
+                  continue;
+                }
                 if (!Lp->contains(UI) && !UI->getType()->isVoidTy()) {
                   if (auto *MC = dyn_cast<CallBase>(UI); MC && isMeasure(MC->getCalledFunction()) && !cur->ctl)
                     continue;
@@ -3057,6 +3063,7 @@ void Analyzer::analyze(SpecState &S) {
                   else if (seen.insert(UI).second)
                     work.push_back(UI);
                 }
+              }
           }
         }
       }

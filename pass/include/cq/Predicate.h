@@ -63,6 +63,9 @@ public:
   const Pred &block(const llvm::BasicBlock *) const;
   const Pred &edge(const llvm::BasicBlock *from, const llvm::BasicBlock *to) const;
   llvm::Value *flag(LoweringContext &, const Pred &);
+  // The flag read only where the classical facts `care` hold (cq-3630b: a K-loop's going-on test, whose classical factor
+  // branches after it is read).
+  llvm::Value *flag(LoweringContext &, const Pred &, const Pred &care);
   // CR rule 14 with rule 9 (a block lowered for some of its paths only: an exit arm's tail on the paths from outside the
   // unit, an arm on a loop's classical exit): until restored, block() and edge() answer under `p`, the condition of those
   // paths. Returns the assumption it replaces, to restore. The results stay valid across later calls.

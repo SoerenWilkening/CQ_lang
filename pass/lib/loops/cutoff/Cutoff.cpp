@@ -2413,6 +2413,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       abortLocal.insert({b, acc});
       evaluated.insert(b);
       creach.erase(b);
+      // cq-3630b (as 06ba00c1 for lowerInsts): the arm's flag f is exactly where this evaluation reaches b, so it implies
+      // b's own predicate, which may read an atom of a trip path this evaluation did not take (TinyCC rt_exit).
+      Pred own = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
       // cq-jws5r: an arm behind a classical condition of the trip is entered by a real branch (rule 8); its flag reads
       // |0> where the branch skips it.
       Value *f = nullptr;
@@ -2488,7 +2491,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           f = xorRail(terms);
           for (Instruction &I : *b)
             if (!isa<PHINode>(I) && !I.isTerminator())
-              lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
+              lowerInstruction(ctx, I, f, &own);
         });
         armFlag[b] = f;
         if (none_of(predecessors(b), [&](BasicBlock *p) { return abortLocal.count(p) != 0; }))
@@ -2523,7 +2526,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       for (Instruction &I : *b)
         if (!isa<PHINode>(I) && !I.isTerminator())
-          lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
+          lowerInstruction(ctx, I, f, &own);
       });
       armFlag[b] = f;
       // An arm's later block is entered from its earlier ones: the flag of its entry is noted once.
@@ -3275,7 +3278,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       Pred Q = go.quantumPart(ctx.T, ctx.S);
       Value *g = classicalValue(ctx, Cc);
-      Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q);
+      // Read only where Cc holds: the branch on g below skips the rest (cq-3630b: Q reads a classical atom minted only on
+      // Cc's paths of the trip, TinyCC decl).
+      Value *fQ = Q.isTop() ? nullptr : ctx.preds().flag(ctx, Q, Cc);
       between();
       if (auto *k = dyn_cast<ConstantInt>(g); !(k && k->isOne())) {
         std::vector<Value *> st = snap();
