@@ -42,15 +42,49 @@ Value *classicalAddress(LoweringContext &ctx, Value *p) {
   return B.CreatePtrToInt(p, I64);
 }
 
+Operand addressOf(LoweringContext &ctx, const Value *p);
+
+bool classicalPointer(LoweringContext &ctx, const Value *p) { return ctx.bound(p) && !ctx.operand(p).handle; }
+
+// Rule 20 address literals: the pointer before the deepest getelementptr without inbounds in G's classical chain (G
+// included), nullptr when the chain is all inbounds (its literal is spelled as before).
+const Value *literalRoot(LoweringContext &ctx, const GEPOperator &G) {
+  const Value *P = G.getPointerOperand();
+  if (!classicalPointer(ctx, P))
+    return nullptr;
+  const Value *lit = G.isInBounds() ? nullptr : P;
+  for (auto *g = dyn_cast<GEPOperator>(P); g && classicalPointer(ctx, g->getPointerOperand());
+       g = dyn_cast<GEPOperator>(g->getPointerOperand()))
+    if (!g->isInBounds())
+      lit = g->getPointerOperand();
+  return lit;
+}
+
+// P - lit over P's classical getelementptr chain: a constant where every offset is one, else the classical difference.
+Value *chainOffset(LoweringContext &ctx, const Value *P, const Value *lit) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *I64 = Type::getInt64Ty(ctx.M.getContext());
+  APInt acc(64, 0);
+  for (const Value *v = P; v != lit; v = cast<GEPOperator>(v)->getPointerOperand()) {
+    APInt o(64, 0);
+    if (!cast<GEPOperator>(v)->accumulateConstantOffset(DL, o))
+      return ctx.B().CreateSub(classicalAddress(ctx, ctx.operand(P).v), classicalAddress(ctx, ctx.operand(lit).v));
+    acc += o;
+  }
+  return ConstantInt::get(I64, acc);
+}
+
 // Rule 20 Address arithmetic: the tainted indices brought to i64, scaled, added per getelementptr; everything
-// untainted is one classical i64, the _hl literal.
+// untainted is one classical i64, the _hl literal. Address literals: where the chain has a getelementptr without
+// inbounds, the literal is the pointer before it and every other classical part is added on the rail side.
 Operand gepAddress(LoweringContext &ctx, const GEPOperator &G) {
   const DataLayout &DL = ctx.M.getDataLayout();
   LLVMContext &C = ctx.M.getContext();
   Type *I64 = Type::getInt64Ty(C);
   RailType w64{Kind::Int, 64};
   IRBuilder<> &B = ctx.B();
-  Operand base = address(ctx, G.getPointerOperand());
+  const Value *lit = literalRoot(ctx, G);
+  Operand base = lit ? Operand{nullptr, false} : addressOf(ctx, G.getPointerOperand());
   uint64_t constant = 0;
   Value *classical = base.handle ? nullptr : base.v;
   Value *rail = nullptr;
@@ -102,6 +136,21 @@ Operand gepAddress(LoweringContext &ctx, const GEPOperator &G) {
   }
   if (constant)
     addClassical(ConstantInt::get(I64, constant));
+  if (lit) {
+    Value *off = chainOffset(ctx, G.getPointerOperand(), lit);
+    if (classical)
+      off = B.CreateAdd(off, classical);
+    Value *litV = classicalAddress(ctx, ctx.operand(lit).v);
+    if (!rail)
+      return Operand{B.CreateAdd(litV, off), false};
+    abi::TemplateSpec add;
+    add.op = "add";
+    add.w = w64;
+    add.shape = "hl";
+    if (auto *k = dyn_cast<ConstantInt>(off); !k || !k->isZero())
+      rail = ctx.emitTemplate(add, {Operand{rail, true}, Operand{off, false}});
+    return Operand{ctx.emitTemplate(add, {Operand{rail, true}, Operand{litV, false}}), true};
+  }
   if (base.handle) {
     if (rail) {
       abi::TemplateSpec add;
@@ -136,7 +185,9 @@ Value *mem(LoweringContext &ctx) {
   return B.CreateCall(abi::declareHost(ctx.M, abi::Host::Mem));
 }
 
-Operand address(LoweringContext &ctx, const Value *p) {
+namespace {
+
+Operand addressOf(LoweringContext &ctx, const Value *p) {
   if (ctx.bound(p)) {
     Operand o = ctx.operand(p);
     return o.handle ? o : Operand{classicalAddress(ctx, o.v), false};
@@ -144,8 +195,56 @@ Operand address(LoweringContext &ctx, const Value *p) {
   if (auto *G = dyn_cast<GEPOperator>(p))
     return gepAddress(ctx, *G);
   if (auto *AC = dyn_cast<AddrSpaceCastOperator>(p))
-    return address(ctx, AC->getPointerOperand());
+    return addressOf(ctx, AC->getPointerOperand());
   internalError("bus: the address of a pointer with no value in the new IR", p);
+}
+
+// Rule 20: p is reached inside the function from an inttoptr, through getelementptr, addrspacecast, phi and select.
+bool fromIntToPtr(const Value *p) {
+  SmallPtrSet<const Value *, 8> seen;
+  SmallVector<const Value *, 8> work{p};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    if (auto *O = dyn_cast<Operator>(v); O && O->getOpcode() == Instruction::IntToPtr)
+      return true;
+    if (auto *G = dyn_cast<GEPOperator>(v))
+      work.push_back(G->getPointerOperand());
+    else if (auto *AC = dyn_cast<AddrSpaceCastOperator>(v))
+      work.push_back(AC->getPointerOperand());
+    else if (auto *Ph = dyn_cast<PHINode>(v))
+      work.append(Ph->incoming_values().begin(), Ph->incoming_values().end());
+    else if (auto *S = dyn_cast<SelectInst>(v))
+      work.append({S->getTrueValue(), S->getFalseValue()});
+  }
+  return false;
+}
+
+// BACKEND_ABI §1.10 No object: __cq_unbound(r) once, right after the address rail r is formed (so before every access
+// at it, on every path).
+void announceUnbound(LoweringContext &ctx, const Value *p, Value *r) {
+  if (!fromIntToPtr(p))
+    return;
+  for (User *u : r->users())
+    if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() && c->getCalledFunction()->getName() == "__cq_unbound")
+      return;
+  IRBuilder<> B(ctx.M.getContext());
+  if (auto *I = dyn_cast<Instruction>(r))
+    I->getNextNode() ? B.SetInsertPoint(isa<PHINode>(I) ? &*I->getParent()->getFirstInsertionPt() : I->getNextNode())
+                     : B.SetInsertPoint(I->getParent());
+  else
+    B.SetInsertPoint(&ctx.out().getEntryBlock(), ctx.out().getEntryBlock().getFirstInsertionPt());
+  B.CreateCall(abi::declareHost(ctx.M, abi::Host::Unbound), {r});
+}
+
+} // namespace
+
+Operand address(LoweringContext &ctx, const Value *p, bool access) {
+  Operand o = addressOf(ctx, p);
+  if (o.handle && access)
+    announceUnbound(ctx, p, o.v);
+  return o;
 }
 
 Value *accessControl(LoweringContext &ctx) {

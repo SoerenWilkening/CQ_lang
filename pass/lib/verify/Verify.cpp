@@ -319,7 +319,7 @@ private:
           if (CB->isArgOperand(&U)) {
             const Sig &S = Sigs.get(*CB);
             unsigned a = CB->getArgOperandNo(&U);
-            if (S.kind == Kind::Core || S.kind == Kind::Template) {
+            if (S.kind == Kind::Core || S.kind == Kind::Template || !S.roles.empty()) {
               if (a < S.roles.size() && S.roles[a] != Role::Classical)
                 continue;
               report("handle-in-classical-op",

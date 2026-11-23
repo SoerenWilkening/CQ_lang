@@ -15,8 +15,9 @@ llvm::Value *mem(LoweringContext &);
 // Rule 20 Address arithmetic / rule 21: the x86-64 address of pointer `p` as an Operand: a classical i64 (ptrtoint
 // instruction for an instruction or argument, `ptrtoint` constant expression for a global; also inside _hl literals)
 // or an i64 address rail (sext_<W>_to_i64 where -O1 wrote no cast, mul/shl_i64_hl per scale, add_i64[_hl] per
-// getelementptr, templates recorded with Uncompute). Idempotent per (p, insertion block).
-Operand address(LoweringContext &, const llvm::Value *p);
+// getelementptr, templates recorded with Uncompute). Idempotent per (p, insertion block). `access`: the address of an
+// access at p, whose rail gets rule 20's __cq_unbound when p is reached from an inttoptr; false for any other use.
+Operand address(LoweringContext &, const llvm::Value *p, bool access = true);
 // Rule 20 (a)/(b) through TaintInfo::hostObjectOf: the access stays the plain LLVM instruction (copied classical).
 bool hostAccess(LoweringContext &, const llvm::Instruction &access);
 // Rule 20 table + rule 5 sentence 1: one qram_load_<W>[_hl][_controlled], recorded as a BusLoad (Uncompute); binds the

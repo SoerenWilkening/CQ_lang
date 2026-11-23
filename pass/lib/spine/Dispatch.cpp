@@ -560,7 +560,7 @@ void dispatchOne(LoweringContext &ctx, Instruction &I) {
   case Instruction::AddrSpaceCast:
     // Rule 20 Address arithmetic: with nothing tainted the getelementptr stays (a rail measured before it: rule 2).
     if (q && any_of(I.operands(), [&](const Use &u) { return ctx.operand(u.get()).handle; })) {
-      bindOperand(ctx, &I, bus::address(ctx, &I));
+      bindOperand(ctx, &I, bus::address(ctx, &I, /*access=*/false));
       return;
     }
     bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});

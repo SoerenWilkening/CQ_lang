@@ -201,7 +201,7 @@ unsigned emitField(LoweringContext &ctx, CallBase &CB, unsigned a, Value *tape, 
   Type *ty = v->getType();
   Type *I64 = Type::getInt64Ty(ctx.M.getContext());
   if (ty->isPointerTy()) {
-    scalarField(ctx, tape, flag, bus::address(ctx, v), I64);
+    scalarField(ctx, tape, flag, bus::address(ctx, v, /*access=*/false), I64);
     return 1;
   }
   if (ty->isIntegerTy() || ty->isFloatingPointTy()) {
@@ -468,7 +468,7 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   }
 
   // A format at an address rail has no ptr for tape_fmt: it falls to the effect entry printf with its address a field.
-  if (libFunc(*F, LibFunc_printf) && !bus::address(ctx, CB.getArgOperand(0)).handle) {
+  if (libFunc(*F, LibFunc_printf) && !bus::address(ctx, CB.getArgOperand(0), /*access=*/false).handle) {
     Operand f = ctx.operand(CB.getArgOperand(0));
     Value *tape = tapeOf(ctx);
     if (flag)

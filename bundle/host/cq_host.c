@@ -9,6 +9,8 @@
  *   void __cq_object(int64_t addr, int64_t size)    BACKEND_ABI §1.10 Objects: forwards to the backend's
  *                                              cqrt_qram_object when the link has one, else nothing. A weak import:
  *                                              on Mach-O the link needs -Wl,-U,_cqrt_qram_object (cqcc, run.py pass it).
+ *   void __cq_unbound(int32_t h)               BACKEND_ABI §1.10 No object: forwards to cqrt_qram_unbound the same way
+ *                                              (-Wl,-U,_cqrt_qram_unbound).
  *   void __cq_clone_register(fn, sig, clone, ctl, unc, ctl_unc), void *__cq_clone_resolve(fn, kind),
  *   int32_t __cq_clone_count(sig), void *__cq_clone_at(sig, i)    the process-wide clone table; sig by string
  *
@@ -28,6 +30,7 @@
 
 int32_t cqrt_qram_alloc_i8(int32_t n);
 extern void cqrt_qram_object(int64_t addr, int64_t size) __attribute__((weak_import));
+extern void cqrt_qram_unbound(int32_t h) __attribute__((weak_import));
 
 /* ---- the bus ---- */
 
@@ -44,6 +47,12 @@ int32_t __cq_mem(void) {
 void __cq_object(int64_t addr, int64_t size) {
   if (size > 0 && cqrt_qram_object)
     cqrt_qram_object(addr, size);
+}
+
+/* An address rail reached from an inttoptr: no object is known for it (CR rule 20). */
+void __cq_unbound(int32_t h) {
+  if (cqrt_qram_unbound)
+    cqrt_qram_unbound(h);
 }
 
 /* ---- signals ---- */

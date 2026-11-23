@@ -1735,7 +1735,7 @@ SmallVector<Operand, 8> tableActuals(LoweringContext &ctx, CallBase &CB) {
     if (FT->isVarArg() && CB.getArgOperandNo(&u) >= FT->getNumParams())
       break;
     if (u->getType()->isPointerTy()) {
-      out.push_back(bus::address(ctx, u.get()));
+      out.push_back(bus::address(ctx, u.get(), /*access=*/false));
       continue;
     }
     for (const Operand &o : actualFields(ctx, u.get()))
