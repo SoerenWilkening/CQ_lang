@@ -2034,13 +2034,28 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
         n = bm.cofactor(n, v, true);
     return n;
   };
+  // A classical branch into a dead end under a quantum predicate is such an edge too (TinyCC decl_initializer_alloc: a
+  // classical switch on an argument into a noreturn arm): C stops on the edge's whole predicate. Only a branch walked
+  // before the merge: one after it has no atom here yet.
+  auto classicalBranch = [&](const BasicBlock *x, const BasicBlock *at) {
+    if (I.rpo.lookup(x) >= I.rpo.lookup(at))
+      return false;
+    const Instruction *t = x->getTerminator();
+    const Value *c = nullptr;
+    if (auto *br = dyn_cast<BranchInst>(t))
+      c = br->isConditional() ? br->getCondition() : nullptr;
+    else if (auto *sw = dyn_cast<SwitchInst>(t))
+      c = sw->getCondition();
+    return c && !CO->isQuantum(c);
+  };
   unsigned care = nodeOf(I.blocks.lookup(bb));
   if (!CO->deadEnd(bb))
     for (const BasicBlock &x : *I.F)
       if (I.rpo.count(&x) && !CO->deadEnd(&x))
         for (const BasicBlock *d : successors(&x))
           if (CO->deadEnd(d))
-            if (unsigned n = entryCalled(nodeOf(ctx.preds().edge(&x, d))); n != Bdd::F && isClassicalNode(n, *CO))
+            if (unsigned n = entryCalled(nodeOf(ctx.preds().edge(&x, d)));
+                n != Bdd::F && (isClassicalNode(n, *CO) || classicalBranch(&x, bb)))
               care = bm.andOp(care, bm.notOp(n));
   return selectChainAt(ctx, chain, mergeRail(phi.getType()), care, &phi);
 }
