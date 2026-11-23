@@ -314,7 +314,8 @@ private:
   }
 
   // q & flag(p): the conjunction of a trip predicate with a predicate local to the trip.
-  Value *conj(Value *q, const Pred &p, const Instruction *at) {
+  // `care`: the classical facts where the conjunction is read (the flag is a don't-care outside them).
+  Value *conj(Value *q, const Pred &p, const Instruction *at, const Pred &care = Pred::top()) {
     if (p.isBottom())
       internalError("loops-cutoff: a trip predicate conjoined with false", at);
     // A classical term still in p (underClassical branches on the classical paths and hands the quantum part on;
@@ -323,7 +324,7 @@ private:
     // cannot factor out. The conjunction with the trip predicate is quantum, so the effects under it are the
     // quantum-predicate forms of rules 16 and 19.
     (void)at;
-    Value *f = ctx.preds().flag(ctx, p);
+    Value *f = ctx.preds().flag(ctx, p, care);
     if (!f)
       return q;
     return andRail(q, f);
@@ -1455,7 +1456,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // cq-o5tjh (rule 8, as underClassical): lp's classical part is the branch around S, its quantum part alone the
     // trip rail's conjunct (no seed of a classical term).
     Pred cg = lp.isBottom() ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
-    Value *trip = conj(q, cg.isTop() ? lp : lp.quantumPart(ctx.T, ctx.S), at);
+    // cq-3630b: read only where cg holds (the branch around S below; TinyCC decl: lp's quantum part reads an atom minted
+    // only on cg's paths of the trip).
+    Value *trip = conj(q, cg.isTop() ? lp : lp.quantumPart(ctx.T, ctx.S), at, cg);
     Value *g = creachOf(S.getHeader());
     if (!cg.isTop()) {
       Value *cv = classicalValue(ctx, cg);
