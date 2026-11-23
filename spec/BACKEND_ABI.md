@@ -103,7 +103,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_template_*`, integer (§2.2–§2.8) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
 | `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
-| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
+| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
 **Link order.** The backend is ONE static archive, `libcq_backend.a`, holding every `cqrt_*`
@@ -478,12 +478,19 @@ circuit.
     A rail with no note is bounded as before (the bit pattern), and the object bound is used only
     where it gives fewer leaves, so a missing note or registration costs qubits and never changes
     the unitary.
-  - *Open.* A pointer the program made from an integer (`inttoptr`, e.g.
-    `(T *)((uintptr_t)p - 16)`) may hold a value outside its object and still be accessed
-    legally at an offset; the value rule above would then name the wrong object
-    (SPEC_ISSUES.md).
-  - *Linking.* `__cq_object` refers to `cqrt_qram_object` weakly. On Mach-O the link of the host
-    runtime passes `-U _cqrt_qram_object`, as `cqcc` does.
+  - *No object.* `void @cqrt_qram_unbound(i32 h)`: no gate, no qubit; the rail h carries no note
+    from this call on, so an access at h is bounded by the bit pattern. A backend without objects
+    need not define it. Lowered code reaches it through the bundle symbol
+    `void @__cq_unbound(i32 h)`, which forwards like `__cq_object`. The compiler calls it on an
+    address rail, before the first access at it, when the accessed pointer is reached inside the
+    function from an `inttoptr` (CR rule 20): such a pointer may legally hold a value outside its
+    object (`(T *)((uintptr_t)p - 16)`, accessed at an offset), and the value rule would name the
+    wrong object. An out-of-object pointer value that reaches the access through memory, an
+    argument or a call result is not visible to the compiler: a program that forms one and
+    accesses through it at a quantum offset is outside the domain of the object bound.
+  - *Linking.* `__cq_object` and `__cq_unbound` refer to `cqrt_qram_object` and
+    `cqrt_qram_unbound` weakly. On Mach-O the link of the host runtime passes `-U` for both, as
+    `cqcc` does.
   - *No simulation.* The bound uses object extents and notes only. It never enumerates the values
     a rail can take per branch of the program, never measures, and holds for every superposition
     of the quantum inputs. The templates of an address computation (`add`, `mul`, `shl`, …) are
