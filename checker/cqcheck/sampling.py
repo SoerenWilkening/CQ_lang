@@ -599,6 +599,9 @@ static int cqd_find(uintptr_t r, uint32_t id, uintptr_t addr, uint64_t n) {
     if (id && best >= 0 && S->ob[best] == r)
         for (int i = 0; i < S->nob; i++)
             if (S->oi[i] == id && S->ob[i] + S->os[i] == r && addr >= S->ob[i] && addr + n <= r) return i;
+    /* a root of unknown provenance past every object's end is memory the table does not know (a host image's data:
+     * a VTT entry into libc++'s construction vtables), not an access past the object below it */
+    if (!id && best >= 0 && r > S->ob[best] + S->os[best]) return -1;
     return best;
 }
 static int cqd_find0(uintptr_t r, uint32_t id) {
@@ -670,10 +673,11 @@ uint64_t __cqd_ms(void *root, const char *p, uint32_t id) {
     }
     return (uint64_t)(e - p);
 }
-/* a function entry: a recursion has no loop header, and its budget is the same number (204's depth 2^32) */
-void __cqd_fn(void) { if (++S->calls > C->hdrcap) cqd_stop("timeout", SIGALRM); }
+/* a function entry: a recursion has no loop header, and its budget is the same number (204's depth 2^32);
+ * the budget is a sample's: the setup (static constructors included) runs outside one, with no jump target */
+void __cqd_fn(void) { if (++S->calls > C->hdrcap && C->in) cqd_stop("timeout", SIGALRM); }
 void __cqd_hdr(int l, bool be) {
-    if (++S->hdrs > C->hdrcap) cqd_stop("timeout", SIGALRM);
+    if (++S->hdrs > C->hdrcap && C->in) cqd_stop("timeout", SIGALRM);
     if (!be || !S->has[l]) { if (S->has[l]) cqd_trip(l, S->cnt[l]); S->cnt[l] = 1; S->has[l] = 1; }
     else S->cnt[l]++;
     S->ent[l] = 1;
@@ -1588,9 +1592,17 @@ class Instrumenter:
             fn_text[f.name] = self.rewrite_function(f)
         i = 0
         lines = mod.lines
+        self.ctors: List[str] = []
         while i < len(lines):
             line = lines[i]
             s = D.strip_comment(line)
+            if s.startswith("@llvm.global_ctors ="):
+                # the module's static constructors run from __cqd_globals, after the runtime is set up and the
+                # globals registered (Darwin runs them before the runtime's own constructor), in priority order
+                ents = re.findall(r"\{\s*i32\s+(\d+),\s*ptr\s+(@(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))", s)
+                self.ctors = [f for _, f in sorted(ents, key=lambda e: int(e[0]))]
+                i += 1
+                continue
             if s.startswith("define "):
                 m = re.search(r"(@(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))\(", s)
                 out_lines.append(line)
@@ -1618,7 +1630,7 @@ class Instrumenter:
         for g, ty in self.registered_globals():
             d.append(f"  call void @__cqd_regg(ptr {g}, i64 ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64), "
                      f"i32 {self.gid(g)})")
-        d += ["  ret void", "}"]
+        d += [f"  call void {f}()" for f in self.ctors] + ["  ret void", "}"]
         return d
 
     def rewrite_function(self, f: D.Function) -> List[str]:

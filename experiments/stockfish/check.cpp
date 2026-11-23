@@ -1,6 +1,6 @@
 // check.cpp: the five spot functions as entries f1..f5 for the sampling checker (cqcheck user): k is the quantum input.
 // The setup is a static constructor of this module; it is classical and runs before the entry in both programs.
-#define CQ_NO_NEW
+// operator new/delete over malloc/free (cq.hpp): a bodiless operator new is a host stand-in returning null under the checker
 #include "cq.hpp"
 #include "bitboard.h"
 #include "position.h"
