@@ -92,7 +92,7 @@ static void out_line(int fd, const char *s) {
     int n = snprintf(buf, sizeof buf, "%ld\t%s\n", cur_sample, s);
     if (n < 0) return;
     if (n >= (int)sizeof buf) n = sizeof buf - 1, buf[n - 1] = '\n';
-    if (fd < 0) return;
+    if (fd < 0 || (fd == trace_fd && cur_sample < 0)) return;   /* oracle.py drops the setup's events (no sample's) */
     obuf *o = fd == trace_fd ? ob_trace : fd == status_fd ? ob_status : 0;
     if (!o) { write_all(fd, buf, (size_t)n); return; }
     if (o->n + (size_t)n > OBUF_CAP) ob_flush(o, fd);
@@ -622,7 +622,8 @@ static void sh_reset(void) {
 }
 
 static uint32_t sh_new(const uint32_t *deps, unsigned k, uint8_t fl) {
-    if (trips_only) return SH_OPAQUE;
+    /* outside a sample (the setup, static constructors included) no node lives: the sample's start resets them all */
+    if (trips_only || !sample_running()) return SH_OPAQUE;
     if (sh_nn < 2) sh_reset();
     if (sh_nn >= SH_MAXN || sh_nd + k > SH_MAXD) { note("internal more than %zu shadow nodes", (size_t)SH_MAXN); _exit(95); }
     uint32_t n = (uint32_t)sh_nn++;
@@ -727,7 +728,7 @@ static struct shcell *sh_cell(uintptr_t a, int add) {
 }
 static uint32_t sh_get(uintptr_t a) { struct shcell *c = sh_ncells ? sh_cell(a, 0) : 0; return c ? c->node : 0; }
 static void sh_put(uintptr_t a, uint32_t n) {
-    if (trips_only) return;
+    if (trips_only || !sample_running()) return;
     if (sh_nn < 2) { if (!n) return; sh_reset(); }
     struct shcell *c = sh_cell(a, n != 0);
     if (c) c->node = n, c->ep = sh_gm;
@@ -1135,7 +1136,7 @@ static uint64_t tripcap = 10000000;
 static void tick_progress(void);
 static void stdout_room(void);
 void __cqo_tick(void) {
-    if (++ticks > tripcap) { note("tripcap"); _exit(98); }
+    if (++ticks > tripcap && sample_running()) { note("tripcap"); _exit(98); }   /* the setup's ticks reset at the sample's start */
     if (!(ticks & 0xffff)) stdout_room();
     if (!(ticks & 0xfffff)) tick_progress();
 }
@@ -1348,15 +1349,17 @@ static void out_long(const char *s, size_t n) {
     char pre[32];
     int k = snprintf(pre, sizeof pre, "%ld\t", cur_sample);
     obuf *o = ob_trace;
-    if (trace_fd < 0 || k < 0) return;
+    if (trace_fd < 0 || k < 0 || cur_sample < 0) return;
     size_t tot = (size_t)k + n + 1;
     if (!o || tot > OBUF_CAP) {
         if (o) ob_flush(o, trace_fd);
         trace_room(tot);
-        /* one write: other writers append to the same file */
-        char *b = bigline + BIG_CAP;
+        /* one write: other writers append to the same file; a line past BIG_CAP (a large named output) gets its own map */
+        char *b = tot <= BIG_CAP ? bigline + BIG_CAP : mmap(0, tot, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (b == MAP_FAILED) { note("internal out_long: mmap"); return; }
         memcpy(b, pre, (size_t)k), memcpy(b + k, s, n), b[k + n] = '\n';
         write_all(trace_fd, b, tot);
+        if (tot > BIG_CAP) munmap(b, tot);
         return;
     }
     if (o->n + tot > OBUF_CAP) ob_flush(o, trace_fd);
@@ -1532,17 +1535,20 @@ static void *errno_cell(void) {
 /* The named outputs in memory (CR §6 item 1; drivers.py "Driver objects"): one object's bytes, a little-endian
  * hex value `w` = i<8n> wide. Host memory is the C program's memory: a plain read. */
 void __cqo_out_mem(const char *name, const void *addr, uint64_t n) {
-    if (!sample_running() || !bigline) return;
-    if (2 * n + 512 > BIG_CAP) { note("internal out_mem: object %s of %llu bytes", name, (unsigned long long)n); return; }
-    size_t m = (size_t)sprintf(bigline, "{\"ev\":\"out_mem\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"w\":\"i%llu\",\"v\":\"0x",
+    if (trips_only || !sample_running() || !bigline) return;   /* trip mode keeps no outputs (oracle.run_samples) */
+    size_t cap = 2 * n + 512;   /* an object past BIG_CAP's line (a program's large table) gets a map of its own */
+    char *line = cap <= BIG_CAP ? bigline : mmap(0, cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (line == MAP_FAILED) { note("internal out_mem: object %s of %llu bytes", name, (unsigned long long)n); return; }
+    size_t m = (size_t)sprintf(line, "{\"ev\":\"out_mem\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"w\":\"i%llu\",\"v\":\"0x",
                                name, (unsigned long long)(uintptr_t)addr, (unsigned long long)n * 8);
-    for (uint64_t i = n; i-- > 0;) m += (size_t)sprintf(bigline + m, "%02x", ((const unsigned char *)addr)[i]);
-    if (!n) bigline[m++] = '0';
-    m += (size_t)sprintf(bigline + m, "\"}");
-    out_long(bigline, m);
+    for (uint64_t i = n; i-- > 0;) m += (size_t)sprintf(line + m, "%02x", ((const unsigned char *)addr)[i]);
+    if (!n) line[m++] = '0';
+    m += (size_t)sprintf(line + m, "\"}");
+    out_long(line, m);
+    if (line != bigline) munmap(line, cap);
 }
 void __cqo_out_object(const char *name, const void *addr, uint64_t n) {
-    if (!sample_running()) return;
+    if (trips_only || !sample_running()) return;
     char b[512];
     int m = snprintf(b, sizeof b, "{\"ev\":\"object\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"size\":%llu}", name,
                      (unsigned long long)(uintptr_t)addr, (unsigned long long)n);
@@ -1575,6 +1581,19 @@ void __cqo_out_regions(void) {
     if (arena_base) {
         m = snprintf(b, sizeof b, "{\"ev\":\"region\",\"name\":\"heap\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
                      (unsigned long long)(uintptr_t)arena_base, (unsigned long long)(uintptr_t)arena_top);
+        out_long(b, (size_t)m);
+    }
+    /* the setup's blocks (a static constructor's operator new) are the host heap's: one span over them, one past the
+     * last end included, as the evaluator's heap region covers its setup's blocks */
+    uintptr_t lo = UINTPTR_MAX, hi = 0;
+    for (size_t i = 0; R && i < R->heap_n; ++i)
+        if (!in_arena((void *)R->heap_tab[i].lo)) {
+            if (R->heap_tab[i].lo < lo) lo = R->heap_tab[i].lo;
+            if (R->heap_tab[i].hi > hi) hi = R->heap_tab[i].hi;
+        }
+    if (lo < hi) {
+        m = snprintf(b, sizeof b, "{\"ev\":\"region\",\"name\":\"heap\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+                     (unsigned long long)lo, (unsigned long long)hi + 1);
         out_long(b, (size_t)m);
     }
 }
@@ -1955,8 +1974,10 @@ void __cqo_sample_end(void) {
 void __cqo_resume(void) { sample_finish(); }
 
 int __cqo_drv_main(void); /* drivers.driver_source(..., main_name="__cqo_drv_main") */
+void __cqo_module_ctors(void); /* oracle.py program(): the program's static constructors, in priority order */
 
 /* One batch in this process; its exit status. */
+static int ctors_fd = -1; /* serve: the static constructors' stdout (they ran once, before the batches fork) */
 static int run_batch(const char *trace, const char *status, const char *subst_path) {
     trace_max = env_bytes("CQO_TRACE_MAX", trace_max);
     unsigned long long fmax = env_bytes("CQO_FILE_MAX", 256ULL << 20);
@@ -1971,6 +1992,12 @@ static int run_batch(const char *trace, const char *status, const char *subst_pa
     if (trace_fd < 0 || status_fd < 0) { perror("cqo"); return 2; }
     stdout_capture(trace);
     load_subst_file(subst_path);
+    if (ctors_fd < 0) __cqo_module_ctors();
+    else { /* serve ran them: their stdout starts the batch's */
+        char b[65536];
+        ssize_t r;
+        for (off_t o = 0; (r = pread(ctors_fd, b, sizeof b, o)) > 0; o += r) write_all(1, b, (size_t)r);
+    }
     __cqo_drv_main();
     if (is_worker) worker_leave(); /* the worker ran the last record */
     return 0;
@@ -1979,6 +2006,16 @@ static int run_batch(const char *trace, const char *status, const char *subst_pa
 static int serve(void) {
     char line[8192];
     setvbuf(stdout, 0, _IOLBF, 0);
+    /* the program's static constructors run once, here, and every batch forks from their state (a module's setup can
+     * be seconds of work: Stockfish's Bitboards::init); their stdout goes to a file each batch's stdout starts with */
+    FILE *cf = tmpfile();
+    int keep = dup(1);
+    if (!cf || keep < 0 || dup2(fileno(cf), 1) < 0) die("the static constructors' stdout");
+    __cqo_module_ctors();
+    fflush(stdout);
+    if (dup2(keep, 1) < 0) die("dup2 stdout");
+    close(keep);
+    ctors_fd = fileno(cf);
     while (fgets(line, sizeof line, stdin)) {
         char tr[2048], stp[2048], err[2048], smp[2048], sub[2048];
         long to;

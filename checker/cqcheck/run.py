@@ -290,7 +290,7 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
   char line[320], hn[40] = "";
   /* a handle result's rail name (resolve_handle_rets); only for a function that returns a handle: any other i32
      result is a value, and the name of the rail whose real handle equals it varies with replay (cq-r4nh-hn) */
-  if (cqe__hname && n == 4 && cqd_hret(fn)) {
+  if (cqe__hname && n >= 4 && cqd_hret(fn)) {   /* a wider result (a C long) is the handle widened: its low word */
     int h; memcpy(&h, p, 4);
     snprintf(hn, sizeof hn, ",\"hn\":%lld", cqe__hname(h));
   }
@@ -1180,6 +1180,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             if e.get("shot"):
                 c["shot"] = True
             clean.append(c)
+        elif ev == "freed":     # core.c: the compact trace's summary of the setup's frees
+            clean.append({"freed": e["freed"], "fdig": e["fdig"]})
         elif ev in ("measure", "reread"):
             # CR rule 2, ABI 1.3: a cqrt_measure of a rail already measured is a classical re-read, no measurement of
             # ours; it is kept apart, with the number of our measurements before it (`at`), for compare._meas_seq
@@ -3087,6 +3089,9 @@ def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end:
         # the compact trace (cq-8m6v): the sample's free events are its dirty ones only, tagged as the
         # sample's; the frame sums up all of them (count, digest of the handles in order)
         evs = [dict(e, shot=True) if isinstance(e, dict) and e.get("ev") == "free" else e for e in evs]
+    # the setup's host effects (a module's static constructors) are no sample's, as the C oracle logs none outside a
+    # sample (cqo_rt.c FX_LOG)
+    pre = [e for e in pre if not (isinstance(e, dict) and e.get("ev") == "effect")]
     events, bad = _with_bad(pre + evs if pre else evs, torn)
     code = end.get("code")
     stdout = setup_out + _bytes_text(end.get("stdout", ""))

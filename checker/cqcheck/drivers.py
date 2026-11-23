@@ -1184,6 +1184,18 @@ def is_llvm_list(name: str, line: str) -> bool:
     return name.startswith("@llvm.") or bool(re.search(r"=\s*(?:[a-z_]+\s+)*appending\b", strip_comment(line)))
 
 
+def take_ctors(text: str) -> Tuple[str, List[str]]:
+    """(text without its `@llvm.global_ctors` line, the static constructors it named in priority order): a checker
+    runtime calls them itself after its own setup, since Darwin runs a program's constructors before the runtime's."""
+    ctors: List[str] = []
+
+    def take(m: "re.Match[str]") -> str:
+        ents = re.findall(r"\{\s*i32\s+(\d+),\s*ptr\s+(@(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))", m.group(0))
+        ctors.extend(f for _, f in sorted(ents, key=lambda e: int(e[0])))
+        return ""
+    return re.sub(r"(?m)^@llvm\.global_ctors = .*\n?", take, text), ctors
+
+
 def lead_type(s: str) -> Tuple[str, str]:
     """(the type that starts s, the rest): a bracketed aggregate or vector type, else the first token."""
     s = s.lstrip()

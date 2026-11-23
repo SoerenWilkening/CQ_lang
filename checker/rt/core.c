@@ -290,7 +290,7 @@ static int keep_event(const char *s) {
     return 1;
   const char *n = s + sizeof pre - 1;
   static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "reread\"", "ret\"",
-                               "violation\"", "exit\"", "host_end\"", "abort_end\"", "effect\"", "shot\"", "shot_end\"", "free\"",
+                               "violation\"", "exit\"", "host_end\"", "abort_end\"", "effect\"", "shot\"", "shot_end\"", "free\"", "freed\"",
                                "out_mem\"", "tape\",\"op\":\"shot\""};
   for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
     if (!strncmp(n, keep[i], strlen(keep[i])))
@@ -2693,11 +2693,22 @@ struct shot_state {
  * free event is written (always outside a sample and without the compact trace; in a sample of a
  * compact trace only a dirty one, which compare reports). */
 static void rp_free_log(int32_t h); /* cq-kcn5i, the end of this file */
+/* The setup's frees in a compact trace, summed up as a sample's are: one {"ev":"freed"} before the first shot, and only
+ * the dirty ones written (a module's static constructors free millions of classical rails, which every sample's
+ * result carried) */
+static long setup_freed_n;
+static unsigned long long setup_freed_dig = 0xcbf29ce484222325ULL;
+static int setup_summed;
 int cqe__free_note(int32_t h, int known) {
   if (cqe__rp_window)
     rp_free_log(h);
-  if (!sample_running())
-    return 1;
+  if (!sample_running()) {
+    if (!compact || setup_summed)
+      return 1;
+    setup_freed_n++;
+    setup_freed_dig = (setup_freed_dig ^ cqe__name((uint32_t)h)) * 0x100000001b3ULL;
+    return !known;
+  }
   R->freed_n++;
   R->freed_dig = (R->freed_dig ^ cqe__name((uint32_t)h)) * 0x100000001b3ULL; /* by name (owner 2026-11-09) */
   return !compact || !known;
@@ -3769,6 +3780,9 @@ int cqe__shot_enter(int idx) {
     snapshot_take();
   worker_signals(); /* every sample: the program may have replaced a handler */
   long k = R->base + idx;
+  if (compact && !setup_summed && setup_freed_n)
+    cqe__logf("{\"ev\":\"freed\",\"freed\":%ld,\"fdig\":\"0x%llx\"}", setup_freed_n, setup_freed_dig);
+  setup_summed = 1;
   cqe__logf("{\"ev\":\"shot\",\"k\":%ld}", k);
   theta_for(k);
   stack_save((char *)__builtin_frame_address(0) + 16);
