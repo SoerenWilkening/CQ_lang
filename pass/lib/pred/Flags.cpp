@@ -2020,7 +2020,29 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   std::vector<std::pair<Pred, Operand>> chain;
   for (const Arm &a : arms)
     chain.push_back({makePred(a.node), code ? addressAsInt(ctx, ctx.operand(a.v)) : ctx.operand(a.v)});
-  return selectChainAt(ctx, chain, mergeRail(phi.getType()), nodeOf(I.blocks.lookup(bb)), &phi);
+  // cq-3630b (rules 9, 16): a path on which C surely took a classical edge into a dead end (its whole predicate classical)
+  // reaches no live block; the walk may still go on along it (the dead end lowered under a flag for its quantum in-edges,
+  // TinyCC decl_initializer_alloc), and the merge is a don't-care there. The dead-end share of a branch falls to its live
+  // successor in the predicates (liveEdgeCond), so the block's own predicate does not exclude it.
+  Bdd &bm = Bdd::get();
+  // In a _ctl clone, where the entry flag is 0 the C program does not run and the merge is no one's (a seed serves).
+  auto entryCalled = [&](unsigned n) {
+    std::set<unsigned> sup;
+    bm.support(n, sup);
+    for (unsigned v : sup)
+      if (atomOf(v).kind == AtomKind::Entry)
+        n = bm.cofactor(n, v, true);
+    return n;
+  };
+  unsigned care = nodeOf(I.blocks.lookup(bb));
+  if (!CO->deadEnd(bb))
+    for (const BasicBlock &x : *I.F)
+      if (I.rpo.count(&x) && !CO->deadEnd(&x))
+        for (const BasicBlock *d : successors(&x))
+          if (CO->deadEnd(d))
+            if (unsigned n = entryCalled(nodeOf(ctx.preds().edge(&x, d))); n != Bdd::F && isClassicalNode(n, *CO))
+              care = bm.andOp(care, bm.notOp(n));
+  return selectChainAt(ctx, chain, mergeRail(phi.getType()), care, &phi);
 }
 
 namespace {
