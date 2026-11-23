@@ -414,9 +414,14 @@ exported roots, 109 MB, 2 min 8 s). One function, `Tablebases::rank_root_moves`,
 its `{ i64, i32 }` result packs several fields into the `i64`; that is fixed (`repro-round9/aggret_packed_leaf.c`).
 Five programs (`spot.cpp`: queen attacks from a quantum square, `Position::pseudo_legal`, `see_ge`,
 `attackers_to` and `UCIEngine::to_cp` on a quantum argument) link with the lowered library, Stockfish's
-ordinary build, the lowered C library and the replay backend. None of their runs finished within 10 minutes,
-so no Stockfish function has been checked against the C++ program: it is shown to lower and to link, not to
-compute the right result.
+ordinary build, the lowered C library and the replay backend. The classical setup (`Bitboards::init`,
+`Position::init`, `Position::set`) is a native object: in the lowered program, rule 27 has no flow, so once
+`main` passes a rail to a library function every library call in the module is a declared clone, the setup
+before `cq_theta` included, and it ran as lowered code without finishing. With the setup native, `to_cp`
+returns the C++ program's value for all three inputs (10 s each). The other four stop at once: the replay
+backend aborts a bus access whose address has more than 16 quantum bits (the magic-bitboard lookups, whose
+address comes from a pointer loaded at a quantum index), and `pseudo_legal`'s lowered code calls templates of
+widths `i10` and `i26`, which BACKEND_ABI does not list yet.
 
 A function whose body is in the program is lowered once per mix of classical and quantum arguments
 it is called with. ABC and Game of Life were also lowered that way, one generated program per mix
