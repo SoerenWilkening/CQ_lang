@@ -1893,7 +1893,24 @@ void Walker::emitReturn(ReturnInst *ret, Instruction *t) {
     SmallVector<Type *, 4> types;
     SmallVector<bool, 4> q;
     entryLeaves(ctx, types, q);
-    SmallVector<Operand, 4> leaves = aggr::flattenResult(ctx, rv);
+    // Rule 26 (cq-126eb): a packed integer leaf (the ABI's coercion of several C fields) is bound at its returns'
+    // packings, as a clone returns it; the entry returns it whole, its fields joined.
+    SmallVector<Operand, 4> leaves = aggregateFields(ret, rv);
+    if (SmallVector<SmallVector<unsigned, 4>, 4> cuts = spine::resultLeafCuts(*ctx.S.F);
+        leaves.size() != types.size() && cuts.size() == types.size()) {
+      SmallVector<Operand, 4> whole;
+      unsigned at = 0;
+      for (const SmallVector<unsigned, 4> &c : cuts) {
+        unsigned n = c.size() > 2 ? unsigned(c.size() - 1) : 1u;
+        if (at + n > leaves.size())
+          break;
+        ArrayRef<Operand> mine = ArrayRef<Operand>(leaves).slice(at, n);
+        whole.push_back(n == 1 ? mine.front() : spine::joinPacked(ctx, c, mine, ret));
+        at += n;
+      }
+      if (at == leaves.size())
+        leaves = whole;
+    }
     auto *st = dyn_cast<StructType>(sh.out->getReturnType());
     if (!st || leaves.size() != types.size() || st->getNumElements() != types.size())
       internalError("spine: an entry's aggregate return does not match its leaves", t);

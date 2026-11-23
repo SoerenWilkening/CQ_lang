@@ -2938,6 +2938,35 @@ void Analyzer::transfer(Instruction &I) {
       // reads that rail, also where the body leaves the lane classical (a small struct coerced to an integer, rule 26).
       if (cur->inPlace && V->getType()->isIntegerTy() && cur->ret.any() && orInto(cur->ret, allLanes(cur->ret.size())))
         st.changed = true;
+      // The same per integer leaf of an aggregate or vector result (cq-126eb): the entry returns a quantum leaf packed
+      // from several C fields ({ i64, i32 }) as ONE handle, its fields joined.
+      if (cur->inPlace && (V->getType()->isAggregateType() || V->getType()->isVectorTy()) && cur->ret.any()) {
+        Lanes whole(cur->ret.size());
+        std::function<void(Type *, unsigned &)> walk = [&](Type *T, unsigned &lane) {
+          if (auto *ST = dyn_cast<StructType>(T))
+            for (Type *E : ST->elements())
+              walk(E, lane);
+          else if (auto *AT = dyn_cast<ArrayType>(T))
+            for (uint64_t k = 0; k < AT->getNumElements(); ++k)
+              walk(AT->getElementType(), lane);
+          else if (auto *VT = dyn_cast<FixedVectorType>(T))
+            for (unsigned k = 0; k < VT->getNumElements(); ++k)
+              walk(VT->getElementType(), lane);
+          else {
+            unsigned n = lanesOf(T), hi = std::min(lane + n, unsigned(cur->ret.size()));
+            for (unsigned k = lane; k < hi; ++k)
+              if (cur->ret.test(k)) {
+                whole.set(lane, hi);
+                break;
+              }
+            lane += n;
+          }
+        };
+        unsigned lane = 0;
+        walk(V->getType(), lane);
+        if (orInto(cur->ret, whole))
+          st.changed = true;
+      }
       // §1.4 (owner 2026-11-12, cq-a9ij3): every result of an _rmq clone is a rail.
       if (cur->rm == 2 && orInto(cur->ret, allLanes(cur->ret.size())))
         st.changed = true;
