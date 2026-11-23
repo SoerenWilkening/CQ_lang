@@ -85,9 +85,9 @@ using namespace llvm;
 // quantum operand is the call of the libm function of the same name: llvm.<n>.<types> is n for a
 // double, nf for a float, nl for an x86_fp80 first operand (175).
 std::string calleeName(const Function &F, const Value *at) {
-  if (!F.isIntrinsic())
-    return F.getName().str();
   StringRef n = F.getName();
+  if (!F.isIntrinsic())
+    return (n.starts_with("\01_") ? n.drop_front(2) : n).str();   // an asm label "\01_n" names C function n (cq-dv19x)
   if (!n.consume_front("llvm.") || n.empty())
     internalError("calls: an intrinsic whose name is not llvm.<name>.<types>", at);
   std::string base = n.take_until([](char c) { return c == '.'; }).str();

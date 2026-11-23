@@ -560,6 +560,9 @@ CASES = [
     ("declared_classical_mem", "cm", [f"-cq-roots={PROBES / 'declared_classical.roots'}"], "lower",
      [r"(%\d+) = call i32 @__cq_q_ext_sum_00_t\(ptr @A, i64 (%\d+), i32 4\)",
       r"call void @__cq_q_ext_sum_00_t_unc\(i32 %\d+, ptr @A, i64 %\d+, i32 4\)"]),
+    # cq-dv19x: a listed function the Darwin headers label "\\01_n" is the clone of C function n. "lower": as above.
+    ("declared_asm_label", "e", [f"-cq-roots={PROBES / 'declared_asm_label.roots'}"], "lower",
+     [r"call i32 @__cq_q_ext_lab_1_t\(i32 %\d+, i32 4\)", r"\A(?![\s\S]*__cq_q_\\01)"]),
 ]
 
 
