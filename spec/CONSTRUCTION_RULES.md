@@ -1219,7 +1219,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     its end: P is a global, an argument, a load or call result or an `alloca`, or is reached from
     one by `inbounds` `getelementptr` only. Where P's chain has a `getelementptr` without
     `inbounds`, the literal is the pointer before it and the offset is added on the index side.
-    Where P is reached inside the function from an `inttoptr`, no object is known for it: the
+    An `inbounds` `getelementptr` is in bounds only index by index: the offsets after its first
+    quantum index are added on the index side, never into the literal. Where a classical P whose
+    chain has a `getelementptr` without `inbounds` is taken in by a `phi` or `select` (a select
+    literal, a seed), its value is passed as it is and no object is known for the merged pointer.
+    Where P is reached inside the function from an `inttoptr`, no object is known for it either: the
     address rail of an access through P is announced as such, `__cq_unbound(r)` once after the
     rail is formed and before the first access at it (BACKEND_ABI §1.10, No object). A classical
     address needs nothing.

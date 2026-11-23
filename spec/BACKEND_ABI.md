@@ -486,7 +486,8 @@ circuit.
     need not define it. Lowered code reaches it through the bundle symbol
     `void @__cq_unbound(i32 h)`, which forwards like `__cq_object`. The compiler calls it on an
     address rail, before the first access at it, when the accessed pointer is reached inside the
-    function from an `inttoptr` (CR rule 20): such a pointer may legally hold a value outside its
+    function from an `inttoptr`, or from a classical pointer that a `phi` or `select` takes in
+    and whose own chain has a `getelementptr` without `inbounds` (CR rule 20): such a pointer may legally hold a value outside its
     object (`(T *)((uintptr_t)p - 16)`, accessed at an offset), and the value rule would name the
     wrong object. An out-of-object pointer value that reaches the access through memory, an
     argument or a call result is not visible to the compiler: a program that forms one and
