@@ -76,7 +76,9 @@ Value *chainOffset(LoweringContext &ctx, const Value *P, const Value *lit) {
 
 // Rule 20 Address arithmetic: the tainted indices brought to i64, scaled, added per getelementptr; everything
 // untainted is one classical i64, the _hl literal. Address literals: where the chain has a getelementptr without
-// inbounds, the literal is the pointer before it and every other classical part is added on the rail side.
+// inbounds, the literal is the pointer before it and every other classical part is added on the rail side. An inbounds
+// step is in bounds only in index order (cq-3v6fh): the offsets after the first tainted index (the tail) go on the rail
+// side too, before the literal.
 Operand gepAddress(LoweringContext &ctx, const GEPOperator &G) {
   const DataLayout &DL = ctx.M.getDataLayout();
   LLVMContext &C = ctx.M.getContext();
@@ -88,6 +90,9 @@ Operand gepAddress(LoweringContext &ctx, const GEPOperator &G) {
   uint64_t constant = 0;
   Value *classical = base.handle ? nullptr : base.v;
   Value *rail = nullptr;
+  bool split = !lit && !base.handle;   // with a literal root or a rail base every classical part is on the rail side
+  uint64_t tailConstant = 0;
+  Value *tail = nullptr;
   auto addRail = [&](Value *r) {
     if (!rail) {
       rail = r;
@@ -98,16 +103,20 @@ Operand gepAddress(LoweringContext &ctx, const GEPOperator &G) {
     add.w = w64;
     rail = ctx.emitTemplate(add, {Operand{rail, true}, Operand{r, true}});
   };
-  auto addClassical = [&](Value *v) { classical = classical ? B.CreateAdd(classical, v) : v; };
+  auto addClassical = [&](Value *v) {
+    Value *&acc = split && rail ? tail : classical;
+    acc = acc ? B.CreateAdd(acc, v) : v;
+  };
   for (gep_type_iterator I = gep_type_begin(G), E = gep_type_end(G); I != E; ++I) {
     const Value *idx = I.getOperand();
+    uint64_t &k = split && rail ? tailConstant : constant;
     if (StructType *st = I.getStructTypeOrNull()) {
-      constant += DL.getStructLayout(st)->getElementOffset(cast<ConstantInt>(idx)->getZExtValue());
+      k += DL.getStructLayout(st)->getElementOffset(cast<ConstantInt>(idx)->getZExtValue());
       continue;
     }
     uint64_t size = I.getSequentialElementStride(DL).getFixedValue();
     if (auto *ci = dyn_cast<ConstantInt>(idx)) {
-      constant += size * ci->getValue().sextOrTrunc(64).getZExtValue();
+      k += size * ci->getValue().sextOrTrunc(64).getZExtValue();
       continue;
     }
     Operand ix = ctx.operand(idx);
@@ -135,7 +144,16 @@ Operand gepAddress(LoweringContext &ctx, const GEPOperator &G) {
     addRail(r);
   }
   if (constant)
-    addClassical(ConstantInt::get(I64, constant));
+    classical = classical ? B.CreateAdd(classical, ConstantInt::get(I64, constant)) : ConstantInt::get(I64, constant);
+  if (tailConstant)
+    tail = tail ? B.CreateAdd(tail, ConstantInt::get(I64, tailConstant)) : ConstantInt::get(I64, tailConstant);
+  if (tail) {
+    abi::TemplateSpec add;
+    add.op = "add";
+    add.w = w64;
+    add.shape = "hl";
+    rail = ctx.emitTemplate(add, {Operand{rail, true}, Operand{tail, false}});
+  }
   if (lit) {
     Value *off = chainOffset(ctx, G.getPointerOperand(), lit);
     if (classical)
@@ -199,24 +217,34 @@ Operand addressOf(LoweringContext &ctx, const Value *p) {
   internalError("bus: the address of a pointer with no value in the new IR", p);
 }
 
-// Rule 20: p is reached inside the function from an inttoptr, through getelementptr, addrspacecast, phi and select.
-bool fromIntToPtr(const Value *p) {
-  SmallPtrSet<const Value *, 8> seen;
-  SmallVector<const Value *, 8> work{p};
+// Rule 20: no object is known for p. p is reached inside the function, through getelementptr, addrspacecast, phi and
+// select, from an inttoptr, or from a classical pointer that a quantum phi or select takes as a literal or seed while
+// that pointer's own classical chain has a getelementptr without inbounds (cq-jewvy). A getelementptr whose base is
+// already a rail is rail arithmetic and keeps the bound.
+bool unbound(LoweringContext &ctx, const Value *p) {
+  SmallPtrSet<const Value *, 8> seen[2];   // [minted]: v is a classical value a quantum merge takes in
+  SmallVector<std::pair<const Value *, bool>, 8> work{{p, false}};
   while (!work.empty()) {
-    const Value *v = work.pop_back_val();
-    if (!seen.insert(v).second)
+    auto [v, m] = work.pop_back_val();
+    bool minted = m;
+    if (!seen[minted].insert(v).second)
       continue;
     if (auto *O = dyn_cast<Operator>(v); O && O->getOpcode() == Instruction::IntToPtr)
       return true;
-    if (auto *G = dyn_cast<GEPOperator>(v))
-      work.push_back(G->getPointerOperand());
-    else if (auto *AC = dyn_cast<AddrSpaceCastOperator>(v))
-      work.push_back(AC->getPointerOperand());
-    else if (auto *Ph = dyn_cast<PHINode>(v))
-      work.append(Ph->incoming_values().begin(), Ph->incoming_values().end());
-    else if (auto *S = dyn_cast<SelectInst>(v))
-      work.append({S->getTrueValue(), S->getFalseValue()});
+    auto push = [&](const Value *in) { work.push_back({in, minted || !ctx.T.isQuantum(in, ctx.S)}); };
+    if (auto *G = dyn_cast<GEPOperator>(v)) {
+      if (minted && !G->isInBounds())
+        return true;
+      work.push_back({G->getPointerOperand(), minted});
+    } else if (auto *AC = dyn_cast<AddrSpaceCastOperator>(v)) {
+      work.push_back({AC->getPointerOperand(), minted});
+    } else if (auto *Ph = dyn_cast<PHINode>(v)) {
+      for (const Value *in : Ph->incoming_values())
+        push(in);
+    } else if (auto *S = dyn_cast<SelectInst>(v)) {
+      push(S->getTrueValue());
+      push(S->getFalseValue());
+    }
   }
   return false;
 }
@@ -224,7 +252,7 @@ bool fromIntToPtr(const Value *p) {
 // BACKEND_ABI §1.10 No object: __cq_unbound(r) once, right after the address rail r is formed (so before every access
 // at it, on every path).
 void announceUnbound(LoweringContext &ctx, const Value *p, Value *r) {
-  if (!fromIntToPtr(p))
+  if (!unbound(ctx, p))
     return;
   for (User *u : r->users())
     if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() && c->getCalledFunction()->getName() == "__cq_unbound")
