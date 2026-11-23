@@ -1214,8 +1214,17 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 20. **Memory.** All memory of the program is the one bus `M` (§1.3). Nothing is known about an
     address: not the object it lies in, its extent, or what its cells hold. Globals, `static` and
     thread-local objects, string literals, heap blocks and whatever the host mapped live at their
-    host addresses, on the bus through the overlay: nothing is allocated, seeded or registered
-    for them.
+    host addresses, on the bus through the overlay: nothing is allocated or seeded for them, and
+    no construction uses knowledge of an object. One classical fact is handed on, for the
+    backend's resource bound only (BACKEND_ABI §1.10, Objects): a lowered module registers the
+    extent of every global variable it defines or declares, `__cq_object(addr, size)` in a module
+    constructor, and `__cq_alloc` registers every block it returns. No rule reads the registry
+    and it changes no lowering. *Address literals:* a classical `i64` that enters an address
+    computation as the value of a pointer P (the literal of an `_hl` add or sub, a `select`
+    literal, a seed) is passed only where LLVM guarantees that P lies in its object or one past
+    its end: P is a global, an argument, a load or call result or an `alloca`, or is reached from
+    one by `inbounds` `getelementptr` only. Where P's chain has a `getelementptr` without
+    `inbounds`, the literal is the pointer before it and the offset is added on the index side.
 
     | access of type T | classical address `p` | address rail `r` |
     |---|---|---|

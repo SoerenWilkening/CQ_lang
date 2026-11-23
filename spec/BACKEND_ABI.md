@@ -452,19 +452,38 @@ circuit.
        global's address, `size` its DataLayout allocation size. Thread-local and `extern_weak`
        globals, `llvm.*` globals and globals in the `llvm.metadata` section are not registered.
        The same global registered by two modules is one object.
-  - *The object bound.* An address formed from a pointer into an object X by adding or subtracting
-    integers designates a cell of X (or one past its end, never accessed): any other access is
-    undefined behaviour in the C program, outside the domain (CR §0). So for an access whose
-    address the backend knows to be *derived from* X, R may be taken as the cells of X. Where the
-    address may be derived from one of several objects, R is their union.
-  - *Derivation* is the backend's own bookkeeping, a classical note beside an address rail and never
-    a gate. The intended rules: a classical-valued address derives from the object containing
-    it; a rail loaded from HOST cells derives from the objects containing the values those cells
-    hold (the cells the load reads anyway); `copy` keeps the note; a merge of two rails under a
-    predicate (`select`, an arm value) has the union; adding or subtracting a rail or literal
-    that carries no note keeps it. Every other operation drops it. A rail with no note is
-    bounded as before (the bit pattern), so a missing note or registration costs qubits and
-    never changes the unitary.
+  - *The object bound.* A pointer value the C program forms lies in its object or one past its
+    end, and an address formed from it by adding or subtracting integers designates a cell of
+    that object: anything else is undefined behaviour, outside the domain (CR §0). So for an
+    access whose address the backend knows to be *derived from* object X, R may be taken as the
+    leaves whose first cell lies in X (an access of S cells may then touch up to S − 1 cells
+    past the end), intersected with the bit pattern of the address. Where the address may be
+    derived from one of several objects, R is the union. Overlapping registrations are one
+    object, their union.
+  - *Derivation* is the backend's own bookkeeping, a classical note beside an `i64` rail and never
+    a gate. The rules:
+    - A classical value v (a literal of `add`, `sub` or `select`, a classical-valued rail) derives
+      from the object containing v and, when v is also one past the end of another object, from
+      that one too. The compiler passes as such a literal only a pointer the program holds, never
+      a base it folded with an offset (CR rule 20, address literals).
+    - A rail loaded from HOST cells, into a rail that was `|0⟩`, derives from the objects of the
+      values those cells hold (the cells the load reads anyway). A value 0 is the null pointer
+      and adds nothing; a QUANTUM cell or a non-zero value in no object leaves the rail with no
+      note.
+    - `copy` into a rail that is `|0⟩` keeps the note, controlled or not (a pointer or null).
+    - `select` has the union of its arms' notes; an arm with no note leaves the result with none;
+      a literal 0 arm is null.
+    - `add` keeps the note when exactly one operand has one; `sub` when only the minuend has one.
+    - Everything else drops it, as does any later gate on the rail's qubits.
+    A rail with no note is bounded as before (the bit pattern), and the object bound is used only
+    where it gives fewer leaves, so a missing note or registration costs qubits and never changes
+    the unitary.
+  - *Open.* A pointer the program made from an integer (`inttoptr`, e.g.
+    `(T *)((uintptr_t)p - 16)`) may hold a value outside its object and still be accessed
+    legally at an offset; the value rule above would then name the wrong object
+    (SPEC_ISSUES.md).
+  - *Linking.* `__cq_object` refers to `cqrt_qram_object` weakly. On Mach-O the link of the host
+    runtime passes `-U _cqrt_qram_object`, as `cqcc` does.
   - *No simulation.* The bound uses object extents and notes only. It never enumerates the values
     a rail can take per branch of the program, never measures, and holds for every superposition
     of the quantum inputs. The templates of an address computation (`add`, `mul`, `shl`, …) are
