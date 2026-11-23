@@ -47,6 +47,10 @@ CASES = [
     # cq-pjjml (§1.4, rule 26): a _ctl clone whose packed formal has no quantum field joins its classical fields in its own
     # entry block (the join was emitted at the previous function's insertion point: a cross-function operand).
     ("packed_classical_ctl", "e", [], "pass", [r"define internal fastcc void @__cq_q_g_00_ctl\(i32 %0, i8 %1, i8 %2\)"]),
+    # cq-to6xa (rules 14, 18, 16 variadic): a call reading a quantum-exit loop's value after the loop: its result is the clone's
+    # (classical here), not the exit value's over-taint. A plain callee and a variadic one.
+    ("loop_exit_call_result", "e", [], "pass", [r"call i32 @__cq_q_f_1"]),
+    ("loop_exit_call_result", "ev", [], "pass", [r"call i32 @__cq_q_ve_"]),
     # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
     # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
     # by name, through a defined noreturn callee.
