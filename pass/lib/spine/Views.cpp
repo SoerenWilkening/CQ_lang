@@ -927,6 +927,15 @@ Operand packedWhole(LoweringContext &ctx, const Value *v) {
   return rangeOf(ctx, segsOfPacked(ctx, v), 0, widthOf(v), v);
 }
 
+Operand joinPacked(LoweringContext &ctx, ArrayRef<unsigned> cuts, ArrayRef<Operand> fields, const Value *at) {
+  if (cuts.size() != fields.size() + 1 || fields.empty())
+    internalError("spine: joinPacked with another field count than its boundaries", at);
+  Segs s;
+  for (unsigned k = 0; k < fields.size(); ++k)
+    s.push_back(Seg{cuts[k], cuts[k + 1], fields[k]});
+  return rangeOf(ctx, s, 0, cuts.back(), at);
+}
+
 // Rule 26 (cq-zo7ja): a classical merge reads its incoming values at the join (merge clean-ups, rule 6's stops), where an arm's
 // fields do not reach. A single rail read there is only looked at; a whole read would emit its joining templates over the phis
 // of the fields, poison on the other arm. So the whole a phi reads is made once, right after the value.

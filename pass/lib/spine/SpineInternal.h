@@ -349,6 +349,9 @@ bool lowerPack(LoweringContext &, llvm::Instruction &);
 void bindPacked(LoweringContext &, const llvm::Value *orig, llvm::ArrayRef<unsigned> cuts,
                 llvm::ArrayRef<Operand> fields);
 Operand packedWhole(LoweringContext &, const llvm::Value *);
+// The whole iN of fields at the boundaries `cuts` (cuts.back() = N), as packedWhole joins a packed value.
+Operand joinPacked(LoweringContext &, llvm::ArrayRef<unsigned> cuts, llvm::ArrayRef<Operand> fields,
+                   const llvm::Value *at);
 void mintPackedForPhi(LoweringContext &, const llvm::Instruction &);
 llvm::SmallVector<Operand, 4> packFields(LoweringContext &, const llvm::Value *v, llvm::ArrayRef<unsigned> cuts);
 // The field boundaries of a packed integer as its readers unpack it (a trunc to C bits, an lshr by C,
