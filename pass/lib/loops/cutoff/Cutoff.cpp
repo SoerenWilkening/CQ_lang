@@ -592,8 +592,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // Its TAIL (Exits.h, cq-t30vh) is not: the sub-unit lowers it for its own paths, and on the paths that enter it from outside
   // that unit it is a block of this trip like any other, whose edges into the continuation are selected in over the unit's value.
   DenseMap<const BasicBlock *, Loop *> subArm, subTail;
-  for (Loop *S : L.getSubLoops()) {
-    exits::Unit SU = exits::unitOf(*S);
+  SmallVector<std::pair<Loop *, exits::Unit>, 4> subUnits;
+  for (Loop *S : L.getSubLoops())
+    subUnits.push_back({S, exits::unitOf(*S)});
+  for (auto &[S, SU] : subUnits) {
+    // cq-6wzf3 (TinyCC tcc_assemble_internal): a sub-loop inside another sub-loop's exit arm (not its tail) is a block of that
+    // unit, its own arm too (the arm runs up to C), whichever sub-loop comes first.
+    if (any_of(subUnits, [&, S = S](const auto &o) {
+          return o.first != S && is_contained(o.second.arm, S->getHeader()) && !is_contained(o.second.tail, S->getHeader());
+        }))
+      continue;
     for (BasicBlock *b : SU.arm)
       if (L.contains(b)) {
         if (is_contained(SU.tail, b))
