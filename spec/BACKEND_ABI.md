@@ -504,7 +504,11 @@ circuit.
     O(log size + log 64), qubits O(W · size); several objects are decoded side by side.
   - *Not covered.* Memory the program holds without `__cq_alloc` or a registered global (a buffer
     a host function returned, `mmap`) is no object: an access derived from it is bounded by the
-    bit pattern.
+    bit pattern. Two stated limits (owner 2026-11-23): such memory that begins exactly at a
+    registered object's end is taken for that object when it is accessed at a signed quantum
+    index; and a classical integer that is an offset, not an address, is noted like an address
+    when its value lies inside a registered object. A program that meets either is outside the
+    domain of the object bound.
 - **Undo (CR rule 5).** The lowered code undoes a bus event in two cases only, and the backend
   relies on nothing else:
   1. *A load copy* is un-copied (`_unc`) after the last consumer of the loaded value and every
