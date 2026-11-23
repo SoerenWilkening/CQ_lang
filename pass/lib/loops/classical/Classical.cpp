@@ -843,7 +843,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                 (phi && phi->getParent() == UX.cont && inUnit(phi->getIncomingBlock(us))))
               continue;   // read by the exit arm or by C's phi on a unit edge
             if (!phi && mxDT->dominates(UX.cont, ui->getParent()) &&
-                (I.getType()->isIntegerTy() || I.getType()->isFloatingPointTy())) {
+                (I.getType()->isIntegerTy() || I.getType()->isFloatingPointTy() || I.getType()->isPointerTy())) {
               if (!is_contained(xreads, &I))
                 xreads.push_back(&I);
               continue;
@@ -852,10 +852,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                           "phi of its continuation or a scalar read C dominates",
                           &I);
           }
-          // A classical pointer read after the loop stays classical (taint cq-1v3i: an address is evaluated per
-          // trip, never a rail); a classical scalar of a case-3 loop is captured below.
-          if (!c3 || isQ(&I) || !I.getType()->isPointerTy())
-            liveOut.push_back(&I);
+          // cq-krhay (CR rules 3 "Loops", 21): a classical pointer of a case-3 loop is captured like any other scalar.
+          liveOut.push_back(&I);
           break;
         }
   struct CPhi {
@@ -1914,8 +1912,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         nexts.push_back(asHandle(o, cv.orig->getType()));
       }
     }
-    for (auto &[v, cp] : caps)
-      cp->addIncoming(select(aPhi, ctx.operand(v), Operand{cp, true}, railOf(v->getType())), cur);
+    for (auto &[v, cp] : caps) {
+      Operand o = ctx.operand(v);
+      if (v->getType()->isPointerTy() && !o.handle)
+        o = Operand{ctx.B().CreatePtrToInt(o.v, Type::getInt64Ty(ctx.M.getContext())), false};
+      cp->addIncoming(select(aPhi, o, Operand{cp, true}, railOf(v->getType())), cur);
+    }
   };
 
   // The seeds minted for classical incomings of phis of handles (mintEdgeSeeds below), per (phi, edge source).
@@ -4150,7 +4152,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           else
             put(v, op);
         },
-        nullptr,
+        // cq-n1hy7, cq-krhay (CR rules 6, 14): an exit value a trip makes that the code after the loop may clean by rule 6
+        // is copied out; the reverse undoes every trip's instance. A value a phi carries is never cleaned (deadAtCleanup).
+        [&](const Value *v) {
+          return !fenvSlot(v) && none_of(v->users(), [](const User *u) { return isa<PHINode>(u); }) &&
+                 rolled::cleanedAfter(top, v);
+        },
         !nested && !inTrip && !stopCur && U.invertOpen() ? function_ref<bool(const Value *)>(afterEnd)
                                                           : function_ref<bool(const Value *)>());
     for (auto &[id, o] : fenvOut)

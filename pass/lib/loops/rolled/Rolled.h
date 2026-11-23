@@ -77,7 +77,7 @@ bool readersKeep(LoweringContext &ctx, const llvm::Loop &top, const llvm::Value 
 // bijective update of v, or a merge with v as an arm, after which v is dead)? Rule 6 replaces the undoing of v's producer
 // by an inverse that reads the update's image, a value made after the loop: right for the last trip's instance of a rail
 // a trip makes, wrong for every earlier trip's, which the reverse loop undoes with the same mirror. v is a value of the
-// loop that is no phi (a phi is never cleaned); its readers after the loop are followed through what may alias it.
+// loop (a phi is never cleaned itself, an alias of it may be); its readers after the loop are followed through what may alias it.
 // Over-approximates: a yes costs one copy.
 bool cleanedAfter(const llvm::Loop &top, const llvm::Value *v);
 
