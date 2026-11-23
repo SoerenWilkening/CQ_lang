@@ -103,7 +103,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_template_*`, integer (§2.2–§2.8) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
 | `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
-| `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
+| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
 **Link order.** The backend is ONE static archive, `libcq_backend.a`, holding every `cqrt_*`
@@ -435,6 +435,47 @@ circuit.
   cells QUANTUM; how tight it is is the backend's resource question, like N and K. A backend
   may impose a resource limit on the number of quantum address bits of one access and must fail
   loudly, not silently, when it is exceeded.
+- **Objects.** The bus stays one bus; an *object* is only a classical fact about it: a range of
+  cells `[addr, addr + size)` that the program obtained as one C object. Objects let the backend
+  take a tight R (No fault, above) with no knowledge of any rail's value.
+  - *Registration.* `void @cqrt_qram_object(i64 addr, i64 size)`: classical arguments, no gate, no
+    qubit, idempotent; `size = 0` registers nothing. A backend that does not define it gets no
+    registrations. Lowered code never calls it directly. It is reached through the bundle symbol
+    `void @__cq_object(i64 addr, i64 size)` (classical host C), which forwards to the backend's
+    `cqrt_qram_object` when the link has one and does nothing otherwise. Two callers:
+    1. `__cq_alloc` registers every block it returns, at the size it was asked for (so `malloc`,
+       `calloc`, `aligned_alloc`, `realloc`'s new block, a bus-resident `alloca` and a VLA; an
+       allocation whose size is a rail is one object of K2 bytes, CR §0). Sizes are run-time
+       values. A block is never freed or reused, so no object is ever withdrawn.
+    2. A lowered module registers, in a module constructor that runs before `main`, every global
+       variable it defines or declares whose value type has a known non-zero size: `addr` is the
+       global's address, `size` its DataLayout allocation size. Thread-local and `extern_weak`
+       globals, `llvm.*` globals and globals in the `llvm.metadata` section are not registered.
+       The same global registered by two modules is one object.
+  - *The object bound.* An address formed from a pointer into an object X by adding or subtracting
+    integers designates a cell of X (or one past its end, never accessed): any other access is
+    undefined behaviour in the C program, outside the domain (CR §0). So for an access whose
+    address the backend knows to be *derived from* X, R may be taken as the cells of X. Where the
+    address may be derived from one of several objects, R is their union.
+  - *Derivation* is the backend's own bookkeeping, a classical note beside an address rail and never
+    a gate. The intended rules: a classical-valued address derives from the object containing
+    it; a rail loaded from HOST cells derives from the objects containing the values those cells
+    hold (the cells the load reads anyway); `copy` keeps the note; a merge of two rails under a
+    predicate (`select`, an arm value) has the union; adding or subtracting a rail or literal
+    that carries no note keeps it. Every other operation drops it. A rail with no note is
+    bounded as before (the bit pattern), so a missing note or registration costs qubits and
+    never changes the unitary.
+  - *No simulation.* The bound uses object extents and notes only. It never enumerates the values
+    a rail can take per branch of the program, never measures, and holds for every superposition
+    of the quantum inputs. The templates of an address computation (`add`, `mul`, `shl`, …) are
+    emitted and built exactly as without objects.
+  - *Circuit.* Belongs to the backend as for every access. The reference construction: subtract
+    the object's start from the address (a classical constant, lookahead adder), decode the low
+    ⌈log2 size⌉ bits of the difference with the fan-out tree, undo the subtraction. Depth
+    O(log size + log 64), qubits O(W · size); several objects are decoded side by side.
+  - *Not covered.* Memory the program holds without `__cq_alloc` or a registered global (a buffer
+    a host function returned, `mmap`) is no object: an access derived from it is bounded by the
+    bit pattern.
 - **Undo (CR rule 5).** The lowered code undoes a bus event in two cases only, and the backend
   relies on nothing else:
   1. *A load copy* is un-copied (`_unc`) after the last consumer of the loaded value and every
