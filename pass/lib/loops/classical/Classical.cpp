@@ -1617,6 +1617,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // output block each unit's flow leaves from with the edge that stands for its exits (real form).
   DenseSet<const PHINode *> kBound;
   DenseMap<const Loop *, const BasicBlock *> kRep;
+  // cq-qesnu: a case-3 unit whose real edge into C leaves from its tail: the output block of the unit's own walk of that tail
+  // (the walk of the tail on the outside paths later takes the same edge key).
+  DenseMap<const Loop *, BasicBlock *> kTailOut;
   auto fwdPreds = [&](const BasicBlock *s) {
     SmallVector<const BasicBlock *, 4> ps;
     Loop *sl = subOf(s);
@@ -2000,7 +2003,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             continue;
           const BasicBlock *ru = k ? kRep.lookup(k) : u;
           auto it = edgeFrom.find({ru, b});
-          if (it == edgeFrom.end())
+          BasicBlock *from = k && kTailOut.count(k) ? kTailOut.lookup(k) : it == edgeFrom.end() ? nullptr : it->second;
+          if (!from)
             internalError("loops-classical: a join edge with no output block", &p);
           Value *v;
           if (k) {
@@ -2015,7 +2019,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               internalError("loops-classical: a classical incoming of a phi of handles with no edge seed", &p);
             v = o.v;
           }
-          ins.push_back({it->second, v});
+          ins.push_back({from, v});
         }
         if (auto kf = kFlowVal.find(&p); kf != kFlowVal.end())
           ins.push_back(kf->second);
@@ -2154,12 +2158,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (edgeVal.count({&p, u}) || edgeFieldsM.count({&p, u}))
         continue;
       // A phi a K-unit bound, whose real edges are all from outside it: the unit's value where none of this edge's arms holds.
-      Loop *kp = nullptr;
+      Loop *kp = nullptr, *kr = nullptr;
       if (kBound.count(&p)) {
         for (const BasicBlock *pi : p.blocks())
           if (Loop *k = kunit(pi) ? kunit(pi) : kTail.lookup(pi); k && !kp && !kReal(k))
             kp = k;
-        if (!kp)
+        // cq-qesnu: a real unit (case 3) whose edge into s leaves from its tail: the walk of that tail on the outside paths
+        // is a real edge of the open flow too, which carries the linearized incomings (the unit's flow takes its own edge).
+        if (!kp && !kunit(u) && kTail.lookup(u))
+          for (const BasicBlock *pi : p.blocks())
+            if (Loop *k = kunit(pi); k && k == kTail.lookup(u) && kTailOut.count(k))
+              kr = k;
+        if (!kp && !kr)
           continue;
       }
       const bool composite = p.getType()->isAggregateType() || p.getType()->isVectorTy();
@@ -2168,7 +2178,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       std::optional<Pred> partFact;
       for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
         BasicBlock *pi = p.getIncomingBlock(i);
-        if (unitEdgeIntoTail(pi, s) || (kp && kunit(pi) == kp))
+        if (unitEdgeIntoTail(pi, s) || (kp && kunit(pi) == kp) || (kr && kunit(pi) == kr))
           continue;
         if (pi != u) {
           if (edgeKind(pi, s) == EK::Real)
@@ -2293,8 +2303,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (const BasicBlock *p : fwdPreds(s))
         if (Loop *k = kTail.lookup(p); k && exits::unitOf(*k).cont == s && !kReal(k))
           lin = true;
-      if (lin)
+      if (lin && inTail) {
+        // cq-qesnu (rules 8, 9): a tail block's real edge into a mixed join carries the open flow, whose linearized paths the
+        // tail's own assumption (its entry predicate) excludes: their incomings are chosen over the trip's predicates.
+        inTail = false;
+        std::optional<Pred> was = ctx.preds().assume(baseAssumed, ctx.T, ctx.S);
         mixedEdge(u, s);
+        ctx.preds().assume(was, ctx.T, ctx.S);
+        inTail = true;
+      } else if (lin) {
+        mixedEdge(u, s);
+      }
     }
     for (PHINode &p : s->phis()) {
       if (!isQ(&p) || edgeSeed.count({&p, u}) || edgeVal.count({&p, u}) || (kBound.count(&p) && kunit(u)))
@@ -2303,8 +2322,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       Operand o = ctx.operand(v);
       if (o.handle)
         continue;
-      if (!(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()))
+      if (!(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy() || p.getType()->isPointerTy()))
         continue;   // emitPhis refuses the phi itself
+      if (p.getType()->isPointerTy())   // cq-qesnu (rule 3): an address is an i64
+        o.v = ctx.B().CreatePtrToInt(o.v, Type::getInt64Ty(ctx.M.getContext()));
       edgeSeed[{&p, u}] = seed(o.v, railOf(p.getType()));
     }
   };
@@ -3319,11 +3340,19 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (PHINode &P : sx->phis())
           if (!was.count(&P) && ctx.bound(&P))
             kBound.insert(&P);
-        // Its real edge into sx: a classical exit test's branch (a quantum exit's edge is the flags of its test's block).
+        // Its real edge into sx: a classical exit test's branch (a quantum exit's edge is the flags of its test's block),
+        // from the unit or, past its exit arm, from its tail (cq-qesnu: the unit's walk of the tail made that edge).
         for (const BasicBlock *p : predecessors(sx))
-          if (auto ef = edgeFrom.find({p, sx}); kunit(p) == sl && ef != edgeFrom.end() && ef->second->getTerminator() &&
-                                                is_contained(successors(ef->second), ob(sx)))
+          if (auto ef = edgeFrom.find({p, sx}); (kunit(p) == sl || kTail.lookup(p) == sl) && ef != edgeFrom.end() &&
+                                                ef->second->getTerminator() && is_contained(successors(ef->second), ob(sx))) {
+            if (kunit(p) != sl && kRep.count(sl))
+              continue;   // the unit's own edge first
             kRep[sl] = p;
+            if (kunit(p) != sl)
+              kTailOut[sl] = ef->second;
+            else
+              kTailOut.erase(sl);
+          }
         if (!kRep.count(sl))
           internalError("loops-classical: a multi-exit sub-loop with no real edge into its continuation",
                         sl->getHeader()->getTerminator());
