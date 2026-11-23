@@ -271,6 +271,41 @@ cat bundle/roots/*.roots > libc.roots
 cqcc prog.c --cq-roots libc.roots -L. -lqc -lmybackend
 ```
 
+## C++ and Rust
+
+The pass reads LLVM IR, not C, so a C++ or Rust program compiled to IR by its own compiler goes through the
+same lowering. `cqcc` takes the `.ll` file; it does not run `clang++` or `rustc` itself yet.
+[`experiments/cxx_rust/`](experiments/cxx_rust/) has the user surface for both (`cq.hpp`: overloads in place of
+`_Generic`; `cq.rs`: a trait over the `cq_theta_*` functions), the build scripts and 40 one-function programs
+per language, each run through the checker against its own unlowered program (`run.sh`, 40 samples, K = 8;
+`results.txt`).
+
+| | Programs | Pass the checker | Not lowered | Lowered, checker differs or times out | Not decided by the checker |
+|---|---|---|---|---|---|
+| C++ (clang++ 19, libc++, `-fno-exceptions`) | 40 | 26 | 3 | 8 | 3 |
+| Rust 1.86 (`panic=abort`, std built from source) | 40 | 29 | 1 | 6 | 4 |
+
+- **C++, passing:** templates, classes and operators, lambdas with `<algorithm>`, `std::vector` (also indexed by
+  a quantum value and grown under a quantum condition), `std::string`, a `std::map` lookup with a quantum key,
+  `unique_ptr` and `shared_ptr`, `optional` and `variant`, `dynamic_cast`, a coroutine, member pointers, `new`
+  under a quantum condition, `std::complex`, and `cq_invert` with phases.
+- **Rust, passing:** generics, iterator chains, `sort_unstable`, `binary_search`, enums and `match`, `Option`
+  and `Result` with `?`, `Box`, `Rc<RefCell>`, boxed closures, `Vec`, `String`, `VecDeque`, `BinaryHeap`,
+  `async`, `u128`, the checked and saturating integer operations, and a panic under a quantum condition.
+- **Libraries.** Most of libc++ is headers, so its code is compiled into the program's module and lowered with
+  it; `operator new` and `delete` are defined over `malloc` and `free` in `cq.hpp`. Rust's `core`, `alloc` and
+  `std` are built from source with every panic an immediate abort (`build_std.sh`) and linked into the
+  program's module by fat LTO, so a panic is the `abort` row of the table above.
+- **Not lowered.** C++ exceptions: `invoke`, `landingpad` and `resume` are an internal error of the pass, so
+  the three programs that throw compile only without them. Rust's float-to-integer `as` casts
+  (`llvm.fptosi.sat`, `llvm.fptoui.sat`) are an internal error with a quantum operand.
+- **Wrong or open.** A virtual call or `dyn Trait` call made in a loop returns a wrong result; the same
+  program in C with a table of function pointers fails the same way. Iterating a `std::map`, `std::string`
+  concatenation and C++ multiple inheritance also differ from the C++ program. Four programs differ only in
+  the kept flag of a loop cutoff. `std::function`, a recursive tree sum and `format!` did not finish within 5
+  minutes. The checker could not decide `std::unordered_map`, `BTreeMap`, `HashMap`, `Mutex`, `iostream` and
+  `std::sort`.
+
 ## Floating point from SoftFloat
 
 A lowered program calls one backend operation per floating-point instruction (`fadd`, `fmul`,
@@ -309,7 +344,7 @@ Time spent in the lowering, on one x86-64 Mac:
 
 ## Experiments on existing C projects
 
-[`experiments/`](experiments/) lowers existing C libraries unchanged, as lowered libraries (`cqcc --cq-lib`)
+[`experiments/`](experiments/) lowers existing libraries unchanged (C, and one in C++), as lowered libraries (`cqcc --cq-lib`)
 that link against the precompiled C standard library and SoftFloat. Nothing in a project is rewritten
 and the standard library is not recompiled per project. Sources, builds and lowered archives are not
 in the repository; each project's `build_lib.sh` fetches and builds them.
@@ -330,6 +365,7 @@ not hide another:
 | [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | 1 s | |
 | [TinyEMU](https://github.com/dearchap/tinyemu) 2018-09-23, a RISC-V system emulator | 581 | 581, as four lowered libraries | 4 min | the 128-bit RISC-V interpreter takes 44 s on its own |
 | [TinyCC](https://github.com/TinyCC/tinycc) 0.9.28rc, a C compiler | 276 | 276, as one lowered library | 3 min | `tcc_relocate_ex` takes 25 s on its own |
+| [Stockfish](https://github.com/official-stockfish/Stockfish) 17, a chess engine in C++ | 707 | 707, as one lowered library | 2 min 30 s | the library build takes 2 min 8 s |
 
 The times are for the whole project on one x86-64 Mac with the current pass: the libraries as built, the
 other projects as the sweep over their functions, six at a time with a limit of 2 minutes per function.
@@ -367,6 +403,18 @@ each): `btype_size`, `pstrcat` and `tcc_basename`, the last with one character o
 terminator. `tcc_basename` first returned 0 where C returns 6: a pointer read after a loop with a quantum exit
 kept the last trip's address, a fault older than this experiment and fixed with it. The other 273 functions are
 only shown to lower, and compiling a program whose source text is quantum (`tcc_compile_string`) was not run.
+
+Stockfish (`experiments/stockfish/`: `build.sh`, then `build_lib.sh`) is the engine at tag `sf_17` with the
+flags of its Makefile's `general-64` target: no SIMD, `-fno-exceptions`, the network files not embedded. Its
+sources are unchanged. The one module has 707 functions and no instruction a C program does not also produce.
+All 707 lower on their own under every arrangement a library exports, and it lowers as one library (214
+exported roots, 109 MB, 2 min 8 s). One function, `Tablebases::rank_root_moves`, first hit an internal error:
+its `{ i64, i32 }` result packs several fields into the `i64`; that is fixed (`repro-round9/aggret_packed_leaf.c`).
+Five programs (`spot.cpp`: queen attacks from a quantum square, `Position::pseudo_legal`, `see_ge`,
+`attackers_to` and `UCIEngine::to_cp` on a quantum argument) link with the lowered library, Stockfish's
+ordinary build, the lowered C library and the replay backend. None of their runs finished within 10 minutes,
+so no Stockfish function has been checked against the C++ program: it is shown to lower and to link, not to
+compute the right result.
 
 A function whose body is in the program is lowered once per mix of classical and quantum arguments
 it is called with. ABC and Game of Life were also lowered that way, one generated program per mix
