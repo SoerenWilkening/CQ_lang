@@ -329,6 +329,7 @@ not hide another:
 | [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | 2 s | |
 | [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | 1 s | |
 | [TinyEMU](https://github.com/dearchap/tinyemu) 2018-09-23, a RISC-V system emulator | 581 | 581, as four lowered libraries | 4 min | the 128-bit RISC-V interpreter takes 44 s on its own |
+| [TinyCC](https://github.com/TinyCC/tinycc) 0.9.28rc, a C compiler | 276 | 276, as one lowered library | 3 min | `tcc_relocate_ex` takes 25 s on its own |
 
 The times are for the whole project on one x86-64 Mac with the current pass: the libraries as built, the
 other projects as the sweep over their functions, six at a time with a limit of 2 minutes per function.
@@ -353,6 +354,14 @@ program on about 2,300 samples each (`spot.c`). The POSIX functions and system c
 outside the C library are effect entries (rule 16), classical calls the backend performs; with a
 quantum argument the backend defers them and the program reads 0 as their result. `POSIX.md` has the
 details.
+
+TinyCC (`experiments/tinycc/`: `build.sh`, then `build_lib.sh`) is the compiler as its Makefile's one-file build
+(`ONE_SOURCE`) for the native x86-64 Mach-O target, without its runtime library `lib/` (assembly). Its 276
+functions lower on their own, and it lowers as one library (37 exported roots, 80 MB, 1.7 GB at most). A program
+linking it waits for nine more template widths in the backend. Of three functions checked against the C program
+(`spot.c`, about 2,300 samples each), `btype_size` and `pstrcat` pass and `tcc_basename` does not: with one
+character of the path quantum, the lowered code returns 0 where C returns 6 on every sample. The construction at
+fault (a backwards pointer loop with a quantum exit after `strlen`) predates TinyCC and is bead cq-krhay.
 
 A function whose body is in the program is lowered once per mix of classical and quantum arguments
 it is called with. ABC and Game of Life were also lowered that way, one generated program per mix

@@ -67,3 +67,20 @@ Of the 58:
   boundary down to the device drivers; it disappears only when the devices are software too. A fully lowered
   TinyEMU booting a guest kernel is exactly that closed machine. A demonstration for the far future, not a
   practical computation (circuit size, and no reversible meaning for interrupts and scheduling).
+
+## TinyCC (2026-11-23)
+
+TinyCC calls 77 external functions: 26 in the lowered C library, 26 named in the ABI's host table (`fopen`,
+`fread`, `fwrite`, `open`, `read`, `lseek`, `setjmp`/`longjmp`, ...) and 26 neither: 6 macOS header artifacts,
+4 macOS-specific (`_NSGetEnviron`, `dispatch_semaphore_*`), about 3 pure or nearly so (`strerror`, `getenv`,
+`realpath`) and about 13 syscalls (`tcc -run`: `mprotect`, `dlopen`, `dlsym`, `sigaction`, ...; `execvp`,
+`system`; `getcwd`, `gettimeofday`, `sysconf`, `fdopen`, `freopen`). No network and no devices.
+
+It is a better case for a lowered kernel than TinyEMU's network calls. A call like `getcwd` already works
+with classical arguments (the backend performs it at once). The limit is a file-system state that depends
+on quantum data: with the source text in superposition, the `#include` files opened, the object file written
+and a path passed to `chdir` or `realpath` all differ per branch, and a host effect can only be deferred
+(result 0). With a lowered kernel whose file system is in memory (tmpfs-like, under a lowered VFS), `open`,
+`read`, `write` and `getcwd` become ordinary lowered code over the same memory bus, and every branch sees its
+own files. A real disk stays classical; every byte of the in-memory file system is quantum memory, so this
+suits a demonstration with a few small files, not a disk image.
