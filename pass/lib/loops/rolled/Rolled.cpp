@@ -953,7 +953,7 @@ bool readAfterInvertEnd(const Loop &top, const Value *v) {
 }
 
 bool cleanedAfter(const Loop &top, const Value *v) {
-  if (!isa<Instruction>(v) || isa<PHINode>(v))
+  if (!isa<Instruction>(v))
     return false;
   SmallVector<const Value *, 4> work{v};
   SmallPtrSet<const Value *, 8> seen{v};
@@ -965,6 +965,9 @@ bool cleanedAfter(const Loop &top, const Value *v) {
         continue;
       // What may name w's rail itself (the spine's aliases: a freeze, a cast it skips, a lane or field move, a classical
       // select or phi over handles) is followed.
+      // From a phi only a cast that keeps the rail (ptrtoint) or a freeze is an alias rule 6 may clean (cq-krhay).
+      if (isa<PHINode>(w) && !isa<FreezeInst>(ui) && !isa<PtrToIntInst>(ui) && !isa<IntToPtrInst>(ui) && !isa<BitCastInst>(ui))
+        continue;
       if (isa<FreezeInst>(ui) || isa<CastInst>(ui) || isa<ExtractElementInst>(ui) || isa<ExtractValueInst>(ui) ||
           isa<InsertElementInst>(ui) || isa<InsertValueInst>(ui) || isa<ShuffleVectorInst>(ui)) {
         if (seen.insert(ui).second)
