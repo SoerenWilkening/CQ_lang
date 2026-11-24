@@ -11,6 +11,8 @@
  *                                              on Mach-O the link needs -Wl,-U,_cqrt_qram_object (cqcc, run.py pass it).
  *   void __cq_unbound(int32_t h)               BACKEND_ABI §1.10 No object: forwards to cqrt_qram_unbound the same way
  *                                              (-Wl,-U,_cqrt_qram_unbound).
+ *   void __cq_pointer(int32_t h)               BACKEND_ABI §1.10 A pointer load: forwards to cqrt_qram_pointer the same
+ *                                              way (-Wl,-U,_cqrt_qram_pointer).
  *   void __cq_clone_register(fn, sig, clone, ctl, unc, ctl_unc), void *__cq_clone_resolve(fn, kind),
  *   int32_t __cq_clone_count(sig), void *__cq_clone_at(sig, i)    the process-wide clone table; sig by string
  *
@@ -31,6 +33,7 @@
 int32_t cqrt_qram_alloc_i8(int32_t n);
 extern void cqrt_qram_object(int64_t addr, int64_t size) __attribute__((weak_import));
 extern void cqrt_qram_unbound(int32_t h) __attribute__((weak_import));
+extern void cqrt_qram_pointer(int32_t h) __attribute__((weak_import));
 
 /* ---- the bus ---- */
 
@@ -53,6 +56,12 @@ void __cq_object(int64_t addr, int64_t size) {
 void __cq_unbound(int32_t h) {
   if (cqrt_qram_unbound)
     cqrt_qram_unbound(h);
+}
+
+/* The result rail of a pointer-typed load at an address rail (CR rule 20). */
+void __cq_pointer(int32_t h) {
+  if (cqrt_qram_pointer)
+    cqrt_qram_pointer(h);
 }
 
 /* ---- signals ---- */
