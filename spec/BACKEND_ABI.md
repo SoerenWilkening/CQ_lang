@@ -484,6 +484,15 @@ circuit.
       was `|0⟩`, takes the union of those cells' notes (a pointer kept in memory that a
       quantum-address store has touched, a `va_list` field, keeps its object).
     The object bound is used only where it gives fewer leaves than the bit pattern.
+    - *Null.* A note can be empty: the rail holds a pointer that points into no object (every
+      source was the null pointer, or a cell that holds no address under the pointer rule).
+      That is not "no note". `copy` keeps it; `select` of null arms is null; `add` and `sub`
+      of a null rail and data (a literal offset, an index that is data) stay null. **An access
+      at a null address reaches no cell: R is empty, a load yields 0, a store or swap writes
+      nothing** (No fault, above). The C program never makes such an access, but the lowered
+      one builds it: a cut-off loop or the arm of a quantum branch runs under a predicate that
+      is false there (a list walked one step past its end, `p->next` with `p` null). Without
+      this rule each of them would cost the memory bound.
   - *The memory size.* There is one limit and no second parameter: the backend's cap on the
     quantum address bits of an access, **Q**, which the user sets from the qubits available (as N
     and K are set). It is also the size of the program's memory: the union of the registered
