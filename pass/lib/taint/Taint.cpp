@@ -4279,6 +4279,48 @@ const Specialization *TaintInfo::calleeSpecialization(const llvm::CallBase &CB,
   internalError("taint: callee specialization not published", &CB);
 }
 
+bool TaintInfo::formalMayReachMeasure(const llvm::Function &F, unsigned idx) const {
+  using Node = std::pair<const llvm::Function *, unsigned>;
+  if (!measureReach) {
+    // Backward closure from the formals passed to a cq_measure_* call over the edges "formal i of F is actual j of a direct
+    // call of G with a body". A superset of what both walks can reach (they skip host callees and _ctl clones as well).
+    llvm::DenseMap<Node, llvm::SmallVector<Node, 2>> callers;
+    llvm::SmallVector<Node, 16> work;
+    measureReach.emplace();
+    for (const llvm::Function &G : *F.getParent())
+      for (const llvm::Argument &A : G.args()) {
+        llvm::SmallVector<const llvm::Value *, 4> views{&A};
+        while (!views.empty()) {
+          const llvm::Value *v = views.pop_back_val();
+          for (const llvm::Use &U : v->uses()) {
+            if (llvm::isa<llvm::FreezeInst>(U.getUser())) {
+              views.push_back(U.getUser());
+              continue;
+            }
+            auto *CB = llvm::dyn_cast<llvm::CallBase>(U.getUser());
+            const llvm::Function *H = CB && CB->isArgOperand(&U) ? CB->getCalledFunction() : nullptr;
+            if (!H)
+              continue;
+            if (H->getName().starts_with("cq_measure_")) {
+              if (measureReach->insert({&G, A.getArgNo()}).second)
+                work.push_back({&G, A.getArgNo()});
+            } else if (!H->isDeclaration()) {
+              callers[{H, CB->getArgOperandNo(&U)}].push_back({&G, A.getArgNo()});
+            }
+          }
+        }
+      }
+    while (!work.empty()) {
+      auto it = callers.find(work.pop_back_val());
+      if (it != callers.end())
+        for (const Node &n : it->second)
+          if (measureReach->insert(n).second)
+            work.push_back(n);
+    }
+  }
+  return measureReach->contains({&F, idx});
+}
+
 llvm::SmallVector<std::pair<llvm::Function *, const Specialization *>, 4>
 TaintInfo::calleeCandidates(const llvm::CallBase &CB, const Specialization &caller) const {
   const ImplState &I = needImpl(impl);

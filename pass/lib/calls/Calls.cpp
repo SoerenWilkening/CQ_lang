@@ -364,7 +364,8 @@ Operand seedActual(LoweringContext &ctx, const Operand &o) {
 // to a clone that does, on every path of S from its entry to a return (what lowerMeasure asks; otherwise S measures a basis
 // copy and the actual stays as it was). A _ctl clone measures a controlled copy (rule 19), so never.
 bool measuresFormal(const TaintInfo &T, const Specialization &S, unsigned idx, SmallPtrSetImpl<const Specialization *> &onStack) {
-  if (S.ctl || S.F->isDeclaration() || idx >= S.F->arg_size() || !onStack.insert(&S).second)
+  if (S.ctl || S.F->isDeclaration() || idx >= S.F->arg_size() || !T.formalMayReachMeasure(*S.F, idx) ||
+      !onStack.insert(&S).second)
     return false;
   const Argument *A = S.F->getArg(idx);
   SmallVector<const Value *, 4> views{A};
