@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <fenv.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -951,7 +952,8 @@ void __cqo_phq(int32_t q) {
  * Each activation of one gets a T2 record when it ends: by an exit edge (capped false), or when the
  * trip counter reaches K+1 trips begun (capped true, n = K, cut/mcut = entries so far); the capped
  * one ends the sample. A quantum-depth recursion counts its `_ctl` activations per function (below). */
-int32_t __cqo_spec_next; /* the callee's specialization id; -1: the driver's call (its entry spec) */
+int32_t __cqo_spec_next; /* the callee's specialization id; -1: a call from outside the program (the driver's, a static constructor's): its entry spec */
+void __cqo_ctor_enter(void) { __cqo_spec_next = -1; } /* oracle.py: before each static constructor (cq-gi85k) */
 
 /* An activation's identity, the same on every sample that reaches it: the call sites leading to it and the how-many-th there.
  * A count over the whole sample would name another activation whenever a quantum arm the C program skips holds an earlier one,
@@ -1008,7 +1010,16 @@ static void kloop_record(const char *id, long long n, int capped, uint64_t path)
     out_line(trace_fd, line);
 }
 
+/* A cap inside the static constructors (cq-gi85k): they run once, before any sample, so the cap is every sample's, at its
+ * start (CR §6 horizon: nothing after it is compared). Recorded here, and the constructors stop (ctors_jb). */
+static struct { const char *id; long long K; uint64_t path; int set; } ctor_cap;
+static int in_ctors;
+static jmp_buf ctors_jb;
 static void kcap(const char *id, long long K, uint64_t path) {
+    if (in_ctors) {
+        ctor_cap.id = id, ctor_cap.K = K, ctor_cap.path = path, ctor_cap.set = 1;
+        longjmp(ctors_jb, 1);
+    }
     kloop_record(id, K, 1, path);
     note("cap %s", id);
     _exit(0);
@@ -1192,7 +1203,6 @@ uint64_t __cqo_mix(uint64_t h, uint64_t w) { return cq_standin_mix(h, w); }
 #include <dlfcn.h>
 #include <mach-o/getsect.h>
 #include <mach-o/ldsyms.h>
-#include <setjmp.h>
 
 static long timeout_ms = 2000;
 static int isolate;
@@ -1941,6 +1951,7 @@ int __cqo_sample_begin(int idx) {
     R->progress++;
     R->in_sample = 1;
     timer_ms(ITIMER_PROF, timeout_ms, 0);
+    if (ctor_cap.set) kcap(ctor_cap.id, ctor_cap.K, ctor_cap.path); /* ends the sample */
     return 1;
 }
 
@@ -1975,6 +1986,11 @@ void __cqo_resume(void) { sample_finish(); }
 
 int __cqo_drv_main(void); /* drivers.driver_source(..., main_name="__cqo_drv_main") */
 void __cqo_module_ctors(void); /* oracle.py program(): the program's static constructors, in priority order */
+static void run_ctors(void) {
+    in_ctors = 1;
+    if (!setjmp(ctors_jb)) __cqo_module_ctors();
+    in_ctors = 0;
+}
 
 /* One batch in this process; its exit status. */
 static int ctors_fd = -1; /* serve: the static constructors' stdout (they ran once, before the batches fork) */
@@ -1992,7 +2008,7 @@ static int run_batch(const char *trace, const char *status, const char *subst_pa
     if (trace_fd < 0 || status_fd < 0) { perror("cqo"); return 2; }
     stdout_capture(trace);
     load_subst_file(subst_path);
-    if (ctors_fd < 0) __cqo_module_ctors();
+    if (ctors_fd < 0) run_ctors();
     else { /* serve ran them: their stdout starts the batch's */
         char b[65536];
         ssize_t r;
@@ -2011,7 +2027,7 @@ static int serve(void) {
     FILE *cf = tmpfile();
     int keep = dup(1);
     if (!cf || keep < 0 || dup2(fileno(cf), 1) < 0) die("the static constructors' stdout");
-    __cqo_module_ctors();
+    run_ctors();
     fflush(stdout);
     if (dup2(keep, 1) < 0) die("dup2 stdout");
     close(keep);
