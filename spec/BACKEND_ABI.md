@@ -515,7 +515,12 @@ circuit.
     loaded, into a rail that was `|0⟩`, only from cells that hold no address (a HOST cell whose
     aligned 8-byte word holds a value in no object, zero included, or a QUANTUM cell last
     written by data) is data; so a copy of integer data is data, and a copy of a pointer is
-    not. (2) The compiler says so: `void @cqrt_qram_data(i32 h)`, no gate, no qubit (bundle
+    not. A rail that is `|0⟩` is data too: the in-place form (CR rule 5) first swaps a `|0⟩`
+    rail into the cells, and that swap must leave their notes alone. And a note is not tied to
+    64 bits: a rail of any width loaded from cells takes the union of their notes ("may hold
+    bytes of a pointer into X") and passes it to the cells it is stored to, as a 64-bit rail
+    does, so a narrow copy inside an object that also holds a pointer neither loses nor wipes
+    that pointer's note; only a rail that is neither noted nor data wipes. (2) The compiler says so: `void @cqrt_qram_data(i32 h)`, no gate, no qubit (bundle
     symbol `void @__cq_data(i32 h)`, forwarding like `__cq_object`), called on a value rail
     before the store or swap that writes it, when the stored value is computed: its type is not
     a pointer and it is not a loaded value passed on unchanged (CR rule 20). `copy` and `select`
