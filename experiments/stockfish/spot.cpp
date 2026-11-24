@@ -30,7 +30,17 @@ static int spot_reg = !__cq_object ? 0 :
 #include "uci.h"
 #endif
 extern Position spot_pos;
+#ifdef ALL  // every value of the 8-bit input in one program: prints "v result" per value, compared with the native output
+#include <cstdio>
+static long one(unsigned char V);
+#ifndef STEP
+#define STEP 1
+#endif
+int main() { for (int v = 0; v < 256; v += STEP) { printf("%d %ld\n", v, one((unsigned char) v)); fflush(stdout); } return 0; }
+static long one(unsigned char V) {
+#else
 int main() {
+#endif
     Position &pos = spot_pos;
     unsigned char k = V; cq_theta(&k, 0.0);
 #if SPOT == 1   // header code over the engine's magic tables: queen attacks from a quantum square
@@ -44,6 +54,10 @@ int main() {
 #elif SPOT == 5 // Position::attackers_to, the square quantum
     long r = popcount(pos.attackers_to(Square(k & 63), pos.pieces()));
 #endif
+#ifdef ALL
+    return cq_measure(r);
+#else
     return (int)cq_measure(r);
+#endif
 }
 #endif
