@@ -433,8 +433,8 @@ circuit.
   fires), so a circuit builder, which cannot know the support, takes the bound it can prove. The
   backend reads and overlays exactly the cells of R. A looser R costs qubits and turns more HOST
   cells QUANTUM; how tight it is is the backend's resource question, like N and K. A backend's
-  resource limit is the memory size M (Objects, below): it must fail loudly, not silently, when a
-  program needs more.
+  resource limit is its cap on quantum address bits, which is also the size of the program's
+  memory (Objects, below): it must fail loudly, not silently, when a program needs more.
 - **Objects.** The bus stays one bus; an *object* is only a classical fact about it: a range of
   cells `[addr, addr + size)` that the program obtained as one C object. Objects let the backend
   take a tight R (No fault, above) with no knowledge of any rail's value.
@@ -484,15 +484,16 @@ circuit.
       was `|0⟩`, takes the union of those cells' notes (a pointer kept in memory that a
       quantum-address store has touched, a `va_list` field, keeps its object).
     The object bound is used only where it gives fewer leaves than the bit pattern.
-  - *The memory size.* The program's memory is the union of the registered objects, and its size
-    is the user's resource: **M** cells, a run-time setting of the backend (the number of cells a
-    program may hold, chosen from the qubits available, as N and K are chosen), not a property of
-    one access. A registration that takes the total above M fails loudly, there and then, like an
-    allocation on a machine that is out of memory. An address rail with no note is an address in
-    the program's memory and nothing more is known: R is every registered object, intersected
-    with the bit pattern, so at most M cells. The 64 bits of a host address are never the bound:
-    as on a classical machine the address is wide and the memory behind it is what the machine
-    has. A noted rail costs its objects, an unnoted one the whole memory.
+  - *The memory size.* There is one limit and no second parameter: the backend's cap on the
+    quantum address bits of an access, **Q**, which the user sets from the qubits available (as N
+    and K are set). It is also the size of the program's memory: the union of the registered
+    objects holds at most 2^Q cells, and a registration that takes the total above 2^Q fails
+    loudly, there and then, like an allocation on a machine that is out of memory. An address
+    rail with no note is an address in the program's memory and nothing more is known: R is every
+    registered object, intersected with the bit pattern, so at most 2^Q cells. The 64 bits of a
+    host address are never the bound: as on a classical machine the address is wide and the
+    memory behind it is what the machine has. A noted rail costs its objects, an unnoted one the
+    whole memory.
   - *No object.* `void @cqrt_qram_unbound(i32 h)`: no gate, no qubit; the rail h carries no note
     from this call on, so an access at h is bounded by the bit pattern. A backend without objects
     need not define it. Lowered code reaches it through the bundle symbol
