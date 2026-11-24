@@ -329,6 +329,9 @@ CallInst *emitLoad(LoweringContext &ctx, Type *T, Operand addr, bool unguarded) 
   ops.append({Operand{m, false}, addr});
   CallInst *call = ctx.emitCore(spec, args);
   ctx.unc().recordBusLoad(call, ops);
+  // CR rule 20, BACKEND_ABI §1.10 A pointer load: a pointer-typed load at an address rail announces its result rail.
+  if (T->isPointerTy() && addr.handle)
+    ctx.B().CreateCall(abi::declareHost(ctx.M, abi::Host::Pointer), {call});
   return call;
 }
 
