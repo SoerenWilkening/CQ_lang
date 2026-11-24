@@ -740,8 +740,9 @@ namespace {
 // measuring call dominates every return). Some: on some path only.
 enum class Meas : uint8_t { None, Some, Always };
 
-Meas formalMeasured(Shared &sh, const Function &F, unsigned idx, SmallPtrSet<const Function *, 8> &onStack) {
-  if (hostCallee(F) || idx >= F.arg_size() || !onStack.insert(&F).second)
+Meas formalMeasured(const TaintInfo &T, Shared &sh, const Function &F, unsigned idx,
+                    SmallPtrSet<const Function *, 8> &onStack) {
+  if (hostCallee(F) || idx >= F.arg_size() || !T.formalMayReachMeasure(F, idx) || !onStack.insert(&F).second)
     return Meas::None;
   const Argument *A = F.getArg(idx);
   SmallVector<const ReturnInst *, 4> rets;
@@ -761,7 +762,7 @@ Meas formalMeasured(Shared &sh, const Function &F, unsigned idx, SmallPtrSet<con
       if (G->getName().starts_with("cq_measure_"))
         m = Meas::Always;
     } else {
-      m = formalMeasured(sh, *G, CB->getArgOperandNo(&U), onStack);
+      m = formalMeasured(T, sh, *G, CB->getArgOperandNo(&U), onStack);
     }
     if (m == Meas::None)
       continue;
@@ -797,7 +798,7 @@ void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *
     if (measuredHere(sh, h) || measuredEarlier(sh, h))
       continue;
     SmallPtrSet<const Function *, 8> onStack;
-    Meas m = formalMeasured(sh, *F, i, onStack);
+    Meas m = formalMeasured(ctx.T, sh, *F, i, onStack);
     // CR rule 2, collapse is static (f684858): a rail the callee measures on some of its classical
     // paths only is lowered as unmeasured after the call. Templates, twins and gates act on the basis
     // state it then holds, and a later cq_measure of it (or of a value read from it) is an ordinary

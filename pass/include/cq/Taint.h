@@ -10,6 +10,7 @@
 #include "cq/Abi.h"
 #include "cq/Common.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -99,6 +100,11 @@ public:
   bool deadVolatileStore(const llvm::Instruction &) const;
   llvm::ArrayRef<Specialization> specializations() const;
   const Specialization *calleeSpecialization(const llvm::CallBase &, const Specialization &caller) const;
+  // Rules 2, 18 (cq-6r6sy): can F's formal `idx` reach a cq_measure_* call by being passed on (through freeze) as an actual of
+  // direct calls? Necessary for calls::measuresFormal and spine's formalMeasured, which walk only such edges: false lets
+  // them answer false at once. Computed once from the module (the originals' bodies do not change while lowering).
+  bool formalMayReachMeasure(const llvm::Function &F, unsigned idx) const;
+  mutable std::optional<llvm::DenseSet<std::pair<const llvm::Function *, unsigned>>> measureReach;
   // cq-s2zz (CR rule 19): every candidate taint lifted for an indirect call (or raise's handlers), in its
   // candidate order: the candidate function and its specialization (nullptr: the candidate's untainted,
   // in-place one, an ordinary call; a declaration's is its rule 27 declared clone).
