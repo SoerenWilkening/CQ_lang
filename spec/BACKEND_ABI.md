@@ -103,7 +103,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_template_*`, integer (§2.2–§2.8) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
 | `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
-| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_pointer`, `__cq_data`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
+| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_pointer`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
 **Link order.** The backend is ONE static archive, `libcq_backend.a`, holding every `cqrt_*`
@@ -509,27 +509,26 @@ circuit.
     not define it.
   - *Data.* A store at an address rail is bounded by its object, so it reaches cells it never
     writes: an integer field updated at a quantum index reaches the pointer field beside it,
-    and by the cell rule that pointer would lose its note. A rail that is *data* (known not to
-    hold a pointer) does not do that: **a store or swap of a data rail leaves the note of every
-    cell it reaches as it was.** A rail is data in two ways. (1) The backend sees it: a rail
-    loaded, into a rail that was `|0⟩`, only from cells that hold no address (a HOST cell whose
-    aligned 8-byte word holds a value in no object, zero included, or a QUANTUM cell last
-    written by data) is data; so a copy of integer data is data, and a copy of a pointer is
-    not. A rail that is `|0⟩` is data too: the in-place form (CR rule 5) first swaps a `|0⟩`
-    rail into the cells, and that swap must leave their notes alone. And a note is not tied to
-    64 bits: a rail of any width loaded from cells takes the union of their notes ("may hold
-    bytes of a pointer into X") and passes it to the cells it is stored to, as a 64-bit rail
-    does, so a narrow copy inside an object that also holds a pointer neither loses nor wipes
-    that pointer's note; only a rail that is neither noted nor data wipes. (2) The compiler says so: `void @cqrt_qram_data(i32 h)`, no gate, no qubit (bundle
-    symbol `void @__cq_data(i32 h)`, forwarding like `__cq_object`), called on a value rail
-    before the store or swap that writes it, when the stored value is computed: its type is not
-    a pointer and it is not a loaded value passed on unchanged (CR rule 20). `copy` and `select`
-    of data rails are data; a rail with a note is never data. *The stated limit* (owner
-    2026-11-24): a value the program reads as a pointer was stored as a pointer or copied from
-    one. A program that computes a pointer's bits with integer arithmetic, stores them as an
-    integer and reads them back through a pointer-typed lvalue with no cast is outside the
-    domain: the cell keeps the note of the pointer it held before. With the cast the pointer
-    is made from an integer and has no object (No object, below), which is correct.
+    and by the cell rule that pointer would lose its note. So the backend also keeps, beside
+    every rail of any width, what the rail can hold: *data* (no bytes of a pointer), *noted*
+    (may hold bytes of a pointer into the noted objects), or *unknown*. It follows from what
+    the rail is made of, with no call from the compiler and no knowledge of any value:
+    - a `|0⟩` rail, a seed of a value in no object (zero included) and a prepared input
+      register are data;
+    - a rail loaded or swapped out of memory, by any load entry (`_hl`, controlled, any width),
+      takes the union of the notes of the cells it reads; it is data if every one of them is
+      data: a HOST cell whose aligned 8-byte word holds a value in no object (zero included),
+      or a QUANTUM cell last written by data; it is unknown if one of them is;
+    - `copy`, a cast (`zext`, `sext`, `trunc`) and `select` pass on what their operands are
+      (the union for `select`); `add` and `sub` keep a note as in Derivation and are data when
+      every operand is;
+    - every other template result is data when all its rail operands are data, and unknown
+      otherwise: bits computed from a pointer are neither a pointer the backend can bound nor
+      data.
+    **A store or swap of a data rail leaves the note of every cell it reaches as it was; a
+    noted rail adds its note to theirs; an unknown rail leaves them with none.** No limit is
+    attached: a pointer whose bits the program computes with integer arithmetic comes out
+    unknown and costs the memory bound, which is correct. `__cq_data` does not exist.
   - *No object.* `void @cqrt_qram_unbound(i32 h)`: no gate, no qubit; the rail h carries no note
     from this call on, so an access at h is bounded by the bit pattern. A backend without objects
     need not define it. Lowered code reaches it through the bundle symbol
@@ -541,8 +540,8 @@ circuit.
     wrong object. An out-of-object pointer value that reaches the access through memory, an
     argument or a call result is not visible to the compiler: a program that forms one and
     accesses through it at a quantum offset is outside the domain of the object bound.
-  - *Linking.* `__cq_object`, `__cq_unbound`, `__cq_pointer` and `__cq_data` refer to
-    `cqrt_qram_object`, `cqrt_qram_unbound`, `cqrt_qram_pointer` and `cqrt_qram_data` weakly. On Mach-O the link of the host runtime
+  - *Linking.* `__cq_object`, `__cq_unbound` and `__cq_pointer` refer to `cqrt_qram_object`,
+    `cqrt_qram_unbound` and `cqrt_qram_pointer` weakly. On Mach-O the link of the host runtime
     passes `-U` for each, as `cqcc` does.
   - *No simulation.* The bound uses object extents and notes only. It never enumerates the values
     a rail can take per branch of the program, never measures, and holds for every superposition

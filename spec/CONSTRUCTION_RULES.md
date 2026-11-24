@@ -1227,12 +1227,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     address rail of an access through P is announced as such, `__cq_unbound(r)` once after the
     rail is formed and before the first access at it (BACKEND_ABI §1.10, No object). A bus load
     of pointer type at an address rail is followed by `__cq_pointer(h)` on its result (BACKEND_ABI
-    §1.10, A pointer load); a load at a classical address needs none. A value rail written by a
-    bus store or swap at an address rail is announced as data, `__cq_data(v)` before the access,
-    when the stored value is computed: its type is not a pointer and it is not a loaded value
-    passed on unchanged (a `load` result, directly or through `phi`, `select` or `freeze`; a
-    `ptrtoint` result is a pointer). The in-place form (rule 5) announces the rail it swaps
-    back. Rule 22 copies announce nothing (BACKEND_ABI §1.10, Data). A classical address needs
+    §1.10, A pointer load); a load at a classical address needs none. A classical address needs
     nothing.
 
     | access of type T | classical address `p` | address rail `r` |
