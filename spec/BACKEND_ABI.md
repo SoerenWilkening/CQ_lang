@@ -432,9 +432,9 @@ circuit.
   on; any such R gives the same unitary (a flag of an address outside the support never
   fires), so a circuit builder, which cannot know the support, takes the bound it can prove. The
   backend reads and overlays exactly the cells of R. A looser R costs qubits and turns more HOST
-  cells QUANTUM; how tight it is is the backend's resource question, like N and K. A backend
-  may impose a resource limit on the number of quantum address bits of one access and must fail
-  loudly, not silently, when it is exceeded.
+  cells QUANTUM; how tight it is is the backend's resource question, like N and K. A backend's
+  resource limit is the memory size M (Objects, below): it must fail loudly, not silently, when a
+  program needs more.
 - **Objects.** The bus stays one bus; an *object* is only a classical fact about it: a range of
   cells `[addr, addr + size)` that the program obtained as one C object. Objects let the backend
   take a tight R (No fault, above) with no knowledge of any rail's value.
@@ -478,9 +478,21 @@ circuit.
       a literal 0 arm is null.
     - `add` keeps the note when exactly one operand has one; `sub` when only the minuend has one.
     - Everything else drops it, as does any later gate on the rail's qubits.
-    A rail with no note is bounded as before (the bit pattern), and the object bound is used only
-    where it gives fewer leaves, so a missing note or registration costs qubits and never changes
-    the unitary.
+    - A store or swap of a rail leaves its note with the cells it can reach: each such cell's note
+      becomes the union of what it had (for a HOST cell, the object of the value it holds) and the
+      rail's note, and none if the rail has none. A rail loaded from QUANTUM cells, into a rail that
+      was `|0⟩`, takes the union of those cells' notes (a pointer kept in memory that a
+      quantum-address store has touched, a `va_list` field, keeps its object).
+    The object bound is used only where it gives fewer leaves than the bit pattern.
+  - *The memory size.* The program's memory is the union of the registered objects, and its size
+    is the user's resource: **M** cells, a run-time setting of the backend (the number of cells a
+    program may hold, chosen from the qubits available, as N and K are chosen), not a property of
+    one access. A registration that takes the total above M fails loudly, there and then, like an
+    allocation on a machine that is out of memory. An address rail with no note is an address in
+    the program's memory and nothing more is known: R is every registered object, intersected
+    with the bit pattern, so at most M cells. The 64 bits of a host address are never the bound:
+    as on a classical machine the address is wide and the memory behind it is what the machine
+    has. A noted rail costs its objects, an unnoted one the whole memory.
   - *No object.* `void @cqrt_qram_unbound(i32 h)`: no gate, no qubit; the rail h carries no note
     from this call on, so an access at h is bounded by the bit pattern. A backend without objects
     need not define it. Lowered code reaches it through the bundle symbol
@@ -504,8 +516,11 @@ circuit.
     ⌈log2 size⌉ bits of the difference with the fan-out tree, undo the subtraction. Depth
     O(log size + log 64), qubits O(W · size); several objects are decoded side by side.
   - *Not covered.* Memory the program holds without `__cq_alloc` or a registered global (a buffer
-    a host function returned, `mmap`) is no object: an access derived from it is bounded by the
-    bit pattern. Two stated limits (owner 2026-11-23): such memory that begins exactly at a
+    a host function returned, `mmap`, an object of a module that was not lowered) is not in the
+    program's memory: an access at a quantum address does not reach it, and a program that makes
+    one is outside the domain unless the memory is registered first (`__cq_object(addr, size)`
+    from host code, before the access). An access at a classical address needs no registration.
+    Two stated limits (owner 2026-11-23): such memory that begins exactly at a
     registered object's end is taken for that object when it is accessed at a signed quantum
     index; and a classical integer that is an offset, not an address, is noted like an address
     when its value lies inside a registered object. A program that meets either is outside the
