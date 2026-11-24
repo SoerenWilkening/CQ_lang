@@ -103,7 +103,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_template_*`, integer (§2.2–§2.8) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
 | `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
-| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
+| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_pointer`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
 **Link order.** The backend is ONE static archive, `libcq_backend.a`, holding every `cqrt_*`
@@ -494,6 +494,19 @@ circuit.
     host address are never the bound: as on a classical machine the address is wide and the
     memory behind it is what the machine has. A noted rail costs its objects, an unnoted one the
     whole memory.
+  - *A pointer load.* `void @cqrt_qram_pointer(i32 h)`: no gate, no qubit. The compiler calls it
+    on the result rail of a bus load whose C/IR type is a pointer, right after the load (bundle
+    symbol `void @__cq_pointer(i32 h)`, forwarding like `__cq_object`). It tells the backend what
+    only the compiler knows: the program uses this value as a pointer. For such a rail the cells
+    of R that hold a non-zero value in no object are treated like null and add nothing, so the
+    note is the union over the cells that do hold an address (the bound of the address is the
+    whole object, so R can include a size header or an integer field next to the pointer the
+    program reads; those are never the value the program uses). The backend keeps, beside a
+    rail a load left with no note for that reason only, the union it would have had, and this
+    call makes it the note. A load without the call follows the value rule as written, whatever
+    its type: nothing changes for a value loaded as an integer, and a pointer copied through an
+    integer load keeps its note exactly where it kept it before. A backend without objects need
+    not define it.
   - *No object.* `void @cqrt_qram_unbound(i32 h)`: no gate, no qubit; the rail h carries no note
     from this call on, so an access at h is bounded by the bit pattern. A backend without objects
     need not define it. Lowered code reaches it through the bundle symbol
@@ -505,9 +518,9 @@ circuit.
     wrong object. An out-of-object pointer value that reaches the access through memory, an
     argument or a call result is not visible to the compiler: a program that forms one and
     accesses through it at a quantum offset is outside the domain of the object bound.
-  - *Linking.* `__cq_object` and `__cq_unbound` refer to `cqrt_qram_object` and
-    `cqrt_qram_unbound` weakly. On Mach-O the link of the host runtime passes `-U` for both, as
-    `cqcc` does.
+  - *Linking.* `__cq_object`, `__cq_unbound` and `__cq_pointer` refer to `cqrt_qram_object`,
+    `cqrt_qram_unbound` and `cqrt_qram_pointer` weakly. On Mach-O the link of the host runtime
+    passes `-U` for each, as `cqcc` does.
   - *No simulation.* The bound uses object extents and notes only. It never enumerates the values
     a rail can take per branch of the program, never measures, and holds for every superposition
     of the quantum inputs. The templates of an address computation (`add`, `mul`, `shl`, …) are
