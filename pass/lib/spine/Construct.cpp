@@ -394,6 +394,7 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
   if (pure && pure->contains(s))
     return const_cast<BasicBlock *>(s);
   std::optional<bool> xDead;   // computed once, only when the cq-v11y rule below needs it
+  std::optional<Pred> xFacts;  // likewise: the classical facts of the path through x (cq-j3ffq)
   for (unsigned j = i + 1; j < L.size(); ++j) {
     BasicBlock *y = L[j];
     if (s ? y == s : is_contained(successors(x), y))
@@ -430,6 +431,9 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
     // cq-us8cz (rules 8, 16): not when x is a dead end. Its path ends, so that classical test excludes y only on a path
     // that never reaches the join; the walk still has to run y before the join reads y's values (TinyEMU
     // i440fx_read_data: x an `unreachable` side, y its live sibling).
+    // cq-j3ffq (rules 8, 9): also when y's predicate meets the classical facts of the path through x. x may be a join
+    // that both arms of the branch reach, the walk having sent a classical edge of one arm (into y) on to x first
+    // (SoftFloat f16_mulAdd: x the join %353, y the classical side %71 that its sibling's edge into %338 skipped).
     for (unsigned q = 0; q < i; ++q)
       if (reach[q].test(i) && reach[q].test(j) && isQuantumTerm(ctx, L[q]->getTerminator()) &&
           !(unitOf.count(L[q]) && unitOf.lookup(L[q])->getHeader() != L[q]) &&
@@ -437,7 +441,11 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
            any_of(successors(L[q]), [&](const BasicBlock *t) {
             auto ti = idx.find(t);
             return ti != idx.end() && ti->second > q && reach[ti->second].test(j) && !reach[ti->second].test(i);
-          })))
+          }) ||
+           predsMeet(ctx.preds().block(y), xFacts ? *xFacts : *(xFacts = (s && is_contained(successors(x), s)
+                                                                             ? ctx.preds().edge(x, s)
+                                                                             : ctx.preds().block(x))
+                                                                            .classicalProjection(ctx.T, ctx.S)))))
         return y;
   }
   return const_cast<BasicBlock *>(s);
