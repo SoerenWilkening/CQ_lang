@@ -56,7 +56,7 @@ class Harness:
     def get(cls):
         if not cls.exe:
             cls.exe = str(Path(WORK.name) / "harness")
-            subprocess.run([CLANG, "-std=c17", "-O0", "-w", "-target", TRIPLE, "-I", str(RT), str(HERE / "harness.c"), *OBJS, "-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-o", cls.exe],
+            subprocess.run([CLANG, "-std=c17", "-O0", "-w", "-target", TRIPLE, "-I", str(RT), str(HERE / "harness.c"), *OBJS, "-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-Wl,-U,_cqrt_qram_data", "-o", cls.exe],
                            check=True)
         return cls.exe
 
@@ -265,7 +265,7 @@ def build_ref(n):
     calls = "".join(f'printf("%lld\\n", (long long)({c}));\n' for c in row[2].split(";") if c.strip())
     (w / "driver.c").write_text(f"#include <stdio.h>\n{row[1]}\nint main(void) {{\n{calls}return 0; }}\n")
     exe = str(w / "prog")
-    subprocess.run([CLANG, "-w", "-O1", "-target", TRIPLE, str(w / "driver.c"), str(low), str(stubs), *OBJS, "-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-o", exe], check=True)
+    subprocess.run([CLANG, "-w", "-O1", "-target", TRIPLE, str(w / "driver.c"), str(low), str(stubs), *OBJS, "-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-Wl,-U,_cqrt_qram_data", "-o", exe], check=True)
     # the C program on the same calls: cq_theta and cq_measure the identity (the checker's oracle (b), by hand)
     (w / "shim.c").write_text(SHIM)
     cexe = str(w / "cprog")
