@@ -103,7 +103,7 @@ translator of the IR. A call never returns before its gates are appended in prog
 | `cq_template_*`, integer (§2.2–§2.8) | backend: out-of-place reversible ops and their `_unc` twins | **yes** |
 | `cq_template_*` with a float width (f16, bf16, f32, f64, f80): `fcmp`, `fcmps` (§2.4), `select` (§2.5), the float casts and `bitcast` (§2.6), §2.9–§2.11 | the compiler: its lowered float library, linked by the driver (§2.12) | **no** |
 | `__cq_q_<fn>_<mask>…` | lowered code (clones, CR §1.4, rule 27) | **no** (§3) |
-| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_pointer`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
+| `__cq_mem`, `__cq_alloc`, `__cq_object`, `__cq_unbound`, `__cq_pointer`, `__cq_data`, `__cq_clone_*`, `__cq_sig` | the injection bundle: classical host C, one definition shared by every module and lowered library (§1.10, §1.14) | **no** |
 | `__cq_register`, `__cq_act_<fn>`, `__cq_k`, `@.cq.sig[.<n>]`, `@.cq.effect.<name>` | lowered code, module-internal (CR §1.3, §1.4, rule 16) | **no** |
 
 **Link order.** The backend is ONE static archive, `libcq_backend.a`, holding every `cqrt_*`
@@ -526,9 +526,21 @@ circuit.
       otherwise: bits computed from a pointer are neither a pointer the backend can bound nor
       data.
     **A store or swap of a data rail leaves the note of every cell it reaches as it was; a
-    noted rail adds its note to theirs; an unknown rail leaves them with none.** No limit is
-    attached: a pointer whose bits the program computes with integer arithmetic comes out
-    unknown and costs the memory bound, which is correct. `__cq_data` does not exist.
+    noted rail adds its note to theirs; an unknown rail leaves them with none.**
+    The derivation alone cannot tell data in one case: the in-place form (CR rule 5) swaps a
+    value out of an array that lies in the same object as a pointer, so by the bound the
+    value may be that pointer and the updated value is unknown. Only the type says it is not.
+    So the compiler says it: `void @cqrt_qram_data(i32 h)`, no gate, no qubit (bundle symbol
+    `void @__cq_data(i32 h)`, forwarding like `__cq_object`), called on a value rail before the
+    store or swap at an address rail that writes it, when the stored value is computed: its
+    type is not a pointer and it is not a loaded value passed on unchanged (CR rule 20). The
+    call makes the rail data whatever the derivation gave. *The stated limit* (owner
+    2026-11-24): a value the program reads as a pointer was stored as a pointer or copied from
+    one. A program that computes a pointer's bits with integer arithmetic, stores them through
+    an integer-typed lvalue at a quantum address and reads them back through a pointer-typed
+    lvalue with no cast is outside the domain: the cell keeps the note of the pointer it held
+    before. With the cast the pointer is made from an integer and has no object, which is
+    correct.
   - *No object.* `void @cqrt_qram_unbound(i32 h)`: no gate, no qubit; the rail h carries no note
     from this call on, so an access at h is bounded by the bit pattern. A backend without objects
     need not define it. Lowered code reaches it through the bundle symbol
@@ -540,8 +552,8 @@ circuit.
     wrong object. An out-of-object pointer value that reaches the access through memory, an
     argument or a call result is not visible to the compiler: a program that forms one and
     accesses through it at a quantum offset is outside the domain of the object bound.
-  - *Linking.* `__cq_object`, `__cq_unbound` and `__cq_pointer` refer to `cqrt_qram_object`,
-    `cqrt_qram_unbound` and `cqrt_qram_pointer` weakly. On Mach-O the link of the host runtime
+  - *Linking.* `__cq_object`, `__cq_unbound`, `__cq_pointer` and `__cq_data` refer to
+    `cqrt_qram_object`, `cqrt_qram_unbound`, `cqrt_qram_pointer` and `cqrt_qram_data` weakly. On Mach-O the link of the host runtime
     passes `-U` for each, as `cqcc` does.
   - *No simulation.* The bound uses object extents and notes only. It never enumerates the values
     a rail can take per branch of the program, never measures, and holds for every superposition
