@@ -1225,9 +1225,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     literal, a seed), its value is passed as it is and no object is known for the merged pointer.
     Where P is reached inside the function from an `inttoptr`, no object is known for it either: the
     address rail of an access through P is announced as such, `__cq_unbound(r)` once after the
-    rail is formed and before the first access at it (BACKEND_ABI §1.10, No object). A bus load
-    of pointer type at an address rail is followed by `__cq_pointer(h)` on its result (BACKEND_ABI
-    §1.10, A pointer load); a load at a classical address needs none. A value rail written by a
+    rail is formed and before the first access at it (BACKEND_ABI §1.10, No object). Every bus load
+    of pointer type is followed by `__cq_pointer(h)` on its result, at an address rail and at a
+    classical address alike (BACKEND_ABI §1.10, A pointer load). A value rail written by a
     bus store or swap at an address rail is announced as data, `__cq_data(v)` before the access,
     when the stored value is computed: its type is not a pointer and it is not a loaded value
     passed on unchanged (a `load` result, directly or through `phi`, `select` or `freeze`; a

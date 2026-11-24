@@ -504,7 +504,8 @@ circuit.
     memory behind it is what the machine has. A noted rail costs its objects, an unnoted one the
     whole memory.
   - *A pointer load.* `void @cqrt_qram_pointer(i32 h)`: no gate, no qubit. The compiler calls it
-    on the result rail of a bus load whose C/IR type is a pointer, right after the load (bundle
+    on the result rail of every bus load whose C/IR type is a pointer (at an address rail or a
+    classical address), right after the load (bundle
     symbol `void @__cq_pointer(i32 h)`, forwarding like `__cq_object`). It tells the backend what
     only the compiler knows: the program uses this value as a pointer. For such a rail the cells
     of R that hold a non-zero value in no object are treated like null and add nothing, so the
