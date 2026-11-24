@@ -780,7 +780,6 @@ llvm::FunctionCallee declareHost(llvm::Module &M, Host f) {
   case Host::Object: return declareChecked(M, "__cq_object", llvm::FunctionType::get(v, {i64, i64}, false));
   case Host::Unbound: return declareChecked(M, "__cq_unbound", llvm::FunctionType::get(v, {i32}, false));
   case Host::Pointer: return declareChecked(M, "__cq_pointer", llvm::FunctionType::get(v, {i32}, false));
-  case Host::Data: return declareChecked(M, "__cq_data", llvm::FunctionType::get(v, {i32}, false));
   }
   llvm_unreachable("cq: host symbols are the enum's");
 }

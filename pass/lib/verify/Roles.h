@@ -43,7 +43,7 @@ struct Sig {
   bool unc = false;
   std::string callee;  // the called symbol ("" for an indirect call)
   std::string fwd;     // for an _unc: the forward symbol
-  llvm::SmallVector<Role, 6> roles;  // core and template, and Other's __cq_unbound, __cq_pointer and __cq_data (one Read)
+  llvm::SmallVector<Role, 6> roles;  // core and template, and Other's __cq_unbound and __cq_pointer (one Read)
   Res res = Res::Word;
   std::optional<abi::CoreSpec> core;
   std::optional<abi::TemplateSpec> tmpl;

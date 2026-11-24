@@ -25,19 +25,12 @@ Operand offsetAddress(LoweringContext &, Operand addr, uint64_t off);
 // `unguarded` takes no control, whatever predicate is in scope (rule 24).
 llvm::CallInst *emitLoad(LoweringContext &, llvm::Type *T, Operand addr, bool unguarded = false);
 // One kept qram_store_<W>[_hl][_controlled] of `value` at addr (a classical value first the seed alloc_<W>), noted
-// (Uncompute::noteKeptStore). Rule 5 sentence 3. `data`: at an address rail the value rail is announced first,
-// __cq_data (CR rule 20, BACKEND_ABI §1.10 Data).
-void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value, bool data = false);
+// (Uncompute::noteKeptStore). Rule 5 sentence 3.
+void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value);
 // The same two under an explicit control rail `c` (nullptr: none) in place of the predicate in scope; the kept store keeps
 // c as its control, and `neg` true puts the store under NOT c (rule 8: an X bracket on c around the store).
 llvm::CallInst *emitLoadUnder(LoweringContext &, llvm::Type *T, Operand addr, llvm::Value *c);
-void emitKeptStoreUnder(LoweringContext &, llvm::Type *T, Operand addr, Operand value, llvm::Value *c, bool neg,
-                        bool data = false);
-// CR rule 20 Data: the stored IR value V is computed: not a pointer, and nothing it may pass on unchanged (through phi,
-// select, freeze, a bitcast or an aggregate/vector insert or extract) is a load, an atomic's old value or a ptrtoint.
-bool storesData(const llvm::Value *V);
-// __cq_data(rail) when addr is an address rail; nothing at a classical address.
-void announceData(LoweringContext &, Operand addr, llvm::Value *rail);
+void emitKeptStoreUnder(LoweringContext &, llvm::Type *T, Operand addr, Operand value, llvm::Value *c, bool neg);
 // A template no Uncompute item undoes (Intrinsics.cpp): the caller undoes it (undoRaw: its _unc, then the free) or keeps it.
 llvm::CallInst *rawTemplate(LoweringContext &, const abi::TemplateSpec &, llvm::ArrayRef<llvm::Value *>);
 void undoRaw(LoweringContext &, const abi::TemplateSpec &, llvm::CallInst *fwd);

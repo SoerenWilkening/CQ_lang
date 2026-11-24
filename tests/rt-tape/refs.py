@@ -49,7 +49,7 @@ def prog(clang, work, objs, spec, ex, decls, call):
     stubs = os.path.join(d, "stubs.ll")
     sh([sys.executable, os.path.join(RT, "stubgen.py"), ll, drvll, "-o", stubs])
     exe = os.path.join(d, "prog")
-    sh([clang, "-O0", "-w", *objs, ll, drvll, stubs, "-lm", "-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-Wl,-U,_cqrt_qram_data", "-o", exe])
+    sh([clang, "-O0", "-w", *objs, ll, drvll, stubs, "-lm", "-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-o", exe])
     return exe
 
 

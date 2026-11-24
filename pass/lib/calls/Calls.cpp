@@ -528,7 +528,7 @@ Value *variadicBlock(LoweringContext &ctx, CallBase &CB, unsigned fixed) {
     }
     Type *t = a->getType();
     if (!isComposite(t)) {
-      bus::emitKeptStore(ctx, t, at, ctx.operand(a), bus::storesData(a));
+      bus::emitKeptStore(ctx, t, at, ctx.operand(a));
       continue;
     }
     SmallVector<bus::Leaf, 4> leaves;
@@ -537,8 +537,7 @@ Value *variadicBlock(LoweringContext &ctx, CallBase &CB, unsigned fixed) {
     if (fields.size() != leaves.size())
       internalError("calls: a variadic actual whose fields are not its scalar leaves", &CB);
     for (unsigned k = 0; k < leaves.size(); ++k)
-      bus::emitKeptStore(ctx, leaves[k].type, bus::offsetAddress(ctx, at, leaves[k].offset), fields[k],
-                         !leaves[k].type->isPointerTy() && bus::storesData(a));
+      bus::emitKeptStore(ctx, leaves[k].type, bus::offsetAddress(ctx, at, leaves[k].offset), fields[k]);
   }
   return block;
 }

@@ -129,7 +129,7 @@ HOST_SOURCE = ROOT / "bundle" / "host" / "cq_host.c"
 # The compiler's float templates (BACKEND_ABI §2.12): softfloat/build.sh lib [softfloat/cqsf_f80.roots] makes them.
 FLOAT_LIBS = [ROOT / "softfloat" / "build" / n for n in ("libqsoftfloat.a", "libqsoftfloat_f80.a")]
 HOST_SYMBOLS = {"__cq_mem", "__cq_alloc", "__cq_sig", "__cq_clone_register", "__cq_clone_resolve", "__cq_clone_count",
-                "__cq_clone_at", "__cq_object", "__cq_unbound", "__cq_pointer", "__cq_data"}
+                "__cq_clone_at", "__cq_object", "__cq_unbound", "__cq_pointer"}
 
 VERBOSE = False
 
@@ -641,8 +641,8 @@ def main(argv) -> int:
             floats = [p for p in FLOAT_LIBS if p.exists()] if o["softfloat"] else []
             run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-x", "ir", lowered, "-x", "none",
                  *objs, *o["backend"], *floats, *(["-lc++"] if any(p.suffix in CXX_SUFFIXES for p in o["inputs"]) else []),
-                 # cq_host.c's weak import of the backend's optional cqrt_qram_object, _unbound, _pointer and _data (BACKEND_ABI §1.10, Objects)
-                 *(["-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer", "-Wl,-U,_cqrt_qram_data"] if sys.platform == "darwin" else []), "-o", staged], "link of the lowered program")
+                 # cq_host.c's weak import of the backend's optional cqrt_qram_object, _unbound and _pointer (BACKEND_ABI §1.10, Objects)
+                 *(["-Wl,-U,_cqrt_qram_object", "-Wl,-U,_cqrt_qram_unbound", "-Wl,-U,_cqrt_qram_pointer"] if sys.platform == "darwin" else []), "-o", staged], "link of the lowered program")
 
         # 5. --cq-check: the C-oracle check of cq-w1-usercheck on this program.
         status = 0

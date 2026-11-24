@@ -350,33 +350,7 @@ Value *keptControl(LoweringContext &ctx, Value *c, Value *value) {
   return g;
 }
 
-bool storesData(const Value *V) {
-  SmallVector<const Value *, 8> work{V};
-  SmallPtrSet<const Value *, 8> seen;
-  while (!work.empty()) {
-    const Value *x = work.pop_back_val();
-    if (!seen.insert(x).second)
-      continue;
-    if (x->getType()->isPtrOrPtrVectorTy() || isa<LoadInst, PtrToIntInst, AtomicRMWInst, AtomicCmpXchgInst>(x))
-      return false;
-    if (auto *P = dyn_cast<PHINode>(x))
-      work.append(P->op_begin(), P->op_end());
-    else if (auto *S = dyn_cast<SelectInst>(x))
-      work.append({S->getTrueValue(), S->getFalseValue()});
-    else if (isa<FreezeInst, BitCastInst, ExtractValueInst, ExtractElementInst>(x))
-      work.push_back(cast<User>(x)->getOperand(0));
-    else if (isa<InsertValueInst, InsertElementInst, ShuffleVectorInst>(x))   // what they pass on unchanged: conservative
-      work.append({cast<User>(x)->getOperand(0), cast<User>(x)->getOperand(1)});
-  }
-  return true;
-}
-
-void announceData(LoweringContext &ctx, Operand addr, Value *rail) {
-  if (addr.handle)
-    ctx.B().CreateCall(abi::declareHost(ctx.M, abi::Host::Data), {rail});
-}
-
-void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value, bool data) {
+void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
   LLVMContext &C = ctx.M.getContext();
   RailType w = accessType(C, T);
   Value *v = value.v;
@@ -407,8 +381,6 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value, b
   if (c)
     args.push_back(c);
   args.append({m, addr.v, v});
-  if (data)
-    announceData(ctx, addr, v);
   abi::CoreSpec x{abi::Core::NotI1, RailType{Kind::Int, 1}};
   if (neg)
     ctx.emitCore(x, {neg});
@@ -448,7 +420,7 @@ CallInst *emitLoadUnder(LoweringContext &ctx, Type *T, Operand addr, Value *c) {
   return call;
 }
 
-void emitKeptStoreUnder(LoweringContext &ctx, Type *T, Operand addr, Operand value, Value *c, bool neg, bool data) {
+void emitKeptStoreUnder(LoweringContext &ctx, Type *T, Operand addr, Operand value, Value *c, bool neg) {
   LLVMContext &C = ctx.M.getContext();
   RailType w = accessType(C, T);
   Value *v = value.v;
@@ -465,8 +437,6 @@ void emitKeptStoreUnder(LoweringContext &ctx, Type *T, Operand addr, Operand val
   if (c)
     args.push_back(c);
   args.append({m, addr.v, v});
-  if (data)
-    announceData(ctx, addr, v);
   abi::CoreSpec x{abi::Core::NotI1, RailType{Kind::Int, 1}};
   if (neg)
     ctx.emitCore(x, {c});
@@ -506,15 +476,14 @@ void lowerStore(LoweringContext &ctx, StoreInst &S) {
   Type *T = V->getType();
   Operand addr = address(ctx, S.getPointerOperand());
   if (!T->isAggregateType() && !T->isVectorTy())
-    return emitKeptStore(ctx, T, addr, ctx.operand(V), storesData(V));
+    return emitKeptStore(ctx, T, addr, ctx.operand(V));
   SmallVector<Leaf, 4> leaves;
   scalarLeaves(DL, T, 0, leaves);
   SmallVector<Operand, 4> fields = aggr::flattenResult(ctx, V);
   if (fields.size() != leaves.size())
     noteUnbuilt("bus: a store of an aggregate whose fields are not its scalar leaves (stores the common prefix)", &S);
   for (unsigned i = 0, e = std::min(leaves.size(), fields.size()); i < e; ++i)
-    emitKeptStore(ctx, leaves[i].type, offsetAddress(ctx, addr, leaves[i].offset), fields[i],
-                  !leaves[i].type->isPointerTy() && storesData(V));
+    emitKeptStore(ctx, leaves[i].type, offsetAddress(ctx, addr, leaves[i].offset), fields[i]);
 }
 
 // Rule 4: a bus load, the compare and select (or the operation's) templates, a bus store, by rule 5 as if written.
@@ -567,7 +536,7 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
   Value *res;
   switch (op) {
   case Op::Xchg:
-    emitKeptStore(ctx, T, addr, val, storesData(R->getValOperand()));
+    emitKeptStore(ctx, T, addr, val);
     spine::bindOperand(ctx, R, oldOp);
     return;
   case Op::And: res = hl("and", w, oldOp, val); break;
@@ -596,7 +565,7 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
     report_fatal_error("cq: unimplemented: bus: an atomicrmw operation clang 19 does not emit for C",
                        /*gen_crash_diag=*/false);
   }
-  emitKeptStore(ctx, T, addr, Operand{res, true}, /*data=*/true);   // computed (and, or, min, fadd, ...)
+  emitKeptStore(ctx, T, addr, Operand{res, true});
   spine::bindOperand(ctx, R, oldOp);
 }
 

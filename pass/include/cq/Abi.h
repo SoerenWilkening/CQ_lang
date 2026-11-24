@@ -31,10 +31,10 @@ enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, 
 // CR §1.3: the host symbols of the injection bundle's runtime object (rules 16, 19): i32 __cq_mem(),
 // ptr __cq_alloc(i64 size, i64 align), void __cq_clone_register(ptr fn, ptr sig, ptr clone, ptr ctl, ptr unc,
 // ptr ctl_unc), ptr __cq_clone_resolve(ptr fn, i32 kind), i32 __cq_clone_count(ptr sig), ptr __cq_clone_at(ptr sig,
-// i32 i), void __cq_object(i64 addr, i64 size), void __cq_unbound(i32 h), void __cq_pointer(i32 h), void __cq_data(i32 h)
+// i32 i), void __cq_object(i64 addr, i64 size), void __cq_unbound(i32 h), void __cq_pointer(i32 h)
 // (BACKEND_ABI §1.10, Objects; CR rule 20);
 // [65 x i64] @__cq_sig is sigTable.
-enum class Host : uint8_t { Mem, Alloc, CloneRegister, CloneResolve, CloneCount, CloneAt, Object, Unbound, Pointer, Data };
+enum class Host : uint8_t { Mem, Alloc, CloneRegister, CloneResolve, CloneCount, CloneAt, Object, Unbound, Pointer };
 llvm::FunctionCallee declareHost(llvm::Module &, Host);
 llvm::GlobalVariable *sigTable(llvm::Module &);
 struct CoreSpec { Core op; RailType w{}; bool ctl = false, hl = false, unc = false; };

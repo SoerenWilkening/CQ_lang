@@ -905,8 +905,6 @@ void emitSteps(LoweringContext &ctx, const Form &F, unsigned from, unsigned to, 
     else
       cur = updateAndClean(ctx, st, cur, F.U, c);
   }
-  if (!F.S || storesData(F.S->getValueOperand()))   // rule 20 Data: the rail swapped back (an atomic add/sub/xor's too)
-    announceData(ctx, addr, cur);
   CallInst *in = swapCell(ctx, F.U, addr, cur, c);
   // Rule 5: the steps' other operands are undone after the second swap, a bus load copy too (`*p += *q`: its un-copy at
   // an address rail may read this cell, 191; between the swaps the cell holds |0>).
@@ -1169,7 +1167,7 @@ void stepsOnCopy(LoweringContext &ctx, Form &F, Value *copy, bool phiCopy, Small
     }
     rails.push_back(cur);
   }
-  emitKeptStore(ctx, F.U, F.copyAddr, Operand{cur, true}, storesData(F.S->getValueOperand()));
+  emitKeptStore(ctx, F.U, F.copyAddr, Operand{cur, true});
   if (phiCopy && !rotated && cur != copy) {
     // A copy nothing rotated is un-copied after its reader and, overtaken, not freed (rule 5 sentence 1).
     SmallVector<Value *, 4> args{copy};
