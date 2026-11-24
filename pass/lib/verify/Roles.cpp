@@ -212,8 +212,8 @@ const Sig &SigCache::get(const CallBase &CB) {
     S.unc = S.clone->unc;
     if (S.unc)
       S.fwd = name.drop_back(4).str();
-  } else if (name == "__cq_unbound" || name == "__cq_pointer") {
-    S.roles.push_back(Role::Read);   // CR rule 20: the host functions a rail is passed to (an address, a loaded pointer)
+  } else if (name == "__cq_unbound" || name == "__cq_pointer" || name == "__cq_data") {
+    S.roles.push_back(Role::Read);   // CR rule 20: the host functions a rail is passed to (an address, a loaded pointer, data)
     S.res = Res::None;
   }
   if (S.kind == Kind::Template && S.roles.size() != nargs)
