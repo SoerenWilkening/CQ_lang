@@ -28,6 +28,7 @@
 #include <optional>
 
 #include "cq/Abi.h"
+#include "../spine/SpineInternal.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/Dominators.h"
@@ -801,7 +802,8 @@ void laneRuleSix(LoweringContext &ctx, Instruction &I, unsigned l, ArrayRef<Oper
     SmallVector<LaneRef, 8> aliases;
     SmallVector<Reader, 8> readers;
     aliasesOf(*org, aliases, readers);
-    DominatorTree DT(*I.getFunction());
+    std::optional<DominatorTree> ownDT;
+    DominatorTree &DT = spine::dtOrOwn(spine::shared(ctx), *I.getFunction(), ownDT);
     bool dead = true;
     for (const Reader &rd : readers) {
       if (rd.u == &I) {

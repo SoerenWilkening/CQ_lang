@@ -1822,8 +1822,9 @@ void callTableTwin(Module &M, IRBuilder<> &B, Value *twin, Value *pred, ArrayRef
 // (or another block) comes before its last consumer. The twin then runs right after the copy: no change lies between.
 bool keptResult(LoweringContext &ctx, CallBase &CB) {
   // Rule 14: in a loop the reverse reads the result, past the next trip's call (a memory version change).
-  DominatorTree DT(*CB.getFunction());
-  if (LoopInfo(DT).getLoopFor(CB.getParent()))
+  std::optional<DominatorTree> ownDT;
+  std::optional<LoopInfo> ownLI;
+  if (spine::liOrOwn(spine::shared(ctx), *CB.getFunction(), ownDT, ownLI).getLoopFor(CB.getParent()))
     return true;
   SmallVector<const Instruction *, 8> work{&CB};
   SmallPtrSet<const Instruction *, 8> seen{&CB};

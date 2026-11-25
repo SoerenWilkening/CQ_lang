@@ -3857,8 +3857,17 @@ static bool guardIsTripZero(const Loop &L, ScalarEvolution &SE) {
 // function, conservatively: every defined function a direct call reaches, transitively, from the body of a function taint
 // gives a table clone (a function reached from elsewhere as well loads @__cq_k too, and reads -1 = no cut there). The
 // table function itself is reached only through a call by name of it.
+// The set is walked once per module's constructions (keyed as calls::mintSites keys its memo): it reads original bodies
+// only, which no construct() edits (an entry's lowered body replaces it after the last one, spine finishEntries).
 static bool reachedFromTable(LoweringContext &ctx) {
-  SmallPtrSet<const Function *, 32> reached;
+  static thread_local struct {
+    const Module *M = nullptr;
+    const void *specs = nullptr;
+    DenseSet<const Function *> reached;
+  } memo;
+  if (memo.M == &ctx.M && memo.specs == ctx.T.specializations().data())
+    return memo.reached.count(ctx.S.F) != 0;
+  DenseSet<const Function *> reached;
   SmallVector<const Function *, 32> work;
   for (const Specialization &S : ctx.T.specializations())
     if (S.table && S.F)
@@ -3873,7 +3882,10 @@ static bool reachedFromTable(LoweringContext &ctx) {
         if (const Function *G = CB->getCalledFunction(); G && !G->isDeclaration() && reached.insert(G).second)
           work.push_back(G);
   }
-  return reached.count(ctx.S.F) != 0;
+  memo.M = &ctx.M;
+  memo.specs = ctx.T.specializations().data();
+  memo.reached = std::move(reached);
+  return memo.reached.count(ctx.S.F) != 0;
 }
 
 // Owner ruling Q2 as corrected 2026-11-15 (CR §1.4 "Received K": a value other than all ones is the K of that
@@ -4043,7 +4055,40 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed, const std::
   return C.stopRail();
 }
 
-bool hasNoreturnArm(const Loop &L) {
+namespace {
+// A loop's unit and hasNoreturnArm depend only on the natural loop of its header in F: during construct()'s run over F
+// (frozenEpoch) they are kept per header (callers make their own LoopInfo objects, so never per Loop*).
+template <typename V> struct HeaderMemo {
+  uint64_t epoch = 0;
+  DenseMap<const BasicBlock *, V> m;
+  template <typename Fn> V get(const Loop &L, Fn compute) {
+    const BasicBlock *h = L.getHeader();
+    uint64_t e = frozenEpoch(*h->getParent());
+    if (!e)
+      return compute();
+    if (epoch != e) {
+      m.clear();
+      epoch = e;
+    }
+    if (auto it = m.find(h); it != m.end())
+      return it->second;
+    V v = compute();
+    m.try_emplace(h, v);
+    return v;
+  }
+};
+thread_local HeaderMemo<Unit> unitMemo;
+thread_local HeaderMemo<bool> noreturnMemo;
+Unit computeUnit(const Loop &L);
+bool computeNoreturnArm(const Loop &L);
+} // namespace
+
+bool hasNoreturnArm(const Loop &L) { return noreturnMemo.get(L, [&] { return computeNoreturnArm(L); }); }
+
+Unit unitOf(const Loop &L) { return unitMemo.get(L, [&] { return computeUnit(L); }); }
+
+namespace {
+bool computeNoreturnArm(const Loop &L) {
   BasicBlock *h = L.getHeader();
   DominatorTree DT(*h->getParent());
   LoopInfo LI(DT);
@@ -4061,6 +4106,7 @@ bool hasNoreturnArm(const Loop &L) {
     }
   return false;
 }
+} // namespace
 
 Pred tripEdge(const BasicBlock *p, const BasicBlock *b) {
   const Instruction *t = p->getTerminator();
@@ -4213,7 +4259,8 @@ static BasicBlock *nearestPostDomPastDeadEnds(Function &F, ArrayRef<BasicBlock *
   return best < 0 ? nullptr : alive[best];
 }
 
-Unit unitOf(const Loop &L) {
+namespace {
+Unit computeUnit(const Loop &L) {
   Unit U;
   SmallVector<BasicBlock *, 4> exitBlocks;
   L.getUniqueExitBlocks(exitBlocks);
@@ -4383,6 +4430,7 @@ Unit unitOf(const Loop &L) {
   }
   return U;
 }
+} // namespace
 
 bool inTailLoopUnit(const Loop &L, const Unit &U, const BasicBlock *u, const LoopInfo &LI) {
   for (const BasicBlock *t : U.tail) {
@@ -4437,6 +4485,10 @@ static Pred tailPredIn(LoweringContext &ctx, const LoopInfo &LI, const Loop &L, 
 }
 
 Pred tailPred(LoweringContext &ctx, const Loop &L, const Unit &U, const BasicBlock *b, const DominatorTree &DT) {
+  // Any tree of the frozen original is its shared one's twin: the shared loops then serve.
+  const Function &F = *L.getHeader()->getParent();
+  if (frozenEpoch(F))
+    return tailPredIn(ctx, spine::shared(ctx).li(F), L, U, b, DT);
   LoopInfo LI(DT);
   return tailPredIn(ctx, LI, L, U, b, DT);
 }

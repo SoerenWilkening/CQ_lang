@@ -2853,6 +2853,10 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       internalError("spine: a clone with more parameters than its formals' fields", C);
   }
 
+  // From here to the end of the walk the walker's one DT and LoopInfo over F stand: F is not edited, and answers over
+  // it may be kept (FrozenInput).
+  std::optional<FrozenInput> frozen;
+  frozen.emplace(F);
   DominatorTree &DT = sh.dt(F);
   LoopInfo LI(DT);
   ctx.preds().compute(F, LI, T, S, entryFlag);
@@ -2897,6 +2901,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     sh.blocks[&F.getEntryBlock()] = entry;
   }
   Walker(ctx, F, DT, LI).run();
+  frozen.reset();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
   calls::insertActivationCounter(ctx);   // rule 14, §1.4

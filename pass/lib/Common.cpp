@@ -6,8 +6,11 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -137,10 +140,8 @@ bool streamName(StringRef n) {
       "wscanf",      "vfwscanf",     "vwscanf",        "fgetwc",          "fgetws",         "fputwc",
       "fputws",      "fwide",        "getwc",          "getwchar",        "putwc",          "putwchar",
       "ungetwc",     "open_wmemstream"};
-  for (const char *x : names)
-    if (n == x)
-      return true;
-  return false;
+  static const StringSet<> set(names);
+  return set.contains(n);
 }
 
 static StringRef cName(const Function &F) {
@@ -220,10 +221,13 @@ static const char *protoOf(StringRef n) {
       // musl's internal names of the mutex calls a lifted mtx_* body calls (src/internal/pthread_impl.h; CR rule 24)
       {"__pthread_mutex_lock", "ip"}, {"__pthread_mutex_trylock", "ip"}, {"__pthread_mutex_timedlock", "ipp"},
       {"__pthread_mutex_unlock", "ip"}};
-  for (const auto &[name, sig] : protos)
-    if (n == name)
-      return sig;
-  return nullptr;
+  static const StringMap<const char *> map = [] {
+    StringMap<const char *> m;
+    for (const auto &[name, sig] : protos)
+      m.try_emplace(name, sig);   // the first entry of a name, as the scan found it
+    return m;
+  }();
+  return map.lookup(n);
 }
 
 static bool typeFits(Type *t, char c) {
@@ -279,9 +283,9 @@ static bool rule16Name(StringRef n) {
                                 "signal",          "raise",         "feclearexcept",   "fegetexceptflag", "feraiseexcept",
                                 "fesetexceptflag", "fetestexcept",  "fegetround",      "fesetround",     "fegetenv",
                                 "feholdexcept",    "fesetenv",      "feupdateenv",     "setjmp",         "longjmp"};
-  for (const char *x : names)
-    if (n == x)
-      return true;
+  static const StringSet<> set(names);
+  if (set.contains(n))
+    return true;
   return (n.starts_with("pthread_") || n.starts_with("__pthread_mutex_")) && protoOf(n);
 }
 
@@ -290,10 +294,8 @@ bool rule24Mutex(StringRef n) {
                                 "pthread_mutex_unlock",  "pthread_mutex_init",    "pthread_mutex_destroy",
                                 "__pthread_mutex_lock",  "__pthread_mutex_trylock", "__pthread_mutex_timedlock",
                                 "__pthread_mutex_unlock"};
-  for (const char *x : names)
-    if (n == x)
-      return true;
-  return false;
+  static const StringSet<> set(names);
+  return set.contains(n);
 }
 
 bool errnoAccessor(const Function &F) {
@@ -392,17 +394,72 @@ template <typename Fn> bool withSCEV(const BasicBlock &header, Fn fn) {
 }
 } // namespace
 
+namespace {
+thread_local const Function *frozenF = nullptr;
+thread_local uint64_t frozenNow = 0, frozenCount = 0;
+
+// Answers over the frozen function, each computed with fresh analyses as before; dropped when the run changes.
+struct ExitMemo {
+  uint64_t epoch = 0;
+  std::map<std::pair<const BasicBlock *, const BasicBlock *>, bool> count;
+  std::map<std::tuple<const BasicBlock *, const Value *, bool>, bool> cond;
+};
+thread_local ExitMemo exitMemo;
+ExitMemo *exitMemoFor(const BasicBlock &header) {
+  uint64_t e = frozenEpoch(*header.getParent());
+  if (!e)
+    return nullptr;
+  if (exitMemo.epoch != e)
+    exitMemo = ExitMemo{e, {}, {}};
+  return &exitMemo;
+}
+} // namespace
+
+FrozenInput::FrozenInput(const Function &F) : prevF(frozenF), prevEpoch(frozenNow) {
+  frozenF = &F;
+  frozenNow = ++frozenCount;
+}
+
+FrozenInput::~FrozenInput() {
+  frozenF = prevF;
+  frozenNow = prevEpoch;
+}
+
+uint64_t frozenEpoch(const Function &F) { return frozenF == &F ? frozenNow : 0; }
+
 bool exitCountKnown(const BasicBlock &header, const BasicBlock &exiting) {
-  return withSCEV(header, [&](ScalarEvolution &SE, Loop &L) {
-    return !isa<SCEVCouldNotCompute>(SE.getExitCount(&L, &exiting, ScalarEvolution::SymbolicMaximum));
-  });
+  auto compute = [&] {
+    return withSCEV(header, [&](ScalarEvolution &SE, Loop &L) {
+      return !isa<SCEVCouldNotCompute>(SE.getExitCount(&L, &exiting, ScalarEvolution::SymbolicMaximum));
+    });
+  };
+  ExitMemo *m = exitMemoFor(header);
+  if (!m)
+    return compute();
+  auto key = std::make_pair(&header, &exiting);
+  if (auto it = m->count.find(key); it != m->count.end())
+    return it->second;
+  bool r = compute();
+  m->count[key] = r;
+  return r;
 }
 
 bool exitCondCountKnown(const BasicBlock &header, const Value &cond, bool exitIfTrue) {
-  return withSCEV(header, [&](ScalarEvolution &SE, Loop &L) {
-    ScalarEvolution::ExitLimit EL =
-        SE.computeExitLimitFromCond(&L, const_cast<Value *>(&cond), exitIfTrue, /*ControlsOnlyExit=*/false);
-    return !isa<SCEVCouldNotCompute>(EL.SymbolicMaxNotTaken);
-  });
+  auto compute = [&] {
+    return withSCEV(header, [&](ScalarEvolution &SE, Loop &L) {
+      ScalarEvolution::ExitLimit EL =
+          SE.computeExitLimitFromCond(&L, const_cast<Value *>(&cond), exitIfTrue, /*ControlsOnlyExit=*/false);
+      return !isa<SCEVCouldNotCompute>(EL.SymbolicMaxNotTaken);
+    });
+  };
+  ExitMemo *m = exitMemoFor(header);
+  if (!m)
+    return compute();
+  auto key = std::make_tuple(&header, &cond, exitIfTrue);
+  if (auto it = m->cond.find(key); it != m->cond.end())
+    return it->second;
+  bool r = compute();
+  m->cond[key] = r;
+  return r;
 }
 } // namespace cq
