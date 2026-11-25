@@ -542,7 +542,7 @@ define i32 @entry(i32 %a, double %t, i64 %c) {
   %r = call fastcc { i32, i64, i32 } @__cq_q_g_10(i32 %q, i64 %c)
   %h0 = extractvalue { i32, i64, i32 } %r, 0
   %h2 = extractvalue { i32, i64, i32 } %r, 2
-  call void @__cq_q_g_10_unc(i32 %h0, i32 %h2, i32 %q, i64 %c)
+  call fastcc void @__cq_q_g_10_unc(i32 %h0, i32 %h2, i32 %q, i64 %c)
   call void @cqrt_free(i32 %h0)
   call void @cqrt_free(i32 %h2)
   %m = call i32 @cqrt_measure_i32(i32 %q)
@@ -589,7 +589,7 @@ declare void @cq_template_mul_i32_unc(i32, i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 )";
 
-const char *kTwinFieldwiseExpected = R"(define internal void @__cq_q_g_10_unc(i32 %out0, i32 %out1, i32 %0, i64 %1) {
+const char *kTwinFieldwiseExpected = R"(define internal fastcc void @__cq_q_g_10_unc(i32 %out0, i32 %out1, i32 %0, i64 %1) {
   %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)
   %4 = add i64 %1, 1
   %5 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
@@ -618,7 +618,7 @@ define i32 @entry(i32 %a, double %t, i32 %c) {
   %q = call i32 @cqrt_alloc_i32(i32 %a)
   call void @cqrt_ry_i32(i32 %q, double %t)
   %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %c)
-  call void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %c)
+  call fastcc void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %c)
   call void @cqrt_free(i32 %r)
   %m = call i32 @cqrt_measure_i32(i32 %q)
   ret i32 %m
@@ -654,7 +654,7 @@ declare void @cq_template_mul_i32_unc(i32, i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 )";
 
-const char *kTwinDefineExpected = R"(define internal void @__cq_q_f_10_unc(i32 %out, i32 %0, i32 %1) {
+const char *kTwinDefineExpected = R"(define internal fastcc void @__cq_q_f_10_unc(i32 %out, i32 %0, i32 %1) {
   %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)
   %4 = call i32 @cq_template_add_i32_hl(i32 %3, i32 %1)
   call void @cqrt_copy_i32(i32 %4, i32 %out)
@@ -671,7 +671,7 @@ const char *kTwinDefineExpected = R"(define internal void @__cq_q_f_10_unc(i32 %
 const char *kTwinChain = R"(
 define i32 @entry(i32 %q, i32 %c, i32 %n) {
   %r = call fastcc i32 @__cq_q_g_100(i32 %q, i32 %c, i32 %n)
-  call void @__cq_q_g_100_unc(i32 %r, i32 %q, i32 %c, i32 %n)
+  call fastcc void @__cq_q_g_100_unc(i32 %r, i32 %q, i32 %c, i32 %n)
   call void @cqrt_free(i32 %r)
   ret i32 0
 }
@@ -698,7 +698,7 @@ rec:
   call void @cqrt_copy_i32(i32 %gm, i32 %f1)
   call void @cq_template_mul_i32_unc(i32 %gm, i32 %hr, i32 %0)
   call void @cqrt_free(i32 %gm)
-  call void @__cq_q_h_10_unc(i32 %hr, i32 %0, i32 %1)
+  call fastcc void @__cq_q_h_10_unc(i32 %hr, i32 %0, i32 %1)
   call void @cqrt_free(i32 %hr)
   ret i32 %f1
 }
@@ -727,7 +727,7 @@ declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 const char *kTwinPure = R"(
 define i32 @entry(i32 %q, double %p) {
   %r = call fastcc i32 @__cq_q_f_10(i32 %q, double %p)
-  call void @__cq_q_f_10_unc(i32 %r, i32 %q, double %p)
+  call fastcc void @__cq_q_f_10_unc(i32 %r, i32 %q, double %p)
   call void @cqrt_free(i32 %r)
   ret i32 0
 }
@@ -784,7 +784,7 @@ declare i32 @cq_template_add_i32_hl(i32, i32)
 const char *kTwinEffect = R"(
 define i32 @entry(i32 %q, double %p) {
   %r = call fastcc i32 @__cq_q_f_10(i32 %q, double %p)
-  call void @__cq_q_f_10_unc(i32 %r, i32 %q, double %p)
+  call fastcc void @__cq_q_f_10_unc(i32 %r, i32 %q, double %p)
   ret i32 0
 }
 define internal fastcc i32 @f(i32 %v, double %p) {
@@ -812,7 +812,7 @@ declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 const char *kTwinNoCopyOut = R"(
 define i32 @entry(i32 %q) {
   %r = call fastcc i32 @__cq_q_f_1(i32 %q)
-  call void @__cq_q_f_1_unc(i32 %r, i32 %q)
+  call fastcc void @__cq_q_f_1_unc(i32 %r, i32 %q)
   ret i32 0
 }
 define internal fastcc i32 @f(i32 %v) {
@@ -832,7 +832,7 @@ declare i32 @cq_template_add_i32_hl(i32, i32)
 const char *kTwinReturnPhi = R"(
 define i32 @entry(i32 %q, i32 %n) {
   %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %n)
-  call void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %n)
+  call fastcc void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %n)
   call void @cqrt_free(i32 %r)
   ret i32 0
 }
@@ -871,7 +871,7 @@ declare i32 @cq_template_add_i32_hl(i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 )";
 
-const char *kTwinReturnPhiExpected = R"(define internal void @__cq_q_f_10_unc(i32 %out, i32 %0, i32 %1) {
+const char *kTwinReturnPhiExpected = R"(define internal fastcc void @__cq_q_f_10_unc(i32 %out, i32 %0, i32 %1) {
   %z = icmp slt i32 %1, 1
   br i1 %z, label %base, label %arm
 
@@ -896,7 +896,7 @@ join:                                             ; preds = %arm, %base
 const char *kTwinClassicalArm = R"(
 define i32 @entry(i32 %q, i32 %n) {
   %r = call fastcc i32 @__cq_q_f_10(i32 %q, i32 %n)
-  call void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %n)
+  call fastcc void @__cq_q_f_10_unc(i32 %r, i32 %q, i32 %n)
   call void @cqrt_free(i32 %r)
   ret i32 0
 }
@@ -939,8 +939,9 @@ std::string printFn(const Module &M, StringRef name) {
   return os.str();
 }
 
-// Runs finalize; checks the module verifies, every named twin is defined (internal, C calling
-// convention) and `check` on the result.
+// Runs finalize; checks the module verifies, every named twin is defined, internal, with its forward's
+// calling convention (CR §1.4: a clone keeps the original's; cq-5yuk9), every call of it carries that
+// convention (a mismatch is UB in LLVM), and `check` on the result.
 void expectTwins(const std::string &c, const char *ir, const std::vector<std::string> &defined,
                  const std::vector<std::string> &declared, std::function<void(Module &)> check = {}) {
   LLVMContext ctx;
@@ -952,10 +953,17 @@ void expectTwins(const std::string &c, const char *ir, const std::vector<std::st
     fail(c, "module does not verify after finalize: " + os.str());
   for (const std::string &n : defined) {
     Function *F = M->getFunction(n);
+    Function *fwd = M->getFunction(StringRef(n).drop_back(4)); // the forward: the name without "_unc"
     if (!F || F->isDeclaration())
       fail(c, "twin @" + n + " is not defined");
-    else if (!F->hasInternalLinkage() || F->getCallingConv() != CallingConv::C)
-      fail(c, "twin @" + n + " is not internal with the C calling convention");
+    else if (!F->hasInternalLinkage())
+      fail(c, "twin @" + n + " is not internal");
+    else if (!fwd || F->getCallingConv() != fwd->getCallingConv())
+      fail(c, "twin @" + n + " does not have its forward's calling convention");
+    else
+      for (User *U : F->users())
+        if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCallingConv() != F->getCallingConv())
+          fail(c, "a call of twin @" + n + " has another calling convention than its definition");
   }
   for (const std::string &n : declared) {
     Function *F = M->getFunction(n);
