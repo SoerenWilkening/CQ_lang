@@ -25,12 +25,16 @@ if [ ! -s bundle/libc.ll ]; then
     echo '["libc.ll"]' > bundle/manifest.json
 fi
 export CQ_BUNDLE_MANIFEST="$PWD/bundle/manifest.json"
-for g in ctype locale string multibyte stdlib time math stdio complex; do
-    [ -s libq_$g.a ] && continue
+# JOBS (default 1) lists at once, largest first (complex, stdio, math took most of a serial run); each writes only its
+# own libq_<g>.a. A failing list stops new ones (xargs: 255).
+order="ctype locale string multibyte stdlib time math stdio complex"
+[ "${JOBS:-1}" -gt 1 ] && order="complex stdio math stdlib string time multibyte locale ctype"
+export ROOT
+for g in $order; do echo $g; done | xargs -P "${JOBS:-1}" -n 1 sh -c '
+    g=$0; [ -s libq_$g.a ] && exit 0
     echo "== $g $(date +%H:%M:%S)"
-    "$ROOT/driver/cqcc" --cq-lib --cq-roots "$ROOT/bundle/roots/$g.roots" -o libq_$g.tmp.a
-    mv libq_$g.tmp.a libq_$g.a
-done
+    "$ROOT/driver/cqcc" --cq-lib --cq-roots "$ROOT/bundle/roots/$g.roots" -o libq_$g.tmp.a || exit 255
+    mv libq_$g.tmp.a libq_$g.a || exit 255'
 libtool -static -o libqc.a $(for g in ctype locale string multibyte stdlib time math stdio complex; do echo libq_$g.a; done)
 cat "$ROOT"/bundle/roots/*.roots > libc.roots
 echo "== done $(date +%H:%M:%S)"; ls -la libqc.a libc.roots backend/*.a

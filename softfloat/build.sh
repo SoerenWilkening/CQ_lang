@@ -53,18 +53,10 @@ lib)
     rm -rf "$B/$stem.groups"; mkdir -p "$B/$stem.groups"
     split -l "${CQSF_GROUP:-40}" "$list" "$B/$stem.groups/g."
     objs=""
-    for g in "$B/$stem.groups"/g.*; do
-        n=$(basename "$g")
-        # The group's roots only: cqcc --cq-lib exports them and their table clones.
-        "$LLVM/opt" -S -passes=internalize,globaldce -internalize-public-api-file="$g" "$B/$stem.O1.ll" -o "$g.in.ll"
-        cp -f "$g" "$g.roots"
-        t0=$(date +%s)
-        nice -n 10 "$CQCC" --cq-lib -S --cq-roots "$g.roots" "$g.in.ll" -o "$g.lowered.ll"
-        # What cqcc -c does with the lowered module (driver/cqcc, step 4).
-        "$LLVM/clang" -O1 -Xclang -disable-llvm-passes -c -x ir "$g.lowered.ll" -o "$g.o"
-        echo "lowered $n: $(wc -l < "$g") roots in $(( $(date +%s) - t0 ))s"
-        objs="$objs $g.o"
-    done
+    for g in "$B/$stem.groups"/g.*; do objs="$objs $g.o"; done   # sorted group names: the archive member order
+    # Up to CQSF_JOBS groups at once (each writes only its own g.*); a failing group stops new ones (xargs: 255).
+    for g in "$B/$stem.groups"/g.*; do printf '%s\n' "$g"; done |
+        xargs -P "${CQSF_JOBS:-1}" -n 1 sh -c 'sh "$0" group "$1" "$2" || exit 255' "$0" "$stem"
     # The original library (CR rule 27): the roots compiled natively. A lowered library defines no C symbol; its
     # clone-table rows are keyed by these.
     "$LLVM/clang" -O1 -c -x ir "$B/$stem.O1.ll" -o "$B/$stem.native.o"
@@ -78,6 +70,19 @@ lib)
     rm -f "$B/$out.a"
     "$LLVM/llvm-ar" rcs "$B/$out.a" "$B/$shim.o" $objs "$B/cq_host.o"
     echo "$B/$out.a"
+    ;;
+group)
+    # Internal (lib): lower one group file $3 of the root list stem $2 into $3.o.
+    stem=$2; g=$3; n=$(basename "$g")
+    # The group's roots only: cqcc --cq-lib exports them and their table clones.
+    "$LLVM/opt" -S -passes=internalize,globaldce -internalize-public-api-file="$g" "$B/$stem.O1.ll" -o "$g.in.ll"
+    cp -f "$g" "$g.roots"
+    t0=$(date +%s)
+    nice -n 10 "$CQCC" --cq-lib -S --cq-roots "$g.roots" "$g.in.ll" -o "$g.lowered.ll"
+    # What cqcc -c does with the lowered module (driver/cqcc, step 4): -O0, since -O1 register allocation over a
+    # lowered group takes minutes (51 s against 6 s for a 32 MB group).
+    "$LLVM/clang" -O0 -Xclang -disable-llvm-passes -c -x ir "$g.lowered.ll" -o "$g.o"
+    echo "lowered $n: $(wc -l < "$g") roots in $(( $(date +%s) - t0 ))s"
     ;;
 probe)
     # Lower every root of LIST alone; build/<list>.probe.tsv: root, ok/FAIL, seconds, the first error line.
