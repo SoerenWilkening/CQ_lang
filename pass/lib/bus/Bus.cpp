@@ -258,9 +258,10 @@ void announceUnbound(LoweringContext &ctx, const Value *p, Value *r) {
     if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() && c->getCalledFunction()->getName() == "__cq_unbound")
       return;
   IRBuilder<> B(ctx.M.getContext());
+  // cq-wbboy: by iterator, so a phi of a block not yet ended is followed by the block's end (a dereferenced end() is the
+  // list sentinel, whose bytes past the node were read as the call's !dbg).
   if (auto *I = dyn_cast<Instruction>(r))
-    I->getNextNode() ? B.SetInsertPoint(isa<PHINode>(I) ? &*I->getParent()->getFirstInsertionPt() : I->getNextNode())
-                     : B.SetInsertPoint(I->getParent());
+    B.SetInsertPoint(I->getParent(), isa<PHINode>(I) ? I->getParent()->getFirstInsertionPt() : std::next(I->getIterator()));
   else
     B.SetInsertPoint(&ctx.out().getEntryBlock(), ctx.out().getEntryBlock().getFirstInsertionPt());
   B.CreateCall(abi::declareHost(ctx.M, abi::Host::Unbound), {r});
