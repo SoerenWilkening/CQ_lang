@@ -29,18 +29,20 @@ not hide another:
 | C standard library (musl) | 387 | 387, as the lowered library | 3 min | 1,524 exported versions |
 | SoftFloat (the float templates) | 855 | 855, as two lowered libraries | 5 min | |
 | GSL 2.8 | 55 sub-libraries | all 55 as lowered libraries | 35 min | 2.1 GB of archives; `specfunc` takes 6 min 54 s |
-| SQLite 3 (core) | 1,542 | 1,542 | 12 min | 5 take more than 2 minutes; `sqlite3VdbeExec`, the bytecode interpreter, takes 95 s on its own |
+| SQLite 3 (core) | 1,542 | 1,542 | 12 min | 4 exceed the sweep's 2-minute limit and lower on their own in 86 to 192 s (`sqlite3BtreeInsert`, `sqlite3EndTable`, `sqlite3Pragma`, `sqlite3VdbeExec`, the bytecode interpreter) |
 | GLPK 5.0 (without the two minisat files) | 1,256 | 1,256 | 4 min | `_glp_zlib_inflate` takes 19 s |
-| GMP 6.3.0 (generic C) | 650 | 650 | 2 min | `__gmpn_div_q` takes 10 s |
+| GMP 6.3.0 (generic C) | 650 | 650, and as one lowered library | 2 min; the library 16 min | the library has 571 exported roots, 617 MB; `__gmpn_div_q` takes 10 s |
 | [ABC](https://github.com/maksimKorzh/abc), a chess engine | 37 | 37 | 2 s | |
 | [Game of Life](https://github.com/bluekeybo/GameOfLife) | 7 | 7 | 1 s | |
 | [TinyEMU](https://github.com/dearchap/tinyemu) 2018-09-23, a RISC-V system emulator | 581 | 581, as four lowered libraries | 4 min | the 128-bit RISC-V interpreter takes 44 s on its own |
-| [TinyCC](https://github.com/TinyCC/tinycc) 0.9.28rc, a C compiler | 276 | 276, as one lowered library | 3 min | `tcc_relocate_ex` takes 25 s on its own |
+| [TinyCC](https://github.com/TinyCC/tinycc) 0.9.28rc, a C compiler | 276 | 276, as one lowered library | 3 min | `tcc_relocate_ex` takes 25 s on its own; `decl_initializer_alloc` exceeds the sweep's limit and takes 111 s on its own |
 | [Stockfish](https://github.com/official-stockfish/Stockfish) 17, a chess engine in C++ | 707 | 707, as one lowered library | 2 min 30 s | the library build takes 2 min 8 s |
 
 The times are for the whole project on one x86-64 Mac with the current pass: the libraries as built, the
 other projects as the sweep over their functions, six at a time with a limit of 2 minutes per function.
-The functions over that limit were last built with an earlier pass.
+The five functions over that limit were lowered on their own with a limit of 20 minutes. Counts are from
+2026-11-25, with rule 6's in-place update; the GSL sub-libraries other than `sys`, `statistics`, `cblas`, `blas`
+and `specfunc` were built earlier that day, before it.
 
 "Lowers" means the pass produced a module that passes its structural verifier. The lowered
 libraries are not checked against the C programs: the checker runs programs, and the reduced cases

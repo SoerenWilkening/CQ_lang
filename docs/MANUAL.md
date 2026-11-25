@@ -39,6 +39,11 @@ Angles, loop bounds and iteration counts are usually classical C.
 | A measurement | `int r = cq_measure(x);` |
 | A lookup at a quantum index | `y = table[x];` |
 
+- **`x += y` and `x ^= y` are in place.** When the old `x` is not read afterwards, the update is one
+  gate on `x`'s own register and uses no extra register. This is decided from the compiled code,
+  not from the spelling: `z = x + y` with `x` never used again is in place too, and `x -= y`,
+  `if (c) x += y` and a loop accumulator are not (they compute into a fresh register, and the old
+  one is cleared and freed).
 - **Scratch is uncomputed for you.** In `if (sqrt(x) == 12.0) cq_phi(M_PI);` the conversion, the
   square root and the comparison go into scratch registers that the compiler clears and frees.
 - **A register of qubits is a `bool` array.** `cq_theta(&q[i], a)` is a one-qubit gate on that cell
@@ -358,7 +363,10 @@ cqcc prog.c -lmybackend -o prog                    # cqcc links both archives wh
 3. **Templates.** A quantum value is an `i32` handle to a backend register. Each instruction on
    quantum operands becomes one call of a reversible template that computes its result into a
    fresh register. When the result is no longer needed, the template's inverse (`_unc`) clears the
-   register and it is freed. The oracle of the example becomes:
+   register and it is freed. The exception is an `add` or `xor` whose old value is never needed
+   again (`x += y`, `x ^= y`, `x += 3`): it is one in-place gate on the register that holds `x`,
+   with no fresh register (`cqrt_add`, `cqrt_addc`, `cqrt_copy`, `cqrt_xorc`). The oracle of the
+   example becomes:
 
    ```llvm
    %9  = call i32 @cq_template_uitofp_i8_to_f64(i32 %8)                        ; (double)x
