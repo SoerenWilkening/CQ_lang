@@ -74,6 +74,9 @@ CASES = [
     # cq-9kcq (CR rules 6, 14 case 2): a rolled trip that branches classically after a bijective update of a carried rail
     # (was: 'mirror would free ... while a rail outside the scope still reads it').
     ("rolled_r6_branch", "rb", [], "pass", []),
+    # cq-esiw9 (CR rules 5, 6): an arm-local rail's clean-up at the return reads a rail defined later on every path of the
+    # same arm (was: it gave way to the rail's own _unc, which read a rail already freed).
+    ("rule6_arm_exit", "ae", [], "pass", [r"call void @cq_template_sub_i64_hl_unc"]),
 ]
 
 # cq-a24ig: probe -> (regex, most occurrences in the lowered module). kcut_items at ab02e1db: 300 run phis and 152 item
