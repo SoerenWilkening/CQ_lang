@@ -2725,7 +2725,9 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     FunctionType *FT = F.getFunctionType();
     Type *retType = nullptr;
     Type *crt = FT->getReturnType();
-    bool qRet = false;
+    // The result's taint, not the returned value's (cq-tyj2l): a value read at the return after a quantum-exit loop is
+    // the exit value merged over the exit trip (rule 14), quantum where the value inside the loop is classical.
+    bool qRet = !crt->isVoidTy() && !crt->isAggregateType() && !crt->isVectorTy() && ctx.T.resultQuantum(S, 0);
     for (BasicBlock &BB : F)
       if (auto *r = dyn_cast<ReturnInst>(BB.getTerminator()))
         if (Value *v = r->getReturnValue())
