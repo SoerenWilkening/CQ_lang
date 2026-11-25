@@ -1611,7 +1611,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       c = ib->getAddress();
     else if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
       c = br->getCondition();
-    return f & (c && !isQ(c) && !e.isBottom() ? e.classicalProjection(ctx.T, ctx.S) : cfOf(e));
+    if (!c || isQ(c) || e.isBottom())
+      return f & cfOf(e);
+    // cq-0u5ti (GMP mpn_mul_fft_decompose): the projection also carries the classical structure of p's own predicate that
+    // is no literal (`a ? !b : 1` from an early return above a quantum arm), which f, built from literal factors, does not; the
+    // arms' facts then fail to cover f. Where p can run the projection is the edge's fact; elsewhere its literal factor.
+    const Pred pb = ctx.preds().block(p).classicalProjection(ctx.T, ctx.S);
+    return f & (e.classicalProjection(ctx.T, ctx.S) | (cfOf(e) & !pb));
   };
   // The phis of a K-unit's continuation that the unit bound (their value where the unit ran), and the
   // output block each unit's flow leaves from with the edge that stands for its exits (real form).
