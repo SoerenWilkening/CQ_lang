@@ -23,8 +23,8 @@ Entry format:
 - Evidence: textual diff of the pass output against the reference for 168 (pass since cq-3v6fh); the §6 verdict is pass on all three.
 - Bead: cq-dnip9
 
-## Rule 6 witnesses (01, 38, 109, 127, 180, 204 and every reference with an `add` or `xor` clean-up): the references show the form before the in-place update
+## 50 references with a rule-6 `add` or `xor` clean-up still show the form before the in-place update
 - Rule: CR rule 6, *In-place update* (owner 2026-11-25): a plain `add` or `xor` of a dead value is one core gate on the old rail (`add_<W>`, `addc_<W>`, `copy_<W>`, `xorc_<W>`)
-- Disagreement: the references emit the template into a fresh rail, then `t = f⁻¹(y')`, `copy(t, y_old)`, `_unc` of `t` and the free of `y_old`
-- Evidence: the rule text; no reference calls `cqrt_add_*`, `cqrt_sub_*` or `cqrt_addc_*`. The affected set has not been enumerated.
+- Disagreement: the references emit the template into a fresh rail, then `t = f⁻¹(y')`, `copy(t, y_old)`, `_unc` of `t` and the free of `y_old`. Examples: 01, 02, 10, 12, 31, 32, 34, 43, 45, 59, 67, 72, 73, 77, 82, 90, 94, 95, 100, 106, 107, 108, 109, 112, 113, 114, 120, 122, 124, 125, 127, 129, 130, 136, 141, 143, 162, 165, 168, 186, 188, 191, 193, 195, 198, 203, 204, 205, 206, 212. 38, 144 and 180, where a rotation acts on the rail before and after the update, failed §6 against their reference and were rewritten in the new form on 2026-11-25.
+- Evidence: the pass output for these examples differs before and after the rule (merge 6b1606216); §6 passes against the reference and the C program on every one of them (`cqcheck run --oracle both`, quick mode, 2026-11-25), so the difference is textual.
 - Bead: cq-2h7xa

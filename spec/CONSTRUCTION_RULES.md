@@ -648,8 +648,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      `_controlled`: under a quantum predicate it is emitted exactly where the template it
      replaces was (a pure computation on a rail that is dead on every path), and an update
      merged with the old value by a `select` or a `phi` is the composite case, not this one.
-     §6: the comparison is unchanged (the old rail was freed at `|0⟩` before and is no rail of
-     its own now).
+     §6: the old value and its image are ONE rail, so a gate before the update and a gate
+     after it act on the same rail (38, 180); a lowering in the older form (two rails, the old
+     one freed at `|0⟩`) is not this rule's.
    - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
      `xor y, -1`, `mul` by an odd literal, `fshl`/`fshr` with `y` in both value slots, `bswap`,
      `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125) and
