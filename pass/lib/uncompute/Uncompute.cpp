@@ -2582,9 +2582,16 @@ struct Uncompute::Impl {
     }
     // cq-lshe (CR rule 6): a clean-up reads its inverse's operands, which must exist wherever the item runs; one
     // whose operand is defined on some paths to pos only (an arm) gives way to g's own uncompute.
+    // cq-esiw9: an item that runs only where g's definition ran (exists) finds x wherever every path from that definition
+    // to pos passes x's definition (outside cycles); its block carries x in (carryOperands).
+    const BasicBlock *Dg = defBlock(g);
     auto notThere = [&](RailId x) {
       auto *h = dyn_cast<Instruction>(rails[x].handle);
-      return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !cq::comesBefore(h, pos.before)));
+      if (!h || (h->getParent() == pos.bb ? cq::comesBefore(h, pos.before) : dominates(h->getParent(), pos.bb)))
+        return false;
+      const BasicBlock *X = h->getParent();
+      return !(exists && X != pos.bb && !onCycle(Dg) && !onCycle(X) &&
+               (X == Dg || (reaches(Dg, X) && !reachesAgain(Dg, pos.bb, {X}))));
     };
     // A guarded clean-up whose guard implies that the arm defining such an operand ran (a K-loop's rule 6 clean-up
     // behind a classical exit test, CR rule 14 with owner ruling Q10) reads it only where it exists.
