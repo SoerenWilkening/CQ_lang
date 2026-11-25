@@ -3102,6 +3102,8 @@ struct Uncompute::Impl {
     Function &F = *U->getParent();
     BasicBlock *entry = &F.getEntryBlock();
     DenseMap<Value *, Value *> carried;
+    // The view of the carries without facts: U's carries add phis only, so the blocks they read stay as they are.
+    CarryView view;
     // cq-g3h1i: one dominance walk per defining block, not per operand (carryTo adds phis, no block or edge).
     DenseMap<const BasicBlock *, bool> doms;
     auto dominatesU = [&](const BasicBlock *D) {
@@ -3120,7 +3122,7 @@ struct Uncompute::Impl {
         if (!c) {
           if (op->getParent() == entry)
             internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
-          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName(), facts);
+          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName(), facts, &view);
         }
         u.set(c);
       }
@@ -3163,7 +3165,7 @@ struct Uncompute::Impl {
   // in the order the walk made them, each inserted at the top of its block. A folded phi still takes its name's unique
   // number when the walk reaches it, as the phi the walk used to make and erase did, so every name stays the same.
   Value *carryTo(BasicBlock *at, bool atEnd, BasicBlock *D, Value *v, Value *dflt, const Twine &name,
-                 const CfgFacts *facts = nullptr) {
+                 const CfgFacts *facts = nullptr, CarryView *noFacts = nullptr) {
     constexpr unsigned kNo = CarryView::kNo;
     const bool arms = !armJoins.empty();
     // cq-jws5r: as flagAt, with D the one event: a block D does not reach ends with dflt, and a noted classical arm
@@ -3171,6 +3173,7 @@ struct Uncompute::Impl {
     SmallPtrSet<const BasicBlock *, 32> reachD, afterD;
     // With the CFG's facts at hand the two questions are read from the order instead of two walks per carry.
     unsigned orderD = 0;
+    const CfgFacts *const facts0 = facts;
     if (facts) {
       auto it = facts->order.find(D);
       if (it == facts->order.end())
@@ -3179,7 +3182,8 @@ struct Uncompute::Impl {
         orderD = it->second;
     }
     CarryView local;
-    CarryView &V = facts ? facts->view : local;
+    // noFacts: a view shared by carries that all run without facts (its blocks carry no order).
+    CarryView &V = facts ? facts->view : !facts0 && noFacts ? *noFacts : local;
     auto orderOf = [&](const BasicBlock *x) {
       auto it = facts->order.find(x);
       return it == facts->order.end() ? kNo : it->second;
