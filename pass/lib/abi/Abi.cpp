@@ -18,6 +18,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
@@ -175,7 +176,7 @@ enum class Dom : uint8_t { Int, Fp, Any, CastII, CastFF, CastIF, CastFI, Bitcast
 enum class Comm : uint8_t { No, Int, Fp, Cmp, FmaProduct };
 
 struct OpInfo {
-  const char *name;
+  llvm::StringLiteral name;
   Arity arity;
   Dom dom;
   Comm comm;
@@ -654,7 +655,7 @@ llvm::FunctionCallee declare(llvm::Module &M, const TemplateSpec &s, bool unc) {
   return declareChecked(M, templateName(s, unc), llvm::FunctionType::get(ret, args, false));
 }
 
-std::optional<TemplateSpec> parseTemplate(llvm::StringRef sym, bool *unc) {
+static std::optional<TemplateSpec> parseTemplateImpl(llvm::StringRef sym, bool *unc) {
   StringRef rest = sym;
   if (!rest.consume_front("cq_template_"))
     return std::nullopt;
@@ -663,14 +664,14 @@ std::optional<TemplateSpec> parseTemplate(llvm::StringRef sym, bool *unc) {
   for (const OpInfo &o : kOps) {
     StringRef on(o.name);
     if (rest.size() > on.size() && rest.starts_with(on) && rest[on.size()] == '_' &&
-        (!op || on.size() > std::strlen(op->name)))
+        (!op || on.size() > op->name.size()))
       op = &o;
   }
   if (!op)
     return std::nullopt;
   TemplateSpec s;
-  s.op = op->name;
-  llvm::SmallVector<StringRef, 8> t = splitUnderscore(rest.drop_front(std::strlen(op->name) + 1));
+  s.op = op->name.str();
+  llvm::SmallVector<StringRef, 8> t = splitUnderscore(rest.drop_front(op->name.size() + 1));
   size_t i = 0, n = t.size();
   auto at = [&](StringRef v) { return i < n && t[i] == v; };
   if (op->hasPred) {
@@ -798,7 +799,7 @@ llvm::GlobalVariable *sigTable(llvm::Module &M) {
   return llvm::cast<llvm::GlobalVariable>(M.getOrInsertGlobal("__cq_sig", T));
 }
 
-std::optional<CoreSpec> parseCore(llvm::StringRef sym) {
+static std::optional<CoreSpec> parseCoreImpl(llvm::StringRef sym) {
   StringRef rest = sym;
   if (!rest.consume_front("cqrt_"))
     return std::nullopt;
@@ -864,11 +865,50 @@ std::string name(const CloneSpec &s) {
 
 // The normative right-to-left reading (CR §1.4): suffix words, then the _b bounds, then the mask as
 // the rightmost binary token; fn is the rest. Its consumers are rule-27 symbols, which carry no bounds.
-std::optional<CloneSpec> parseClone(llvm::StringRef symbol) {
+static std::optional<CloneSpec> parseCloneChecked(llvm::StringRef symbol) {
   auto s = parseCloneImpl(symbol);
   if (!s || cloneName(*s) != symbol)
     return std::nullopt;
   return s;
+}
+
+// The parsers are pure functions of the symbol and run in the pass's fixpoints: memoized per thread on an owned copy of
+// the name (a function's name dies with it), filled only past the cheap prefix test.
+std::optional<TemplateSpec> parseTemplate(llvm::StringRef sym, bool *unc) {
+  if (!sym.starts_with("cq_template_"))
+    return std::nullopt;
+  thread_local llvm::StringMap<std::optional<std::pair<TemplateSpec, bool>>> memo;
+  auto [it, fresh] = memo.try_emplace(sym);
+  if (fresh) {
+    bool u = false;
+    if (std::optional<TemplateSpec> s = parseTemplateImpl(sym, &u))
+      it->second = std::make_pair(std::move(*s), u);
+  }
+  if (!it->second)
+    return std::nullopt;
+  if (unc)
+    *unc = it->second->second;
+  return it->second->first;
+}
+
+std::optional<CoreSpec> parseCore(llvm::StringRef sym) {
+  if (!sym.starts_with("cqrt_"))
+    return std::nullopt;
+  thread_local llvm::StringMap<std::optional<CoreSpec>> memo;
+  auto [it, fresh] = memo.try_emplace(sym);
+  if (fresh)
+    it->second = parseCoreImpl(sym);
+  return it->second;
+}
+
+std::optional<CloneSpec> parseClone(llvm::StringRef symbol) {
+  if (!symbol.starts_with("__cq_q_"))
+    return std::nullopt;
+  thread_local llvm::StringMap<std::optional<CloneSpec>> memo;
+  auto [it, fresh] = memo.try_emplace(symbol);
+  if (fresh)
+    it->second = parseCloneChecked(symbol);
+  return it->second;
 }
 
 // Rule 27 (3aaafe1): SHA-256 over the asm string as LLVM spells it ($N operands), one NUL byte, then
