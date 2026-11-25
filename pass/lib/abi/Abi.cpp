@@ -471,6 +471,9 @@ const CoreInfo kCores[] = {
     {Core::Pop, "pop", WidthUse::None, false, false, false, false},
     {Core::InvertBegin, "invert_begin", WidthUse::None, false, false, false, false},
     {Core::InvertEnd, "invert_end", WidthUse::None, false, false, false, false},
+    {Core::Addc, "addc", WidthUse::Any, false, false, false, false},
+    {Core::Add, "add", WidthUse::Any, false, false, false, false},
+    {Core::Sub, "sub", WidthUse::Any, false, false, false, false},
 };
 
 const CoreInfo &coreInfo(Core op) {
@@ -496,6 +499,8 @@ std::string checkCore(const CoreSpec &s) {
       return std::string("cqrt_") + c.stem + " takes no width";
     break;
   }
+  if ((s.op == Core::Add || s.op == Core::Sub || s.op == Core::Addc) && s.w.kind != Kind::Int)
+    return std::string("cqrt_") + c.stem + " is integer only";
   if (s.ctl && !c.ctlAllowed)
     return std::string("cqrt_") + c.stem + " has no _controlled form";
   if (!s.ctl && c.ctlRequired)
@@ -738,6 +743,9 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
   case Core::XorI1: a.append({h, h}); break;
   case Core::Copy: a.append({h, h}); break;
   case Core::Xorc: a.append({h, T()}); break;
+  case Core::Add:
+  case Core::Sub: a.append({h, h}); break;   // (s, d)
+  case Core::Addc: a.append({h, T()}); break;
   case Core::QramAlloc: ret = h; a.push_back(i32); break;
   // CR §1.3: addr is an i64 address rail, or the classical i64 address with _hl.
   case Core::QramStore: a.append({h, s.hl ? llvm::Type::getInt64Ty(C) : h, h}); break;   // (m, addr, v)

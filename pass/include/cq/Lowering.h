@@ -62,6 +62,9 @@ private:
   struct Impl; std::shared_ptr<Impl> impl;
 };
 void construct(llvm::Module &, const TaintInfo &, const Specialization &, const loops::KOptions &);
+// CR rule 6, in-place update (cq-2h7xa): after every construction, each clean-up of a plain add/xor's dead operand that
+// Uncompute placed right after the update becomes one core gate on the old rail; the !cq.r6 tags are dropped.
+void fuseInPlaceUpdates(llvm::Module &);
 void lowerOpcode(LoweringContext &, llvm::Instruction &);
 void lowerInstruction(LoweringContext &, llvm::Instruction &);   // the spine's dispatch of one non-phi, non-terminator
 void lowerInstruction(LoweringContext &, llvm::Instruction &, llvm::Value *tripFlag);   // cq-99f7: under a loop trip's i1 rail

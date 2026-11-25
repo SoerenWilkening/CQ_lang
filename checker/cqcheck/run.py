@@ -2138,7 +2138,7 @@ def kept_k2_module(text: str) -> str:
 # __cq_q_<fn>_<mask>[_b...][_t][_ctl] (no twin: _unc, _pure) with scalar parameters (iN up to 64, ptr, half, float,
 # double; one per ABI argument: the _ctl predicate, then one per mask digit, a 1 an i32 handle) and a void or scalar
 # result, whose body and every clone it calls by name hold only templates (no _rm, _rmq, _exc), cqrt_ alloc, free,
-# the i1 gates, copy, xorc, bus load/store/swap, push and pop (cq-mxe2q, owner 2026-11-08: the runtime records only a
+# the i1 gates, copy, xorc, add, sub, addc (cq-2h7xa), bus load/store/swap, push and pop (cq-mxe2q, owner 2026-11-08: the runtime records only a
 # window whose pops take only its own pushes and that ends at the depth it began at, dispatch.c), __cq_mem, the module's totalisation helpers, pure llvm
 # intrinsics, cqe__set_store_kept and cqe__set_kept_ak; no load, store or other memory instruction, no indirect call, no inline asm.
 # The runtime checks again what the text cannot show (a rail outside the call's arguments, a trace line, a
@@ -2168,7 +2168,7 @@ _RP_CLONE = re.compile(r"^__cq_q_(.+)_(v|[01]+)(?:_b\d+(?:_\d+)*)?(_t)?(_ctl)?$"
 _RP_HEAD = re.compile(r'^define\s+(?P<pre>[^@]*?)\s*@(?P<name>[-\w.$]+)\(')
 _RP_CC = re.compile(r"\b(fastcc|coldcc|ccc|tailcc|swiftcc|swifttailcc|cc \d+)\b")
 _RP_SCALAR = re.compile(r"^(?:i(\d+)|ptr|half|float|double)$")
-_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|push|pop|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|"
+_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|push|pop|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|(?:add|sub|addc)_i\d+|"
                          r"qram_(?:load|store|swap)_\w+)$")
 _RP_LLVM_OK = re.compile(r"^llvm\.(?:smax|smin|umax|umin|abs|ctlz|cttz|ctpop|bswap|bitreverse|fshl|fshr|"
                          r"[su](?:add|sub|mul)\.with\.overflow|[su](?:add|sub)\.sat|[su]shl\.sat|assume|expect|"

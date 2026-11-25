@@ -2,7 +2,7 @@
 ; (no store, rotation, phase, measurement or host call) and reads the formal only into fresh rails keeps
 ; nothing: the call is a reader, x is cleaned from x + 1 after it (unc-h2 p21). @storing_clone: the callee
 ; stores its formal into a global: an escape, x is kept.
-; CHECK-COUNT pure_clone: call void @cqrt_copy_i32( 1
+; CHECK-COUNT pure_clone: call void @cqrt_addc_i32( 1
 ; CHECK-COUNT storing_clone: call void @cqrt_copy_i32( 0
 ;
 ; C: static __attribute__((noinline)) int sq(int v) { return v * v; }

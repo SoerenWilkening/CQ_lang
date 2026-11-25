@@ -9,10 +9,10 @@
 ; CHECK-COUNT retry_mul: call void @cqrt_copy_i32( 1
 ; CHECK retry_mul: call i32 @cq_template_mul_i32_hl(i32 %{{t}}, i32 -858993459)
 ; CHECK-COUNT retry_gate: call void @cqrt_copy_i32( 1
-; CHECK-COUNT retry_first: call void @cqrt_copy_i32( 1
-; CHECK retry_first: call i32 @cq_template_sub_i32_hl(i32 %{{t}}, i32 3)
+; CHECK retry_first: call void @cqrt_addc_i32(i32 %{{t}}, i32 3)
+; CHECK-COUNT retry_first: call void @cqrt_copy_i32( 0
 ; CHECK-COUNT retry_xor: call void @cqrt_copy_i32( 1
-; CHECK-COUNT retry_garbage: call void @cqrt_copy_i32( 2
+; CHECK-COUNT retry_garbage: call void @cqrt_addc_i32( 2
 ;
 ; C: int retry_mul(int y0, double th) {
 ; C:     int y = y0;

@@ -21,8 +21,8 @@ define i32 @pn(i32 %x0, double %tx, i32 %y0, double %ty, i32 %k, double %t) {
   %r = add i32 %mx, %m
   ret i32 %r
 }
-; CHECK-COUNT pn: call void @cqrt_copy_i32( 1
-; CHECK-COUNT pn: call i32 @cq_template_sub_i32( 1
+; CHECK-COUNT pn: call void @cqrt_add_i32( 1
+; CHECK-COUNT pn: call void @cqrt_copy_i32( 0
 ; CHECK-COUNT pn: call void @cq_template_select_i32_ll_unc( 1
 
 define i32 @comp3(i32 %x0, double %tx) {
@@ -63,6 +63,6 @@ define i32 @chain(i32 %x0, double %tx, i32 %k) {
   %m = call i32 @cq_measure_si32(i32 %u)
   ret i32 %m
 }
-; CHECK chain: call i32 @cq_template_sub_i32_hl(i32 %3, i32 %k)
-; CHECK chain: call i32 @cq_template_sub_i32(i32 %5, i32 %1)
-; CHECK-COUNT chain: call void @cqrt_copy_i32( 2
+; CHECK chain: call void @cqrt_addc_i32(i32 %2, i32 %k)
+; CHECK chain: call void @cqrt_add_i32(i32 %1, i32 %2)
+; CHECK-COUNT chain: call void @cqrt_copy_i32( 0

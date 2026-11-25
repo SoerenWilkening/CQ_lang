@@ -1770,6 +1770,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
+    // 5'. CR rule 6's in-place update (cq-2h7xa): on the placed clean-ups, twins included.
+    cq::fuseInPlaceUpdates(M);
     // 5a. Rule 27 (owner ruling 2026-11-21): the address of a listed function taken here is the original library's, and the
     // row a call through it reaches is the lowered library's, registered by that library's constructor. A reference to the
     // all-ones clone links that library's object in although no call here names a clone of it.

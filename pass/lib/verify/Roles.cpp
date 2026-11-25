@@ -104,7 +104,13 @@ void coreRoles(Sig &S, const CallBase &CB) {
     S.res = Res::None;
     break;
   case Core::Xorc:
+  case Core::Addc:
     R.append({Role::Write, Role::Classical});
+    S.res = Res::None;
+    break;
+  case Core::Add:
+  case Core::Sub:
+    R.append({Role::Read, Role::Write});
     S.res = Res::None;
     break;
   case Core::QramAlloc:

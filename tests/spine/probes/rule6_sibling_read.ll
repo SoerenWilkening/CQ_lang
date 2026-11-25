@@ -27,8 +27,6 @@ j:
   %s2 = add nsw i32 %s, %w
   ret i32 %s2
 }
-; CHECK u01: call i32 @cq_template_sub_i32(i32 %8, i32 %1)
-; CHECK u01: call void @cqrt_copy_i32(i32 %9, i32 %2)
-; CHECK u01: call i32 @cq_template_sub_i32(i32 %10, i32 %3)
-; CHECK u01: call void @cqrt_copy_i32(i32 %11, i32 %8)
+; CHECK u01: call void @cqrt_add_i32(i32 %1, i32 %2)
+; CHECK u01: call void @cqrt_add_i32(i32 %3, i32 %2)
 ; CHECK-COUNT u01: call void @cq_template_add_i32_unc( 0

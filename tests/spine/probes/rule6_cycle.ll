@@ -5,7 +5,7 @@
 ; Regenerate: clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I CQ_spec -include CQ.h rule6_cycle.c (this header kept)
 ; USERCHECK cyc_arm
 ; USERCHECK cyc_mem
-; CHECK-COUNT cyc_arm: call void @cqrt_copy_i32( 1
+; CHECK-COUNT cyc_arm: call void @cqrt_add_i32( 1
 ; ModuleID = 'rule6_cycle.c'
 source_filename = "rule6_cycle.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

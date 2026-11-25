@@ -81,5 +81,5 @@ entry:
   %y = add i32 %x, 5
   ret i32 %y
 }
-; CHECK no_measure: %{{y}} = call i32 @cq_template_add_i32_hl(
+; CHECK no_measure: call void @cqrt_addc_i32(i32 %{{y}}, i32 5)
 ; CHECK no_measure: ret i32 %{{y}}

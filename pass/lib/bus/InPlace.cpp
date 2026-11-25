@@ -830,6 +830,20 @@ Value *selectRaw(LoweringContext &ctx, Value *c, Value *a, Value *b, Type *U, Sm
 // the inverse undone, the old rail freed.
 Value *updateAndClean(LoweringContext &ctx, const Step &st, Value *cur, Type *U, Value *c) {
   RailType w = railTypeOf(U);
+  // CR rule 6, in-place update (cq-2h7xa): with no quantum predicate (under one the update is the composite select), a
+  // plain add or xor of the swapped-out rail and a literal or another rail is one core gate on that rail.
+  if (!c && st.kind == Step::Single && st.a.op && st.a.z && (StringRef(st.a.op) == "add" || StringRef(st.a.op) == "xor")) {
+    Operand z = zOperand(ctx, st.a.z, U);
+    if (!z.handle || z.v != cur) {
+      bool add = StringRef(st.a.op) == "add";
+      abi::CoreSpec gs{add ? (z.handle ? abi::Core::Add : abi::Core::Addc) : (z.handle ? abi::Core::Copy : abi::Core::Xorc), w};
+      if (z.handle)
+        ctx.emitCore(gs, {z.v, cur});
+      else
+        ctx.emitCore(gs, {cur, z.v});
+      return cur;
+    }
+  }
   // A classical select condition is a seed for the composite (rule 7).
   Value *k = nullptr, *seed = nullptr;
   if (st.kind == Step::Choice) {
