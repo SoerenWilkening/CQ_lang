@@ -371,6 +371,14 @@ CASES = [
     ("err_noerrno", "ne_rail", [], "pass", []),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
     ("mint2", "mint2", [], "pass", [r"call fastcc void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, i32 %\d+, double %\d+\)"]),
+    # cq-3kzya (rules 6, 18, 19): the twin is handed a register after its rotation; rule 6's clean of the register's pre-image
+    # against it would free a dirty rail. The twin makes no pre-image (no `* 3` in it).
+    ("twin_rule6_preimage", "callq", [], "pass",
+     [r"define internal void @__cq_q_bumpq_10_unc\((?:(?!\n}\n)[\s\S])*\n}\n", r"\A(?![\s\S]*@__cq_q_bumpq_10_unc\([^\n]*\{(?:(?!\n}\n)[\s\S])*i32 3\))"]),
+    ("twin_rule6_preimage", "callchain", [], "pass",
+     [r"\A(?![\s\S]*@__cq_q_chainq_10_unc\([^\n]*\{(?:(?!\n}\n)[\s\S])*i32 3\))"]),
+    ("twin_rule6_preimage", "callread", [], "pass",
+     [r"\A(?![\s\S]*@__cq_q_readq_10_unc\([^\n]*\{(?:(?!\n}\n)[\s\S])*i32 3\))"]),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).
     ("twin_kept_overflow", "tk", [], "pass", []),
     # cq-c09h (owner 2026-11-02, revisits cq-kkgh): a by-value formal is a copy: the clone's cq_theta on it

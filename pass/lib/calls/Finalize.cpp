@@ -540,6 +540,96 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       for (CallInst *c : writes)
         c->eraseFromParent();
     }
+    // cq-3kzya. Rule 6 cleaned an old rail o from the register's image before its rotation (t = f^-1(image, ..);
+    // copy(t, o)); here the register is handed after the rotation, so t is not o's value. o is undone by its producer's
+    // _unc instead, and the closed set below then drops it: the twin never makes the register's pre-image.
+    auto templ = [](Value *v) -> CallInst * {
+      auto *c = dyn_cast_or_null<CallInst>(v);
+      bool unc = false;
+      return c && c->getCalledFunction() && abi::parseTemplate(c->getCalledFunction()->getName(), &unc) && !unc &&
+                     !c->getType()->isVoidTy()
+                 ? c
+                 : nullptr;
+    };
+    auto readsHanded = [&](Value *t) {
+      SmallVector<Value *, 4> work{t};
+      SmallPtrSet<Value *, 8> seen;
+      while (!work.empty()) {
+        Value *v = work.pop_back_val();
+        if (!seen.insert(v).second)
+          continue;
+        if (is_contained(handed, v))
+          return true;
+        if (CallInst *c = templ(v))
+          work.append(c->arg_begin(), c->arg_end());
+      }
+      return false;
+    };
+    SmallVector<CallInst *, 2> stale;
+    for (Instruction &I : instructions(twin)) {
+      auto *c = dyn_cast<CallInst>(&I);
+      std::optional<abi::CoreSpec> cs = c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+      if (cs && cs->op == abi::Core::Copy && !cs->ctl && templ(c->getArgOperand(1)) && readsHanded(c->getArgOperand(0)))
+        stale.push_back(c);
+    }
+    for (CallInst *c : stale) {
+      CallInst *o = templ(c->getArgOperand(1));
+      SmallVector<Value *, 4> args{o};
+      SmallVector<Type *, 4> tys{o->getType()};
+      for (Value *a : o->args()) {
+        args.push_back(a);
+        tys.push_back(a->getType());
+      }
+      FunctionCallee unc = M.getOrInsertFunction((o->getCalledFunction()->getName() + "_unc").str(),
+                                                 FunctionType::get(Type::getVoidTy(C), tys, false));
+      IRBuilder<>(c).CreateCall(unc, args);
+      c->eraseFromParent();
+    }
+    // A closed set of template rails nothing else reads (each user is its own producer, _unc, copy onto it or free,
+    // or the producer, _unc or copy of another rail of the set) is computed and undone for nothing: dropped.
+    SetVector<CallInst *> idle;
+    for (Instruction &I : instructions(twin))
+      if (CallInst *c = templ(&I); c && any_of(c->users(), [](User *U) {
+            auto *f = dyn_cast<CallInst>(U);
+            return f && f->getCalledFunction() && f->getCalledFunction()->getName() == "cqrt_free";
+          }))
+        idle.insert(c);
+    auto writes = [&](User *U) -> CallInst * {   // the rail an instruction makes, undoes, copies onto or frees
+      auto *c = dyn_cast<CallInst>(U);
+      if (!c || !c->getCalledFunction())
+        return nullptr;
+      if (idle.count(c))
+        return c;
+      bool unc = false;
+      StringRef n = c->getCalledFunction()->getName();
+      if (abi::parseTemplate(n, &unc) && unc)
+        return dyn_cast<CallInst>(c->getArgOperand(0));
+      std::optional<abi::CoreSpec> cs = abi::parseCore(n);
+      if (cs && cs->op == abi::Core::Free)
+        return dyn_cast<CallInst>(c->getArgOperand(0));
+      if (cs && cs->op == abi::Core::Copy && !cs->ctl)
+        return dyn_cast<CallInst>(c->getArgOperand(1));
+      return nullptr;
+    };
+    for (bool changed = true; changed;) {
+      SmallVector<CallInst *, 8> read;
+      for (CallInst *r : idle)
+        if (!all_of(r->users(), [&](User *U) { CallInst *w = writes(U); return w && idle.count(w); }))
+          read.push_back(r);
+      for (CallInst *r : read)
+        idle.remove(r);
+      changed = !read.empty();
+    }
+    SetVector<Instruction *> drop;
+    for (CallInst *r : idle) {
+      for (User *U : r->users())
+        drop.insert(cast<Instruction>(U));
+      drop.insert(r);
+    }
+    for (Instruction *I : drop)
+      I->dropAllReferences();
+    for (Instruction *I : drop)
+      I->eraseFromParent();
     // A merge of handed registers is the register; a result nobody reads now need not be made again.
     for (bool changed = true; changed;) {
       changed = false;
