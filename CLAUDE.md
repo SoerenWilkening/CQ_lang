@@ -53,9 +53,11 @@ K per loop, first match wins: the per-function flag (`fmod=2046,sin=53`), a `CQ_
 (the `used` constant `__cq_k_<f>`), the global flag, the built-in default 4. Per-loop annotation is
 deferred until CQ_spec defines its syntax.
 
-The version 1 injection bundle is what the corpus lifts: compiler-rt's
-`__{mul,div}{s,d,x}c3` (69, 169–174, 181, 182) and musl `memcmp` and friends (190). Everything else
-with no body goes through rule 27 declared clones. Build the bundle with the corpus triple.
+The injection bundle (`bundle/manifest.json`) holds the bodies the corpus lifts: compiler-rt's
+`__{mul,div}{s,d,x}c3` (69, 169–174, 181, 182), musl `memcmp` and friends (190), the libm functions the
+corpus calls (175) and the `sprintf` and `sscanf` families. A callee with no body and on no root list
+is a host call (rule 16); on a root list it is a rule 27 declared clone. Build the bundle with the
+corpus triple.
 
 ## Internal errors, never declines
 
@@ -111,6 +113,9 @@ Built first (step 0 below). Requirements:
 
 ## Build order
 
+Steps 0 to 7, the full musl bundle and the library mode are built. The list stays as the order the
+constructions depend on.
+
 0. The §6 checker, evaluator runtime and drivers, with the self-test.
 1. Straight-line code: taint, templates, the uncompute spine, the structural verifier.
 2. Acyclic control flow: path predicates, flags, phases, value arms, `switch`, measurement.
@@ -151,5 +156,7 @@ run their own probes, never the implementer's tests. A finding becomes a bead.
 
 ## Documents
 
-`NORTHSTAR.md` (goals and principles, nothing dated), this file, `SPEC_ISSUES.md`. No other
-documents until something needs one.
+`NORTHSTAR.md` (goals and principles, nothing dated), this file, `SPEC_ISSUES.md`. For users:
+`README.md`, `docs/MANUAL.md`, `llms.txt` (the manual on one page for AI assistants; change it with
+the manual) and `docs/EXPERIMENTS.md` (dated measurements). `DECISIONS.md` is history and is not
+extended. No other documents until something needs one.

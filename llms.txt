@@ -1,0 +1,84 @@
+# CQ
+
+> CQ is plain C plus one header, `CQ.h`, with four primitives. The compiler `cqcc` (clang -O1, then
+> the LLVM pass `cq-lower`) turns every operation on quantum data into reversible circuits behind a
+> backend interface. Write ordinary C; do not write gates.
+
+Full manual: docs/MANUAL.md. Normative rules: spec/CONSTRUCTION_RULES.md. User surface: spec/CQ.h.
+Backend contract: spec/BACKEND_ABI.md. Worked programs: examples/grover/grover.c, examples/dicke/dicke.c.
+
+## The whole API
+
+    cq_theta(&x, angle);    // Ry(angle) on every qubit of x, in place. x: any integer or float l-value. Makes x quantum.
+    cq_phi(angle);          // multiply the amplitude of the current branch by e^(i*angle)
+    r = cq_measure(x);      // measure x, return the classical outcome (same type as x)
+    cq_invert_begin(); ...; cq_invert_end();   // the enclosed code runs as its adjoint
+    CQ_K(fn, k)             // file scope: loop cutoff for function fn
+    CQ_K2(fn, bytes)        // file scope: byte bound for fn's allocations of quantum size
+
+`CQ.h` is included automatically by `cqcc`. Angles are `double`, in radians, and classical.
+
+## Rules for writing CQ
+
+- There is no qubit type, no register object, no gate list, no circuit builder. Do not invent
+  `qubit`, `qreg`, `cq_h`, `cq_x`, `cq_cnot`, `cq_alloc` or any other name: they do not exist.
+- A value is quantum iff it derives from a `cq_theta` result (through arithmetic, memory, calls,
+  pointers). Everything else is classical host code.
+- Uniform superposition of an n-bit integer: start at 0, `cq_theta(&x, M_PI / 2)`.
+- One qubit: `bool q = 0;`. A register of individually addressed qubits: `bool q[N];`, not the
+  bits of a wide integer.
+- Controlled Ry: `if (c) cq_theta(&q, a);`. Doubly controlled: `if (c && d) cq_theta(&q, a);`.
+- CNOT: `t ^= c;` on `bool`s. X: `q = !q;` or `q ^= 1;`.
+- Phase oracle: `if (pred(x)) cq_phi(M_PI);`. `pred` is ordinary C, `math.h` included.
+- Do not uncompute by hand. Temporaries of an expression or a call are cleared by the compiler.
+- Adjoint of a block: wrap it in `cq_invert_begin()` / `cq_invert_end()`.
+- `if` on a quantum condition runs both arms; phases, rotations and stores are controlled by it.
+- A loop whose exit test reads quantum data runs exactly K trips (default 4). Set K to cover the
+  largest trip count in superposition: `CQ_K(fn, k)` or `-cq-k=fn=k`. Prefer classical loop bounds.
+- `printf` of a quantum value is deferred to the end of the run: the value is measured, then printed.
+- `cq_measure` inside a quantum branch measures unconditionally.
+- Library calls on quantum values work (`sqrt(x)`, `sin(x)`, `strlen(s)`, `sprintf`), and are
+  expensive: a `double` operation is thousands of gates. Use the narrowest integer type that fits.
+- C undefined behaviour is still undefined (division by 0, shift by the width, out-of-bounds).
+- x86-64 macOS and LLVM 19 only.
+
+## Minimal program
+
+    #include <math.h>
+    #include <stdio.h>
+    int main(void) {
+        unsigned char x = 0;
+        cq_theta(&x, M_PI / 2);                    /* all 256 values */
+        for (int r = 0; r < 12; r++) {             /* classical loop */
+            if (sqrt(x) == 12.0) cq_phi(M_PI);     /* oracle */
+            cq_invert_begin(); cq_theta(&x, M_PI / 2); cq_invert_end();
+            if (x != 0) cq_phi(M_PI);              /* diffusion */
+            cq_theta(&x, M_PI / 2);
+        }
+        printf("%d\n", x);                         /* measured at the end: 144 */
+        return 0;
+    }
+
+## Commands
+
+    cqcc -S prog.c -o prog.lowered.ll                  # lowered LLVM IR, no backend needed
+    cqcc -S --cq-check [--cq-entry fn] prog.c          # compare with the C program: exit 0 pass, 1 differs, 2 undecided
+    cqcc prog.c -lcq_backend -lcq_gates_count -o prog  # executable; CQ_COUNT=file ./prog counts gates, depth, qubits
+    cqcc prog.c -lcq_backend -lcq_gates_trace -o prog  # CQ_TRACE=file ./prog writes the circuit
+    cqcc -cq-k=fn=16 -cq-k-default=8 ...               # loop cutoffs
+    cqcc --save-temps DIR ...                          # keep linked.ll (pass input) and lowered.ll
+    cqcc --help                                        # every option
+
+From a checkout without `cqcc` on the PATH: `driver/cqcc`. The backend libraries come from
+https://github.com/SoerenWilkening/opcode_quantum_operations (see README.md).
+
+## Reading failures
+
+- `cq: internal error: ...`: a compiler bug, never a property of the program. There is no
+  "unsupported" diagnostic. Keep `linked.ll` and report it; do not rewrite the program to dodge it
+  without saying so.
+- `--cq-check` exit 1: the lowering differs from C on the printed input. Check first whether a
+  quantum-exit loop needs more than K trips.
+- Undefined `cq_template_f*` at link: build `softfloat/` (docs/MANUAL.md) or use a backend with floats.
+- Backend aborts on a wide quantum address: index arrays by a narrow quantum value; avoid walking
+  a quantum pointer.
