@@ -80,7 +80,7 @@ flags of its Makefile's `general-64` target: no SIMD, `-fno-exceptions`, the net
 sources are unchanged. The one module has 707 functions and no instruction a C program does not also produce.
 All 707 lower on their own under every arrangement a library exports, and it lowers as one library (214
 exported roots, 109 MB, 2 min 8 s). One function, `Tablebases::rank_root_moves`, first hit an internal error:
-its `{ i64, i32 }` result packs several fields into the `i64`; that is fixed (`repro-round9/aggret_packed_leaf.c`).
+its `{ i64, i32 }` result packs several fields into the `i64`; that is fixed.
 Five programs (`spot.cpp`: queen attacks from a quantum square, `Position::pseudo_legal`, `see_ge`,
 `attackers_to` and `UCIEngine::to_cp` on a quantum argument) link with the lowered library, Stockfish's
 ordinary build, the lowered C library and the replay backend. The classical setup (`Bitboards::init`,
