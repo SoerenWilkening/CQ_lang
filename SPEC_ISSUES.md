@@ -22,3 +22,9 @@ Entry format:
 - Disagreement: the reference lowering passes `base + 4` as the `_hl` literal of an access `arr[q].field`; the rule gives `add_i64_hl(rail, 4)` and then the literal `base`. 120 and 129 have the same shape.
 - Evidence: textual diff of the pass output against the reference for 168 (pass since cq-3v6fh); the §6 verdict is pass on all three.
 - Bead: cq-dnip9
+
+## Rule 6 witnesses (01, 38, 109, 127, 180, 204 and every reference with an `add` or `xor` clean-up): the references show the form before the in-place update
+- Rule: CR rule 6, *In-place update* (owner 2026-11-25): a plain `add` or `xor` of a dead value is one core gate on the old rail (`add_<W>`, `addc_<W>`, `copy_<W>`, `xorc_<W>`)
+- Disagreement: the references emit the template into a fresh rail, then `t = f⁻¹(y')`, `copy(t, y_old)`, `_unc` of `t` and the free of `y_old`
+- Evidence: the rule text; no reference calls `cqrt_add_*`, `cqrt_sub_*` or `cqrt_addc_*`. The affected set has not been enumerated.
+- Bead: cq-2h7xa

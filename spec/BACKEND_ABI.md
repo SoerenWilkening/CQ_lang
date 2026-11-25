@@ -87,7 +87,7 @@ translator of the IR. A call never returns before its gates are appended in prog
   type: `i1`, `iN`, `half`, `bfloat`, `float`, `double`, `x86_fp80`.
 - **Aliasing** *(corpus)*. One rail may fill several read-only operand slots of one call, as in
   `cq_template_fshr_i32(%5, %5, %6)` (112) and `cq_template_fadd_f16(%0, %0)` (111). The target of an
-  in-place core gate (`not/and/or/xor_i1` `t`, `copy` `d`, `xorc` `h`, `ry/rz` target) never equals
+  in-place core gate (`not/and/or/xor_i1` `t`, `copy` `d`, `xorc` `h`, `add`/`sub` `d`, `addc` `h`, `ry/rz` target) never equals
   any other operand of that call.
 - **Narrow scalar arguments and returns.** The corpus declares 6 symbols both with and without
   `signext`/`zeroext` (allowed, CR §1.2). The backend reads only the low W bits of a
@@ -216,7 +216,8 @@ cross this ABI.
 `<W>` is the width token. `_controlled` takes the control flag (an `i1` rail) as **argument 0**;
 in the bus load's `_controlled_unc`, which puts the result handle first, it is argument 1 (§1.10).
 The bus load's is the only core `_unc` symbol: the undo of an in-place core XOR gate (§1.8, §1.9,
-the bus swap) is the same call. ⟦h⟧ is the basis value of rail
+the bus swap) is the same call, and the undo of an in-place add (§1.15) is `sub` or `addc` of the
+negated literal. ⟦h⟧ is the basis value of rail
 h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 
 ### 1.1 `cqrt_alloc_<W>`
@@ -865,6 +866,32 @@ it.
 
 ---
 
+### 1.15 In-place add: `cqrt_add_<W>`, `cqrt_sub_<W>`, `cqrt_addc_<W>`
+- **Sig.** `void @cqrt_add_<W>(i32 s, i32 d)`, `void @cqrt_sub_<W>(i32 s, i32 d)`,
+  `void @cqrt_addc_<W>(i32 h, <T> lit)`. `<W>` is an integer width `iN`, N ≥ 1; `<T>` is that
+  integer type.
+- **Sem.** add: ⟦d⟧ ← (⟦d⟧ + ⟦s⟧) mod 2^W. sub: ⟦d⟧ ← (⟦d⟧ − ⟦s⟧) mod 2^W. addc: ⟦h⟧ ← (⟦h⟧ + lit)
+  mod 2^W, lit a classical value known at run time (§0 *Literal*), read as its low W bits.
+  Each acts as that permutation on every basis state of a superposition; there is no result
+  rail and nothing is returned.
+- **Rails.** s is unchanged. d (h) is modified and need not be `|0⟩`: it is any live rail, a
+  rotated register included. s and d are never the same rail. Every ancilla (carries) is
+  returned to `|0⟩` before the call returns. `sub_<W>(s, d)` is the exact inverse of
+  `add_<W>(s, d)`, and `addc_<W>(h, −lit)` that of `addc_<W>(h, lit)`; there is no `_unc` and
+  no `_controlled` form.
+- **Uses.** CR rule 6's in-place update: an `add` of a dead value, where the template into a
+  fresh rail followed by the clean-up of the old rail was emitted before. `sub` is emitted only
+  where an `add` is reversed (a `cq_invert` region, a twin, a reverse loop). The in-place `xor`
+  of the same rule is `copy_<W>(o, y)` and `xorc_<W>(y, lit)` of §1.9, which a backend already has;
+  that rule calls them on a target that is not `|0⟩`, which §1.9 allows.
+- **§2.** None: addition mod 2^W is total.
+- **Impl.** add: an in-place ripple-carry adder with no carry-out, such as the Cuccaro adder
+  §2.2 names for the `add` template (not read against BJ for this section). sub: the same
+  gate list reversed, or X on every bit of d, add, X on every bit of d. addc: add with the
+  literal loaded into a scratch rail by X gates and unloaded after, or a constant adder.
+  W = 1: add and sub are CX(s, d); addc is X(h) when lit is odd.
+- **Ex.** None in the corpus yet: the references still show rule 6's older form.
+
 ## 2. Templates (`cq_template_*`)
 
 ### 2.1 Grammar and conventions (CR §1.2)
@@ -1315,6 +1342,7 @@ corpus symbols are their expansions by width, shape and suffix. `<W>` is `i<N>` 
 | `rz_i1`; `rz_qangle` | none; `[_controlled]` | 1.6, 1.7 |
 | `not_i1`, `and_i1`, `or_i1`, `xor_i1` | none | 1.8 |
 | `copy`, `xorc` | `_<W>[_controlled]` | 1.9 |
+| `add`, `sub`, `addc` | `_<W>` | 1.15 |
 | `qram_alloc` | `_i8` | 1.10 |
 | `qram_load` | `_<W>[_hl][_controlled][_unc]` | 1.10 |
 | `qram_store`, `qram_swap` | `_<W>[_hl][_controlled]` | 1.10 |
@@ -1413,6 +1441,7 @@ parts of CR can alter a contract stated here, and the sections named are re-read
   returns: §1.10, §2.2–§2.11;
 - rule 5 (what is un-copied and what is kept, the `_controlled` bus forms, the in-place form):
   §1.10;
+- rule 6's in-place update (which opcodes, which core gates): §1.9, §1.15;
 - rule 16 (effect entries, the callees recognised by name, their results, allocation, K2):
   §1.11 and its callee table, §0;
 - rule 17 (`cq_invert`: what is reversed, the flush points): §1.13 and the result-rail clause

@@ -169,6 +169,9 @@ xor_i1(a, t)                      t ^= a              (CNOT)
 copy_<W>(s, d)                    d ^= s              (unconditional XOR, an involution; d need not be |0>)
 copy_<W>_controlled(c, s, d)
 xorc_<W>(h, lit), xorc_<W>_controlled(c, h, lit)
+add_<W>(s, d)                     d += s mod 2^W      (in place; s unchanged; s and d are different rails)
+sub_<W>(s, d)                     d -= s mod 2^W      (the inverse of add_<W>; emitted only where an add_<W> is reversed)
+addc_<W>(h, lit)                  h += lit mod 2^W    (in place; its inverse is addc_<W>(h, -lit))
 qram_alloc_i8(0) -> m             the memory bus M, the only QRAM: 8-bit cells, 2^64 cells (n = 0), cell index = the
                                   x86-64 address; created once per process, reached only through __cq_mem(), never freed
 qram_load_<W>[_hl][_controlled]([c,] m, addr) -> h
@@ -488,7 +491,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    `select` (or the operation's) templates, and a bus store (rules 20, 24), lowered by rule 5 as
    if written (an `add`, `sub` or `xor` is the in-place form, its result a plain load before the swap-out). There is no in-place
    template; in-place is reserved for rule 2 (rotation of an existing rail), rule 10 (controlled
-   Ry), `xorc` on a basis-state seed and rule 5's in-place form on a memory cell. — 10, 11, 13,
+   Ry), `xorc` on a basis-state seed, rule 5's in-place form on a memory cell and rule 6's
+   in-place update (`add` and `xor` of a dead value, the core gates `add`, `addc`, `copy`, `xorc`). — 10, 11, 13,
    14, 56, 92, 112; 94, 130.
 
 5. **Uncompute spine.** Every rail that is not a user register, a result, a tape/abort rail, an
@@ -620,6 +624,32 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      against the sum, `%t` kept; below, 109), or a reader of it follows a non-diagonal gate on its image.
      A kept old value is a which-path record of the rail that replaced it: a later
      non-diagonal gate on `y'` or on an operand of `f` acts on a dephased register (162).
+   - *In-place update (`add`, `xor`; owner 2026-11-25).* When `f` is the plain opcode `add` or
+     `xor` (not `sub`, not a select or a composite update, not the rolled-loop case below), its
+     other operand `o` is a literal or a rail other than `y`'s, and the clean-up point is right
+     after the update (no reader of the old value follows the update instruction: no SSA use and
+     no `_unc` that re-reads it), then wherever the sentences above would clean and free
+     `y_old` there, the update and the clean-up together are ONE core gate on `y_old`'s rail:
+
+         add y, o    add_<W>(o, y)      a literal o: addc_<W>(y, lit)
+         xor y, o    copy_<W>(o, y)     a literal o: xorc_<W>(y, lit)
+
+     and `y'` IS that rail from there on: no template, no fresh rail, no `t`, no `copy` onto the
+     old rail, no free. The rail then lives as `y'` would have (kept, measured, returned, the
+     old value of the next update in a chain, the step of rule 5's in-place form on the
+     swapped-out rail `h`). Every case in which the old value is kept (escapes, a kept store's
+     rail, measured, operand 1 of an update whose operands are both dead, a reader after a
+     non-diagonal gate) and every case in which this rule does not free `y_old` itself (a
+     seed, a rail the function does not own) is unchanged: the template into a fresh rail,
+     as before. So is every update whose clean-up point is later than the update. Where the
+     code is reversed (rule 17's region, a twin of rule 18, a reverse loop of rule 14) the
+     inverse of `add_<W>(o, y)` is `sub_<W>(o, y)`, that of `addc_<W>(y, lit)` is
+     `addc_<W>(y, -lit)`, and `copy` and `xorc` are their own. The gate is never
+     `_controlled`: under a quantum predicate it is emitted exactly where the template it
+     replaces was (a pure computation on a rail that is dead on every path), and an update
+     merged with the old value by a `select` or a `phi` is the composite case, not this one.
+     §6: the comparison is unchanged (the old rail was freed at `|0⟩` before and is no rail of
+     its own now).
    - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
      `xor y, -1`, `mul` by an odd literal, `fshl`/`fshr` with `y` in both value slots, `bswap`,
      `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125) and
