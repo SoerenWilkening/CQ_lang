@@ -41,8 +41,7 @@ not hide another:
 The times are for the whole project on one x86-64 Mac with the current pass: the libraries as built, the
 other projects as the sweep over their functions, six at a time with a limit of 2 minutes per function.
 The five functions over that limit were lowered on their own with a limit of 20 minutes. Counts are from
-2026-11-25, with rule 6's in-place update; the GSL sub-libraries other than `sys`, `statistics`, `cblas`, `blas`
-and `specfunc` were built earlier that day, before it.
+2026-11-25, with rule 6's in-place update.
 
 "Lowers" means the pass produced a module that passes its structural verifier. The lowered
 libraries are not checked against the C programs: the checker runs programs, and the reduced cases
