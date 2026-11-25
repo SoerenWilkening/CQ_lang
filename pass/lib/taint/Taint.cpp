@@ -314,9 +314,9 @@ private:
   void propagateEvents();
   // Rules 14, 19 (cq-m8biu): S's body holds a quantum-exit loop whose a_K is kept (B > K or no bound).
   bool ownKeptAK(SpecState &S);
-  SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
-                     std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {}, bool plain = false, bool table = false,
-                     uint8_t rm = 0);
+  SpecState *getSpec(Function *F, std::vector<Lanes> formal, const std::vector<Type *> &tys, bool ctl, bool pure,
+                     const std::vector<uint64_t> &bounds, const std::vector<unsigned> &boundFormals = {}, bool plain = false,
+                     bool table = false, uint8_t rm = 0);
   void analyze(SpecState &S);
   // Rule 23, §1.4 (owner 2026-11-12, cq-a9ij3): the mode word of a call of G from cur at the current point.
   uint8_t modeWord(const Function *G);
@@ -427,14 +427,30 @@ private:
         if (auto *CB = dyn_cast<CallBase>(&I))
           if (const Function *G = CB->getCalledFunction()) {
             bool loop = LI.getLoopFor(&BB) != nullptr;
-            if (hostCallee(*G))
+            if (hostM(*G))
               found = found || (loop && G->getName().starts_with("cq_theta_"));
             else if (!G->getReturnType()->isVoidTy() && (loop || callsReach(G, F)) && rotatesByName(G))
               found = true;
           }
     return mintsPerTripCache[F] = found;
   }
+  // hostCallee, measuresByName, rotatesByName, measuresInLoop and callsReach per function for this run (the IR does not
+  // change during one computeTaint; the memos die with the Analyzer, as Function pointers are reused between runs).
+  DenseMap<const Function *, bool> hostMemo, measuresMemo, rotatesMemo, measuresInLoopMemo;
+  DenseMap<const Function *, SmallPtrSet<const Function *, 16>> reachMemo;
+  bool hostM(const Function &F) {
+    auto [it, fresh] = hostMemo.try_emplace(&F, false);
+    if (fresh)
+      it->second = hostCallee(F);
+    return it->second;
+  }
   bool measuresInLoop(const Function *F) {
+    if (auto it = measuresInLoopMemo.find(F); it != measuresInLoopMemo.end())
+      return it->second;
+    bool r = measuresInLoopT(F);
+    return measuresInLoopMemo[F] = r;
+  }
+  bool measuresInLoopT(const Function *F) {
     if (F->isDeclaration())
       return false;
     const LoopInfo &LI = *fn(F).LI;
@@ -444,12 +460,18 @@ private:
       for (const Instruction &I : BB)
         if (auto *CB = dyn_cast<CallBase>(&I))
           if (const Function *G = CB->getCalledFunction())
-            if (hostCallee(*G) ? G->getName().starts_with("cq_measure_") : measuresByName(G))
+            if (hostM(*G) ? G->getName().starts_with("cq_measure_") : measuresByName(G))
               return true;
     }
     return false;
   }
   bool measuresByName(const Function *F) {
+    if (auto it = measuresMemo.find(F); it != measuresMemo.end())
+      return it->second;
+    bool r = measuresByNameT(F);
+    return measuresMemo[F] = r;
+  }
+  bool measuresByNameT(const Function *F) {
     SmallPtrSet<const Function *, 16> seen{F};
     SmallVector<const Function *, 16> work{F};
     while (!work.empty()) {
@@ -460,7 +482,7 @@ private:
             if (const Function *G = CB->getCalledFunction()) {
               if (G->isDeclaration() && G->getName().starts_with("cq_measure_"))
                 return true;
-              if (!hostCallee(*G) && seen.insert(G).second)
+              if (!hostM(*G) && seen.insert(G).second)
                 work.push_back(G);
             }
     }
@@ -468,6 +490,12 @@ private:
   }
   // F's body rotates, itself or through a callee by name.
   bool rotatesByName(const Function *F) {
+    if (auto it = rotatesMemo.find(F); it != rotatesMemo.end())
+      return it->second;
+    bool r = rotatesByNameT(F);
+    return rotatesMemo[F] = r;
+  }
+  bool rotatesByNameT(const Function *F) {
     SmallPtrSet<const Function *, 16> seen{F};
     SmallVector<const Function *, 16> work{F};
     while (!work.empty()) {
@@ -478,40 +506,33 @@ private:
             if (const Function *G = CB->getCalledFunction()) {
               if (G->getName().starts_with("cq_theta_"))
                 return true;
-              if (!hostCallee(*G) && seen.insert(G).second)
+              if (!hostM(*G) && seen.insert(G).second)
                 work.push_back(G);
             }
     }
     return false;
   }
-  // G reaches F through direct calls of defined functions (recursion, rule 14).
-  std::map<std::pair<const Function *, const Function *>, bool> reachCache;
+  // G reaches F through direct calls of defined functions (recursion, rule 14): F is a direct callee of G or of a function
+  // so reached, the walk passing through no host callee (G included). One walk per G collects every such callee.
   bool callsReach(const Function *G, const Function *F) {
-    auto key = std::make_pair(G, F);
-    auto it = reachCache.find(key);
-    if (it != reachCache.end())
-      return it->second;
-    SmallPtrSet<const Function *, 16> seen;
-    SmallVector<const Function *, 16> work{G};
-    bool found = false;
-    while (!work.empty() && !found) {
-      const Function *X = work.pop_back_val();
-      if (hostCallee(*X))
-        continue;
-      for (const BasicBlock &BB : *X)
-        for (const Instruction &I : BB)
-          if (auto *CB = dyn_cast<CallBase>(&I))
-            if (const Function *C = CB->getCalledFunction()) {
-              if (C == F) {
-                found = true;
-                break;
-              }
-              if (seen.insert(C).second)
-                work.push_back(C);
-            }
+    auto it = reachMemo.find(G);
+    if (it == reachMemo.end()) {
+      SmallPtrSet<const Function *, 16> seen;
+      SmallVector<const Function *, 16> work{G};
+      while (!work.empty()) {
+        const Function *X = work.pop_back_val();
+        if (hostM(*X))
+          continue;
+        for (const BasicBlock &BB : *X)
+          for (const Instruction &I : BB)
+            if (auto *CB = dyn_cast<CallBase>(&I))
+              if (const Function *C = CB->getCalledFunction())
+                if (seen.insert(C).second)
+                  work.push_back(C);
+      }
+      it = reachMemo.try_emplace(G, std::move(seen)).first;
     }
-    reachCache[key] = found;
-    return found;
+    return it->second.count(F);
   }
 
   // Post-fixpoint.
@@ -797,9 +818,9 @@ static Lanes cloneResultLanes(const SpecState &C, unsigned n) {
   return r;
 }
 
-SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
-                             std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain, bool table,
-                             uint8_t rm) {
+SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, const std::vector<Type *> &tys, bool ctl, bool pure,
+                             const std::vector<uint64_t> &bounds, const std::vector<unsigned> &boundFormalsIn, bool plain,
+                             bool table, uint8_t rm) {
   // Rule 18, §1.4: a clone exists once per taint mask of its scalar formals, and a quantum scalar formal is one rail. Byte
   // lanes of an integer actual (x & 4095) never split a mask digit: its whole field is the rail, so calls whose actuals
   // differ only in their quantum bytes reach one clone.
@@ -823,34 +844,52 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   }
   // A bound with no formal named (a library-build root read from its name): the quantum integer formals
   // in order, the reading §1.4's name gives.
-  if (boundFormals.size() != bounds.size()) {
-    boundFormals.clear();
-    for (unsigned i = 0; i < formal.size() && boundFormals.size() < bounds.size(); ++i)
+  std::vector<unsigned> boundFormalsOwn;
+  const std::vector<unsigned> *bfp = &boundFormalsIn;
+  if (boundFormalsIn.size() != bounds.size()) {
+    bfp = &boundFormalsOwn;
+    for (unsigned i = 0; i < formal.size() && boundFormalsOwn.size() < bounds.size(); ++i)
       if (i < tys.size() && tys[i]->isIntegerTy() && tys[i]->getIntegerBitWidth() > 1 && formal[i].any())
-        boundFormals.push_back(i);
-    if (boundFormals.size() != bounds.size())
+        boundFormalsOwn.push_back(i);
+    if (boundFormalsOwn.size() != bounds.size())
       internalError("taint: a clone's bounds outnumber its quantum integer formals", F);
   }
-  std::string key = F->getName().str();
-  key += "|";
-  for (unsigned i = 0; i < formal.size(); ++i)
-    key += lanesStr(formal[i]) + ",";
-  key += "|" + std::to_string(ctl) + std::to_string(pure) + std::to_string(plain) + (table ? "t" : "");
+  const std::vector<unsigned> &boundFormals = *bfp;
+  StringRef fname = F->getName();
+  std::string key;
+  key.reserve(fname.size() + 16 + formal.size() * 9 + bounds.size() * 24);
+  key.append(fname.data(), fname.size());
+  key += '|';
+  for (const Lanes &l : formal) {
+    for (unsigned k = 0; k < l.size(); ++k)
+      key += l.test(k) ? '1' : '0';   // lanesStr
+    key += ',';
+  }
+  key += '|';
+  key += ctl ? '1' : '0';
+  key += pure ? '1' : '0';
+  key += plain ? '1' : '0';
+  if (table)
+    key += 't';
   if (rm)
     key += rm == 1 ? "|rm" : "|rmq";
-  for (size_t i = 0; i < bounds.size(); ++i)
-    key += ":b" + std::to_string(boundFormals[i]) + "=" + std::to_string(bounds[i]);
+  for (size_t i = 0; i < bounds.size(); ++i) {
+    key += ":b";
+    key += std::to_string(boundFormals[i]);
+    key += '=';
+    key += std::to_string(bounds[i]);
+  }
   auto it = st.byKey.find(key);
   if (it != st.byKey.end())
     return it->second;
   auto S = std::make_unique<SpecState>();
   S->F = F;
   S->formal = std::move(formal);
-  S->formalTy = std::move(tys);
+  S->formalTy = tys;
   S->ctl = ctl;
   S->pure = pure;
-  S->bounds = std::move(bounds);
-  S->boundFormals = std::move(boundFormals);
+  S->bounds = bounds;
+  S->boundFormals = boundFormals;
   S->declared = F->isDeclaration();
   S->plain = plain;
   S->table = table;
@@ -862,10 +901,10 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   for (const Lanes &l : S->formal)
     zero = zero && l.none();
   S->inPlace = zero && !S->declared;
-  S->key = key;
   S->ret = Lanes(lanesOf(F->getReturnType()));
   SpecState *raw = S.get();
   st.byKey[key] = raw;
+  S->key = std::move(key);
   st.specs.push_back(std::move(S));
   st.changed = true;
   return raw;
@@ -1183,6 +1222,25 @@ void Analyzer::computeCDT(SpecState &S) {
       }
       if (pit == fi.cdParents.end() && fromHeader.empty())
         continue;
+      // Every cdt entry only grows within this call, so dst is a subset of the rebuilt set: when dst already holds every
+      // source (each stored entry is sorted and unique), the rebuild would leave it as it is.
+      auto &dst = S.cdt[BB];
+      auto has = [&](const BasicBlock *X) { return std::binary_search(dst.begin(), dst.end(), X); };
+      bool same = llvm::all_of(fromHeader, has);
+      if (same && pit != fi.cdParents.end())
+        for (const BasicBlock *A : pit->second) {
+          if (S.taintedTerm.count(A) && !has(A)) {
+            same = false;
+            break;
+          }
+          auto ait = S.cdt.find(A);
+          if (ait != S.cdt.end() && !std::includes(dst.begin(), dst.end(), ait->second.begin(), ait->second.end())) {
+            same = false;
+            break;
+          }
+        }
+      if (same)
+        continue;
       SmallVector<const BasicBlock *, 4> v(fromHeader);
       if (pit != fi.cdParents.end())
         for (const BasicBlock *A : pit->second) {
@@ -1194,7 +1252,6 @@ void Analyzer::computeCDT(SpecState &S) {
         }
       llvm::sort(v);
       v.erase(std::unique(v.begin(), v.end()), v.end());
-      auto &dst = S.cdt[BB];
       if (dst.size() != v.size() || !std::equal(v.begin(), v.end(), dst.begin())) {
         dst.assign(v.begin(), v.end());
         ch = true;
@@ -1227,7 +1284,7 @@ bool Analyzer::edgeChosen(const BasicBlock *from, const BasicBlock *to) {
   }
   auto tit = cur->cdt.find(to);
   for (const BasicBlock *T : E) {
-    if (tit == cur->cdt.end() || llvm::find(tit->second, T) == tit->second.end())
+    if (tit == cur->cdt.end() || !std::binary_search(tit->second.begin(), tit->second.end(), T))
       return true;
   }
   return false;
@@ -1354,7 +1411,7 @@ bool Analyzer::chosenAtDependentJoin(const PHINode &PN) {
     if (eit == cdE.end())
       continue;
     for (const BasicBlock *T : eit->second)
-      if (cur->taintedTerm.count(T) && llvm::find(jit->second, T) != jit->second.end())
+      if (cur->taintedTerm.count(T) && std::binary_search(jit->second.begin(), jit->second.end(), T))
         return true;
   }
   return false;
@@ -2024,7 +2081,7 @@ std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
 // itself passed a mode, an `_rm`/`_rmq` clone, whose calls of such bodies pass the mode on). A body with a strict op or a
 // fenv call, itself or through a callee, has 82's ABI: its plain name carries a classical mode, `_rmq` a mode rail.
 uint8_t Analyzer::modeWord(const Function *G) {
-  if (!G || G->isDeclaration() || hostCallee(*G))
+  if (!G || G->isDeclaration() || hostM(*G))
     return 0;
   bool strict = touchesEnvM(*G);
   if (!strict && !readsModeM(*G))
@@ -2072,7 +2129,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   // reached with the flags rail and the mode, whatever its data arguments. With every data argument classical that is
   // never the own symbol (its C parameter list carries no flags, and a classical root calling it stays as it is,
   // principle 1): the all-zero mask with 82's ABI and the mode as a handle, `_rmq` (§1.4).
-  if (!rm && !viaIntrinsic && !anyQ && !plain && (fenvNow() & 2) && !G->isDeclaration() && !hostCallee(*G) &&
+  if (!rm && !viaIntrinsic && !anyQ && !plain && (fenvNow() & 2) && !G->isDeclaration() && !hostM(*G) &&
       touchesEnvM(*G))
     rm = 2;
   // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
@@ -2499,7 +2556,7 @@ void Analyzer::transferCall(CallBase &CB) {
     // cq-gk1ki (rule 18): a defined noreturn callee handed a quantum argument or called under a quantum predicate is
     // lifted like any callee with a body (its clone carries rule 16's abort form), unless, with classical arguments, it
     // aborts on every path with nothing before (the noreturn call it ends in: spine Classify's Class::Noreturn).
-    if (!G->isDeclaration() && !hostCallee(*G)) {
+    if (!G->isDeclaration() && !hostM(*G)) {
       bool q = false;
       for (Value *A : actuals)
         q = q || L(A).any();
@@ -2538,7 +2595,7 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   // Rule 16 Signal table: signal is the bus load of the cell and the bus store of the handler; raise loads the cell and
   // calls through the loaded address rail by rule 19. No handler is tracked.
-  if (hostCallee(*G) && G->getName() == "signal" && actuals.size() == 2) {
+  if (hostM(*G) && G->getName() == "signal" && actuals.size() == 2) {
     setL(&CB, allLanes(rn));
     cur->busLoad = true;
     cur->writesOuter = true;
@@ -2547,7 +2604,7 @@ void Analyzer::transferCall(CallBase &CB) {
       cur->quantumStore = true;
     return;
   }
-  if (hostCallee(*G) && G->getName() == "raise" && actuals.size() == 1) {
+  if (hostM(*G) && G->getName() == "raise" && actuals.size() == 1) {
     if (rn && !CB.use_empty()) {
       setL(&CB, allLanes(rn));
       cur->readsEffect = true;
@@ -2564,7 +2621,7 @@ void Analyzer::transferCall(CallBase &CB) {
     StringRef pn = G->getName();
     if (pn.starts_with("\x01_"))
       pn = pn.drop_front(2);
-    if (hostCallee(*G) && (pn == "pthread_join" || rule24Mutex(pn)))
+    if (hostM(*G) && (pn == "pthread_join" || rule24Mutex(pn)))
       return;
   }
   if (G->getName() == "pthread_create" && actuals.size() == 4) {
@@ -2579,7 +2636,7 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   // cq-pt57w, cq-rrc52 (rule 16): an interface rule 16 names is the host boundary although the bundle has its body, never
   // lifted.
-  if (!hostCallee(*G)) {
+  if (!hostM(*G)) {
     lift(CB, G, actuals, false);
     return;
   }
@@ -2999,7 +3056,13 @@ void Analyzer::analyze(SpecState &S) {
     for (const BasicBlock *BB : fi.rpo)
       loopHeaderRule(S, BB, headerQ);
     uint8_t exit = 0;
-    for (const BasicBlock *BB : fi.rpo) {
+    // The join of every block's end state (fenvOut only grows): when it adds nothing to fenvCur, no block O below can.
+    uint8_t allOut = 0;
+    for (const BasicBlock *B : fi.rpo)
+      allOut |= S.fenvOut.lookup(B);
+    const unsigned nB = unsigned(fi.rpo.size());
+    for (unsigned j = 0; j < nB; ++j) {
+      const BasicBlock *BB = fi.rpo[j];
       // Rule 23: the environment state entering the block, joined over its predecessors.
       fenvCur = BB->isEntryBlock() ? fenvstate::kIdentity : 0;
       for (const BasicBlock *Pr : predecessors(BB))
@@ -3012,21 +3075,24 @@ void Analyzer::analyze(SpecState &S) {
       // read over those output paths: a fact an earlier block makes a rail (fesetround under a predicate: MODE' =
       // select(p, r, MODE)) is a rail at the start of every later block (a merge over handles). A block joins the
       // state at the end of every block before it in L that does not reach it in the CFG.
-      if (S.taintedTerm.size())
-        for (const BasicBlock *O : fi.rpo) {
+      if (S.taintedTerm.size() && (fenvCur | allOut) != fenvCur) {
+        if (fi.walkAt.empty()) {
+          for (const BasicBlock *B : fi.rpo)
+            fi.walkAt.push_back(fi.walk.lookup(B));
+          fi.reachKnown.resize(nB * nB);
+          fi.reachVal.resize(nB * nB);
+        }
+        const unsigned wBB = fi.walkAt[j];
+        for (unsigned i = 0; i < nB; ++i) {
           // A state that adds nothing to fenvCur needs no reachability answer (every pair, in a function with no
           // fenv call at all: half of SQLite's taint time).
-          uint8_t oo = S.fenvOut.lookup(O);
-          if (O == BB || (fenvCur | oo) == fenvCur || fi.walk.lookup(O) >= fi.walk.lookup(BB))
+          if (i == j || fi.walkAt[i] >= wBB)
             continue;
-          if (fi.reachIdx.empty()) {
-            unsigned n = 0;
-            for (const BasicBlock *B : fi.rpo)
-              fi.reachIdx[B] = n++;
-            fi.reachKnown.resize(n * n);
-            fi.reachVal.resize(n * n);
-          }
-          unsigned k = fi.reachIdx.lookup(O) * unsigned(fi.rpo.size()) + fi.reachIdx.lookup(BB);
+          const BasicBlock *O = fi.rpo[i];
+          uint8_t oo = S.fenvOut.lookup(O);
+          if ((fenvCur | oo) == fenvCur)
+            continue;
+          unsigned k = i * nB + j;
           if (!fi.reachKnown.test(k)) {
             fi.reachKnown.set(k);
             if (isPotentiallyReachable(O, BB, nullptr, fi.DT.get(), fi.LI.get()))
@@ -3035,6 +3101,7 @@ void Analyzer::analyze(SpecState &S) {
           if (!fi.reachVal.test(k))
             fenvCur |= oo;
         }
+      }
       for (const Instruction &CI : *BB) {
         Instruction &I = const_cast<Instruction &>(CI);
         curUser = &I;
@@ -3049,6 +3116,7 @@ void Analyzer::analyze(SpecState &S) {
       uint8_t &o = S.fenvOut[BB];
       if ((o | fenvCur) != o) {
         o |= fenvCur;
+        allOut |= o;
         localChanged = true;
       }
       if (isa<ReturnInst>(BB->getTerminator()))
@@ -3299,7 +3367,7 @@ void Analyzer::solve() {
   // Roots: in-place specializations of every externally reachable function; library-build roots. A stream call's body
   // is classical host C, never lowered (CR "Every body is lowered": the only bodies never lifted are rule 16's).
   for (Function &F : M) {
-    if (hostCallee(F))
+    if (hostM(F))
       continue;
     if (!F.hasLocalLinkage() || F.hasAddressTaken()) {
       std::vector<Lanes> z;

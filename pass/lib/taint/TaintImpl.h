@@ -27,6 +27,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -63,7 +64,8 @@ struct FnInfo {
   llvm::DenseMap<const llvm::BasicBlock *, unsigned> walk;
   // isPotentiallyReachable(rpo[i], rpo[j]) by i * rpo.size() + j, asked once per pair: the CFG, DT and LI are fixed for
   // one computeTaint and Analyzer::analyze asks every pair in every round (cq-k4l4z's SQLite run: 98% of the time).
-  llvm::DenseMap<const llvm::BasicBlock *, unsigned> reachIdx;
+  // walkAt[i]: walk position of rpo[i], filled with the reachability bits on first need.
+  std::vector<unsigned> walkAt;
   llvm::BitVector reachKnown, reachVal;
   // cq-z6q1: per (loop header, exiting block), whether SCEV computes the exit's count (exitCountKnown).
   std::map<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>, bool> exitKnown;
@@ -193,7 +195,7 @@ struct ImplState {
   // Rule 20 (a), rule 24: the host-resident globals, read on the pristine module.
   llvm::DenseSet<const llvm::GlobalVariable *> hostGlobals;
   std::vector<std::unique_ptr<SpecState>> specs;
-  std::map<std::string, SpecState *> byKey;
+  llvm::StringMap<SpecState *> byKey;   // looked up only, never iterated
   std::map<const llvm::Function *, std::unique_ptr<FnInfo>> fns;
   llvm::DenseMap<llvm::Type *, unsigned> laneCount;
   bool changed = false;
