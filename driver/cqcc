@@ -101,6 +101,7 @@ both sides, so the program's own lowering is checked, not the library's.
 A failing step exits with that step's status and writes no output. A failing --cq-check still writes
 the output and exits with cqcheck user's status.
 """
+import hashlib
 import json
 import os
 import re
@@ -289,14 +290,16 @@ def bundle_without(bundle, names, work: Path):
     every file that defines one, the file itself otherwise."""
     out = []
     for i, f in enumerate(bundle):
-        defined = {n.removeprefix("_") for n in nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)}
+        defined = {n.removeprefix("_") for n in bundle_defined(f, work)}
         drop = [n for n in names if n in defined]
         if not drop:
             out.append(f)
             continue
-        g = work / f"bundle{i}.nolisted.ll"
+        # Bitcode: llvm-nm and llvm-link read it without assembling it again. Named by what it drops, so a second
+        # call (--cq-ext-roots, then --cq-roots) writes a new file and bundle_defined's per-run memo stays exact.
+        g = work / f"bundle{i}.nolisted.{hashlib.sha256(','.join(drop).encode()).hexdigest()[:16]}.bc"
         run([tool("opt"), f"-load-pass-plugin={PLUGIN}", "-passes=cq-drop-bodies", "-cq-drop-bodies=" + ",".join(drop),
-             "-S", f, "-o", g], f"opt -passes=cq-drop-bodies on {f.name}")
+             f, "-o", g], f"opt -passes=cq-drop-bodies on {f.name}")
         out.append(g)
     return out
 
@@ -339,12 +342,46 @@ def nm(path: Path, flags, what: str, work: Path) -> set:
     return {ln.strip() for ln in r.stdout.splitlines() if ln.strip()}
 
 
+_BUNDLE_DEFINED = {}
+
+
+def bundle_defined(f: Path, work: Path) -> set:
+    """nm --defined-only of a bundle file, once per run. A file outside `work` (the bundle itself, not a scratch copy)
+    is also cached across runs in $CQ_BUILD_DIR/nm-cache, keyed by (path, mtime_ns, size, llvm-nm); a missing, stale
+    or unreadable entry is scanned again."""
+    if f in _BUNDLE_DEFINED:
+        return _BUNDLE_DEFINED[f]
+    entry = None
+    if not Path(f).resolve().is_relative_to(Path(work).resolve()):
+        st = os.stat(f)
+        key = [str(Path(f).resolve()), st.st_mtime_ns, st.st_size, tool("llvm-nm")]
+        entry = BUILD_DIR / "nm-cache" / (hashlib.sha256(json.dumps(key).encode()).hexdigest() + ".json")
+        try:
+            c = json.loads(entry.read_text())
+            if c["key"] == key:
+                _BUNDLE_DEFINED[f] = set(c["defined"])
+                return _BUNDLE_DEFINED[f]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    out = nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)
+    if entry is not None:
+        try:
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            part = entry.with_suffix(f".{os.getpid()}.tmp")
+            part.write_text(json.dumps({"key": key, "defined": sorted(out)}))
+            os.replace(part, entry)   # atomic: a concurrent run reads the old entry or the new one
+        except OSError:
+            pass
+    _BUNDLE_DEFINED[f] = out
+    return out
+
+
 def bundle_needed(linked: Path, bundle, work: Path) -> bool:
     """The bundle rule (module docstring): some symbol a bundle file defines is declared in `linked`
     without a body."""
     defined = set()
     for f in bundle:
-        defined |= nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)
+        defined |= bundle_defined(f, work)
     declared = nm(linked, ["--undefined-only"], "llvm-nm of the linked user module", work)
     return bool(defined & declared)
 
@@ -353,7 +390,7 @@ def libm_decls(linked: Path, bundle, work: Path) -> dict:
     """The libm functions the bundle defines that the module's LLVM math intrinsics stand for and no declaration names."""
     defined = set()
     for f in bundle:
-        defined |= nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)
+        defined |= bundle_defined(f, work)
     text = Path(linked).read_text()
     types = {"f32": ("float", "f"), "f64": ("double", ""), "f80": ("x86_fp80", "l")}
     out = {}

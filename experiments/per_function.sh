@@ -10,11 +10,13 @@ E=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$OUT/f"
 grep '^define ' "$IN" | sed -E 's/^define [^@]*@"?([A-Za-z0-9_.$]+)"?\(.*/\1/' | sort -u > "$OUT/functions.txt"
 cat "$E/lib/libc.roots" "$OUT/functions.txt" | sort -u > "$OUT/roots.txt"
-export IN OUT PLUGIN L
+# Parsed once: every worker extracts from bitcode (the extracted text differs only in its ModuleID comment).
+"$L/llvm-as" "$IN" -o "$OUT/in.bc"
+export OUT PLUGIN L
 set +e
 xargs -P6 -n1 sh -c '
 f=$1; k=$(printf %s "$f" | cksum | cut -d" " -f1)   # file key: names differing only in case share a file on macOS
-$L/llvm-extract --func="$f" -S "$IN" -o "$OUT/f/$k.ll" 2>/dev/null || { echo "$f|EXTRACT||"; exit 0; }
+$L/llvm-extract --func="$f" -S "$OUT/in.bc" -o "$OUT/f/$k.ll" 2>/dev/null || { echo "$f|EXTRACT||"; exit 0; }
 perl -e "alarm 120; exec @ARGV" $L/opt -load-pass-plugin="$PLUGIN" -passes=cq-lower -cq-roots="$OUT/roots.txt" -S -o /dev/null < "$OUT/f/$k.ll" > "$OUT/f/$k.err" 2>&1
 rc=$?
 if [ $rc = 0 ]; then echo "$f|ok||"; rm -f "$OUT/f/$k.ll" "$OUT/f/$k.err"
