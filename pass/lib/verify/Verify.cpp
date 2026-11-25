@@ -31,6 +31,7 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -93,7 +94,9 @@ private:
   void measureProvenance() {
     const unsigned MDKind = F.getContext().getMDKindID("cq.measure");
     for (const Instruction &I : instructions(F)) {
-      const MDNode *MD = I.getMetadata(MDKind);
+      if (!isa<CallBase>(I) && !I.hasMetadata())
+        continue;   // neither a measure call nor a carrier of !cq.measure
+      const MDNode *MD = I.hasMetadata() ? I.getMetadata(MDKind) : nullptr;
       const Sig *S = sigOf(I);
       const bool isMeasure = S && S->kind == Kind::Core && S->core && S->core->op == abi::Core::Measure;
       if (isMeasure && !MD)
@@ -604,6 +607,28 @@ private:
       }
       return eq;
     };
+    // With no back edge (every reachable predecessor earlier in RPO), one pass in RPO is the fixed point: report
+    // during it. rep only gates the reports, never the states.
+    DenseMap<const BasicBlock *, unsigned> pos;
+    for (const BasicBlock *BB : RPO)
+      pos[BB] = pos.size();
+    bool acyclic = all_of(RPO, [&](const BasicBlock *BB) {
+      return all_of(predecessors(BB), [&](const BasicBlock *P) {
+        auto It = pos.find(P);
+        return It == pos.end() || It->second < pos.lookup(BB);
+      });
+    });
+    if (acyclic) {
+      for (const BasicBlock *BB : RPO) {
+        State S = entryState(BB);
+        blockEntry(*BB, S, OutS, true);
+        for (const Instruction &I : *BB)
+          if (!isa<PHINode>(I))
+            transfer(I, S, true);
+        OutS[BB] = std::move(S.c);
+      }
+      return;
+    }
     bool changed = true;
     while (changed) {
       changed = false;
@@ -814,7 +839,7 @@ private:
 
   // ---- unc-operand-mismatch ----
   void uncOperands() {
-    std::map<std::string, std::vector<const CallBase *>> callsTo;
+    StringMap<std::vector<const CallBase *>> callsTo;   // read by find only
     // cq-i61ms: the forward clone calls by (fn, mask, bounds, ctl), in program order, read once: the twins below
     // looked them up by a scan of the whole function each (isForwardOf; sqlite3VdbeExec: minutes).
     std::map<std::tuple<std::string, Mask, std::vector<uint64_t>, bool>, std::vector<const CallBase *>> fwdClones;
@@ -824,7 +849,7 @@ private:
         unsigned n = callIdx.size();
         callIdx[CB] = n;
         if (const Function *Callee = CB->getCalledFunction())
-          callsTo[Callee->getName().str()].push_back(CB);
+          callsTo[Callee->getName()].push_back(CB);
         if (const Sig &S = Sigs.get(*CB); S.kind == Kind::Clone && !S.unc)
           fwdClones[{S.clone->fn, S.clone->mask, S.clone->bounds, S.clone->ctl}].push_back(CB);
       }

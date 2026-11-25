@@ -39,6 +39,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Constants.h"
@@ -594,31 +596,48 @@ void defineTwin(Module &M, Function &twin, Function &src) {
             return f && f->getCalledFunction() && f->getCalledFunction()->getName() == "cqrt_free";
           }))
         idle.insert(c);
+    // Which operand of a call to this callee is the rail it undoes (template _unc, free) or copies onto (copy); -1: none.
+    DenseMap<Function *, int> railArg;
+    auto argOf = [&](Function *f) {
+      auto [it, fresh] = railArg.try_emplace(f, -1);
+      if (fresh) {
+        bool unc = false;
+        StringRef n = f->getName();
+        std::optional<abi::CoreSpec> cs;
+        if (abi::parseTemplate(n, &unc) && unc)
+          it->second = 0;
+        else if ((cs = abi::parseCore(n)) && cs->op == abi::Core::Free)
+          it->second = 0;
+        else if (cs && cs->op == abi::Core::Copy && !cs->ctl)
+          it->second = 1;
+      }
+      return it->second;
+    };
     auto writes = [&](User *U) -> CallInst * {   // the rail an instruction makes, undoes, copies onto or frees
       auto *c = dyn_cast<CallInst>(U);
       if (!c || !c->getCalledFunction())
         return nullptr;
       if (idle.count(c))
         return c;
-      bool unc = false;
-      StringRef n = c->getCalledFunction()->getName();
-      if (abi::parseTemplate(n, &unc) && unc)
-        return dyn_cast<CallInst>(c->getArgOperand(0));
-      std::optional<abi::CoreSpec> cs = abi::parseCore(n);
-      if (cs && cs->op == abi::Core::Free)
-        return dyn_cast<CallInst>(c->getArgOperand(0));
-      if (cs && cs->op == abi::Core::Copy && !cs->ctl)
-        return dyn_cast<CallInst>(c->getArgOperand(1));
-      return nullptr;
+      int a = argOf(c->getCalledFunction());
+      return a < 0 ? nullptr : dyn_cast<CallInst>(c->getArgOperand(a));
     };
-    for (bool changed = true; changed;) {
-      SmallVector<CallInst *, 8> read;
-      for (CallInst *r : idle)
-        if (!all_of(r->users(), [&](User *U) { CallInst *w = writes(U); return w && idle.count(w); }))
-          read.push_back(r);
-      for (CallInst *r : read)
-        idle.remove(r);
-      changed = !read.empty();
+    // The greatest set in which every user of a rail writes a rail of the set: a removal can only unsettle the rails a
+    // removed one uses (it was their user) and those used by its users (they wrote it). The set's order is kept.
+    SmallVector<CallInst *, 16> work(idle.begin(), idle.end());
+    while (!work.empty()) {
+      CallInst *r = work.pop_back_val();
+      if (!idle.count(r) || all_of(r->users(), [&](User *U) { CallInst *w = writes(U); return w && idle.count(w); }))
+        continue;
+      idle.remove(r);
+      auto requeue = [&](User *u) {
+        for (Value *v : u->operands())
+          if (auto *o = dyn_cast<CallInst>(v); o && idle.count(o))
+            work.push_back(o);
+      };
+      requeue(r);
+      for (User *U : r->users())
+        requeue(U);
     }
     SetVector<Instruction *> drop;
     for (CallInst *r : idle) {
@@ -712,6 +731,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
 std::set<std::string> keepsResults, popsMints;
 // Rule 27, library build: the table clones and twins of the roots this module defines (exportRootClones).
 std::vector<std::string> exportedClones;
+StringSet<> exportedSet;   // exportedClones' members, for lookup; the vector's order is the one iterated
 // ... and the roots among them whose C function is the host library's (-cq-host-roots).
 std::set<std::string> hostRootNames;
 
@@ -779,6 +799,7 @@ void defineTableClones(Module &M) {
   keepsResults.clear();
   popsMints.clear();
   exportedClones.clear();
+  exportedSet.clear();
   hostRootNames.clear();
   if (rows.empty())
     return;
@@ -817,8 +838,10 @@ void defineTableClones(Module &M) {
       popsMints.insert(tcu->getName().str());
     if (!r.registered) {   // rule 27, owner 2026-11-20: another arrangement of a root, reached by name only
       if (r.exported)
-        for (Function *f : {t, tc, tu, tcu})
+        for (Function *f : {t, tc, tu, tcu}) {
           exportedClones.push_back(f->getName().str());
+          exportedSet.insert(f->getName());
+        }
       continue;
     }
     Constant *key = fn;
@@ -850,8 +873,10 @@ void defineTableClones(Module &M) {
     }
     B.CreateCall(add, {key, sigString(M, r.type), t, tc, tu, tcu});
     if (r.exported)
-      for (Function *f : {t, tc, tu, tcu})
+      for (Function *f : {t, tc, tu, tcu}) {
         exportedClones.push_back(f->getName().str());
+        exportedSet.insert(f->getName());
+      }
   }
   B.CreateRetVoid();
   appendToGlobalCtors(M, reg, 65535);
@@ -874,7 +899,7 @@ void exportRootClones(Module &M) {
   // names, so here it is only declared. A compiler-made one (__cq_*) stays this module's.
   if (!hostRootNames.empty()) {
     for (Function &F : M)
-      if (!F.isDeclaration() && !F.hasLocalLinkage() && !is_contained(exportedClones, F.getName().str()))
+      if (!F.isDeclaration() && !F.hasLocalLinkage() && !exportedSet.contains(F.getName()))
         F.setLinkage(GlobalValue::InternalLinkage);
     for (GlobalVariable &G : M.globals()) {
       if (G.isDeclaration() || G.hasLocalLinkage() || G.getName().starts_with("llvm."))
@@ -890,6 +915,7 @@ void exportRootClones(Module &M) {
     }
   }
   exportedClones.clear();
+  exportedSet.clear();
   hostRootNames.clear();
 }
 
@@ -900,7 +926,7 @@ void defineTwins(Module &M) {
     SmallVector<Function *, 8> todo;
     for (Function &F : M) {
       // An exported twin no row names (a root's other arrangement, rule 27) is defined although nothing here calls it.
-      if (!isClone(F) || !F.isDeclaration() || (F.use_empty() && !is_contained(exportedClones, F.getName().str())))
+      if (!isClone(F) || !F.isDeclaration() || (F.use_empty() && !exportedSet.contains(F.getName())))
         continue;
       std::optional<abi::CloneSpec> s = abi::parseClone(F.getName());
       if (!s || !s->unc)
