@@ -51,7 +51,7 @@ RailType railTypeOf(llvm::Type *t) {
   llvm::raw_string_ostream os(s);
   t->print(os);
   // fp128 is unreachable from C on this target (CR §1.1, rule 25); ppc_fp128 is not x86-64.
-  // Anything else (pointer, vector, aggregate, void) is no rail.
+  // Anything else (vector, aggregate, void) is no rail.
   if (t->isFloatingPointTy())
     internalError("abi: railTypeOf: IR the pinned pipeline cannot emit (CR §0, rule 25): an fp type with no CR §1.1 rail width: " + os.str());
   internalError("abi: railTypeOf: not a scalar rail type: " + os.str());
