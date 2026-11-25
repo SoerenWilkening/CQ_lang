@@ -82,7 +82,10 @@ static void testTypes() {
   CHECK(irTypeOf(C, {Kind::BFloat, 16}) == llvm::Type::getBFloatTy(C), "{BFloat,16} is bfloat");
   CHECK(dies([] { irTypeOf(C, {Kind::BFloat, 32}); }), "a BFloat rail is 16 bits");
   CHECK(dies([] { irTypeOf(C, {Kind::BFloat, 8}); }), "a BFloat rail is 16 bits (8)");
-  CHECK(dies([] { railTypeOf(llvm::PointerType::getUnqual(C)); }), "ptr is not a rail");
+  { // CR rule 21: a pointer is its 64-bit address, so its rail is i64 (irTypeOf gives i64, not ptr)
+    RailType p = railTypeOf(llvm::PointerType::getUnqual(C));
+    CHECK(p.kind == Kind::Int && p.bits == 64, "railTypeOf(ptr) is {Int, 64}");
+  }
   CHECK(dies([] { railTypeOf(llvm::FixedVectorType::get(llvm::Type::getInt32Ty(C), 4)); }), "vector");
   CHECK(dies([] { irTypeOf(C, {Kind::Fp, 128}); }), "f128");
   CHECK(dies([] { irTypeOf(C, {Kind::Int, 0}); }), "i0");
