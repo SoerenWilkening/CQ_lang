@@ -1174,6 +1174,48 @@ static void gate_copy_xorc(call_t *c, const char *w, int is_copy, int ctl) {
   g_copy_xorc(c->sym, &W, is_copy, ctl, cf, a, is_copy ? as_i32(&c->raw[n - 1]) : 0, &c->raw[n - 1]);
 }
 
+/* cq-2h7xa (BACKEND_ABI §1.15, CR rule 6's in-place update): add_<W>(s, d): d += s; sub_<W>(s, d): d -= s;
+ * addc_<W>(h, lit): h += lit; mod 2^W, integer widths only. Known-basis as the XOR gates: add and sub as copy (the
+ * zero rule over d and s), addc as an uncontrolled xorc (d keeps its flag). No carry of a frozen rail's content
+ * (cqe__carry): an update leaves it in d, which stays the register. */
+enum { ADD_ADD, ADD_SUB, ADD_LIT };
+static void gate_add(call_t *c, const char *w, int op) {
+  if (!want_args(c, 2, op == ADD_LIT ? "hL" : "hh"))
+    return;
+  wspec W = wspec_of(w);
+  if (w[0] != 'i') {
+    cqe__violation("malformed_call", -1, "%s: %s is no integer width", c->sym, w);
+    return;
+  }
+  int32_t d = as_i32(&c->raw[op == ADD_LIT ? 0 : 1]), s = op == ADD_LIT ? 0 : as_i32(&c->raw[0]);
+  cqe_val *tv, *sv = NULL;
+  if (op != ADD_LIT && !operand_v(c->sym, s, &W, &sv))
+    return;
+  if (!operand_v(c->sym, d, &W, &tv))
+    return;
+  if (op != ADD_LIT && !distinct_(c->sym, d, &s, 1))
+    return;
+  const cqe_val *dv = op == ADD_LIT ? &c->raw[1] : sv;
+  uint64_t carry = op == ADD_SUB; /* d - s = d + ~s + 1 */
+  for (uint32_t i = 0; i < tv->nw; ++i) {
+    uint64_t b = i < dv->nw ? dv->w[i] : 0;
+    if (op == ADD_SUB)
+      b = ~b;
+    uint64_t a = tv->w[i], r = a + b;
+    uint64_t c1 = r < a;
+    r += carry;
+    carry = c1 | (r < carry);
+    tv->w[i] = r;
+  }
+  vmask_(tv);
+  cqe__mark_written(d);
+  if (op != ADD_LIT) {
+    cqe__add_dep(d, s);
+    zero_rule_v(d, tv, &s, 1);
+  }
+  log_gate_(c->sym, d, &s, op != ADD_LIT);
+}
+
 static inline void g_push(int32_t v) {
   if (nstack == capstack) {
     capstack = capstack ? 2 * capstack : 256;
@@ -1214,7 +1256,7 @@ static void gate_pop(call_t *c) {
 }
 
 /* A cqrt_* core gate's name, parsed (cq-9hzgh: once per call site, dispatch_site). */
-enum { G_FREE = 1, G_PUSH, G_POP, G_ALLOC, G_MEASURE, G_RY, G_RZ_I1, G_RZ_QANGLE, G_LOGIC, G_COPY_XORC };
+enum { G_FREE = 1, G_PUSH, G_POP, G_ALLOC, G_MEASURE, G_RY, G_RZ_I1, G_RZ_QANGLE, G_LOGIC, G_COPY_XORC, G_ADD };
 typedef struct {
   int gate, q, ctl, is_copy, lop;
   uint32_t wbits; /* w's bits and kind as wspec_of gives them (the fast gates) */
@@ -1274,6 +1316,14 @@ static int core_parse(const char *s, core_cls *k) {
     k->gate = G_COPY_XORC, k->is_copy = is_copy, k->name = is_copy ? "copy" : "xorc";
     return 1;
   }
+  static const char *const adds[] = {"add_", "sub_", "addc_"}; /* cq-2h7xa: ADD_* order */
+  for (int i = 0; i < 3; ++i) {
+    size_t n = strlen(adds[i]);
+    if (!strncmp(s, adds[i], n) && (r = take_w(s + n, k->w, sizeof k->w)) && !*r) {
+      k->gate = G_ADD, k->lop = i, k->name = i == ADD_ADD ? "add" : i == ADD_SUB ? "sub" : "addc";
+      return 1;
+    }
+  }
   memset(k, 0, sizeof *k);
   return 0;
 }
@@ -1311,6 +1361,9 @@ static void core_run(call_t *c, const core_cls *k) {
     break;
   case G_COPY_XORC:
     gate_copy_xorc(c, k->w, k->is_copy, k->ctl);
+    break;
+  case G_ADD:
+    gate_add(c, k->w, k->lop);
     break;
   }
 }
@@ -2755,6 +2808,19 @@ static void iv_run(const iv_op *op) {
       } else {
         buf[nargs - 1][7] ^= 0x80; /* the double literal negated */
       }
+    }
+    /* cq-2h7xa (BACKEND_ABI §1.15): add and sub are each other's inverse; addc's is addc of the negated literal (its
+     * buffer negated as 128 bits: the gate reads the low W). */
+    if (op->inv && (!strncmp(sym, "cqrt_add_", 9) || !strncmp(sym, "cqrt_sub_", 9)))
+      memcpy(sym + 5, sym[5] == 'a' ? "sub" : "add", 3);
+    else if (op->inv && !strncmp(sym, "cqrt_addc_", 10) && nargs == 2) {
+      uint64_t lo, hi;
+      memcpy(&lo, buf[1], 8);
+      memcpy(&hi, buf[1] + 8, 8);
+      lo = ~lo + 1;
+      hi = ~hi + (lo == 0);
+      memcpy(buf[1], &lo, 8);
+      memcpy(buf[1] + 8, &hi, 8);
     }
     iv_call(op, sym, sig, argv, nargs, rbuf);
     if (a)

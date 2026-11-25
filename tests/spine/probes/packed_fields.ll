@@ -42,4 +42,4 @@ define i32 @pack_mixed(i32 %x, double %tx, i32 %c) {
 ; CHECK-COUNT pack_mixed: @cq_template_or 0
 ; CHECK-COUNT pack_mixed: @cq_template_lshr 0
 ; CHECK-COUNT pack_mixed: @cq_template_trunc 0
-; CHECK-COUNT pack_mixed: @cq_template_add_i32_hl( 1
+; CHECK-COUNT pack_mixed: @cqrt_addc_i32( 1

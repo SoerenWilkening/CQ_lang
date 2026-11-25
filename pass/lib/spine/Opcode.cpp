@@ -1261,6 +1261,31 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
       });
 }
 
+// CR rule 6, in-place update (owner 2026-11-25, cq-2h7xa): I is the plain opcode `add` or `xor` and its clean-up of the
+// dead operand Y is requested from I's image yp. The image's forward template is tagged !cq.r6 with Y's slot in it;
+// fuseInPlaceUpdates fuses it with the clean-up into one core gate where Uncompute placed that clean-up right after it.
+// Not tagged: an other operand that is Y's rail itself (no bijection anyway).
+void tagInPlace(LoweringContext &ctx, Instruction &I, Value *Y, Operand yp) {
+  auto *bo = dyn_cast<BinaryOperator>(&I);
+  if (!bo || !bo->getType()->isIntegerTy() || (bo->getOpcode() != Instruction::Add && bo->getOpcode() != Instruction::Xor))
+    return;
+  if (bo->getOperand(0) == bo->getOperand(1) || (bo->getOperand(0) != Y && bo->getOperand(1) != Y))
+    return;
+  auto *F = yp.handle ? dyn_cast<CallInst>(yp.v) : nullptr;
+  Function *G = F ? F->getCalledFunction() : nullptr;
+  bool unc = false;
+  std::optional<abi::TemplateSpec> t = G ? abi::parseTemplate(G->getName(), &unc) : std::nullopt;
+  if (!t || unc || t->op != (bo->getOpcode() == Instruction::Add ? "add" : "xor") || F->arg_size() != 2)
+    return;
+  Value *h = ctx.operand(Y).v;
+  for (unsigned i = 0; i < 2; ++i)
+    if (F->getArgOperand(i) == h && F->getArgOperand(1 - i) != h) {
+      LLVMContext &C = ctx.M.getContext();
+      F->setMetadata("cq.r6", MDNode::get(C, {ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(C), i))}));
+      return;
+    }
+}
+
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
   Value *h = ctx.operand(y).v;
   for (const Operand &o : inv.ops)
@@ -1963,6 +1988,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   auto cleanOrDefer = [&](Value *Y, const Inverse &inv) {
     auto dl = dynOf.find(Y);
     if (merges.empty() && dl == dynOf.end()) {
+      tagInPlace(ctx, I, Y, yp);
       clean(ctx, Y, inv);
       recompose(Y);
       return;
@@ -2118,6 +2144,7 @@ void ruleSixRetry(LoweringContext &ctx) {
           ctx.unc().noteUse(yid, uh);
       }
     }
+    tagInPlace(ctx, *e.I, e.Y, e.yp);
     clean(ctx, e.Y, *inv);
   }
 }
@@ -2145,6 +2172,91 @@ bool spine::measuredOnEveryPath(LoweringContext &ctx, const Value *v, const Inst
 
 bool spine::measuredOnEveryPath(const TaintInfo &T, const Specialization &S, const Value *v, const Instruction *also) {
   return cq::measuredOnEveryPath([&](const Value *x) { return T.isQuantum(x, S); }, v, also);
+}
+
+// CR rule 6, in-place update (owner 2026-11-25, cq-2h7xa). F = cq_template_{add,xor}_<W>[_hl](.., y, ..) is the image of
+// a plain add/xor whose dead operand y rule 6 cleans (tagged !cq.r6 by tagInPlace with y's slot). Where Uncompute placed
+// that clean-up (t = f^-1(F, o); copy(t, y); f^-1_unc(t, F, o); free t; free y) in F's block with no reader of y and no
+// cq_invert marker between F and it (the clean-up point is right after the update), update and clean-up are one core
+// gate on y's rail, and F is y's rail from there on:
+//   add y, o: add_<W>(o, y), a literal o addc_<W>(y, o);   xor y, o: copy_<W>(o, y), a literal o xorc_<W>(y, o).
+// Everything else keeps the clean-up as placed. Reversal: a cq_invert region's backend inverts the gate (BACKEND_ABI
+// §1.13, §1.15); a twin and a reverse loop undo only records, and a clean-up is none, so neither meets the gate.
+void fuseInPlaceUpdates(Module &M) {
+  SmallVector<CallInst *, 16> tagged;
+  for (Function &Fn : M)
+    for (Instruction &X : instructions(Fn))
+      if (X.getMetadata("cq.r6"))
+        tagged.push_back(cast<CallInst>(&X));
+  auto callee = [](const Instruction *X) -> StringRef {
+    auto *c = dyn_cast_or_null<CallInst>(X);
+    return c && c->getCalledFunction() ? c->getCalledFunction()->getName() : StringRef();
+  };
+  for (CallInst *F : tagged) {
+    unsigned yi = mdconst::extract<ConstantInt>(F->getMetadata("cq.r6")->getOperand(0))->getZExtValue();
+    F->setMetadata("cq.r6", nullptr);
+    bool unc = false;
+    std::optional<abi::TemplateSpec> fs = abi::parseTemplate(callee(F), &unc);
+    if (!fs || unc || F->arg_size() != 2 || yi > 1)
+      continue;
+    Value *y = F->getArgOperand(yi), *o = F->getArgOperand(1 - yi);
+    bool lit = fs->shape == "hl";
+    if (!(fs->shape.empty() || (lit && yi == 0)) || y == o)
+      continue;
+    // The clean-up, as Uncompute emits it: t, copy, t's _unc, free t, free y, consecutive.
+    CallInst *t = nullptr, *cp = nullptr;
+    for (User *u : y->users()) {
+      auto *c = dyn_cast<CallInst>(u);
+      std::optional<abi::CoreSpec> cs = c ? abi::parseCore(callee(c)) : std::nullopt;
+      if (!cs || cs->op != abi::Core::Copy || cs->ctl || c->getArgOperand(1) != y)
+        continue;
+      auto *tc = dyn_cast<CallInst>(c->getArgOperand(0));
+      std::optional<abi::TemplateSpec> ts = tc ? abi::parseTemplate(callee(tc), &unc) : std::nullopt;
+      if (!ts || unc || ts->op != (fs->op == "add" ? "sub" : "xor") || ts->w.kind != fs->w.kind ||
+          ts->w.bits != fs->w.bits || ts->shape != fs->shape || tc->arg_size() != 2 || tc->getArgOperand(0) != F ||
+          tc->getArgOperand(1) != o || tc->getNextNode() != c)
+        continue;
+      t = tc;
+      cp = c;
+      break;
+    }
+    if (!t)
+      continue;
+    auto *tu = dyn_cast_or_null<CallInst>(cp->getNextNode());
+    auto *ft = dyn_cast_or_null<CallInst>(tu ? tu->getNextNode() : nullptr);
+    auto *fy = dyn_cast_or_null<CallInst>(ft ? ft->getNextNode() : nullptr);
+    if (!fy || callee(tu) != (callee(t) + "_unc").str() || tu->arg_size() != 3 || tu->getArgOperand(0) != t ||
+        tu->getArgOperand(1) != F || tu->getArgOperand(2) != o || callee(ft) != "cqrt_free" ||
+        ft->getArgOperand(0) != t || callee(fy) != "cqrt_free" || fy->getArgOperand(0) != y)
+      continue;
+    if (t->getParent() != F->getParent() || !F->comesBefore(t))
+      continue;
+    bool between = false;
+    for (Instruction *X = F->getNextNode(); X != t && !between; X = X->getNextNode())
+      between = is_contained(X->operands(), y) || callee(X) == "cqrt_invert_begin" || callee(X) == "cqrt_invert_end";
+    if (between)
+      continue;
+    abi::CoreSpec gs{fs->op == "add" ? (lit ? abi::Core::Addc : abi::Core::Add) : (lit ? abi::Core::Xorc : abi::Core::Copy),
+                     fs->w};
+    IRBuilder<> B(F);
+    SmallVector<Value *, 2> args;
+    if (lit)
+      args.append({y, o});
+    else
+      args.append({o, y});
+    CallInst *g = B.CreateCall(abi::declare(M, gs), args);
+    g->setDebugLoc(F->getDebugLoc());
+    Function *gone[] = {F->getCalledFunction(), t->getCalledFunction(), tu->getCalledFunction()};
+    for (CallInst *X : {fy, ft, tu, cp, t})
+      X->eraseFromParent();
+    F->replaceAllUsesWith(y);
+    F->eraseFromParent();
+    if (gone[1] == gone[0])
+      gone[1] = nullptr;   // xor's inverse is its own template
+    for (Function *D : gone)
+      if (D && D->isDeclaration() && D->use_empty())
+        D->eraseFromParent();
+  }
 }
 
 

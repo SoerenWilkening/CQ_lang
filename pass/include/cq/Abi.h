@@ -27,7 +27,8 @@ enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, 
   Copy, Xorc, QramAlloc, QramStore, QramLoad, QramSwap, TapeAlloc, TapeFmt, TapeEffect,
   TapeEffectW,   // CR §1.3: tape_effect_<W>_controlled(c, t, name, n) -> r
   TapeWrite, TapeWriteLit, AbortI1, Push, Pop,
-  InvertBegin, InvertEnd };   // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
+  InvertBegin, InvertEnd,     // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
+  Add, Sub, Addc };           // cq-2h7xa: CR §1.3, rule 6's in-place update (BACKEND_ABI §1.15)
 // CR §1.3: the host symbols of the injection bundle's runtime object (rules 16, 19): i32 __cq_mem(),
 // ptr __cq_alloc(i64 size, i64 align), void __cq_clone_register(ptr fn, ptr sig, ptr clone, ptr ctl, ptr unc,
 // ptr ctl_unc), ptr __cq_clone_resolve(ptr fn, i32 kind), i32 __cq_clone_count(ptr sig), ptr __cq_clone_at(ptr sig,

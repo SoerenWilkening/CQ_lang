@@ -651,6 +651,22 @@ class HandlerOrder(unittest.TestCase):
         self.assertIn("every registered handler declined", r.violations[0]["msg"])
 
 
+class InPlaceAdd(unittest.TestCase):
+    """cq-2h7xa (BACKEND_ABI §1.15): add, sub, addc mod 2^W (i32, i100 across a word), the inverse of each inside a
+    cq_invert region, and s == d rejected."""
+
+    def test_forward_wide_and_inverted(self):
+        for x0 in (5, -1, 0x7FFFFFFF):
+            r = go("inplace_add.ll", "int inplace(int,double)", "inplace", ["int", "double"], [x0, 0.5])
+            self.assertEqual(r.violations, [])
+            # x0 + 7 - 7 - 3, then the region's add 7 and addc 10 reversed: - 10 - 7
+            self.assertEqual([int(m["v"], 16) for m in r.measured], [(x0 - 20) & 0xFFFFFFFF, (1 << 64) - 6])
+
+    def test_aliased_operands(self):
+        r = go("v_add_aliases.ll", "int core_all(int,double)", "core_all", ["int", "double"], [5, 0.5])
+        self.assertEqual([v["what"] for v in r.violations][:1], ["target_aliases_operand"])
+
+
 class MultiWord(unittest.TestCase):
     def test_wide_rails(self):
         v = (1 << 127) | 0x1234

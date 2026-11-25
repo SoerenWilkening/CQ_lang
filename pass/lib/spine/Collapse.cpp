@@ -666,6 +666,14 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
     }
     return;
   }
+  if (spec.op == abi::Core::Add || spec.op == abi::Core::Sub || spec.op == abi::Core::Addc) {
+    // Rule 6's in-place update (cq-2h7xa): no XOR, so the rail's records no longer give its basis value.
+    Value *d = args[spec.op == abi::Core::Addc ? 0 : 1];
+    if (auto it = sh.hist.find(d); it != sh.hist.end())
+      it->second.opaque = true;
+    opaqueThroughPhi(sh, d);
+    return;
+  }
   int t = xorTarget(spec, args.size());
   if (t < 0 || t >= int(args.size()))
     return;
