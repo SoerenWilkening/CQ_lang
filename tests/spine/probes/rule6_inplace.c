@@ -1,6 +1,6 @@
 /* tests/spine probe (CR rule 6, in-place update; owner 2026-11-25, cq-2h7xa): an add or xor of a dead value is one
  * core gate on the old rail (add_<W>, addc_<W>, copy_<W>, xorc_<W>); the old form stays where the old value is read
- * later, for y + y and for a select-merged update. */
+ * later and for y + y; a select of an update is `y + select(c, o, 0)` (cq-6wef6). */
 int add_reg(int x0, double tx, int y0, double ty) {
   int x = x0, y = y0;
   cq_theta(&x, tx);
