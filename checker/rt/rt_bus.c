@@ -610,6 +610,9 @@ void cqe__q2_check(const char *name, uint64_t a) {
   cqe_log(b);
 }
 
+/* A pointer argument of a real host call (run.py _q2_host_pointers, cq-fgyee). */
+void cqe__q2_ptr(const char *name, const void *p) { cqe__q2_check(name, (uint64_t)(uintptr_t)p); }
+
 /* Rulings Q2 for CR rule 23's calls with an object operand: a host call by name (rule 16, cq-rrc52) that reads and writes
  * the object's host bytes (rule 23), so a QUANTUM cell of the object gets CR 1.3's result. run.py host_effects_module
  * sends a direct call of each here; the system's function runs as before (dlsym past the program image, as

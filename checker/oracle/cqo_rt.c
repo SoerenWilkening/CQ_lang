@@ -1510,6 +1510,8 @@ static void __cqo_q2_check(const char *name, uintptr_t a) {
                      name ? name : "", (unsigned long long)a, (unsigned long long)o->lo, (unsigned long long)o->hi);
     out_long(b, (size_t)m);
 }
+/* A pointer argument of a real host call (OracleInstr.cpp hostPointers, cq-fgyee). */
+void __cqo_q2_ptr(const char *name, const void *p) { __cqo_q2_check(name, (uintptr_t)p); }
 /* Owner ruling 2026-11-12 cq-dbtpi: the reads of a host call's result (OracleInstr.cpp hostReads). __cqo_hscall(id) at
  * the call of site id, __cqo_hsread(id, name) before an instruction its result reaches: the first such read of the
  * sample after the call logs {"ev":"hsread","name"} (oracle.py: outputs["hsread"]). The table holds the sample's

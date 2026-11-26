@@ -167,6 +167,16 @@ static constexpr const char *StandinMarker = "__cqo_standin_phi";
 
 bool isDriverFn(const Function &F) { return F.getName().starts_with("__cqo_"); }
 
+// Library allocation, string-memory and thread entry points the runtime replaces wholesale (replaceLibrary).
+static const char *const LibraryNames[] = {
+    "malloc", "calloc", "realloc", "reallocf", "free", "aligned_alloc", "posix_memalign", "valloc", "memcpy", "memmove",
+    "memset", "memcmp", "bcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk", "pthread_create",
+    "pthread_join", "pthread_detach",
+    // fenv as rule 23 models it, not as the host libm does (cq-fvs2)
+    "fetestexcept", "feclearexcept", "feraiseexcept", "fegetexceptflag", "fesetexceptflag", "fesetround", "feupdateenv",
+    // the host's, behind the rulings Q2 check of their object operand (cqo_rt.c)
+    "fegetenv", "feholdexcept", "fesetenv"};
+
 class Instrumenter {
   Module &M;
   LLVMContext &C;
@@ -2975,16 +2985,8 @@ public:
     }
   }
 
-  // Library allocation, string-memory and thread entry points the runtime replaces wholesale.
+  // LibraryNames (above): the runtime replaces them wholesale.
   void replaceLibrary() {
-    static const char *names[] = {"malloc", "calloc", "realloc", "reallocf", "free", "aligned_alloc",
-                                  "posix_memalign", "valloc", "memcpy", "memmove", "memset", "memcmp",
-                                  "bcmp", "bzero", "__memcpy_chk", "__memmove_chk", "__memset_chk", "pthread_create", "pthread_join", "pthread_detach",
-                                  // fenv as rule 23 models it, not as the host libm does (cq-fvs2)
-                                  "fetestexcept", "feclearexcept", "feraiseexcept", "fegetexceptflag",
-                                  "fesetexceptflag", "fesetround", "feupdateenv",
-                                  // the host's, behind the rulings Q2 check of their object operand (cqo_rt.c)
-                                  "fegetenv", "feholdexcept", "fesetenv"};
     // CR rule 24: when some pthread_join of the module has a second operand other than the null constant, every
     // pthread_create stores the start routine's result in *t and every join stores its pthread_t operand through r;
     // otherwise neither writes (cqo_rt.c, the _r forms). The pass's own condition (Conc.cpp joinAskingResult).
@@ -2996,7 +2998,7 @@ public:
                                                  !(isa<Constant>(CB->getArgOperand(1)) &&
                                                    cast<Constant>(CB->getArgOperand(1))->isNullValue()))
             joinAsks = true;
-    for (const char *n : names) {
+    for (const char *n : LibraryNames) {
       std::string repl = std::string("__cqo_") + n;
       if (joinAsks && (StringRef(n) == "pthread_create" || StringRef(n) == "pthread_join"))
         repl += "_r";
@@ -3531,6 +3533,47 @@ public:
     }
   }
 
+  // ---------------------------------------------------------------- rulings Q2 at a real host call (cq-fgyee)
+  // A direct call of a bodiless callee that runs for real on both sides (drivers._REAL: strlen, strchr, a libm function
+  // with an out pointer, ...; not a stand-in, which fx_call.h hooks, not a stub, not what replaceLibrary models) given a
+  // pointer: __cqo_q2_ptr (cqo_rt.c) decides rulings Q2 on each pointer argument before the call, as fx_call.h's
+  // FX_PTR_HOOK does for a stand-in. The lowered side narrows (run.py host_effects_module).
+  void hostPointers() {
+    StringSet<> skip;
+    for (const char *n : LibraryNames)
+      skip.insert(n);
+    for (const std::string &n : OutresListed)
+      skip.insert(n);
+    if (!StubsFile.empty())
+      if (auto buf = MemoryBuffer::getFile(StubsFile)) {
+        SmallVector<StringRef, 16> lines;
+        (*buf)->getBuffer().split(lines, '\n', -1, false);
+        for (StringRef l : lines)
+          skip.insert(l.trim());
+      }
+    std::vector<CallBase *> sites;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !isDriverFn(F))
+        for (Instruction &I : instructions(F))
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && Pristine.count(CB))
+            if (const Function *G = CB->getCalledFunction(); G && G->isDeclaration() && !G->isIntrinsic()) {
+              StringRef n = G->getName();
+              n.consume_front("\x01_");
+              if (!n.starts_with("cq") && !n.starts_with("__cq") && !skip.count(n))
+                sites.push_back(CB);
+            }
+    if (sites.empty())
+      return;
+    MDNode *tag = MDNode::get(C, {});  // as hostReads
+    FunctionCallee h = hook("__cqo_q2_ptr", Void, {Ptr, Ptr});
+    for (CallBase *CB : sites) {
+      IRBuilder<> B(CB);
+      for (Value *A : CB->args())
+        if (A->getType()->isPointerTy())
+          B.CreateCall(h, {str(CB->getCalledFunction()->getName()), A})->setMetadata("cqo.sh", tag);
+    }
+  }
+
   // ---------------------------------------------------------------- termination notes
   void notes(Function &F) {
     static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
@@ -3760,6 +3803,7 @@ public:
     notePristine();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
     hostReads();       // ruling cq-dbtpi: after shadows(), which never sees its hooks
+    hostPointers();    // rulings Q2 at a real host call (cq-fgyee), likewise
     instrumentRule24();
     if (KI.on) {
       SpecNext = M.getGlobalVariable("__cqo_spec_next");

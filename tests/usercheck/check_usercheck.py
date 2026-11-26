@@ -43,6 +43,9 @@ Fails on any of:
             bodies in their own unit): fegetenv and fegetexceptflag are host calls (rule 16) given an object that holds a
             rail only where x is odd; not a PASS on the others with the excluded count stated, or a wrong lowering (either
             call dropped, so the host's write is lost) not rejected. --fenvq2 runs this group alone
+  hostq2    rulings Q2 at a real host call (src/hostq2, cq-fgyee): strlen and strchr given an object that holds a rail
+            only where x is odd; not a PASS on the others with the excluded count stated, or a wrong strlen result not
+            rejected. --hostq2 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -500,6 +503,28 @@ def fenvq2(tmp):
         expect(f"mutant fenvq2 {m_}", 1, user(o1, p, "f", samples=64, light=True))
 
 
+def hostq2(tmp):
+    """Rulings Q2 at a real host call (cq-fgyee): strlen and strchr have no body and run for real on both sides (rule 16,
+    drivers._REAL); where x is odd s holds a rail at the calls and the input is not compared (OracleInstr.cpp
+    hostPointers, run.py _q2_host_pointers), where x is even it is compared. Mutant: strlen's result replaced by 7."""
+    d = SRC / "hostq2"
+    o1, low = d / "hostq2.O1.ll", d / "hostq2.lowered.ll"
+    code, out = user(o1, low, "f", samples=64, light=True)
+    expect("program hostq2 (f)", 0, (code, out))
+    m = re.search(r"compared (\d+) of (\d+) samples", out)
+    n = re.search(r"(\d+) of \d+ samples not compared \(rulings Q2", out)
+    if code == 0 and not (m and n and int(m.group(1)) > 0 and int(n.group(1)) > 0
+                          and int(m.group(1)) + int(n.group(1)) == int(m.group(2))):
+        fail("program hostq2 (f)", f"no partial exclusion stated:\n{out}")
+    text = low.read_text()
+    t = re.sub(r"= call i64 @strlen\(ptr [^%\n]*%\d+\) #\d+", "= add i64 7, 0", text)
+    if t == text:
+        raise SystemExit("hostq2: no strlen site in its lowering")
+    p = tmp / "hostq2_strlen7.ll"
+    p.write_text(t)
+    expect("mutant hostq2 strlen7", 1, user(o1, p, "f", samples=64, light=True))
+
+
 def musl_stdout(tmp):
     """Ruling Q6 and the output ruling of 2026-11-12 item 4: a program built against musl's <stdio.h> names the host's
     stream `stdout`, which Darwin calls __stdoutp; both sides bind it to the host's object, so the C program's fprintf
@@ -518,6 +543,7 @@ def main():
     ap.add_argument("--rv3", nargs="*", help="only the src/rv3 group, or these of it")
     ap.add_argument("--musl-stdout", action="store_true", help="only the src/muslstdout test")
     ap.add_argument("--dbtpi", action="store_true", help="only the src/dbtpi tests (ruling cq-dbtpi)")
+    ap.add_argument("--hostq2", action="store_true", help="only the src/hostq2 tests (rulings Q2, a real host call)")
     ap.add_argument("--fenvq2", action="store_true", help="only the src/fenvq2 tests (rulings Q2, rule 23's objects)")
     ap.add_argument("--spec", type=Path, default=ROOT / "spec")
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
@@ -532,6 +558,11 @@ def main():
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
             dbtpi(Path(t))
         print(f"{len(failures)} failures" if failures else "all dbtpi tests passed")
+        return 1 if failures else 0
+    if a.hostq2:
+        with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
+            hostq2(Path(t))
+        print(f"{len(failures)} failures" if failures else "all hostq2 tests passed")
         return 1 if failures else 0
     if a.fenvq2:
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
@@ -553,6 +584,7 @@ def main():
         musl_stdout(tmp)
         dbtpi(tmp)
         fenvq2(tmp)
+        hostq2(tmp)
         for name, entry in PROGRAMS:
             d = tmp / name
             r = subprocess.run([sys.executable, str(CQCC), "-S", str(SRC / f"{name}.c"), "--save-temps", str(d),
