@@ -245,7 +245,8 @@ Constant *effectName(Module &M, StringRef name) {
 
 // ------------------------------------------------------------------ noreturn look-ahead
 
-// May a call to F (with a quantum or non-classical pointer argument) modify a caller's rail in place?
+// May a call to F modify a caller's rail it reads by value in place? Memory writes do not (cq-e1ebs): a store leaves its
+// value rail unchanged (ABI qram_store), and the pointer arguments are no snapshot targets (laterInPlaceTargets).
 bool bodyMayModifyInPlace(const Function *F, SmallPtrSetImpl<const Function *> &seen) {
   if (!F || hostCallee(*F))
     return true;   // opaque (rule 27; a rule-16 stream call)
@@ -253,8 +254,6 @@ bool bodyMayModifyInPlace(const Function *F, SmallPtrSetImpl<const Function *> &
     return false;
   for (const BasicBlock &bb : *F)
     for (const Instruction &I : bb) {
-      if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
-        return true;
       auto *CB = dyn_cast<CallBase>(&I);
       if (!CB)
         continue;
@@ -265,11 +264,8 @@ bool bodyMayModifyInPlace(const Function *F, SmallPtrSetImpl<const Function *> &
         return true;
       if (isThetaSurface(G))
         return true;
-      if (G->isIntrinsic()) {
-        if (isa<MemIntrinsic>(CB))
-          return true;
+      if (G->isIntrinsic())
         continue;
-      }
       if (hostCallee(*G)) {
         StringRef n = G->getName();
         if (n.starts_with("cq_measure_") || n == "cq_phi")
