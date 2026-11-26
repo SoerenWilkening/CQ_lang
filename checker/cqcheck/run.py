@@ -2751,10 +2751,43 @@ def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
     for name in _FENV_OBJ_CALLS:
         if name not in defined and re.search(rf"(?m)^declare\b[^\n]*@{name}\(", text):
             text = re.sub(rf"@{name}(?=\()", f"@cqe__q2_{name}", text)
-    return text + drivers.effect_wrappers_ir(callees)
+    return _q2_host_pointers(text, defined) + drivers.effect_wrappers_ir(callees)
 
 
 _FENV_OBJ_CALLS = ("fegetenv", "feholdexcept", "fesetenv", "feupdateenv", "fegetexceptflag", "fesetexceptflag")
+_CALL_AT = re.compile(r"^([ \t]+)(?:%[-\w.$]+ = )?(?:(?:tail|musttail|notail) )?call [^@\n]*@([-\w.$]+|\"[^\"]*\")\(", re.M)
+
+
+def _q2_host_pointers(text: str, defined: Sequence[str] = ()) -> str:
+    """rulings Q2 at a real host call (cq-fgyee): before each direct call of a declared function that is no ABI or checker
+    symbol (strlen, a libm function with an out pointer, ...), rt_bus.c cqe__q2_ptr records each pointer argument into an
+    object holding a QUANTUM cell. The C side decides (OracleInstr.cpp hostPointers), this record narrows; a function the
+    driver defines (203's ext_fill) is no host call."""
+    from cqcheck import drivers
+    hosts = {m.group("name") for m in drivers._DECLARE.finditer(text)
+             if not drivers._c_name(m.group("name")).startswith(("llvm.", "cq", "__cq"))
+             and drivers._c_name(m.group("name")) not in defined}
+    if not hosts:
+        return text
+    names: Dict[str, str] = {}
+    out, last = [], 0
+    for m in _CALL_AT.finditer(text):
+        if m.group(2) not in hosts:
+            continue
+        ptrs = [a.split()[-1] for a in drivers.split_operands(drivers._balanced(text, m.end() - 1))
+                if a.split()[:1] == ["ptr"] and re.fullmatch(r"[%@][-\w.$]+", a.split()[-1])]
+        if not ptrs:
+            continue
+        c = drivers._c_name(m.group(2))
+        g = names.setdefault(c, f"@__cqe_q2n.{len(names)}")
+        out.append(text[last:m.start()])
+        out += [f"{m.group(1)}call void @cqe__q2_ptr(ptr {g}, ptr {p})\n" for p in ptrs]
+        last = m.start()
+    if not names:
+        return text
+    out.append(text[last:])
+    return ("".join(out) + "\ndeclare void @cqe__q2_ptr(ptr, ptr)\n"
+            + "".join(f'{g} = private unnamed_addr constant [{len(c) + 1} x i8] c"{c}\\00"\n' for c, g in names.items()))
 
 
 def _fx_arg(f: dict) -> dict:
