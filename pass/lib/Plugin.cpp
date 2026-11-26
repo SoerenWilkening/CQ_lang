@@ -877,7 +877,10 @@ bool unifySubLoopExits(Function &F) {
 // loop also leaving past it (a `return` in the loop), runs once after the trips, on the arm's value merged across them, unconditionally:
 // the paths past it are measured too, rule 2's deviation. The same kind of rewrite as unifySubLoopExits: the edges from the unit past the
 // measurement meet it at a hub, whose phis carry what their targets and later readers take (poison where a value does not reach), and
-// the hub then branches on which edge came in. The hub is the loop's continuation, so the measurement is no part of a trip. Inside an outer
+// the hub then branches on which edge came in; the measurement heads the arm's own successor of the hub, so it is rule 2's measurement
+// in an arm: unconditional where the hub's choice is quantum, and only on the arm's edge in a specialization where the loop's exits are
+// classical (cq-up2jp: the CFG is shared with a table clone whose exits are quantum). The hub is the loop's continuation, so the
+// measurement is no part of a trip. Inside an outer
 // loop the same holds for one of its trips: once per outer trip, after the inner loop's trips (owner, cq-2z29a).
 bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
   // A hub phi this rewrite made has no taint answer: it is asked through the value it stands for (cq-q7u9y: a second
@@ -1029,6 +1032,7 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
         for (size_t i = 0; i + 1 < targets.size(); ++i)
           sw->addCase(ConstantInt::get(Type::getInt32Ty(C), i), targets[i]);
       }
+      cm->moveBefore(&*rest->getFirstInsertionPt());   // rest's one predecessor is the hub
       // Later readers: a value that no longer dominates a use is read through a hub phi.
       DominatorTree New(F);
       SmallVector<Instruction *, 16> insts;

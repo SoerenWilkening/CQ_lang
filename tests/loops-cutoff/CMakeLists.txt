@@ -208,9 +208,10 @@ add_test(NAME loops-cutoff-prev-value
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/prev_value.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-q7u9y: two measurements in sequence in a K-loop's exit arm, the loop also returning past them, each once after the trips.
+# cq-up2jp: ec, a classical loop whose table clone has quantum exits: its exit arm's measurement runs only on that exit.
 add_test(NAME loops-cutoff-measure-seq
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in e=2 --measures-in e0=2
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in e=2 --measures-in e0=2 --measures-in ec=2
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_seq.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-47f8h (owner 2026-11-07): measurements are identified by call site: the trips no sample of the C program reaches
