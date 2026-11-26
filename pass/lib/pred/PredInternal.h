@@ -55,8 +55,13 @@ struct PathPredicates::Impl {
   unsigned assumedId = 0;
   std::map<std::tuple<unsigned, const llvm::BasicBlock *, const llvm::BasicBlock *>, Pred> underAssumed;
   // cq-ct59d: the rail last minted for a node (a flag, a classical seed, a switch case's equality), for
-  // GateSink::reusable.
-  std::map<unsigned, llvm::WeakVH> minted;
+  // GateSink::reusable. With the bindings its atoms' IR values had then (cq-p1olk: a rolled trip rebinds a header phi in the
+  // same output block, after which the rail holds the node over the previous trip's values).
+  struct Minted {
+    llvm::WeakVH rail;
+    std::vector<std::pair<const llvm::Value *, llvm::Value *>> reads;
+  };
+  std::map<unsigned, Minted> minted;
 };
 
 namespace pred_detail {
