@@ -443,13 +443,17 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
 
   ctx.emitCore(abi::CoreSpec{abi::Core::AbortI1, i1}, {flag});
   ctx.unc().setRole(ctx.unc().idOf(flag), Role::Abort);
+  fenv::atAbort(ctx, CB);
 }
 
 } // namespace
 
 void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
-  if (ctx.S.pure)
+  if (ctx.S.pure) {
+    if (CB.doesNotReturn())
+      fenv::atAbort(ctx, CB);   // the _pure clone drops the abort, not what it means for the state after it
     return;
+  }
   const Function *F = calleeOf(CB);
   if (!F)
     internalError("eff-tape: a host effect with no direct callee", &CB);
@@ -890,8 +894,10 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
 }
 
 void lowerNoreturn(LoweringContext &ctx, CallBase &CB) {
-  if (ctx.S.pure)
+  if (ctx.S.pure) {
+    fenv::atAbort(ctx, CB);   // the _pure clone drops the abort, not what it means for the state after it
     return;
+  }
   // Rule 16 lowers the call to abort_i1(pred) alone: its arguments (exit's status, __assert_fail's
   // strings), classical or quantum, are dropped, as the program they would end continues uncontrolled.
   Value *flag = bus::accessControl(ctx);

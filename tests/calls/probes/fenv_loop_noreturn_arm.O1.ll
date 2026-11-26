@@ -196,6 +196,69 @@ define i32 @ec() local_unnamed_addr #2 {
   ret i32 %12
 }
 
+; Function Attrs: noinline nounwind ssp uwtable
+define i32 @gr(i32 noundef %0) local_unnamed_addr #0 {
+  %2 = tail call i32 @fegetround() #4
+  %3 = add nsw i32 %2, %0
+  ret i32 %3
+}
+
+declare i32 @fegetround() local_unnamed_addr #1
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @er() local_unnamed_addr #2 {
+  %1 = tail call signext i8 @cq_theta_c(i8 noundef signext 0, double noundef 5.000000e-01) #5
+  br label %2
+
+2:                                                ; preds = %8, %0
+  %3 = phi i32 [ 0, %0 ], [ %9, %8 ]
+  %4 = zext nneg i32 %3 to i64
+  %5 = getelementptr inbounds [16 x i8], ptr @buf, i64 0, i64 %4
+  %6 = load i8, ptr %5, align 1, !tbaa !6
+  %7 = icmp eq i8 %6, %1
+  br i1 %7, label %14, label %8
+
+8:                                                ; preds = %2
+  %9 = add nuw nsw i32 %3, 1
+  %10 = icmp eq i32 %9, 7
+  br i1 %10, label %11, label %2, !llvm.loop !15
+
+11:                                               ; preds = %8
+  %12 = sext i8 %1 to i32
+  %13 = tail call i32 @gr(i32 noundef %12)
+  tail call void @exit(i32 noundef 3) #6
+  unreachable
+
+14:                                               ; preds = %2
+  %15 = tail call i32 @cq_measure_ui32(i32 noundef %3) #4
+  %16 = tail call i32 @fetestexcept(i32 noundef 32) #4
+  %17 = add i32 %16, %15
+  ret i32 %17
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @ea() local_unnamed_addr #2 {
+  %1 = tail call signext i8 @cq_theta_c(i8 noundef signext 0, double noundef 5.000000e-01) #5
+  %2 = sext i8 %1 to i32
+  %3 = and i32 %2, 1
+  %4 = icmp eq i32 %3, 0
+  br i1 %4, label %7, label %5
+
+5:                                                ; preds = %0
+  %6 = tail call i32 @g(i32 noundef %2)
+  tail call void @exit(i32 noundef 3) #6
+  unreachable
+
+7:                                                ; preds = %0
+  %8 = tail call signext i8 @cq_measure_c(i8 noundef signext %1) #4
+  %9 = sext i8 %8 to i32
+  %10 = tail call i32 @fetestexcept(i32 noundef 32) #4
+  %11 = add nsw i32 %10, %9
+  ret i32 %11
+}
+
+declare signext i8 @cq_measure_c(i8 noundef signext) local_unnamed_addr #1
+
 attributes #0 = { noinline nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -222,3 +285,4 @@ attributes #6 = { noreturn nounwind }
 !12 = distinct !{!12, !13, !10}
 !13 = !{!"llvm.loop.mustprogress"}
 !14 = distinct !{!14, !10}
+!15 = distinct !{!15, !10}

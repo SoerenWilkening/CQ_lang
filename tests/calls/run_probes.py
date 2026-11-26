@@ -51,16 +51,19 @@ CASES = [
     # (classical here), not the exit value's over-taint. A plain callee and a variadic one.
     ("loop_exit_call_result", "e", [], "pass", [r"call i32 @__cq_q_f_1"]),
     ("loop_exit_call_result", "ev", [], "pass", [r"call i32 @__cq_q_ve_"]),
-    # cq-6zudr (rules 14, 16, 23): a rule-14 loop's noreturn arm, lowered with the loop, changes the flags: the loop carries
-    # them (fenv::loopCarried over the arm) and taint's loop header joins the arm's state. e failed on taint (fetestexcept
-    # classical); en (TinyCC's parse_operand: no live exit, the arm in each trip) merged the trip's flags after the loop's
-    # reverse had freed them (recordMerge). cq-dmlhn (rules 19, 23): g raises into the HOST flags, so under the arm's quantum
-    # predicate it is g's _ctl clone (its raise a rail operation), never the plain clone run unguarded. "lower": the §6 run
-    # still reports g's dead result and returned flags rail left live in the arm (no twin call there).
-    ("fenv_loop_noreturn_arm", "e", [], "lower", [r"%cq\.fenv\d* = phi i32", r"call \{ i32, i32 \} @__cq_q_g_1_ctl\("]),
-    ("fenv_loop_noreturn_arm", "en", [], "lower", [r"%cq\.fenv\d* = phi i32"]),
-    ("fenv_loop_noreturn_arm", "eq", [], "lower", []),
-    ("fenv_loop_noreturn_arm", "ec", [], "lower", [r"call \{ i32, i32 \} @__cq_q_g_1_ctl\("]),
+    # cq-6zudr (rules 14, 16, 23): a rule-14 loop's noreturn arm, lowered with the loop, changes the flags; en is TinyCC's
+    # parse_operand (no live exit, the arm in each trip). cq-9vtv2 (rules 16, 23): the arm's environment ends at its abort
+    # (fenv::atAbort), so the loop carries nothing for it and the state after it is the state before the arm, as taint has
+    # it; er (the arm's body only reads the mode) and ea (no loop) stopped at a later fetestexcept. cq-dmlhn (rules 19, 23):
+    # g raises into the HOST flags, so under the arm's quantum predicate it is g's _ctl clone (its raise a rail operation),
+    # never the plain clone run unguarded; g writes memory (rule 5: its own symbol's feraiseexcept is a host call), so it has
+    # no twin and its results are KEPT (rule 18).
+    ("fenv_loop_noreturn_arm", "e", [], "pass", [r"call \{ i32, i32 \} @__cq_q_g_1_ctl\("]),
+    ("fenv_loop_noreturn_arm", "en", [], "pass", []),
+    ("fenv_loop_noreturn_arm", "eq", [], "pass", []),
+    ("fenv_loop_noreturn_arm", "ec", [], "pass", [r"call \{ i32, i32 \} @__cq_q_g_1_ctl\("]),
+    ("fenv_loop_noreturn_arm", "er", [], "pass", []),
+    ("fenv_loop_noreturn_arm", "ea", [], "pass", []),
     # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
     # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
     # by name, through a defined noreturn callee.
