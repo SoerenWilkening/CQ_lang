@@ -4489,6 +4489,10 @@ static Pred tailPredIn(LoweringContext &ctx, const LoopInfo &LI, const Loop &L, 
       const Case oc = classify(*O, ctx.T, ctx.S);
       if (oc != Case::QuantumExit && oc != Case::ClassicalBoundQuantumExit)
         continue;
+      // cq-56kjj: b is O's continuation, where O's unit ends: every path into O reaches it (rule 14, the unit always ends),
+      // so O's paths enter the tail here under O's header predicate, made before the loop and readable after it.
+      if (b == OU.cont)
+        acc = acc | ctx.preds().block(O->getHeader());
       if (is_contained(OU.tail, p))
         acc = acc | (tailPredIn(ctx, LI, *O, OU, p, DT) & ctx.preds().edge(p, b));
       other = true;
