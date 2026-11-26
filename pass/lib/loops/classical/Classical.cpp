@@ -1852,10 +1852,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         return e.Y;
     if (L.contains(s) || top.contains(s))
       return ob(s);
-    // A classical switch's edge into a noreturn arm: abortTest ran the arm; the switch stands for its other edges.
-    if (tgtFrom && is_contained(UX.abort, s) && isa<SwitchInst>(tgtFrom->getTerminator()))
+    // A classical switch's edge into a noreturn arm: abortTest ran the arm; the switch stands for its other edges. Its edge
+    // into an effect-free dead end (-O1's `default: unreachable`, cq-vvjel) is UB to take: it stands for another edge too.
+    auto deadOrAbort = [&](const BasicBlock *x) { return is_contained(UX.abort, x) || is_contained(UX.dead, x); };
+    if (tgtFrom && deadOrAbort(s) && isa<SwitchInst>(tgtFrom->getTerminator()))
       for (BasicBlock *o : successors(tgtFrom))
-        if (!is_contained(UX.abort, o))
+        if (!deadOrAbort(o))
           return o == header ? H : (L.contains(o) || top.contains(o)) ? ob(o) : unitExit;
     return unitExit;   // cq-j5mq: an edge out of the whole unit, also from a sub-loop
   };
