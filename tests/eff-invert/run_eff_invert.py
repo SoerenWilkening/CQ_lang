@@ -50,6 +50,7 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "mem_clone_qrom.O1.ll": ["i10"],
            "invert_mem.O1.ll": ["p_store_flush", "p_inplace_cell", "p_load_inside", "p_effect_flush"],
            "region_output.O1.ll": ["p_out"],
+           "region_view.O1.ll": ["p_view"],   # cq-82krl
            "dup_begin.O1.ll": ["p_dup"],
            "dup_end.O1.ll": ["p_dupend"],
            "invert_arm.O1.ll": ["p_armpair", "p_armbegin", "p_armend", "p_armnest"]}
