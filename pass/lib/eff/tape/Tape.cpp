@@ -422,7 +422,9 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
   for (auto &t : targets)
     flagModified |= t.first == flag;
   RailType i1{Kind::Int, 1};
-  if (!isa<CallInst>(flag) || flagModified) {
+  // cq-dcw0i (rule 16): so is a flag minted outside this output block: kept as it is, it would also lose its uncompute on
+  // the classical paths that pass its block but not the abort (dead_end_sibling: the abort under `c == 3`).
+  if (!isa<CallInst>(flag) || flagModified || cast<CallInst>(flag)->getParent() != ctx.B().GetInsertBlock()) {
     CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
     RailId fid = ctx.unc().recordSeed(f);
     abi::CoreSpec cp{abi::Core::Copy, i1};

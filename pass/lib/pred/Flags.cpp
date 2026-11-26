@@ -1275,7 +1275,23 @@ class JoinRepair {
   unsigned edgeFacts(BasicBlock *p, BasicBlock *J, const std::set<unsigned> &vars) {
     Decoder D(*this);
     unsigned fp = inFacts(D, p, vars);
-    return m.andOp(fp, D.edge(p, J));
+    unsigned e = D.edge(p, J);
+    // cq-dcw0i (rules 8, 9): a classical guard's edge is decoded again over every classical atom with a value by now,
+    // then projected onto vars. Over vars alone a literal outside them reads as unknown and voids the whole cube it sits
+    // in: the skip edge (the negation of a cover of cubes) said nothing, and a merge arm or an atom the guard skipped was
+    // carried up past its join (__divdc3, 169).
+    if (!ctx.guardBranch(p->getTerminator()))
+      return m.andOp(fp, e);
+    Decoder W(*this);
+    for (unsigned v : boundClassicalVars()) {
+      const Atom &a = atomOf(v);
+      if (a.kind == AtomKind::Cond)
+        W.condVar[ctx.operand(a.v).v] = v;
+      else if (a.kind == AtomKind::Eq)
+        W.eqVar.emplace_back(ctx.operand(a.v).v, a.c, v);
+    }
+    e = m.exists(W.edge(p, J), [&](unsigned v) { return !vars.count(v); });
+    return m.andOp(fp, e);
   }
 
   // The classical facts over `vars` every forward output path from the entry establishes on reaching U. Leaving an
@@ -1363,7 +1379,8 @@ class JoinRepair {
   // output edge into a join above U that they exclude carries a don't-care (rule 9's arm on its own
   // edge). The point's predicate is the quantum part of its block's (rule 8: C stays a classical
   // branch), so its classical facts are known only from the output CFG.
-  unsigned factsAt(BasicBlock *U) {
+  // Every classical atom of the function's path predicates that has its value in the output by now.
+  const std::set<unsigned> &boundClassicalVars() {
     if (!pointVars) {
       pointVars.emplace();
       const PathStorage &I = storage(ctx.preds());
@@ -1378,8 +1395,11 @@ class JoinRepair {
           pointVars->insert(v);
       }
     }
+    return *pointVars;
+  }
+  unsigned factsAt(BasicBlock *U) {
     Decoder D(*this);
-    return inFacts(D, U, *pointVars);
+    return inFacts(D, U, boundClassicalVars());
   }
   std::optional<std::set<unsigned>> pointVars;
   // inFacts' tables: the output CFG they were computed on (factsSig) and per key (vars, their output values) the table.

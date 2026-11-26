@@ -39,6 +39,8 @@ public:
   void rebind(const llvm::Value *orig, llvm::ArrayRef<Operand>);   // replaces a binding; internalError if unbound
   // cq-mgkr: has orig a value in the new IR yet (a constant always)?
   bool bound(const llvm::Value *orig) const;
+  // cq-dcw0i: is br a classical guard's branch (rule 8: a block's classical condition, its false edge the skip)?
+  bool guardBranch(const llvm::Instruction *br) const;
   // cq-mgkr (rule 9 at a unit's join, CR rule 14): v is P's incoming on an edge whose predicate is `edge`,
   // which a loop unit binding P could not read (lowered after the loop): the walker selects v in for P
   // where `edge` holds when it lowers P's block, over the unit's binding elsewhere.
