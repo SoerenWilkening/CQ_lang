@@ -4373,6 +4373,13 @@ bool Uncompute::deferredExit(RailId r) const {
   return false;
 }
 
+bool Uncompute::namesDeferredRailSometimes(RailId m) const {
+  for (RailId x : impl->closure(m))
+    if (x != m && !impl->isMerge(x) && impl->pending(x) && impl->rails[x].ownedBy != kNone && !impl->alwaysChosen(m, x))
+      return true;
+  return false;
+}
+
 bool Uncompute::ownItem(RailId r) const {
   const Impl::Rail &x = impl->rails[r];
   return x.ownedBy == kNone && x.deferred == kNone && !impl->isMerge(r);

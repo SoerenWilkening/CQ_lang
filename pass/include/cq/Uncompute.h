@@ -106,6 +106,9 @@ public:
   // Is the rail, or an arm of the merge it is, an exit rail of a deferred item (recordDeferred)? Its reverse must still
   // read it, so it cannot escape.
   bool deferredExit(RailId) const;
+  // Does the merge name, on some classical paths only, a pending rail of a deferred item (an exit rail of a loop whose
+  // reverse runs after the loop's readers)? Keeping the merge would keep that rail on every path (keepMerge).
+  bool namesDeferredRailSometimes(RailId merge) const;
   // Is the rail an item of its own, one resolveAt may place: no merge, no rail of a deferred item (resolved with it)?
   bool ownItem(RailId) const;
   // Rule 6 (204): a merge of kept rails becomes one rail of its own, Role::Garbage, which a clean-up may then clean; its

@@ -46,3 +46,20 @@ int f_oracle(int x0, double th, int s, int n) {
   cq_theta(&x, -th);
   return cq_measure(x);
 }
+/* cq-forc2 (CR rules 2, 5, 14 case 1): the exit value r is measured in place on one classical path only (c & 6 == 0); on
+ * the others a value computed from it is measured (r + 1, r - h2(5x)). r is the loop's exit rail, which its reverse
+ * undoes: the measurement reads a kept copy of the merge, and r is uncomputed on every path (it was kept on all). */
+__attribute__((noinline)) static int h1(int v) { return v * 3 + 1; }
+__attribute__((noinline)) static int h2(int v) { return (v ^ 5) - 2; }
+int f_partial(int x0, double th, int c, int s, int n) {
+  int x = x0; cq_theta(&x, th);
+  int r = 0;
+  for (int i = 0; i < n; i++)
+    if (s & (2 << i))
+      r += h1(x + i);
+  if (c & 4)
+    return cq_measure(r + 1);
+  if (c & 2)
+    r -= h2(x * 5);
+  return cq_measure(r);
+}

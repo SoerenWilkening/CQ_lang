@@ -76,7 +76,8 @@ DEFERRED_PROBE = PROBES / "deferred.O1.ll"
 DEFERRED = {"f_arm": [("frozen", "i32"), ("measured", "i32")],
             "f_arm_brk": [("frozen", "i32"), ("measured", "i32")],
             "f_arm_phase": [("frozen", "i32"), ("measured", "i32")],
-            "f_oracle": [("measured", "i32")]}
+            "f_oracle": [("measured", "i32")],
+            "f_partial": [("frozen", "i32"), ("measured", "i32")]}
 # cq-8lf8: y = 3x + 1 measured when n == 7 only; at n = 2, 3 the loop path keeps no garbage rail.
 MEASURED_PROBE = PROBES / "measured_some.O1.ll"
 # cq-ot39: a quantum loop invariant LICM hoisted into the guarded preheader (resolved on the loop's exit path).
