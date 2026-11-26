@@ -95,6 +95,13 @@ add_test(NAME loops-cutoff-exit-mem
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exit_mem.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-p1olk (CR rule 14 case 2): the region form's next header test re-reads its case equalities on the advanced state, not
+# a flag the body minted over the trip's own values (the flag-reuse cache, cq-ct59d).
+add_test(NAME loops-cutoff-region-reuse
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/region_reuse.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-z6nkx: musl mbsrtowcs' two scan loops into one tail; strlen's tail edge excluding its unit; stpcpy's skip of a loop in a tail; its head's flag seed.
 add_test(NAME loops-cutoff-tail-phis
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

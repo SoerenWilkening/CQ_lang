@@ -802,19 +802,33 @@ public:
     auto it = minted.find(node);
     if (it == minted.end())
       return nullptr;
-    auto *I = dyn_cast_or_null<Instruction>(static_cast<Value *>(it->second));
+    auto *I = dyn_cast_or_null<Instruction>(static_cast<Value *>(it->second.rail));
     BasicBlock *U = ctx.B().GetInsertBlock();
     BasicBlock::iterator pt = ctx.B().GetInsertPoint();
     if (!I || I->getParent() != U || (pt != U->end() && (&*pt == I || !cq::comesBefore(I, &*pt))))
       return nullptr;
     if (!ctx.unc().recorded(I) || !ctx.unc().liveRole(ctx.unc().idOf(I)))
       return nullptr;
+    if (it->second.reads != atomReads(node))
+      return nullptr;   // an atom's IR value rebound since (cq-p1olk)
     return I;
   }
 
   void minted(unsigned node, Value *rail) override {
     if (!over)
-      storage(ctx.preds()).minted[node] = rail;
+      storage(ctx.preds()).minted[node] = {rail, atomReads(node)};
+  }
+
+  // The output value each atom of node reads its IR value through now (its first field; nullptr where unbound).
+  std::vector<std::pair<const Value *, Value *>> atomReads(unsigned node) {
+    std::set<unsigned> vars;
+    Bdd::get().support(node, vars);
+    std::vector<std::pair<const Value *, Value *>> r;
+    for (unsigned v : vars) {
+      const Value *x = atomOf(v).v;
+      r.push_back({x, ctx.bound(x) ? ctx.fields(x).front().v : nullptr});
+    }
+    return r;
   }
 
   Value *liveNegation(unsigned var) override {
