@@ -1013,6 +1013,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         else
           id = h;
       }
+      // cq-xec3y (jnf): an earlier loop unit exiting into X already bound P (an exit edge of that loop reads this one's
+      // start); the general capture's `earlier` form merges this unit's exit value into that binding.
+      if (ok && !foreign && id && top && ctx.bound(&P)) {
+        takeGeneral("loops-cutoff: an exit phi an earlier unit bound (cq-xec3y)", &P);
+        continue;
+      }
       // A loop nested in a trip's arm is run under that arm's flag: what its classical factor skips is the arm's own business.
       if (ok && !foreign && id && (!top || ctx.preds().block(H).classicalFactor(ctx.T, ctx.S).isTop())) {
         exitPhis.push_back({&P, id});
