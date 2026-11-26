@@ -749,6 +749,97 @@ public:
   }
   std::optional<cq::TaintInfo> Taint;
 
+  // cq-066r (CR rule 17, BACKEND_ABI 1.13): a bus store and an effect entry inside a cq_invert region are flush points: the
+  // gates recorded before them run forward. In a module with a region, the flush points are the accesses the pass makes a
+  // bus store in some specialization (rule 20: not a host access, bus::hostAccess) other than a rule 5 update (an
+  // overwriting store is kept, an update is the in-place form, which inverts exactly), and the effect entries (rule 16,
+  // T.isEffectEntry). flushReach: the functions that reach one, directly or through calls (a call by pointer: every
+  // address-taken one's). Shadow::flushes logs them (cqo_rt.c __cqo_flush).
+  DenseSet<const Instruction *> flushPts;
+  DenseSet<const Function *> flushReach;
+  bool flushTaken = false;
+  // A rule 5 update: the stored value is the same pointer's load through cq_theta steps and casts or arithmetic
+  // (bus/InPlace.cpp's shape, "y may be the value forwarded from the preceding store": a store of that pointer's in turn).
+  // shortcut: the shape only, not InPlace.cpp's conditions; a store it reads otherwise than the pass shows as a mismatch.
+  static bool ruleFiveUpdate(const Instruction &I) {
+    auto *St = dyn_cast<StoreInst>(&I);
+    if (!St)
+      return false;
+    const Value *p = St->getPointerOperand();
+    SmallPtrSet<const Value *, 16> seen;
+    SmallVector<const Value *, 8> work{St->getValueOperand()};
+    while (!work.empty()) {
+      const Value *v = work.pop_back_val();
+      if (!seen.insert(v).second || seen.size() > 64)
+        continue;
+      if (auto *L = dyn_cast<LoadInst>(v)) {
+        if (L->getPointerOperand() == p)
+          return true;
+        continue;
+      }
+      if (auto *C = dyn_cast<CallInst>(v)) {
+        const Function *G = C->getCalledFunction();
+        if (G && G->getName().starts_with("cq_theta_") && C->arg_size() == 2)
+          work.push_back(C->getArgOperand(0));
+        continue;
+      }
+      if (isa<BinaryOperator>(v) || isa<CastInst>(v) || isa<UnaryOperator>(v) || isa<FreezeInst>(v))
+        for (const Value *o : cast<Instruction>(v)->operands())
+          work.push_back(o);
+    }
+    // y forwarded from the preceding store of the same pointer in the block
+    for (const Instruction *J = St->getPrevNode(); J; J = J->getPrevNode())
+      if (auto *S2 = dyn_cast<StoreInst>(J); S2 && S2->getPointerOperand() == p)
+        return seen.count(S2->getValueOperand()) != 0;
+    return false;
+  }
+  void flushSites() {
+    Function *beg = M.getFunction("__cq_invert_begin");
+    if (!Taint || !beg || beg->use_empty())
+      return;
+    const cq::TaintInfo &T = *Taint;
+    for (const cq::Specialization &S : T.specializations()) {
+      if (!S.F || S.F->isDeclaration() || isDriverFn(*S.F))
+        continue;
+      for (Instruction &I : instructions(*S.F)) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        if (CB && !isa<MemIntrinsic>(CB)) {
+          if (T.isEffectEntry(*CB, S))
+            flushPts.insert(&I);
+          continue;
+        }
+        if (!CB && !isa<StoreInst>(I) && !isa<AtomicRMWInst>(I) && !isa<AtomicCmpXchgInst>(I))
+          continue;
+        if (T.hostObjectOf(I, S) && !T.controlTainted(I.getParent(), S) && !S.ctl)
+          continue;
+        if (!ruleFiveUpdate(I))
+          flushPts.insert(&I);
+      }
+    }
+    for (const Instruction *I : flushPts)
+      flushReach.insert(I->getFunction());
+    for (bool changed = true; changed;) {
+      changed = false;
+      if (!flushTaken)
+        for (Function &F : M)
+          if (F.hasAddressTaken() && flushReach.count(&F))
+            flushTaken = changed = true;
+      for (Function &F : M)
+        if (!F.isDeclaration() && !isDriverFn(F) && !flushReach.count(&F))
+          for (Instruction &I : instructions(F))
+            if (auto *CB = dyn_cast<CallBase>(&I); CB && calleeFlushes(*CB)) {
+              flushReach.insert(&F), changed = true;
+              break;
+            }
+    }
+  }
+  bool calleeFlushes(const CallBase &CB) const {
+    if (CB.isInlineAsm())
+      return false;
+    const Function *G = CB.getCalledFunction();
+    return G ? flushReach.count(G) != 0 : flushTaken;
+  }
+
   struct Shadow {
     Instrumenter &In;
     Function &F;
@@ -1115,6 +1206,77 @@ public:
           IRBuilder<> BJ(&*J->getFirstInsertionPt());
           BJ.CreateCall(h("__cqo_join", In.Void, {I32}), {BJ.getInt32(jid)});
         }
+      }
+    }
+    // cq-066r (CR rule 17, BACKEND_ABI 1.13): each flush point (Instrumenter::flushSites) logs a flush before it runs, and
+    // a branch a quantum condition decided logs one when an arm it skipped holds a flush point: the circuit runs every arm,
+    // its store or effect entry under the arm's predicate, and the backend flushes at that call whatever the predicate.
+    // shortcut: the skipped arm's flush is logged at the branch, before the taken arm's gates, and a flush point behind a
+    // classical branch inside the skipped arm counts as reached; a gate of the taken arm after the branch whose emission
+    // the circuit orders before the skipped arm's flush shows as a mismatch.
+    void flushes(const std::vector<BasicBlock *> &order) {
+      if (!In.flushReach.count(&F))
+        return;
+      FunctionCallee fl = h("__cqo_flush", In.Void, {I32});
+      DenseMap<const BasicBlock *, bool> has;
+      std::vector<Instruction *> pts;
+      for (BasicBlock *BB : order) {
+        bool b = false;
+        for (Instruction &I : *BB) {
+          if (!orig.count(&I))
+            continue;
+          if (In.flushPts.count(&I))
+            pts.push_back(&I), b = true;
+          else if (auto *CB = dyn_cast<CallBase>(&I); CB && In.calleeFlushes(*CB))
+            b = true;
+        }
+        has[BB] = b;
+      }
+      for (Instruction *I : pts)
+        IRBuilder<>(I).CreateCall(fl, {ConstantInt::get(I32, 1)});
+      for (BasicBlock *BB : order) {
+        Instruction *Tm = BB->getTerminator();
+        if (!orig.count(Tm) || Tm->getNumSuccessors() < 2 || !(isa<BranchInst>(Tm) || isa<SwitchInst>(Tm)))
+          continue;
+        BasicBlock *J = PDT.getNode(BB) && PDT.getNode(BB)->getIDom() ? PDT.getNode(BB)->getIDom()->getBlock() : nullptr;
+        unsigned K = Tm->getNumSuccessors();
+        std::vector<bool> arm(K, false);
+        bool any = false;
+        for (unsigned k = 0; k < K; ++k) {
+          SmallPtrSet<BasicBlock *, 32> seen;
+          SmallVector<BasicBlock *, 16> w{Tm->getSuccessor(k)};
+          while (!w.empty() && !arm[k]) {
+            BasicBlock *x = w.pop_back_val();
+            if (x == J || !has.count(x) || !seen.insert(x).second)
+              continue;
+            arm[k] = has[x];
+            if (x != BB)
+              for (BasicBlock *y : successors(x))
+                w.push_back(y);
+          }
+          any |= arm[k];
+        }
+        if (!any)
+          continue;
+        IRBuilder<> B(Tm);
+        Value *cond = condOf(Tm);
+        // whether an arm other than the one taken holds a flush point
+        auto other = [&](unsigned k) -> Value * {
+          bool o = false;
+          for (unsigned k2 = 0; k2 < K; ++k2)
+            o = o || (k2 != k && arm[k2]);
+          return B.getInt1(o);
+        };
+        Value *sk;
+        if (isa<BranchInst>(Tm)) {
+          sk = B.CreateSelect(cond, other(0), other(1));
+        } else {
+          auto *SI = cast<SwitchInst>(Tm);
+          sk = other(0);
+          for (auto &c : SI->cases())
+            sk = B.CreateSelect(B.CreateICmpEQ(cond, c.getCaseValue()), other(c.getSuccessorIndex()), sk);
+        }
+        B.CreateCall(fl, {B.CreateZExt(B.CreateAnd(sk, qDecided(B, cond, 0)), I32)});
       }
     }
     // cq-xidq (CR rule 12: "Inside a `_ctl` clone or a callee reached from a quantum arm it is `rz_i1(pred, θ)`"; §6: a
@@ -1768,6 +1930,7 @@ public:
           visit(I, retMerge, rets, qconds);
       }
       skips(order);
+      flushes(order);
       phaseScope(order);
 
       storeSlots();
@@ -3592,6 +3755,7 @@ public:
     }
     standinPhases();
     measureSites();
+    flushSites();
     phaseReach();
     notePristine();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)

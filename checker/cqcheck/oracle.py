@@ -1356,10 +1356,14 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     measured before it (cq-459d), and a phi's "q": True when a quantum predicate is in scope there (cq-xidq); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations, reads, skips = [], [], [], []
+    nflush = 0     # cq-066r: the flush points reached inside a cq_invert region (cqo_rt.c __cqo_flush)
     open_skips: Dict[Any, List[dict]] = {}
     status = _exit_status(sr)
     phq = False
     for e in sr.events:
+        if e.get("ev") == "flush":
+            nflush += 1
+            continue
         if e.get("ev") == "phq":
             phq = True               # cq-xidq: the next phi site is reached with a quantum predicate in scope
             continue
@@ -1384,13 +1388,13 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
             # measure a load copy of it, classical-valued (rule 3: every load is a rail, 207)
             reads.append({"w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         else:
-            rotations.append(dict(e, nmeas=len(measured), **({"q": True} if phq and e["kind"] == "phi" else {})))
+            rotations.append(dict(e, nmeas=len(measured), **({"nflush": nflush} if nflush else {}), **({"q": True} if phq and e["kind"] == "phi" else {})))
         phq = False
     return RunResult(side="c", sample=sr.sample,
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": _effects_of(sr),
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
-                              "k2": list(sr.k2), "reads": reads, "skips": skips, "q2": list(sr.q2),
+                              "k2": list(sr.k2), "reads": reads, "skips": skips, **({"nflush": nflush} if nflush else {}), "q2": list(sr.q2),
                               "hsread": sorted(sr.hsread),
                               "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"}),
                               **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {}),

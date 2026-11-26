@@ -906,6 +906,17 @@ class COracleT1(unittest.TestCase):
         self.check(ours([2.0, -4.0, -3.0]), c, True)
         self.check(ours([-4.0, -3.0, -2.0]), c, False)
 
+    def test_store_in_region_flushes_forward(self):
+        # cq-066r (CR rule 17, BACKEND_ABI 1.13): begin [ Ry 2 ; store ; Ry 3 ] end -> Ry 2 forward, then Ry -3
+        def rots(a):
+            r = [self.beg(), self.site("f", 1, "theta", 2.0, a), self.site("f", 2, "theta", 3.0, a), self.end()]
+            for k, x in enumerate(r):
+                x["nflush"] = 0 if k < 2 else 1
+            return r
+        c = self.c_side(lambda a, b, s: dict(rots=rots(a)))
+        self.check(self.lowered(lambda a, b: [ry(1, 2.0), ry(1, -3.0)]), c, True)
+        self.check(self.lowered(lambda a, b: [ry(1, -3.0), ry(1, -2.0)]), c, False)
+
     def test_region_emission(self):
         from cqcheck.compare import region_emission
         e = [("invert_begin", 0), ("theta", 0), ("invert_begin", 0), ("phi", 0), ("theta", 1), ("invert_end", 1),

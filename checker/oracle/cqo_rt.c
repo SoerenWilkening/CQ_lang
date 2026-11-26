@@ -845,8 +845,19 @@ static long n_rotations, n_measured;
 
 static const char *kinds[] = {"theta", "phi", "measure", "invert_begin", "invert_end", "read"};
 
+/* cq-066r (CR rule 17, BACKEND_ABI 1.13): the cq_invert regions open (an end with none open closes nothing, as compare's
+ * region_emission reads it). A flush point reached with one open (OracleInstr.cpp Shadow::flushes; on: 0 where a
+ * branch's skipped arms hold none) logs `flush`: compare emits the open regions' sites so far forward. */
+static long iv_depth;
+void __cqo_flush(int32_t on) {
+    if (trips_only || !on || iv_depth <= 0) return;
+    out_line(trace_fd, "{\"ev\":\"flush\"}");
+}
+
 void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void *reg, int32_t bits) {
     if (kind == 2 && sh_pending_read) kind = 5; /* rule 2: a classical read, no measurement (cq-y1ll) */
+    if (kind == 3) ++iv_depth;
+    else if (kind == 4 && iv_depth > 0) --iv_depth;
     sh_pending_read = 0;
     int sk = kind == 0 ? skey_of(fn, site) : -1;
     /* cq-3o3v: a theta site's register before the substitution (compare checks the lowered Ry's

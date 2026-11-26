@@ -2865,11 +2865,14 @@ def theta_schedule(events: Sequence[dict], o1: Path) -> str:
     """The $CQE_THETA file of one sample (dispatch.c): its C program's cq_theta reaches in the circuit's
     emission order, `<angle> <W> <value>` per line; a reach the circuit runs inverted (a cq_invert region
     reversed at its end, CR rule 17) has its angle negated, one a measurement inside the region flushed
-    forward first does not (BACKEND_ABI 1.13; compare.region_emission)."""
+    forward first does not, nor one a bus store or an effect entry flushed (BACKEND_ABI 1.13;
+    compare.region_emission; cq-066r)."""
     from cqcheck import compare, drivers
     widths = drivers.theta_site_widths(o1)
     sites, entries, nmeas = [], [], 0
     for e in events:
+        if e.get("ev") == "flush":
+            nmeas += 1
         if e.get("ev") != "site":
             continue
         kind = e.get("kind")

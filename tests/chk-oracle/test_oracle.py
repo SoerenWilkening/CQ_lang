@@ -406,6 +406,34 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
                 body = body[:body.index("\n}")]
                 self.assertRegex(body, rf"(?m)^{re.escape(hdr[1:])}:", (e, body))
 
+    def test_flush_points_in_region(self):
+        # cq-066r (CR rule 17, BACKEND_ABI 1.13): a kept store and an effect entry inside a cq_invert region log a flush; a
+        # store outside a region, and an in-place update (rule 5) inside one, log none; a quantum branch that skips an arm
+        # holding an effect entry logs one at the branch.
+        o1 = compile_c("fl", """
+int cell;
+extern void sinkfx(int);
+int fl_q(int x0, double t, int c) {
+    int x = x0;
+    cq_theta(&x, t);
+    cell = c;
+    int *p = &cell;
+    cq_invert_begin();
+    cq_theta(p, t);
+    cell = x;
+    if (x > 2) sinkfx(x);
+    cq_invert_end();
+    return cq_measure(x);
+}
+""")
+        sp = spec("fl", "int fl_q(int,double,int)", [("fl_q", ["int", "double", "int"])])
+        for x0 in (0, 5):
+            ev = oracle.trace_sample(o1, sp, {"call": 0, "args": [i32(x0), HALF, i32(1)]})
+            kinds = [e.get("kind", e["ev"]) for e in ev if e["ev"] in ("site", "flush")]
+            # the kept store, then the effect entry reached (x0 = 5) or the arm skipped by the quantum x > 2 (x0 = 0)
+            self.assertEqual(kinds, ["theta", "invert_begin", "theta", "flush", "flush", "invert_end", "measure"],
+                             (x0, ev))
+
     def test_guard_skip_through_preheader(self):
         # cq-ly85: the guard reaches the header through a preheader block (the shape of example 55);
         # a skip reports n = 0, and a path that returns before the guard reports nothing.
