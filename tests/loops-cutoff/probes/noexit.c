@@ -40,3 +40,9 @@ void na_only(int x0, double th) {
       abort();
   }
 }
+/* cq-q7do6 (CR rules 2, 14 "No live exit"; rulings Q3): a measurement in the noreturn arm runs per trip under the trip's exit
+ * flag; on a trip the C program goes on from, a quantum test skipped the arm, so that measurement is rule 2's extra one. */
+void na_meas(int x0, double th) {
+  int x = x0; cq_theta(&x, th);
+  for (;;) { int t = x ^ 5; x = x * 3 + 1; if (x & 16) exit(cq_measure(t) & 7); }
+}

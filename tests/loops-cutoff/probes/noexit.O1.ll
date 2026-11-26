@@ -102,6 +102,27 @@ define void @na_only(i32 noundef %0, double noundef %1) local_unnamed_addr #4 {
   unreachable
 }
 
+; Function Attrs: noreturn nounwind ssp uwtable
+define void @na_meas(i32 noundef %0, double noundef %1) local_unnamed_addr #4 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #5
+  br label %4
+
+4:                                                ; preds = %4, %2
+  %5 = phi i32 [ %3, %2 ], [ %7, %4 ]
+  %6 = mul nsw i32 %5, 3
+  %7 = add nsw i32 %6, 1
+  %8 = and i32 %7, 16
+  %9 = icmp eq i32 %8, 0
+  br i1 %9, label %4, label %10, !llvm.loop !11
+
+10:                                               ; preds = %4
+  %11 = xor i32 %5, 5
+  %12 = tail call i32 @cq_measure_si32(i32 noundef %11) #7
+  %13 = and i32 %12, 7
+  tail call void @exit(i32 noundef %13) #8
+  unreachable
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { cold noreturn nounwind "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -126,3 +147,4 @@ attributes #8 = { noreturn nounwind }
 !8 = !{!"llvm.loop.unroll.disable"}
 !9 = distinct !{!9, !7, !8}
 !10 = distinct !{!10, !8}
+!11 = distinct !{!11, !8}
