@@ -1011,40 +1011,49 @@ def handle_returning_fns(text: str) -> List[str]:
             continue
         m = _RET.match(line)
         if m and m.group(1) != "void":
-            fns[cur][1].append(m.group(2).strip())
-    memo: Dict[str, bool] = {}
+            fns[cur][1].append(m.group(2).split()[-1])   # `ret { i32, i32 } %v`: the operand is the last word
+    memo: Dict[Tuple[str, Optional[int]], bool] = {}
 
-    def value(fn: str, v: str, seen: set) -> bool:
+    # idx: None for a scalar; a field number for an aggregate (a clone's { result, ... } read by extractvalue, cq-noavf)
+    def value(fn: str, v: str, seen: set, idx: Optional[int] = None) -> bool:
         defs = fns[fn][0]
-        if not v.startswith("%") or (fn, v) in seen or v not in defs:
+        if not v.startswith("%") or (fn, v, idx) in seen or v not in defs:
             return False   # a constant or an argument: classical
-        seen.add((fn, v))
+        seen.add((fn, v, idx))
         rhs = defs[v]
         op = rhs.split(" ", 1)[0]
         if op == "phi":
-            return any(value(fn, a.strip(), seen) for a in re.findall(r"\[\s*([^,\]]+),", rhs))
+            return any(value(fn, a.strip(), seen, idx) for a in re.findall(r"\[\s*([^,\]]+),", rhs))
         if op == "select":
             ops = _split_top(rhs.split(" ", 1)[1])
-            return any(value(fn, o.split()[-1], seen) for o in ops[1:3] if o)
+            return any(value(fn, o.split()[-1], seen, idx) for o in ops[1:3] if o)
         if op in ("zext", "sext", "trunc", "bitcast", "freeze"):
             mm = re.match(r"\S+ \S+ (\S+) to ", rhs)
-            return bool(mm) and value(fn, mm.group(1), seen)
+            return bool(mm) and value(fn, mm.group(1), seen, idx)
+        if op == "extractvalue" and idx is None:
+            mm = re.match(r"extractvalue \{[^}]*\} (\S+), (\d+)$", rhs)
+            return bool(mm) and value(fn, mm.group(1), seen, int(mm.group(2)))
+        if op == "insertvalue" and idx is not None:
+            mm = re.match(r"insertvalue \{[^}]*\} (\S+), \S+ (\S+), (\d+)$", rhs)
+            if not mm:
+                return False
+            return value(fn, mm.group(2), seen) if int(mm.group(3)) == idx else value(fn, mm.group(1), seen, idx)
         m = _CALLEE.search(rhs)
         if m and re.match(r"^(tail |musttail |notail )?call\b", rhs):
-            return returns_handle(m.group(2))
+            return returns_handle(m.group(2), idx)
         return False
 
-    def returns_handle(callee: str) -> bool:
+    def returns_handle(callee: str, idx: Optional[int] = None) -> bool:
         if callee.startswith("cq_template_"):
             return not callee.endswith("_unc")
         if callee.startswith("cqrt_"):
             return callee.startswith(_RAIL_CALLS)
         if callee not in fns:
             return callee.startswith("__cq_q_") and not callee.endswith("_unc")
-        if callee not in memo:
-            memo[callee] = False   # a recursive cycle alone gives no handle
-            memo[callee] = any(value(callee, r, set()) for r in fns[callee][1])
-        return memo[callee]
+        if (callee, idx) not in memo:
+            memo[callee, idx] = False   # a recursive cycle alone gives no handle
+            memo[callee, idx] = any(value(callee, r, set(), idx) for r in fns[callee][1])
+        return memo[callee, idx]
 
     return sorted(f for f in fns if returns_handle(f))
 

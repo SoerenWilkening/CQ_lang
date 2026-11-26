@@ -178,6 +178,9 @@ CASES = [
     ("fnptr_shapes", "s_fp", [], "pass", [r"call void @__cq_clone_register\(ptr @half, "]),
     ("fnptr_shapes", "s_rec", [], "pass", [r"call void @__cq_clone_register\(ptr @rec, "]),
     ("fnptr_shapes", "s_wr", [], "pass", [r"call void @__cq_clone_register\(ptr @wr, "]),
+    # cq-noavf (rule 19, §1.1): a vtable dispatch in a classical loop; the entry returns a handle extracted from the loop
+    # clone's aggregate result, which the checker read as a value.
+    ("fnptr_vtable_loop_ret", "vt", [], "pass", [r"(%\d+) = extractvalue \{ i32, i32 \} %\d+, 0\n(?:  .*\n)*  ret i32 \1\n"]),
     ("fp_classical", "fp_classical", [], "pass", [r"@__cq_clone_resolve"]),
     ("fp_under_pred", "fp_under_pred", [], "pass", [r"@__cq_clone_resolve\(ptr %\w+, i32 1\)", r"@__cq_clone_resolve\(ptr %\w+, i32 3\)"]),
     ("fp_rail_unmeasured", "fp_rail_unmeasured", [], "pass", [r"@__cq_clone_count"]),
