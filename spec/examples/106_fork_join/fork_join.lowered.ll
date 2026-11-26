@@ -1,14 +1,13 @@
-; HAND-WRITTEN. Rules: 24, 20, 16, 18, 5, 7, 3, 4, 2, §1.4.
+; HAND-WRITTEN. Rules: 24, 20, 16, 18, 5, 6, 7, 3, 4, 2, §1.4.
 ; Checked: s = a.out + b.out (the add rail, measured) = (x * x + 1) + (c * c + 1). The cells at exit: a.in = x,
 ; a.out = x * x + 1, b.in = c, b.out = c * c + 1 (bus cells of the two __cq_alloc blocks; not named outputs).
-; Clean: per activation of worker (two: job a, job b): the load copy of j->in (un-copied right after the product's
-; uncompute, before the activation's store, the next memory version change, rule 5 sentence 1) and the product rail
-; j->in * j->in (uncomputed by its _unc after its consumer, the add). fork_join: the load copies of a.out and b.out,
+; Clean: per activation of worker (two: job a, job b): the load copy of j->in (un-copied right after its last reader,
+; the product, before the activation's store, the next memory version change, rule 5 sentence 1). fork_join: the load copies of a.out and b.out,
 ; un-copied right after the add, before the measurement (nothing changes memory after the loads, rule 5 sentence 1).
 ; Kept: x (the rotated user register; also the value rail of the a.in store); the sum (measured); and by rule 5 the
 ; tape slots of the six bus stores (a.in, a.out, b.in, b.out in fork_join; j->out in each worker activation) with
 ; their value rails: the seeds alloc_i32(0) (a.out), alloc_i32(c) (b.in), alloc_i32(0) (b.out) and, per activation,
-; the add rail j->in * j->in + 1 that worker stores into j->out.
+; the product rail j->in * j->in, updated in place into j->in * j->in + 1, that worker stores into j->out.
 ; Rotations: (Ry, x, th, 1).
 ; SINGLE-THREAD COLLAPSE (rule 24; Bennett.jl's stance, owner 2026-10-20): a reversible program is a function of its
 ; inputs, so a thread interleaving that could change the result has nothing to uncompute; data-race-free fork/join
@@ -29,8 +28,11 @@
 ; A POINTER IS ONE SCALAR (§1.4, rules 18, 21). worker(&a) and worker(&b) both pass a classical ptr (the address of a
 ; __cq_alloc block): mask digit 0, so both calls reach worker's OWN symbol with its C parameter list, lowered (its body
 ; makes bus accesses). Nothing about the pointee (which cells hold rails) crosses the call. worker stores into j->out,
-; so it WRITES MEMORY: it has no twin (rule 18) and the store's tape slot and value rail stay (rule 5). The load copy
-; of j->in is un-copied inside the activation, before that store. In fork_join the loads of a.out and b.out follow the
+; so it WRITES MEMORY: it has no twin (rule 18) and the store's tape slot and value rail stay (rule 5). The `+ 1` is a
+; plain add of a dead value, the product (rule-5 garbage, a template result): rule 6's in-place update (owner ruling
+; 2026-11-26: it applies though the operand is garbage) makes it ONE core gate addc_i32(product, 1) on the product's
+; rail, the stored value from there on; the mul's _unc is never called. The load copy of j->in is un-copied inside the
+; activation after the product, its last reader, before that store. In fork_join the loads of a.out and b.out follow the
 ; last memory version change (the second worker call), so both copies are un-copied after the add.
 ; SPEC GAP (rule 24, join): rule 24 names pthread_create and mutexes, not pthread_join. Taken (proposed sentence):
 ; pthread_create is a direct call of the start routine that writes no pthread_t, and pthread_join is nothing (its retval
@@ -104,14 +106,12 @@ define internal noalias noundef ptr @worker(ptr noundef %0) {    ; IR: define in
   %3 = ptrtoint ptr %0 to i64    ; IR: %0 as its run-time address (mask digit 0: the formal is the C ptr)
   %4 = call i32 @cqrt_qram_load_i32_hl(i32 %2, i64 %3)    ; IR: %2 = load i32, ptr %0  [j->in: a bus load, a rail]
   %5 = call i32 @cq_template_mul_i32(i32 %4, i32 %4)    ; IR: %3 = mul nsw i32 %2, %2
-  %6 = call i32 @cq_template_add_i32_hl(i32 %5, i32 1)    ; IR: %4 = add nuw nsw i32 %3, 1  [the stored value rail]
-  call void @cq_template_mul_i32_unc(i32 %5, i32 %4, i32 %4)    ; IR: uncompute %3
-  call void @cqrt_free(i32 %5)    ; IR: release the %3 rail (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %4, i32 %2, i64 %3)    ; IR: un-copy %2 (its last reader, the _unc of %3, is done; the store below is the next memory version change)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %4, i32 %2, i64 %3)    ; IR: un-copy %2 (its last reader, the mul %3, is done; the store below is the next memory version change)
   call void @cqrt_free(i32 %4)    ; IR: release the %2 rail (|0>)
-  %7 = getelementptr inbounds i8, ptr %0, i64 4    ; IR: %5 = getelementptr inbounds i8, ptr %0, i64 4  (&j->out; the gep stays)
-  %8 = ptrtoint ptr %7 to i64    ; IR: %5 as its run-time address
-  call void @cqrt_qram_store_i32_hl(i32 %2, i64 %8, i32 %6)    ; IR: store i32 %4, ptr %5  [kept store: no _unc; worker writes memory, so it has no twin]
+  call void @cqrt_addc_i32(i32 %5, i32 1)    ; IR: %4 = add nuw nsw i32 %3, 1  [rule 6, in-place update (owner ruling 2026-11-26: it applies to the mul result, rule-5 garbage): %3 is dead after the add, so the result IS the %3 rail: %3 += 1; the stored value rail]
+  %6 = getelementptr inbounds i8, ptr %0, i64 4    ; IR: %5 = getelementptr inbounds i8, ptr %0, i64 4  (&j->out; the gep stays)
+  %7 = ptrtoint ptr %6 to i64    ; IR: %5 as its run-time address
+  call void @cqrt_qram_store_i32_hl(i32 %2, i64 %7, i32 %5)    ; IR: store i32 %4, ptr %5  [kept store: no _unc; worker writes memory, so it has no twin]
   ret ptr null    ; IR: ret ptr null  (classical, unused by the create site)
 }
 
@@ -128,8 +128,7 @@ declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare i32 @cqrt_qram_load_i32_hl(i32, i64)
 declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
 declare i32 @cq_template_mul_i32(i32, i32)
-declare void @cq_template_mul_i32_unc(i32, i32, i32)
-declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }

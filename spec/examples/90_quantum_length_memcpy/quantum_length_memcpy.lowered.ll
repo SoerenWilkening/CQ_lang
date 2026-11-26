@@ -1,16 +1,17 @@
-; HAND-WRITTEN. Rules: 22, 20, 21, 16, 14, 5, 7, 9, 4, 2.
-; Checked: memcpy_quantum_len: d[0] + d[3] (the result rail, measured), with n = x & 3 and m = (x >> 2) & 3:
+; HAND-WRITTEN. Rules: 22, 20, 21, 16, 14, 5, 6, 7, 9, 4, 2.
+; Checked: memcpy_quantum_len: d[0] + d[3] (the zext rail of d[3], updated in place into the sum, measured), with n = x & 3 and m = (x >> 2) & 3:
 ; d[0] = m > 0 ? 0 : (n > 0 ? src[0] : 9) and d[3] = 9 (no trip of either intrinsic reaches byte 3: n, m <= 3).
-; memcpy_quantum_src: d[0] + d[1] (the result rail, measured): x & 1 == 1 copies 2 bytes from s1 (s1[0] + s1[1]),
+; memcpy_quantum_src: d[0] + d[1] (the zext rail of d[1], updated in place into the sum, measured): x & 1 == 1 copies 2 bytes from s1 (s1[0] + s1[1]),
 ; x & 1 == 0 copies 1 byte from s2 (s2[0] + 9).
 ; Clean: memcpy_quantum_len: the memcpy length chain (x & 3, its zext n; uncomputed between the copy's two loops), the
-; memset length chain (x >> 2, & 3, its zext m; uncomputed after the memset loop), the load copies of d[0] and d[3]
-; (un-copied after their zexts' _unc: no memory version change follows the loads) and the two zexts.
+; memset length chain (x >> 2, & 3, its zext m; uncomputed after the memset loop), the load copy of d[3] (un-copied
+; right after its zext), the zext of d[0] and its load copy (uncomputed, then un-copied, after the add; no memory
+; version change follows the loads).
 ; memcpy_quantum_src: x & 1, the flag (x & 1) == 0, the address rail s = select(flag, s2, s1) and the length rail
 ; n = select(flag, 1, 2) (uncomputed between the copy's two loops, after their last readers in the load loop), each
-; trip's source address rail s + j (uncomputed right after its load), the load copies of d[0] and d[1] (un-copied) and
-; the two zexts.
-; Kept: the register x of each function (rotated) and each result rail (measured); by rule 5: the initializer's seed
+; trip's source address rail s + j (uncomputed right after its load), the load copy of d[1] (un-copied right after its
+; zext), the zext of d[0] and its load copy (uncomputed, then un-copied, after the add).
+; Kept: the register x of each function (rotated) and each result rail (the second zext's, measured); by rule 5: the initializer's seed
 ; (i32 151587081 / i16 2313) and its tape slot; for every copy trip j the predicate p_j = (n >u j), the controlled load
 ; copy of source byte j (the value rail of its kept store) and that store's tape slot; for every memset trip j the
 ; predicate p_j = (m >u j) and the tape slot of its store, and the memset's one value seed alloc_i8(0) (rule 22).
@@ -41,6 +42,10 @@
 ; SPEC GAP (rule 22, memset with a quantum length): the rule places p_j "in the load loop" and uncomputes the length
 ; "between the two loops"; a memset has one loop. Chosen: p_j is computed in the memset's store loop, kept as that
 ; store's control (rule 5), and the length chain is uncomputed right after the loop.
+; THE FINAL ADD (rule 6, in-place update; owner ruling 2026-11-26: it applies though the operand is rule-5 garbage).
+; Both operands are zexts of load copies, both garbage and dead after the add, so operand 0 of the IR add (the zext of
+; d[3] / d[1]) is updated: ONE core gate add_i32(zext d[0], that rail), which is the sum from there on and is measured.
+; That zext's _unc is never called; its load copy is un-copied right after the zext, its last reader.
 source_filename = "quantum_length_memcpy.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -115,17 +120,15 @@ define i32 @memcpy_quantum_len(i32 noundef %0, double noundef %1, ptr nocapture 
   %42 = ptrtoint ptr %41 to i64    ; IR: %13 as its run-time address (classical)
   %43 = call i32 @cqrt_qram_load_i8_hl(i32 %4, i64 %42)    ; IR: %14 = load i8, ptr %13: d[3]  [load copy at a classical address]
   %44 = call i32 @cq_template_zext_i8_to_i32(i32 %43)    ; IR: %15 = zext i8 %14 to i32
-  %45 = call i32 @cq_template_add_i32(i32 %44, i32 %40)    ; IR: %16 = add nuw nsw i32 %15, %12  [result rail]
-  call void @cq_template_zext_i8_to_i32_unc(i32 %44, i32 %43)    ; IR: uncompute %15
-  call void @cqrt_free(i32 %44)    ; IR: release the %15 rail (|0>)
-  call void @cqrt_qram_load_i8_hl_unc(i32 %43, i32 %4, i64 %42)    ; IR: un-copy %14 (its last reader, the _unc of %15, is done; no memory version change since the load, rule 5)
+  call void @cqrt_qram_load_i8_hl_unc(i32 %43, i32 %4, i64 %42)    ; IR: un-copy %14 (its last reader, the zext %15, is done; no memory version change since the load, rule 5)
   call void @cqrt_free(i32 %43)    ; IR: release the %14 rail (|0>)
+  call void @cqrt_add_i32(i32 %40, i32 %44)    ; IR: %16 = add nuw nsw i32 %15, %12  [rule 6, in-place update (owner ruling 2026-11-26: it applies to the zext, rule-5 garbage): %15 is dead after the add, so the result IS the %15 rail: %15 += %12]
   call void @cq_template_zext_i8_to_i32_unc(i32 %40, i32 %39)    ; IR: uncompute %12
   call void @cqrt_free(i32 %40)    ; IR: release the %12 rail (|0>)
   call void @cqrt_qram_load_i8_hl_unc(i32 %39, i32 %4, i64 %7)    ; IR: un-copy %11
   call void @cqrt_free(i32 %39)    ; IR: release the %11 rail (|0>)
-  %46 = call i32 @cqrt_measure_i32(i32 %45)    ; IR: %17 = cq_measure_si32(%16)
-  ret i32 %46    ; IR: ret i32 %17  (llvm.lifetime.end dropped)
+  %45 = call i32 @cqrt_measure_i32(i32 %44)    ; IR: %17 = cq_measure_si32(%16)
+  ret i32 %45    ; IR: ret i32 %17  (llvm.lifetime.end dropped)
 }
 
 define i32 @memcpy_quantum_src(i32 noundef %0, double noundef %1, ptr nocapture noundef readonly %2, ptr nocapture noundef readonly %3) {
@@ -185,17 +188,15 @@ define i32 @memcpy_quantum_src(i32 noundef %0, double noundef %1, ptr nocapture 
   %35 = ptrtoint ptr %34 to i64    ; IR: %13 as its run-time address (classical)
   %36 = call i32 @cqrt_qram_load_i8_hl(i32 %5, i64 %35)    ; IR: %14 = load i8, ptr %13: d[1]  [load copy at a classical address]
   %37 = call i32 @cq_template_zext_i8_to_i32(i32 %36)    ; IR: %15 = zext i8 %14 to i32
-  %38 = call i32 @cq_template_add_i32(i32 %37, i32 %33)    ; IR: %16 = add nuw nsw i32 %15, %12  [result rail]
-  call void @cq_template_zext_i8_to_i32_unc(i32 %37, i32 %36)    ; IR: uncompute %15
-  call void @cqrt_free(i32 %37)    ; IR: release the %15 rail (|0>)
-  call void @cqrt_qram_load_i8_hl_unc(i32 %36, i32 %5, i64 %35)    ; IR: un-copy %14 (its last reader, the _unc of %15, is done; no memory version change since the load, rule 5)
+  call void @cqrt_qram_load_i8_hl_unc(i32 %36, i32 %5, i64 %35)    ; IR: un-copy %14 (its last reader, the zext %15, is done; no memory version change since the load, rule 5)
   call void @cqrt_free(i32 %36)    ; IR: release the %14 rail (|0>)
+  call void @cqrt_add_i32(i32 %33, i32 %37)    ; IR: %16 = add nuw nsw i32 %15, %12  [rule 6, in-place update (owner ruling 2026-11-26: it applies to the zext, rule-5 garbage): %15 is dead after the add, so the result IS the %15 rail: %15 += %12]
   call void @cq_template_zext_i8_to_i32_unc(i32 %33, i32 %32)    ; IR: uncompute %12
   call void @cqrt_free(i32 %33)    ; IR: release the %12 rail (|0>)
   call void @cqrt_qram_load_i8_hl_unc(i32 %32, i32 %5, i64 %9)    ; IR: un-copy %11
   call void @cqrt_free(i32 %32)    ; IR: release the %11 rail (|0>)
-  %39 = call i32 @cqrt_measure_i32(i32 %38)    ; IR: %17 = cq_measure_si32(%16)
-  ret i32 %39    ; IR: ret i32 %17  (llvm.lifetime.end dropped)
+  %38 = call i32 @cqrt_measure_i32(i32 %37)    ; IR: %17 = cq_measure_si32(%16)
+  ret i32 %38    ; IR: ret i32 %17  (llvm.lifetime.end dropped)
 }
 
 declare i32 @__cq_mem()
@@ -230,4 +231,4 @@ declare i32 @cq_template_add_i64_hl(i32, i64)
 declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_zext_i8_to_i32(i32)
 declare void @cq_template_zext_i8_to_i32_unc(i32, i32)
-declare i32 @cq_template_add_i32(i32, i32)
+declare void @cqrt_add_i32(i32, i32)

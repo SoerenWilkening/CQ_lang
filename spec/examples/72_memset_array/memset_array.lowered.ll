@@ -1,21 +1,21 @@
-; HAND-WRITTEN. Rules: 22, 20, 21, 16, 14, 5, 7, 4, 2.
+; HAND-WRITTEN. Rules: 22, 20, 21, 16, 14, 5, 6, 7, 4, 2.
 ; Checked: memset_over_quantum: before + a[1] (the add rail, measured), before = a[k & 3] read before the memset;
-; memset_quantum_byte: b[0] + b[3] (the add rail, measured). The cells of the two blocks are not named outputs.
+; memset_quantum_byte: b[0] + b[3] (the zext rail of b[3], updated in place into the sum, measured). The cells of the two blocks are not named outputs.
 ; Clean: memset_over_quantum: the address chain of &a[x & 3] (x & 3, its zext, the scaled index, the address rail),
 ; each uncomputed by its template's _unc right after the store and freed; the load copy a[1], un-copied after the add,
 ; before the measurement (no memory version change lies between the load and its _unc) and freed; the load copy
 ; before = a[k & 3], un-copied after the add, its last reader, and left allocated (rule 5 sentence 1: the memset, a
 ; memory version change, lies between the load and that point).
 ; memset_quantum_byte: the address chain of &b[y & 3] (y & 3, its zext, the address rail; size 1, no scale),
-; uncomputed right after the store and freed; the load copies b[0] and b[3] and their zexts, uncomputed after the add,
-; before the measurement, and freed.
+; uncomputed right after the store and freed; the load copy b[3], un-copied after its zext and freed; the zext of b[0]
+; and its load copy, uncomputed after the add, before the measurement, and freed.
 ; Kept: memset_over_quantum: x (rotated register); the four fill-value rails x + i (each the value rail of its trip's
 ; kept store, rule 5); the i8 seed 0 (the value rail of the memset's 16
 ; kept byte stores, rules 7, 22); the i32 seed c (the value rail of the store a[x & 3] = c); the tape slots of the 4
 ; fill stores, the 16 memset byte stores and the quantum-address store (rule 5); the sum (measured).
 ; memset_quantum_byte: x and y (rotated registers); the fill byte rail (char)x (the value rail of the memset's 4 kept
 ; byte stores, rule 22); the i8 seed 7 (value rail of the store b[y & 3] = 7); the tape slots of the 4 memset byte
-; stores and of the quantum-address store; the sum (measured).
+; stores and of the quantum-address store; the zext rail of b[3], updated in place into the sum (measured).
 ; Rotations: memset_over_quantum: (Ry, x, th, 1). memset_quantum_byte: (Ry, x, tx, 1); (Ry, y, ty, 1).
 ; ONE BUS (rules 20, 21): a[] and b[] are written at a QUANTUM address (a[x & 3] = c, b[y & 3] = 7: a getelementptr with
 ; a tainted index) and take quantum values, so each alloca is BUS-RESIDENT: __cq_alloc(size, align) at its program
@@ -34,6 +34,11 @@
 ; before = a[k & 3] is a bus load at a classical address taken before the memset: it is un-copied after the add, its
 ; last reader, and stays allocated, not freed (rule 5 sentence 1: overtaken by the memset). a[1] is loaded after the quantum-address store and un-copied before the
 ; measurement. A load copy is never cleaned by rule 6, so the add's operands are not cleaned by it.
+; In memset_quantum_byte both operands of b[0] + b[3] are zexts of load copies, rule-5 garbage; the add is a plain
+; add of a dead value, so rule 6's in-place update (owner ruling 2026-11-26: it applies though the operand is garbage)
+; makes it ONE core gate add_i32(zext b[0], zext b[3]) on the rail of operand 0 of the IR add (both are garbage), which
+; is the sum from there on and is measured. That zext's _unc is never called; its load copy b[3] is un-copied right
+; after the zext, its last reader. The zext of b[0] and its load copy are uncomputed after the add as before.
 source_filename = "memset_array.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -137,17 +142,15 @@ define i32 @memset_quantum_byte(i32 noundef %0, i32 noundef %1, double noundef %
   %24 = ptrtoint ptr %23 to i64    ; the run-time address of b[3]
   %25 = call i32 @cqrt_qram_load_i8_hl(i32 %5, i64 %24)    ; IR: %15 = load i8, ptr %14: b[3]  [a bus load copy]
   %26 = call i32 @cq_template_zext_i8_to_i32(i32 %25)    ; IR: %16 = zext i8 %15 to i32
-  %27 = call i32 @cq_template_add_i32(i32 %26, i32 %22)    ; IR: %17 = add nuw nsw i32 %16, %13  [result rail]
-  call void @cq_template_zext_i8_to_i32_unc(i32 %26, i32 %25)    ; IR: uncompute %16
-  call void @cqrt_free(i32 %26)    ; IR: release the %16 rail (|0>)
-  call void @cqrt_qram_load_i8_hl_unc(i32 %25, i32 %5, i64 %24)    ; IR: un-copy %15 (no memory version change since the load, rule 5)
+  call void @cqrt_qram_load_i8_hl_unc(i32 %25, i32 %5, i64 %24)    ; IR: un-copy %15 after its last reader, the zext %16 (no memory version change since the load, rule 5)
   call void @cqrt_free(i32 %25)    ; IR: release the %15 rail (|0>)
+  call void @cqrt_add_i32(i32 %22, i32 %26)    ; IR: %17 = add nuw nsw i32 %16, %13  [rule 6, in-place update (owner ruling 2026-11-26: it applies to the zext, rule-5 garbage): %16 is dead after the add, so the result IS the %16 rail: %16 += %13]
   call void @cq_template_zext_i8_to_i32_unc(i32 %22, i32 %21)    ; IR: uncompute %13
   call void @cqrt_free(i32 %22)    ; IR: release the %13 rail (|0>)
   call void @cqrt_qram_load_i8_hl_unc(i32 %21, i32 %5, i64 %7)    ; IR: un-copy %12
   call void @cqrt_free(i32 %21)    ; IR: release the %12 rail (|0>)
-  %28 = call i32 @cqrt_measure_i32(i32 %27)    ; IR: %18 = cq_measure_si32(%17)
-  ret i32 %28    ; IR: ret i32 %18  (llvm.lifetime.end dropped)
+  %27 = call i32 @cqrt_measure_i32(i32 %26)    ; IR: %18 = cq_measure_si32(%17)
+  ret i32 %27    ; IR: ret i32 %18  (llvm.lifetime.end dropped)
 }
 
 declare i32 @__cq_mem()
@@ -165,6 +168,7 @@ declare void @cqrt_qram_store_i8(i32, i32, i32)
 declare void @cqrt_qram_store_i8_hl(i32, i64, i32)
 declare i32 @cqrt_qram_load_i8_hl(i32, i64)
 declare void @cqrt_qram_load_i8_hl_unc(i32, i32, i64)
+declare void @cqrt_add_i32(i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)

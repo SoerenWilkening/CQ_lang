@@ -637,7 +637,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      and `y'` IS that rail from there on: no template, no fresh rail, no `t`, no `copy` onto the
      old rail, no free. The rail then lives as `y'` would have (kept, measured, returned, the
      old value of the next update in a chain, the step of rule 5's in-place form on the
-     swapped-out rail `h`). Every case in which the old value is kept (escapes, a kept store's
+     swapped-out rail `h`). *Garbage (owner 2026-11-26):* the same gate is emitted when `y` is a
+     dead value that rule 5 would otherwise uncompute, a template result (the `mul` of 106, the
+     `zext` of 72 and 90) or a clone result that has a twin (34, 67), under the same
+     conditions: the gate goes on `y`'s rail, `y`'s own `_unc` or twin is NOT called (the rail
+     holds `y'` from there on), and what `y` was computed from is undone where rule 5 places
+     it (a load copy whose last reader was `y` is un-copied right after `y`, before the gate).
+     When both operands are such values, operand 0 of the IR instruction is the rail updated
+     and the other operand is uncomputed right after the gate (34, 72, 90). A template result
+     beside a load copy that sentence 1 excepts stays as it was (198). Every case in which the old value is kept (escapes, a kept store's
      rail, measured, operand 1 of an update whose operands are both dead, a reader after a
      non-diagonal gate) and every case in which this rule does not free `y_old` itself (a
      seed, a rail the function does not own) is unchanged: the template into a fresh rail,
