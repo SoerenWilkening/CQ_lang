@@ -71,7 +71,8 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
   inverted twice), both for matching and for the per-sample order; a C measurement while a region is
-  open emits the sites reached so far forward first (BACKEND_ABI 1.13 flush, region_emission). A marker without its partner in
+  open emits the sites reached so far forward first (BACKEND_ABI 1.13 flush, region_emission), and so does a bus store or
+  an effect entry (a record's "nflush", the flush points before it, oracle.py; cq-066r). A marker without its partner in
   a sample is read by CR rule 17 (2026-11-02, cq-asfn: a marker inside a quantum arm whose match is outside
   the arm): an invert_end with no open region closes nothing, and an invert_begin still open where the
   sample stops (its end in the other arm; or the sample ended in noreturn/raise, or its cut lies inside the
@@ -977,8 +978,11 @@ def _c_order(rr: RunResult) -> List[Tuple[int, Dict[str, Any], bool]]:
     # closes nothing: the tail on this path lies outside the bracket. On a path that leaves a region open
     # (an end in the other arm, its begin before the branch) the region holds everything after its begin on
     # this path: it is closed where the sample stops.
-    order, _unmatched, _left = region_emission([(r["kind"], _int(r.get("nmeas")) or 0) for r in recs],
-                                               len(rr.measured or []), True)
+    # cq-066r: a flush point (a bus store or an effect entry, oracle.py "nflush") flushes as a measurement does
+    nflush = (rr.outputs or {}).get("nflush", 0) if isinstance(rr.outputs, dict) else 0
+    order, _unmatched, _left = region_emission(
+        [(r["kind"], (_int(r.get("nmeas")) or 0) + (_int(r.get("nflush")) or 0)) for r in recs],
+        len(rr.measured or []) + nflush, True)
     return [(i, recs[i], neg) for i, neg in order]
 
 
