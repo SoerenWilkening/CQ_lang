@@ -7,6 +7,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -68,4 +69,17 @@ bool exitCountKnown(const llvm::BasicBlock &header, const llvm::BasicBlock &exit
 // classical disjunct of a quantum exit (`stop || q`, `stop` loop-invariant) that bounds nothing makes no
 // classical bound (case 2, not case 3).
 bool exitCondCountKnown(const llvm::BasicBlock &header, const llvm::Value &cond, bool exitIfTrue);
+// The run of spine's construct() over its original function F: nothing edits F while it lasts (the walker's one
+// LoopInfo over F holds for the whole run), so an answer that depends only on F may be kept for the run.
+// frozenEpoch(G) is the run's number (never 0) when G is the F of the innermost live run, else 0.
+class FrozenInput {
+  const llvm::Function *prevF;
+  uint64_t prevEpoch;
+public:
+  explicit FrozenInput(const llvm::Function &F);
+  ~FrozenInput();
+  FrozenInput(const FrozenInput &) = delete;
+  FrozenInput &operator=(const FrozenInput &) = delete;
+};
+uint64_t frozenEpoch(const llvm::Function &F);
 }

@@ -149,6 +149,8 @@ struct Shared {
   llvm::DenseSet<const llvm::Value *> statePreps;
   // Dominance over the original function(s): one tree per function read.
   std::map<const llvm::Function *, std::unique_ptr<llvm::DominatorTree>> dts;
+  // Loops over the original function(s): one per function read, over dt(F) (so valid exactly where dt(F) is).
+  std::map<const llvm::Function *, std::unique_ptr<llvm::LoopInfo>> lis;
   // The original instruction being lowered.
   const llvm::Instruction *cur = nullptr;
   // cq-99f7: the loop module's trip rail for the lowerInstruction call in progress (nullptr = none),
@@ -245,11 +247,21 @@ struct Shared {
 
   Shared(llvm::Module &M, const loops::KOptions &KO) : M(M), KO(KO), B(M.getContext()) {}
   llvm::DominatorTree &dt(const llvm::Function &F);
+  llvm::LoopInfo &li(const llvm::Function &F);
   // Does the original instruction `def` dominate the instruction being lowered?
   bool dominatesCurrent(const llvm::Instruction *def);
 };
 
 Shared &shared(LoweringContext &);
+// The shared dt(F) / li(F) while F is the frozen original of the construct() run (cq::frozenEpoch), else ones of the
+// caller's own built in `own` / `ownLI` (a function that may be edited, or outside the walk).
+inline llvm::DominatorTree &dtOrOwn(Shared &sh, const llvm::Function &F, std::optional<llvm::DominatorTree> &own) {
+  return frozenEpoch(F) ? sh.dt(F) : own.emplace(const_cast<llvm::Function &>(F));
+}
+inline llvm::LoopInfo &liOrOwn(Shared &sh, const llvm::Function &F, std::optional<llvm::DominatorTree> &own,
+                               std::optional<llvm::LoopInfo> &ownLI) {
+  return frozenEpoch(F) ? sh.li(F) : ownLI.emplace(own.emplace(const_cast<llvm::Function &>(F)));
+}
 // cq-8un4 (Context.cpp): the walker brackets each loop unit's loops:: call; LoweringContext::loopUnit()
 // reads the innermost one running.
 void pushLoopUnit(LoweringContext &, const llvm::Loop &);

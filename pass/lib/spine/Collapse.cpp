@@ -48,6 +48,28 @@ namespace cq::spine {
 
 namespace {
 
+// The visited set of one backward walk over the output CFG, reused across walks (a fresh set per walk was most of their
+// cost): a block is visited in this walk iff its stamp is the walk's generation. Never an answer kept across walks.
+struct WalkSet {
+  DenseMap<const BasicBlock *, unsigned> stamp;
+  unsigned gen = 0;
+  void start() {
+    if (++gen == 0 || stamp.size() > (1u << 16)) {   // wrapped, or grown over blocks long gone
+      stamp.clear();
+      gen = 1;
+    }
+  }
+  bool insert(const BasicBlock *b) {
+    unsigned &s = stamp[b];
+    if (s == gen)
+      return false;
+    s = gen;
+    return true;
+  }
+};
+thread_local WalkSet walkSet;
+thread_local SmallVector<const BasicBlock *, 16> walkWork;
+
 // Does `def` (an instruction of the output function) dominate the builder's insertion point? The
 // output function is under construction, so dominance is read along the chain of single
 // predecessors from the insertion block: the walk emits forward edges into a block before it, and a
@@ -60,22 +82,23 @@ bool outAvailable(Shared &sh, const Instruction *def) {
     BasicBlock::iterator ip = sh.B.GetInsertPoint();
     return ip == cur->end() || cq::comesBefore(def, &*ip);
   }
-  SmallPtrSet<BasicBlock *, 8> seen;
-  for (BasicBlock *b = cur->getSinglePredecessor(); b && seen.insert(b).second; b = b->getSinglePredecessor())
+  walkSet.start();
+  for (BasicBlock *b = cur->getSinglePredecessor(); b && walkSet.insert(b); b = b->getSinglePredecessor())
     if (b == def->getParent())
       return true;
   // cq-8nj3o: past a join (a classical branch's, whose arms both reach it) the predecessors are walked backwards as in
   // outBefore: def's block dominates the insertion block when no walk avoiding it reaches a block with no predecessor.
   const BasicBlock *ab = def->getParent();
-  SmallPtrSet<const BasicBlock *, 16> back;
-  SmallVector<const BasicBlock *, 16> work{cur};
-  back.insert(cur);
+  walkSet.start();
+  SmallVector<const BasicBlock *, 16> &work = walkWork;
+  work.assign(1, cur);
+  walkSet.insert(cur);
   while (!work.empty()) {
     const BasicBlock *x = work.pop_back_val();
     if (pred_empty(x))
       return false;
     for (const BasicBlock *p : predecessors(x))
-      if (p != ab && back.insert(p).second)
+      if (p != ab && walkSet.insert(p))
         work.push_back(p);
   }
   return true;
@@ -90,15 +113,16 @@ bool outBefore(const Instruction *a, const Instruction *b) {
   const BasicBlock *ab = a->getParent(), *bb = b->getParent();
   if (ab == bb)
     return a != b && cq::comesBefore(a, b);
-  SmallPtrSet<const BasicBlock *, 16> seen;
-  SmallVector<const BasicBlock *, 16> work{bb};
-  seen.insert(bb);
+  walkSet.start();
+  SmallVector<const BasicBlock *, 16> &work = walkWork;
+  work.assign(1, bb);
+  walkSet.insert(bb);
   while (!work.empty()) {
     const BasicBlock *x = work.pop_back_val();
     if (pred_empty(x))
       return false;
     for (const BasicBlock *p : predecessors(x))
-      if (p != ab && seen.insert(p).second)
+      if (p != ab && walkSet.insert(p))
         work.push_back(p);
   }
   return true;
@@ -163,7 +187,7 @@ bool carriedOutcome(Shared &sh, Value *h) {
   auto *P = dyn_cast<PHINode>(m->second.v);
   if (!P || sh.cur->getFunction() != P->getFunction())
     return false;
-  LoopInfo LI(sh.dt(*P->getFunction()));
+  LoopInfo &LI = sh.li(*P->getFunction());
   const Loop *L = LI.getLoopFor(P->getParent());
   return L && L->getHeader() == P->getParent() && L->contains(sh.cur);
 }

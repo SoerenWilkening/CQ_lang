@@ -957,7 +957,7 @@ bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
 }
 
 // F's body rotates, itself or through a callee by name.
-bool rotates(const Function &F) {
+static bool rotatesWalk(const Function &F) {
   SmallPtrSet<const Function *, 8> seen{&F};
   SmallVector<const Function *, 8> work{&F};
   while (!work.empty()) {
@@ -974,11 +974,31 @@ bool rotates(const Function &F) {
   return false;
 }
 
+// rotatesWalk, kept per function for one module's constructions (keyed as mintSites keys its memo, whose answers already
+// rest on this one): every query asks about an original body, and no construct() edits one (an entry's lowered body
+// replaces it after the last construct(), spine finishEntries; calls::finalize runs after that and asks nothing here).
+bool rotates(const TaintInfo &T, const Function &F) {
+  static thread_local struct {
+    const Module *M = nullptr;
+    const void *specs = nullptr;
+    DenseMap<const Function *, bool> m;
+  } memo;
+  if (memo.M != F.getParent() || memo.specs != T.specializations().data()) {
+    memo.M = F.getParent();
+    memo.specs = T.specializations().data();
+    memo.m.clear();
+  }
+  auto [it, fresh] = memo.m.try_emplace(&F, false);
+  if (fresh)
+    it->second = rotatesWalk(F);
+  return it->second;
+}
+
 // §1.4 with rule 18's no-twin case (rulings3 F): a table clone that rotates and whose twin only pops. Its registers may be minted
 // per trip, on any path, between a loop's pushes and its reverse loop's pops, so the clone lists them in its frame and pushes them
 // at its return, the count on top; the twin pops the count, then the handles.
 bool tablePopsMints(const TaintInfo &T, const Specialization &S) {
-  return S.table && !S.pure && tableKeepsResults(T, S) && rotates(*S.F);
+  return S.table && !S.pure && tableKeepsResults(T, S) && rotates(T, *S.F);
 }
 
 constexpr const char *mintHeadName = "cq.mints";
@@ -1108,7 +1128,7 @@ ArrayRef<MintSlot> mintSites(const TaintInfo &T, const Specialization &S) {
         sites.push_back({CB, 0});
         continue;
       }
-      if (G->isDeclaration() || G->getReturnType()->isVoidTy() || !rotates(*G))
+      if (G->isDeclaration() || G->getReturnType()->isVoidTy() || !rotates(T, *G))
         continue;
       const Specialization *C = T.calleeSpecialization(*CB, S);
       if (!C)
@@ -1535,7 +1555,7 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S)) {
     ordinaryCall(ctx, CB);
     auto *made = dyn_cast<CallInst>(&ctx.B().GetInsertBlock()->back());
-    if (CB.getType()->isVoidTy() && made && made->getCalledFunction() == cs.F && rotates(*cs.F))
+    if (CB.getType()->isVoidTy() && made && made->getCalledFunction() == cs.F && rotates(ctx.T, *cs.F))
       made->setMetadata("cq.mint.drop", MDNode::get(ctx.M.getContext(), {}));
     return;
   }
@@ -1585,7 +1605,7 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   call->setAttributes(AL);
   // Rule 19: a frozen result is kept like the caller's own registers. Rule 18: every other result is zeroed by the twin
   // __cq_q_<fn>_<mask>_unc (the all-zero mask, `v` with no formal), a load for rule 5; with no twin KEPT.
-  bool twin = hasTwin(ctx.T, cs) && er->registers == 0 && !rotates(F);
+  bool twin = hasTwin(ctx.T, cs) && er->registers == 0 && !rotates(ctx.T, F);
   std::string twinName = abi::name(abi::CloneSpec{F.getName().str(), cs.mask.empty() ? "v" : cs.mask, {}, false, false, true});
   SmallVector<Value *, 2> dead;
   auto keep = [&](Value *h) {
@@ -1624,7 +1644,7 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   Value *h = rt == i32 ? static_cast<Value *>(call) : ctx.B().CreateTrunc(call, i32);
   keep(h);
   callRegisters[{&ctx.out(), &CB}].push_back(h);
-  if (tablePopsMints(ctx.T, ctx.S) && rotates(F))
+  if (tablePopsMints(ctx.T, ctx.S) && rotates(ctx.T, F))
     listMint(ctx, h);
   tagRegisterCall(ctx, CB, call, true);
   recordDead();
@@ -1697,7 +1717,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
-  if (CB.getType()->isVoidTy() && rotates(*cs->F))
+  if (CB.getType()->isVoidTy() && rotates(ctx.T, *cs->F))
     r.call->setMetadata("cq.mint.drop", MDNode::get(ctx.M.getContext(), {}));
   bindCloneCall(ctx, CB, *cs, r);
 }
@@ -1822,8 +1842,9 @@ void callTableTwin(Module &M, IRBuilder<> &B, Value *twin, Value *pred, ArrayRef
 // (or another block) comes before its last consumer. The twin then runs right after the copy: no change lies between.
 bool keptResult(LoweringContext &ctx, CallBase &CB) {
   // Rule 14: in a loop the reverse reads the result, past the next trip's call (a memory version change).
-  DominatorTree DT(*CB.getFunction());
-  if (LoopInfo(DT).getLoopFor(CB.getParent()))
+  std::optional<DominatorTree> ownDT;
+  std::optional<LoopInfo> ownLI;
+  if (spine::liOrOwn(spine::shared(ctx), *CB.getFunction(), ownDT, ownLI).getLoopFor(CB.getParent()))
     return true;
   SmallVector<const Instruction *, 8> work{&CB};
   SmallPtrSet<const Instruction *, 8> seen{&CB};

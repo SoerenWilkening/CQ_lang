@@ -556,7 +556,7 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
 namespace {
 // Is P the header phi of a loop that holds `at`?
 bool carriedHere(LoweringContext &ctx, const PHINode *P, const Instruction &at) {
-  LoopInfo LI(spine::shared(ctx).dt(*P->getFunction()));
+  LoopInfo &LI = spine::shared(ctx).li(*P->getFunction());
   const Loop *L = LI.getLoopFor(P->getParent());
   return L && L->getHeader() == P->getParent() && L->contains(&at);
 }
@@ -566,7 +566,7 @@ bool carriedHere(LoweringContext &ctx, const PHINode *P, const Instruction &at) 
 // disjunct, rule 8), or an exit that is no conditional branch?
 bool classicalExitTest(LoweringContext &ctx, const PHINode *P, const Instruction &at) {
   auto &sh = spine::shared(ctx);
-  LoopInfo LI(sh.dt(*P->getFunction()));
+  LoopInfo &LI = sh.li(*P->getFunction());
   const Loop *L = LI.getLoopFor(P->getParent());
   if (!L || L->getHeader() != P->getParent() || !L->contains(&at))
     return false;
@@ -665,7 +665,7 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   // A value of the header's test region (the region form) is carried the same way.
   if (every)
     if (auto *hv = dyn_cast<Instruction>(call.getArgOperand(0)); hv && spine::shared(ctx).rolledHeaders.count(hv->getParent())) {
-      LoopInfo LI(spine::shared(ctx).dt(*hv->getFunction()));
+      LoopInfo &LI = spine::shared(ctx).li(*hv->getFunction());
       const Loop *RL = LI.getLoopFor(hv->getParent());
       if (RL && RL->getHeader() == hv->getParent() && RL->contains(&call))
         every = false;
@@ -790,13 +790,15 @@ bool cleanable(LoweringContext &ctx, Value *y) {
     return false;
   // A field of a clone call's composite result (an extractvalue of the lowered call, U2): the call's
   // result rails are undone together by its twin (rule 18, 166), never one of them by rule 6.
-  if (isa<ExtractValueInst>(ctx.operand(y).v))
+  // One read: a repeat would be the same (a collapse's recomputation is kept in Shared::collapsed, nothing between moves).
+  const Operand yo = ctx.operand(y);
+  if (isa<ExtractValueInst>(yo.v))
     return false;
   // A handle that is a classical merge of rails in the new IR (a lane or field of a classical select or
   // phi over handles, cq-oa67) aliases its arms, as the select itself does.
-  if (isa<SelectInst>(ctx.operand(y).v) || isa<PHINode>(ctx.operand(y).v))
+  if (isa<SelectInst>(yo.v) || isa<PHINode>(yo.v))
     return false;
-  return ctx.operand(y).handle;
+  return yo.handle;
 }
 
 // Dead after `at` (CR rule 6): every other use of y is an earlier instruction that neither stores,

@@ -670,7 +670,8 @@ void Unit::cleanInvariantOnExit(Loop &L) {
   BasicBlock *latch = L.getLoopLatch();
   if (!latch || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
     return;
-  DominatorTree DT(F);
+  std::optional<DominatorTree> ownDT;
+  DominatorTree &DT = spine::dtOrOwn(spine::shared(ctx), F, ownDT);
   Module &M = Mod;
   for (BasicBlock *b : L.blocks()) {
     if (!DT.dominates(b, latch) || !qp(b).isTop())
@@ -823,7 +824,16 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // non-phi in C or a block C dominates is the exit value of the trip that left, as a phi of C with that
   // value on every unit edge into C would be (SSA: the value dominates C, so each unit edge into C
   // carries its latest trip's value); it is a capture of its own (xreads), bound after the loop.
-  std::unique_ptr<DominatorTree> mxDT = mx ? std::make_unique<DominatorTree>(*header->getParent()) : nullptr;
+  // The shared tree and loops of the original function while it is frozen (spine::dtOrOwn), else this unit's own.
+  std::optional<DominatorTree> mxDTown;
+  std::optional<LoopInfo> mxLIown;
+  DominatorTree *mxDT = mx ? &spine::dtOrOwn(spine::shared(ctx), *header->getParent(), mxDTown) : nullptr;
+  // A LoopInfo over *mxDT: the shared one, or one built into `own` from the unit's tree.
+  auto loopsOfMxDT = [&](std::optional<LoopInfo> &own) -> LoopInfo & {
+    if (frozenEpoch(*header->getParent()))
+      return spine::shared(ctx).li(*header->getParent());
+    return own.emplace(*mxDT);
+  };
   std::vector<const Instruction *> liveOut, xreads;
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b)
@@ -895,7 +905,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   BasicBlock *cxb = nullptr;
   BasicBlock *cxArm = nullptr;                      // the arm block cxb's classical exit edge enters (nullptr: C itself)
   SmallVector<BasicBlock *, 2> cxAll, cxExtra;      // the classical exit tests; those besides cxb that enter C only
-  std::unique_ptr<LoopInfo> mxLI;
+  LoopInfo *mxLI = nullptr;
   DenseMap<const BasicBlock *, Loop *> armUnit;     // a block of a loop of the exit arm's unit -> that loop
   // Classical exit edges into the exit arm (case 3: cxb's; case 1, cq-y7kw: each classical exit edge not into C): each
   // runs the arm once, in a segment of its own after the trips.
@@ -913,7 +923,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   auto buildArmUnits = [&]() {
     if ((UX.arm.empty() && UX.abort.empty()) || mxLI)
       return;
-    mxLI = std::make_unique<LoopInfo>(*mxDT);
+    mxLI = &loopsOfMxDT(mxLIown);
     for (auto *blocks : {&UX.arm, &UX.abort})
       for (BasicBlock *a : *blocks) {
         Loop *l = mxLI->getLoopFor(a), *last = nullptr;
@@ -935,7 +945,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // predicate, and C's phis take that edge's value (the cx form's copy-out at T).
   const bool c1Arm = cx && UX.multi();
   if (c1Arm) {
-    mxDT = std::make_unique<DominatorTree>(*header->getParent());
+    mxDT = &spine::dtOrOwn(spine::shared(ctx), *header->getParent(), mxDTown);
     buildArmUnits();
     SmallVector<BasicBlock *, 4> exiting;
     L.getExitingBlocks(exiting);
@@ -1101,8 +1111,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       }
       // cq-h8y6: an incoming from a tail block (Exits.h) on the outside paths, not classically excluded from the
       // unit: the walker selects it in over this binding (the unit's capture), a classical one it joins.
+      std::optional<LoopInfo> tailLI;
       for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
-        if (BasicBlock *u = P.getIncomingBlock(i); is_contained(UX.tail, u) && !exits::inTailLoopUnit(L, UX, u, LoopInfo(*mxDT))) {
+        if (BasicBlock *u = P.getIncomingBlock(i); is_contained(UX.tail, u) && !exits::inTailLoopUnit(L, UX, u, loopsOfMxDT(tailLI))) {
           Pred e = exits::tailPred(ctx, L, UX, u, *mxDT) & ctx.preds().edge(u, UX.cont);
           if (!e.isBottom() && !(e & hb.classicalFactor(ctx.T, ctx.S)).isBottom())
             ctx.addJoinArm(&P, e, P.getIncomingValue(i));
@@ -1228,8 +1239,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   for (BasicBlock *u : predecessors(header))
     if (!L.contains(u) && !is_contained(outsideP, u))
       outsideP.push_back(u);
-  std::unique_ptr<DominatorTree> sDT = std::make_unique<DominatorTree>(*header->getParent());
-  std::unique_ptr<LoopInfo> sLI = std::make_unique<LoopInfo>(*sDT);
+  std::optional<DominatorTree> sDTown;
+  std::optional<LoopInfo> sLIown;
+  LoopInfo *sLI = &spine::liOrOwn(spine::shared(ctx), *header->getParent(), sDTown, sLIown);
   auto startOf = [&](PHINode &p) -> Operand {
     // The continuation of a loop just before this one: that unit bound p on its exit edge.
     if (isQ(&p) && exits::boundByLoopBefore(ctx, p, *sLI))
@@ -1359,7 +1371,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (cp.P && cp.rails.size() == 1 && outermost && !inTrip && ctx.bound(cp.P)) {
         Operand acc = ctx.operand(cp.P);
         if (acc.handle) {
-          LoopInfo LI(*mxDT);
+          std::optional<LoopInfo> ownLI;
+          LoopInfo &LI = loopsOfMxDT(ownLI);
           Pred ran = Pred::bottom();
           for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i)
             if (BasicBlock *u = cp.P->getIncomingBlock(i); !inUnit(u) && LI.getLoopFor(u))
@@ -4250,8 +4263,8 @@ void Unit::resolvePreheader() {
   BasicBlock *exitB = exits::liveExit(top);
   if (!pre || !exitB)
     return;
-  DominatorTree DT(*pre->getParent());
-  if (DT.dominates(pre, exitB))
+  std::optional<DominatorTree> ownDT;
+  if (spine::dtOrOwn(spine::shared(ctx), *pre->getParent(), ownDT).dominates(pre, exitB))
     return;
   std::vector<RailId> rails;
   // GSL ode-initval rk4imp (CR rule 5: a rail is uncomputed before every rail its producer read, so resolving one here resolves its
@@ -4320,8 +4333,10 @@ namespace {
 std::optional<Pred> tripPaths(LoweringContext &ctx, const Loop &L) {
   BasicBlock *h = L.getHeader();
   Function &F = *h->getParent();
-  DominatorTree DT(F);
-  LoopInfo LI(DT);
+  std::optional<DominatorTree> ownDT;
+  std::optional<LoopInfo> ownLI;
+  LoopInfo &LI = spine::liOrOwn(spine::shared(ctx), F, ownDT, ownLI);
+  DominatorTree &DT = ownDT ? *ownDT : spine::shared(ctx).dt(F);
   for (Loop *O : LI.getLoopsInPreorder()) {
     if (O->contains(h) || classify(*O, ctx.T, ctx.S) != Case::QuantumExit)
       continue;

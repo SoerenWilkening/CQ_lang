@@ -78,6 +78,13 @@ DominatorTree &Shared::dt(const Function &F) {
   return *p;
 }
 
+LoopInfo &Shared::li(const Function &F) {
+  auto &p = lis[&F];
+  if (!p)
+    p = std::make_unique<LoopInfo>(dt(F));
+  return *p;
+}
+
 bool Shared::dominatesCurrent(const Instruction *def) {
   if (!cur)
     return false;
