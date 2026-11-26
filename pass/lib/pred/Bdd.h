@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+
 namespace cq::pred_detail {
 
 class Bdd {
@@ -52,7 +54,7 @@ public:
   // Whether a & b (a & !b when negB) is satisfiable, without making the conjunction (cq-m16f6).
   bool meets(unsigned a, unsigned b, bool negB = false);
   // Existential quantification over every variable `pick` selects.
-  unsigned exists(unsigned f, const std::function<bool(unsigned)> &pick);
+  unsigned exists(unsigned f, llvm::function_ref<bool(unsigned)> pick);
   // Coudert-Madre restrict: a function that agrees with f wherever c holds, with support within f's.
   unsigned restrict(unsigned f, unsigned c);
   void support(unsigned f, std::set<unsigned> &out) const;

@@ -161,20 +161,34 @@ unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
   return r;
 }
 
-unsigned Bdd::exists(unsigned f, const std::function<bool(unsigned)> &pick) {
-  std::unordered_map<unsigned, unsigned> memo;
-  std::function<unsigned(unsigned)> go = [&](unsigned n) -> unsigned {
-    if (terminal(n))
-      return n;
-    auto it = memo.find(n);
-    if (it != memo.end())
-      return it->second;
-    unsigned l = go(lo(n)), h = go(hi(n));
-    unsigned r = pick(var(n)) ? orOp(l, h) : mk(var(n), l, h);
-    memo.emplace(n, r);
-    return r;
-  };
-  return go(f);
+unsigned Bdd::exists(unsigned f, llvm::function_ref<bool(unsigned)> pick) {
+  // Memoized per call by the stamp arrays (orOp and mk do not touch them), children low first, so the node numbers are
+  // those of a walk with any exact memo.
+  if (++stamp == 0) {
+    std::fill(seenAt.begin(), seenAt.end(), 0u);
+    stamp = 1;
+  }
+  if (seenAt.size() < nodes.size()) {   // nodes made during the walk are results, never looked up
+    seenAt.resize(nodes.size(), 0u);
+    memoVal.resize(nodes.size(), 0u);
+  }
+  struct Walk {
+    Bdd &m;
+    llvm::function_ref<bool(unsigned)> pick;
+    unsigned call;
+    unsigned go(unsigned n) {
+      if (m.terminal(n))
+        return n;
+      if (m.seenAt[n] == call)
+        return m.memoVal[n];
+      unsigned l = go(m.lo(n)), h = go(m.hi(n));
+      unsigned r = pick(m.var(n)) ? m.orOp(l, h) : m.mk(m.var(n), l, h);
+      m.seenAt[n] = call;
+      m.memoVal[n] = r;
+      return r;
+    }
+  } walk{*this, pick, stamp};
+  return walk.go(f);
 }
 
 std::pair<bool, bool> Bdd::sides(unsigned f, unsigned v) {

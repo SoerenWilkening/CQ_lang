@@ -1119,7 +1119,12 @@ class JoinRepair {
     JoinRepair &R;
     DenseMap<const Value *, unsigned> condVar;
     std::vector<std::tuple<const Value *, APInt, unsigned>> eqVar;
-    std::map<std::pair<const Value *, bool>, unsigned> memo;
+    DenseMap<std::pair<const Value *, unsigned>, unsigned> memo;   // {value, pol}
+    // condVar's compares bucketed by (predicate, operands): isIdenticalTo implies all three equal. Built at the first
+    // use, after inFacts filled condVar (cmpIndexed is reset there).
+    std::map<std::tuple<unsigned, const Value *, const Value *>, SmallVector<std::pair<const CmpInst *, unsigned>, 2>>
+        cmpIndex;
+    bool cmpIndexed = false;
     explicit Decoder(JoinRepair &R) : R(R) {}
 
     unsigned eqOf(const Value *x, const APInt &c) {
@@ -1150,7 +1155,7 @@ class JoinRepair {
       Bdd &m = R.m;
       if (const auto *k = dyn_cast<ConstantInt>(v))
         return k->isOne() == pol ? Bdd::T : Bdd::F;
-      auto key = std::make_pair(v, pol);
+      auto key = std::make_pair(v, unsigned(pol));
       if (auto it = memo.find(key); it != memo.end())
         return it->second;
       unsigned r = Bdd::T;
@@ -1199,9 +1204,18 @@ class JoinRepair {
       // instead of it: `icmp eq %1, 2` is also switch case 2, and not case 1 (SQLite windowCodeOp).
       if (const auto *cv = dyn_cast<CmpInst>(v)) {
         SmallVector<unsigned, 2> same;   // by variable, not by the map's pointer order: one BDD whatever the addresses
-        for (auto &[x, var] : condVar)
-          if (x != v && isa<CmpInst>(x) && cast<CmpInst>(x)->isIdenticalTo(cv))
-            same.push_back(var);
+        if (!cmpIndexed) {
+          cmpIndex.clear();
+          for (auto &[x, var] : condVar)
+            if (const auto *cx = dyn_cast<CmpInst>(x))
+              cmpIndex[{unsigned(cx->getPredicate()), cx->getOperand(0), cx->getOperand(1)}].push_back({cx, var});
+          cmpIndexed = true;
+        }
+        if (auto it = cmpIndex.find({unsigned(cv->getPredicate()), cv->getOperand(0), cv->getOperand(1)});
+            it != cmpIndex.end())
+          for (auto &[x, var] : it->second)
+            if (x != v && x->isIdenticalTo(cv))
+              same.push_back(var);
         llvm::sort(same);
         for (unsigned var : same)
           r = m.andOp(r, pol ? m.ithVar(var) : m.notOp(m.ithVar(var)));
@@ -1256,19 +1270,46 @@ class JoinRepair {
   // BDD of 2^n nodes in the atoms' order (cq-iaz30, GSL ode-initval rk8pd_apply).
   unsigned inFacts(Decoder &D, BasicBlock *U, const std::set<unsigned> &vars) {
     DenseMap<unsigned, const Instruction *> defOf;
+    std::vector<const void *> key;   // per var: the var, its output value, the value defOf reads and its block
     for (unsigned v : vars) {
       const Atom &a = atomOf(v);
-      if (a.kind == AtomKind::Cond)
-        D.condVar[ctx.operand(a.v).v] = v;
-      else if (a.kind == AtomKind::Eq)
-        D.eqVar.emplace_back(ctx.operand(a.v).v, a.c, v);
-      else
+      key.push_back(reinterpret_cast<const void *>(uintptr_t(v)));
+      if (a.kind == AtomKind::Cond) {
+        Value *x = ctx.operand(a.v).v;
+        D.condVar[x] = v;
+        key.push_back(x);
+      } else if (a.kind == AtomKind::Eq) {
+        Value *x = ctx.operand(a.v).v;
+        D.eqVar.emplace_back(x, a.c, v);
+        key.push_back(x);
+      } else {
         continue;
-      if (auto *x = dyn_cast<Instruction>(ctx.operand(a.v).v))
+      }
+      Value *y = ctx.operand(a.v).v;
+      key.push_back(y);
+      if (auto *x = dyn_cast<Instruction>(y)) {
         defOf[v] = x;
+        key.push_back(x->getParent());
+      }
     }
+    D.cmpIndexed = false;
     Function &OF = ctx.out();
-    DenseMap<const BasicBlock *, unsigned> idx, in;
+    // The table of a repeat call is the one computed before: the same vars over the same output values (and the blocks of
+    // their definitions) on the same output CFG. A repeat computation would make no BDD node (every function it builds
+    // exists already), so a hit leaves the node numbers as they were. The CFG is compared exactly, not tracked by an
+    // epoch: code outside this file may add blocks or retarget edges between two calls.
+    factsSig(OF, sigScratch);
+    if (sigScratch != factsCfg) {
+      factsCfg.swap(sigScratch);
+      factsCache.clear();
+    }
+    auto [ce, fresh] = factsCache.try_emplace(std::move(key));
+    DenseMap<const BasicBlock *, unsigned> &in = ce->second;
+    if (!fresh) {
+      auto pi = in.find(U);
+      return pi == in.end() ? Bdd::T : pi->second;
+    }
+    DenseMap<const BasicBlock *, unsigned> idx;
     ReversePostOrderTraversal<Function *> rpot(&OF);
     unsigned i = 0;
     for (BasicBlock *b : rpot)
@@ -1327,6 +1368,26 @@ class JoinRepair {
     return inFacts(D, U, *pointVars);
   }
   std::optional<std::set<unsigned>> pointVars;
+  // inFacts' tables: the output CFG they were computed on (factsSig) and per key (vars, their output values) the table.
+  std::vector<const void *> factsCfg, sigScratch;
+  std::map<std::vector<const void *>, DenseMap<const BasicBlock *, unsigned>> factsCache;
+  // Every block in order with its predecessors in use-list order (the order inFacts joins them) and its terminator's
+  // operands (condition, successors, cases).
+  static void factsSig(Function &F, std::vector<const void *> &sig) {
+    sig.clear();
+    for (BasicBlock &b : F) {
+      sig.push_back(&b);
+      for (BasicBlock *p : predecessors(&b))
+        sig.push_back(p);
+      sig.push_back(nullptr);
+      if (const Instruction *t = b.getTerminator()) {
+        sig.push_back(t);
+        for (const Value *o : t->operands())
+          sig.push_back(o);
+      }
+      sig.push_back(nullptr);
+    }
+  }
 
   bool noJoinAbove(BasicBlock *U) {
     SmallPtrSet<BasicBlock *, 16> seen;
