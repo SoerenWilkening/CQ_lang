@@ -122,6 +122,7 @@
 #include <string>
 
 #include "../../bus/BusInternal.h"
+#include "../../taint/DeadEnd.h"
 #include "../../taint/FenvName.h"
 #include "cq/Abi.h"
 #include "cq/Bus.h"
@@ -540,6 +541,12 @@ struct State {
   std::map<const Function *, std::unique_ptr<LoopInfo>> li;
   std::map<const Function *, std::unique_ptr<PostDominatorTree>> pdt;
   std::map<const Function *, DenseMap<const BasicBlock *, unsigned>> walk;   // the spine's order L
+  // cq-9vtv2 (CR rules 16, 23): the state before the first change made in each dead-end block (no return reachable from
+  // it), in lowering order; restored at the arm's abort (atAbort).
+  std::vector<std::pair<const BasicBlock *, Part>> armPre;
+  std::map<const Function *, taint_detail::DeadEnds> deadEnds;
+  // (arm block, loop header): a noreturn arm a rolled loop lowers inside each trip (loopCarried's `trip`).
+  DenseSet<std::pair<const BasicBlock *, const BasicBlock *>> tripArm;
 };
 
 // Keyed by the output function. A key reused by a later module's function is reset on first use
@@ -1039,6 +1046,18 @@ Part readAt(LoweringContext &ctx, State &st, const Key &k) {
 }
 
 Part cur(LoweringContext &ctx, State &st) { return readAt(ctx, st, kState); }
+
+bool deadEnd(State &st, const BasicBlock *B) {
+  return st.deadEnds.try_emplace(B->getParent(), *B->getParent()).first->second.isDeadEnd(B);
+}
+
+// cq-9vtv2: I in a dead-end block is about to change the state: the state before it, once per block (atAbort).
+void noteArm(LoweringContext &ctx, State &st, const Instruction &I) {
+  const BasicBlock *B = I.getParent();
+  if (!B || !deadEnd(st, B) || any_of(st.armPre, [&](const auto &e) { return e.first == B; }))
+    return;
+  st.armPre.push_back({B, cur(ctx, st)});
+}
 
 void define(LoweringContext &ctx, State &st, const Key &k, Part p) {
   if (p.flags)
@@ -1719,6 +1738,7 @@ Value *hostLane(LoweringContext &ctx, const ConstrainedFPIntrinsic &CI, ArrayRef
 void lowerConstrained(LoweringContext &ctx, CallBase &CB) {
   auto &CI = cast<ConstrainedFPIntrinsic>(CB);
   State &st = state(ctx, CI);
+  noteArm(ctx, st, CI);
   const char *op = constrainedOp(CI.getIntrinsicID());
   bool fmuladd = CI.getIntrinsicID() == Intrinsic::experimental_constrained_fmuladd;
   unsigned n = CI.getNonMetadataArgCount();
@@ -2053,6 +2073,7 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
   if (fn == FenvFn::None)
     internalError("eff-fenv: lowerFenvCall on a call that is no <fenv.h> function", &CB);
   State &st = state(ctx, CB);
+  noteArm(ctx, st, CB);
   auto arg = [&](unsigned i) { return ctx.operand(CB.getArgOperand(i)); };
   auto hostCopy = [&]() {
     Instruction *h = copyHost(ctx, CB);
@@ -2485,6 +2506,37 @@ void afterMeasure(LoweringContext &ctx, CallInst &measure) {
     settle(ctx, st, measure);
 }
 
+// cq-9vtv2 (CR rules 16, 23): at a noreturn call's abort_i1, the builder after it. The output after it is the C
+// program's only where the arm did not run (an aborted branch is no part of it), so the state there is the state before
+// the arm's first change, as taint has it: what the arm's dead-end blocks changed is dropped.
+void atAbort(LoweringContext &ctx, CallBase &noreturnCall) {
+  auto &m = states();
+  auto it = m.find(&ctx.out());
+  if (it == m.end() || !it->second || !it->second->orig || it->second->orig->getParent() != noreturnCall.getModule())
+    return;
+  State &st = *it->second;
+  const BasicBlock *NB = noreturnCall.getParent();
+  LoopInfo &LI = loopInfo(st, *NB->getParent());
+  // A block of a loop that lowers this arm inside its trip: its changes are the trip's, which the loop carries.
+  auto tripOwn = [&](const BasicBlock *X) {
+    for (const Loop *l = LI.getLoopFor(X); l; l = l->getParentLoop())
+      if (!l->contains(NB) && st.tripArm.contains({NB, l->getHeader()}))
+        return true;
+    return false;
+  };
+  auto inArm = [&](const std::pair<const BasicBlock *, Part> &e) {
+    return (e.first == NB || (e.first->getParent() == NB->getParent() && isPotentiallyReachable(e.first, NB))) &&
+           !tripOwn(e.first);
+  };
+  auto first = find_if(st.armPre, inArm);
+  if (first == st.armPre.end())
+    return;
+  Part p = first->second;
+  erase_if(st.armPre, inArm);
+  if (!cur(ctx, st).same(p))
+    define(ctx, st, kState, p);
+}
+
 // ROLES: at a return of an entry, before the spine's flushAtExit: the state there is final.
 void atEntryReturn(LoweringContext &ctx, ReturnInst &ret) {
   auto &m = states();
@@ -2530,6 +2582,7 @@ bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S) { return carri
 
 std::array<Operand, 2> envArgs(LoweringContext &ctx, CallBase &site) {
   State &st = state(ctx, site);
+  noteArm(ctx, st, site);
   // Owner 2026-11-12 (cq-a9ij3): the callee's mode is a rail (an _rmq clone with 82's ABI) or classical (its plain name).
   uint8_t rm = 0;
   for (auto &[G, cs] : ctx.T.calleeCandidates(site, ctx.S))
@@ -2654,8 +2707,11 @@ std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const Loop &L, Array
   // cq-6zudr: the exit and noreturn arms run per trip too (a get_tok_str before a noreturn _tcc_error).
   SmallVector<const BasicBlock *, 16> blocks(L.blocks());
   blocks.append(trip.begin(), trip.end());
+  taint_detail::DeadEnds dead(*ctx.S.F);
   for (const BasicBlock *bb : blocks)
     for (const Instruction &I : *bb) {
+      if (dead.isDeadEnd(bb) && !L.contains(bb))
+        break;   // cq-9vtv2: a noreturn arm's changes end at its abort (atAbort): no later trip sees them
       flags |= writesFlags(I);
       mode |= writesMode(I);
       auto *CB = dyn_cast<CallBase>(&I);
@@ -2671,6 +2727,9 @@ std::vector<CarriedPiece> loopCarried(LoweringContext &ctx, const Loop &L, Array
   if (!flags && !mode)
     return out;
   State &st = state(ctx, *at);
+  for (const BasicBlock *b : trip)
+    st.tripArm.insert({b, L.getHeader()});
+  noteArm(ctx, st, *at);   // a loop inside a noreturn arm: its carried state is the arm's change
   Part p = cur(ctx, st);
   Part q = p;
   if (flags && !q.flags)

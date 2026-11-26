@@ -47,6 +47,9 @@ namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &
                        // builder where the return is emitted and before flushAtExit: the fenv state there is
                        // final (kept, or copied out when a merge or superseded on another path).
                        void atEntryReturn(LoweringContext &, llvm::ReturnInst &orig);
+                       // cq-9vtv2 (CR rules 16, 23): right after a noreturn call's abort_i1: the state after it is
+                       // the state before the arm's changes.
+                       void atAbort(LoweringContext &, llvm::CallBase &noreturnCall);
                        // E1 (cq-ibkc, freeze amendment on cq-arch; CR rule 23, 82): the clone ABI of the
                        // environment. Contract at the end of eff/fenv/Fenv.cpp: a clone of S that carries it
                        // takes (mode, flags) as two trailing i32 parameters and returns the new flags handle

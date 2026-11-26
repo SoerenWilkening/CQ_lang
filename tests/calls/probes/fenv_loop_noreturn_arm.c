@@ -63,3 +63,24 @@ int ec(void) {
   if (n & 1) { feraiseexcept(FE_UNDERFLOW); r = h(n); }
   return cq_measure(r) + fetestexcept(FE_INEXACT | FE_UNDERFLOW);
 }
+// cq-9vtv2 (rules 16, 23): a noreturn arm's environment ends at its abort: the surviving path never ran the arm, so a
+// later read is the state before the arm (classical here). In a loop, the arm's body only reading the mode ...
+__attribute__((noinline)) int gr(int x) { return x + fegetround(); }
+int er(void) {
+  char n = 0;
+  cq_theta(&n, .5);
+  unsigned i = 0;
+  for (;;) {
+    if (buf[i] == n) break;
+    i++;
+    if (i == 7) { gr(n); exit(3); }
+  }
+  return cq_measure(i) + fetestexcept(FE_INEXACT);
+}
+// ... and with no loop, the arm raising.
+int ea(void) {
+  char n = 0;
+  cq_theta(&n, .5);
+  if (n & 1) { g(n); exit(3); }
+  return cq_measure(n) + fetestexcept(FE_INEXACT);
+}
