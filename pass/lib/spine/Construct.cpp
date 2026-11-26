@@ -870,6 +870,19 @@ void Walker::planGuards() {
       // facts: bottom, not outB (classicalFactor(bottom) is top).
       const Pred &ep = ctx.preds().edge(b, s);
       Pred f = ep.isBottom() ? Pred::bottom() : tg == s ? outB & ep.classicalFactor(ctx.T, ctx.S) : outB;
+      // cq-1cljt (rules 8, 9): a classical switch's edge establishes its case set, a disjunction the classical factor (a
+      // conjunction of literals) drops. Without it a merge on the edge read, where the edge leaves, an arm minted under
+      // another case of the same switch (TinyEMU csr_read: a quantum test around a switch with a quantum sub-switch).
+      if (auto *sw = dyn_cast<SwitchInst>(t); sw && tg == s && !f.isBottom()) {
+        Pred own = Pred::bottom(), none = Pred::top();
+        for (auto &cs : sw->cases()) {
+          Pred e = Pred::eqAtom(sw->getCondition(), cs.getCaseValue()->getValue());
+          if (cs.getCaseSuccessor() == s)
+            own = own | e;
+          none = none & !e;
+        }
+        f = f & (sw->getDefaultDest() == s ? own | none : own);
+      }
       add(tg, f);
       fact(b, tg, f);
     }
