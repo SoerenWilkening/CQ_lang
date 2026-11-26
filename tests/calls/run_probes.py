@@ -181,6 +181,9 @@ CASES = [
     # cq-noavf (rule 19, §1.1): a vtable dispatch in a classical loop; the entry returns a handle extracted from the loop
     # clone's aggregate result, which the checker read as a value.
     ("fnptr_vtable_loop_ret", "vt", [], "pass", [r"(%\d+) = extractvalue \{ i32, i32 \} %\d+, 0\n(?:  .*\n)*  ret i32 \1\n"]),
+    # cq-3fzuf (rule 18): `call i32 (...) @g()` against `define i32 @g()` (C17 unprototyped declaration across files) is
+    # the direct call, retyped once in calls::canonicalizeLibCalls.
+    ("unprototyped_call", "up", [], "pass", [r"call i32 @g\(\)"]),
     ("fp_classical", "fp_classical", [], "pass", [r"@__cq_clone_resolve"]),
     ("fp_under_pred", "fp_under_pred", [], "pass", [r"@__cq_clone_resolve\(ptr %\w+, i32 1\)", r"@__cq_clone_resolve\(ptr %\w+, i32 3\)"]),
     ("fp_rail_unmeasured", "fp_rail_unmeasured", [], "pass", [r"@__cq_clone_count"]),

@@ -181,7 +181,33 @@ bool rewriteAtomic(CallInst *CI, StringRef n) {
 
 } // namespace
 
+// cq-3fzuf: a call through an unprototyped declaration (C17 `int g();`) has type `i32 (...)` against a callee of
+// another type, so getCalledFunction() is null on it while stripPointerCasts() sees the callee. When the call's
+// arguments and result are the callee's own types (what InstCombine's transformConstExprCastCall accepts without a
+// cast) it is that direct call, retyped once here so every reader agrees. Otherwise it is undefined behaviour in C and
+// stays as LLVM left it.
+static bool retypeDirectCalls(Module &M) {
+  bool changed = false;
+  for (Function &F : M)
+    for (Instruction &I : instructions(F)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      auto *G = CB && !CB->isInlineAsm() ? dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts()) : nullptr;
+      if (!G || G->getFunctionType() == CB->getFunctionType())
+        continue;
+      FunctionType *FT = G->getFunctionType();
+      bool ok = !FT->isVarArg() && FT->getReturnType() == CB->getType() && FT->getNumParams() == CB->arg_size();
+      for (unsigned i = 0; ok && i < CB->arg_size(); ++i)
+        ok = FT->getParamType(i) == CB->getArgOperand(i)->getType();
+      if (ok) {
+        CB->setCalledFunction(G);
+        changed = true;
+      }
+    }
+  return changed;
+}
+
 bool canonicalizeLibCalls(Module &M) {
+  bool retyped = retypeDirectCalls(M);
   SmallVector<CallInst *, 16> calls;
   for (Function &F : M)
     for (Instruction &I : instructions(F))
@@ -212,7 +238,7 @@ bool canonicalizeLibCalls(Module &M) {
   for (Function *G : callees)
     if (G->use_empty())
       G->eraseFromParent();
-  return changed;
+  return changed || retyped;
 }
 
 unsigned patternPeriod(const CallBase &CB) {
