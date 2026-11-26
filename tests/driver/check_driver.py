@@ -28,6 +28,7 @@ Fails on any of:
               executable prints a wrong value; the program lowered against the library is not §6-equal to the C
               program of both sources; a listed name is injected from the bundle; a library of a bundle function
               exports anything but its root's table clones, or does not key the row by the host's sin
+  drop-bodies cq-drop-bodies leaves an alias of a dropped body, or its uses do not name the declaration (cq-o6cfm)
 
 Default corpus examples: a handful (the bead iterates on few); --examples NN_name... or --all for more.
 --manifest FILE (or CQ_BUNDLE_MANIFEST) tests against another bundle manifest than bundle/manifest.json.
@@ -510,6 +511,20 @@ def test_library(tmp):
             ok("--cq-lib with no input takes sin from the bundle: its clones (masks 0, 1) exported, sin itself left to the host library")
 
 
+def test_drop_bodies(tmp):
+    """cq-o6cfm: cq-drop-bodies on a body with aliases (an alias, and a weak alias of it as musl's weak_alias makes)
+    gives a valid module whose alias uses name the dropped function, now a declaration."""
+    src = tmp / "drop.ll"
+    src.write_text("define i32 @f(i32 %x) {\n  ret i32 %x\n}\n@a = alias i32 (i32), ptr @f\n@b = weak alias i32 (i32), ptr @a\n"
+                   "define i32 @g(i32 %x) {\n  %r = call i32 @a(i32 %x)\n  %s = call i32 @b(i32 %r)\n  ret i32 %s\n}\n")
+    r = run([LLVM / "opt", f"-load-pass-plugin={ENV['CQ_PLUGIN']}", "-passes=cq-drop-bodies", "-cq-drop-bodies=f", "-S",
+             src], text=True)
+    if r.returncode or "alias" in r.stdout or "declare i32 @f(i32" not in r.stdout or r.stdout.count("call i32 @f(") != 2:
+        fail("cq-drop-bodies with aliases", r.stderr + r.stdout)
+    else:
+        ok("cq-drop-bodies: an alias of a dropped body (and its alias) is replaced by the declaration")
+
+
 def test_host_link(tmp):
     """Rulings Q7, Q6: cq_host.c is linked after the pass when the lowered module asks for a host symbol."""
     main_c = tmp / "hostmain.c"
@@ -578,6 +593,7 @@ def main():
         test_link(tmp)
         test_cxx(tmp)
         test_library(tmp)
+        test_drop_bodies(tmp)
         test_host_link(tmp)
     print(f"\n{len(failures)} failure(s)")
     return 1 if failures else 0

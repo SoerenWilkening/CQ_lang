@@ -1903,17 +1903,28 @@ struct CQVerifyPass : PassInfoMixin<CQVerifyPass> {
 
 // The driver's tool for rule 27 ("a bodiless callee on a root list is lowered code of a linked library"): the listed
 // functions of an injection bundle file become declarations, so the bundle never supplies a body the library has.
-// Only an externally visible function is one a root list can name. Nothing else in the module changes.
+// Only an externally visible function is one a root list can name. An alias of a dropped body (musl's
+// weak_alias(sscanf, __isoc99_sscanf), or an alias of such an alias) names the same function, whose clones the library
+// exports under the root's name only: its uses take its aliasee (so they reach the declared clone) and it goes. Nothing
+// else in the module changes.
 struct CQDropBodiesPass : PassInfoMixin<CQDropBodiesPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
-    bool any = false;
+    SmallPtrSet<const Function *, 8> dropped;
     for (const std::string &n : DropBodies)
       if (Function *F = M.getFunction(n); F && !F->isDeclaration() && !F->hasLocalLinkage()) {
         F->deleteBody();
         F->setComdat(nullptr);
-        any = true;
+        dropped.insert(F);
       }
-    return any ? PreservedAnalyses::none() : PreservedAnalyses::all();
+    SmallVector<GlobalAlias *, 8> stale; // module order, so the output is deterministic
+    for (GlobalAlias &A : M.aliases())
+      if (const auto *F = dyn_cast_or_null<Function>(A.getAliaseeObject()); F && dropped.contains(F))
+        stale.push_back(&A);
+    for (GlobalAlias *A : stale)
+      A->replaceAllUsesWith(A->getAliasee());
+    for (GlobalAlias *A : stale)
+      A->eraseFromParent();
+    return dropped.empty() ? PreservedAnalyses::all() : PreservedAnalyses::none();
   }
   static bool isRequired() { return true; }
 };
