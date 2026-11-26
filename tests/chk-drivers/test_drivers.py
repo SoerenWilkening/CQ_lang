@@ -887,13 +887,37 @@ class OutOfObject(unittest.TestCase):
 class ThetaSites(unittest.TestCase):
     """cq-6m2 (cq-arch Z4): the cq_theta site table that "subst" keys name."""
 
+    # CQ.h's suffixes and their registers' width tokens (the table the IR type replaced, cq-ktb8c)
+    NAMED = {"i1": "i1", "c": "i8", "si8": "i8", "ui8": "i8", "si16": "i16", "ui16": "i16",
+             "si32": "i32", "ui32": "i32", "sl": "i64", "ul": "i64", "sll": "i64", "ull": "i64",
+             "f16": "f16", "bf16": "bf16", "f32": "f32", "f64": "f64", "f80": "f80"}
+
     def test_keys_and_widths_agree_with_the_oracle(self):
         from cqcheck import oracle
         for n in ("59_controlled_ry_bits", "60_qft", "12_int_widths", "185_qpe_quantum_angle", "116_shor15"):
             o1 = D.o1_path(n)
-            want = {f"{fn}:{k}": oracle._SITE_RAIL[c[len("cq_theta_"):]]
+            want = {f"{fn}:{k}": self.NAMED[c[len("cq_theta_"):]]
                     for (fn, k), c in oracle.site_callees(o1).items() if c.startswith("cq_theta_")}
             self.assertEqual(D.theta_site_widths(o1), want, n)
+            rails = oracle.site_rails(o1)
+            for (fn, k), c in oracle.site_callees(o1).items():
+                if c.startswith("cq_measure_"):
+                    self.assertEqual(rails[(fn, k)], self.NAMED[c[len("cq_measure_"):]], (n, fn, k))
+
+    def test_rail_from_the_ir_type(self):
+        """cq-ktb8c: the register type is the call's IR return type, any iN (a _BitInt(10) register)."""
+        for text, w in (("%1 = tail call zeroext i10 @cq_theta_reg(i10 noundef zeroext 0, double 1.0)", "i10"),
+                        ("%2 = tail call i10 @cq_measure_reg(i10 noundef %1)", "i10"),
+                        ("%3 = call signext i8 @cq_theta_c(i8 noundef signext %0, double %a)", "i8"),
+                        ("%4 = tail call nnan double @cq_measure_f64(double noundef %3)", "f64"),
+                        ("%5 = call x86_fp80 @cq_theta_f80(x86_fp80 noundef %x, double %a)", "f80"),
+                        ("%6 = call i1 @cq_measure_i1(i1 %b)", "i1"),
+                        ("%7 = call ptr @cq_theta_p(ptr %p, double %a)", None)):
+            self.assertEqual(D.site_rail(text), w, text)
+        st = D.ThetaSite("main", 0, "i10", set())
+        self.assertEqual((st.ctype.kind, st.ctype.bits), ("i", 10))
+        self.assertEqual(S.site_edges(st.ctype), [0, 1, 1023, 512, 511])
+        self.assertEqual(S._site_hex(st, -1), "0x3ff")
 
     def test_substituted_sites(self):
         def subs(n):

@@ -26,6 +26,28 @@ Nothing is declared quantum. A value is quantum when it derives from a `cq_theta
 arithmetic, memory, calls and pointers; everything else is classical and runs as ordinary host code.
 Angles, loop bounds and iteration counts are usually classical C.
 
+### Exact-width registers (`_BitInt`)
+
+`cq_theta` and `cq_measure` choose their function by `_Generic` over the standard C types, so they do
+not accept a `_BitInt(N)`. Declare the two primitives for your type yourself, in value form: any name
+that starts with `cq_theta_` and takes the register and a `double`, or starts with `cq_measure_` and
+takes the register, returning the register's type.
+
+```c
+typedef unsigned _BitInt(10) reg;
+__attribute__((nomerge)) reg cq_theta_reg(reg x, double angle);   /* Ry(angle) on x; returns the rotated x */
+reg cq_measure_reg(reg x);
+
+reg a = 0;
+a = cq_theta_reg(a, M_PI / 2);           /* what cq_theta(&a, M_PI / 2) means for a standard type */
+int r = (int)cq_measure_reg(a);
+```
+
+The register is exactly N qubits wide, signed or unsigned. Write the assignment back to the same
+variable: `a = cq_theta_reg(a, t)` rotates `a` in place, as `cq_theta(&a, t)` does. A pointer form
+(`cq_theta_reg(&a, t)`) is not a primitive. Keep `nomerge` on the `cq_theta_` declaration, as `CQ.h`
+does: it stops clang from merging the rotations of two arms of a branch into one call.
+
 ### Idioms
 
 | You want | You write |
