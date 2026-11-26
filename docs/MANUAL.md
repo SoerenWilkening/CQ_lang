@@ -63,9 +63,14 @@ does: it stops clang from merging the rotations of two arms of a branch into one
 
 - **`x += y` and `x ^= y` are in place.** When the old `x` is not read afterwards, the update is one
   gate on `x`'s own register and uses no extra register. This is decided from the compiled code,
-  not from the spelling: `z = x + y` with `x` never used again is in place too, and `x -= y`,
-  `if (c) x += y` and a loop accumulator are not (they compute into a fresh register, and the old
-  one is cleared and freed).
+  not from the spelling: `z = x + y` with `x` never used again is in place too, and so is
+  `if (c) x += 7;` outside a loop (as `x += c ? 7 : 0;`). `x -= y` and a loop accumulator are not
+  (they compute into a fresh register, and the old one is cleared and freed).
+- **A register that starts at a constant starts quantum.** With `reg a = 20;` and updates under
+  quantum conditions, clang folds the first updates into selects of constants and carries the
+  chain in a wider type with masks, and none of that is in place. Write
+  `reg a = 0; cq_theta(&a, 0.0); a ^= 20;` instead: `a` is a quantum register from the start, and
+  `a ^= 20` and every later update are one gate on it.
 - **Scratch is uncomputed for you.** In `if (sqrt(x) == 12.0) cq_phi(M_PI);` the conversion, the
   square root and the comparison go into scratch registers that the compiler clears and frees.
 - **A register of qubits is a `bool` array.** `cq_theta(&q[i], a)` is a one-qubit gate on that cell

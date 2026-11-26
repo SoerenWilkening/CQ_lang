@@ -1263,6 +1263,40 @@ bool rewriteLoadRelative(Function &F) {
   return !work.empty();
 }
 
+// CR rule 6 in-place update, a select of an update (owner ruling pending, 2026-11-26; cq-6wef6): outside a loop,
+// `s = select c, (y op o), y` (either arm order, op a plain add or xor whose only user is s, o not y) is
+// `s = y op (select c, o, 0)`, the same value, so `if (c) y += o;` lowers as `y += c ? o : 0;` does. Rolled-loop
+// accumulators keep their merge (rule 14).
+bool selectOfUpdate(Function &F, LoopInfo &LI) {
+  SmallVector<SelectInst *, 4> work;
+  for (Instruction &I : instructions(F))
+    if (auto *s = dyn_cast<SelectInst>(&I); s && s->getType()->isIntegerTy() && !LI.getLoopFor(s->getParent()))
+      work.push_back(s);
+  bool changed = false;
+  for (SelectInst *s : work) {
+    for (unsigned arm : {1u, 2u}) {
+      auto *u = dyn_cast<BinaryOperator>(s->getOperand(arm));
+      Value *y = s->getOperand(3 - arm);
+      if (!u || !u->hasOneUse() || (u->getOpcode() != Instruction::Add && u->getOpcode() != Instruction::Xor) ||
+          u->getOperand(0) == u->getOperand(1) || (u->getOperand(0) != y && u->getOperand(1) != y))
+        continue;
+      Value *o = u->getOperand(u->getOperand(0) == y ? 1 : 0);
+      IRBuilder<> B(s);
+      Constant *zero = Constant::getNullValue(s->getType());
+      Value *d = arm == 1 ? B.CreateSelect(s->getCondition(), o, zero) : B.CreateSelect(s->getCondition(), zero, o);
+      // The update's operand order (rule 6: operand 0 is the rail updated when both operands are dead). No nuw/nsw: fewer poison values.
+      Value *r = B.CreateBinOp(u->getOpcode(), u->getOperand(0) == y ? y : d, u->getOperand(0) == y ? d : y);
+      r->takeName(s);
+      s->replaceAllUsesWith(r);
+      s->eraseFromParent();
+      u->eraseFromParent();
+      changed = true;
+      break;
+    }
+  }
+  return changed;
+}
+
 // cq-zd8jo, cq-p45s (CR rule 26: an SSA aggregate is one rail per scalar field; extractvalue/insertvalue and their vector
 // forms are representation changes): in a tainted function an aggregate or vector phi becomes one phi per field, each
 // incoming extracted at the end of its block, and the value rebuilt after the phis. The loop constructions then carry
@@ -1628,6 +1662,13 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
         continue;
       trace("rounding intrinsics / load.relative / aggregate phis: changed @" + F->getName());
       CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+    for (Function *F : Tainted) {
+      if (!selectOfUpdate(*F, FAM.getResult<LoopAnalysis>(*F)))
+        continue;
+      trace("select of an update: changed @" + F->getName());
+      CFGChanged = true;   // new instructions: the preliminary taint has no answer for them
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
     for (Function *F : Tainted) {

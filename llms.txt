@@ -41,7 +41,10 @@ the result back:
 - CNOT: `t ^= c;` on `bool`s. X: `q = !q;` or `q ^= 1;`.
 - Phase oracle: `if (pred(x)) cq_phi(M_PI);`. `pred` is ordinary C, `math.h` included.
 - `x += y`, `x ^= y`, `x += 3` on a quantum `x` that is not read afterwards are in place: one gate on
-  x's register, no extra qubits for the result. `x -= y` and `if (c) x += y` are not.
+  x's register, no extra qubits for the result; so is `if (c) x += 7;` outside a loop. `x -= y` and a
+  loop accumulator are not.
+- A register that starts at a constant: `reg a = 0; cq_theta(&a, 0.0); a ^= 20;`, not `reg a = 20;`
+  (clang folds a constant start into wide, masked selects that are not in place).
 - Do not uncompute by hand. Temporaries of an expression or a call are cleared by the compiler.
 - Adjoint of a block: wrap it in `cq_invert_begin()` / `cq_invert_end()`.
 - `if` on a quantum condition runs both arms; phases, rotations and stores are controlled by it.

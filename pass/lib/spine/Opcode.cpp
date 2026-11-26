@@ -1992,6 +1992,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     if (merges.empty() && dl == dynOf.end()) {
       tagInPlace(ctx, I, Y, yp);
       clean(ctx, Y, inv);
+      spine::shared(ctx).ruleSixOrigin.push_back(spine::Shared::PendingSix{&ctx, Y, &I, yp, {}, {}});
       recompose(Y);
       return;
     }
@@ -2148,6 +2149,7 @@ void ruleSixRetry(LoweringContext &ctx) {
     }
     tagInPlace(ctx, *e.I, e.Y, e.yp);
     clean(ctx, e.Y, *inv);
+    sh.ruleSixOrigin.push_back(Shared::PendingSix{&ctx, e.Y, e.I, e.yp, {}, e.loads});
   }
 }
 

@@ -1,6 +1,6 @@
 ; /* tests/spine probe (CR rule 6, in-place update; owner 2026-11-25, cq-2h7xa): an add or xor of a dead value is one
 ;  * core gate on the old rail (add_<W>, addc_<W>, copy_<W>, xorc_<W>); the old form stays where the old value is read
-;  * later, for y + y and for a select-merged update. */
+;  * later and for y + y; a select of an update is `y + select(c, o, 0)` (cq-6wef6). */
 ; int add_reg(int x0, double tx, int y0, double ty) {
 ;   int x = x0, y = y0;
 ;   cq_theta(&x, tx);
@@ -423,6 +423,7 @@ attributes #6 = { noduplicate nounwind }
 ; CHECK-COUNT read_later: @cqrt_add_ 0
 ; CHECK doubled: call i32 @cq_template_shl_i32_hl(
 ; CHECK-COUNT doubled: @cqrt_add 0
-; CHECK merged: call i32 @cq_template_add_i32_hl(
-; CHECK merged: call i32 @cq_template_sub_i32_hl(
-; CHECK-COUNT merged: @cqrt_add 0
+; CHECK merged: call i32 @cq_template_select_i32_ll(i32 %{{c}}, i32 5, i32 0)
+; CHECK merged: call void @cqrt_add_i32(i32 %{{s}}, i32 %{{x}})
+; CHECK-COUNT merged: @cq_template_add 0
+; CHECK-COUNT merged: @cq_template_sub 0

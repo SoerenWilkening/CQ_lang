@@ -655,7 +655,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      `addc_<W>(y, -lit)`, and `copy` and `xorc` are their own. The gate is never
      `_controlled`: under a quantum predicate it is emitted exactly where the template it
      replaces was (a pure computation on a rail that is dead on every path), and an update
-     merged with the old value by a `select` or a `phi` is the composite case, not this one.
+     merged with the old value by a `phi` is the composite case, not this one. *A select of an
+     update (owner ruling pending, 2026-11-26):* outside a loop, `s = select c, f(y), y` (either
+     arm order), `f` the plain `add` or `xor` of `y` and a literal or rail `o` that only `s` reads,
+     is `s = y + select(c, o, 0)` (`^` for `xor`; the `0` in `y`'s arm's place): the select
+     template on `o` (`_ll` for a literal), this clause's gate where its conditions hold, the
+     select's `_unc`. So `if (x) a += 7;` lowers as `a += x ? 7 : 0;` does. A rolled loop's
+     accumulator keeps its merge (rule 14).
      §6: the old value and its image are ONE rail, so a gate before the update and a gate
      after it act on the same rail (38, 180); a lowering in the older form (two rails, the old
      one freed at `|0⟩`) is not this rule's.
