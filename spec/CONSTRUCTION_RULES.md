@@ -656,7 +656,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      `_controlled`: under a quantum predicate it is emitted exactly where the template it
      replaces was (a pure computation on a rail that is dead on every path), and an update
      merged with the old value by a `phi` is the composite case, not this one. *A select of an
-     update (owner ruling pending, 2026-11-26):* outside a loop, `s = select c, f(y), y` (either
+     update (owner 2026-11-26):* outside a loop, `s = select c, f(y), y` (either
      arm order), `f` the plain `add` or `xor` of `y` and a literal or rail `o` that only `s` reads,
      is `s = y + select(c, o, 0)` (`^` for `xor`; the `0` in `y`'s arm's place): the select
      template on `o` (`_ll` for a literal), this clause's gate where its conditions hold, the
