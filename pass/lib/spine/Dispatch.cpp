@@ -215,10 +215,21 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
   // Kept past the end: a value read after it that is no pure instruction, and every such value a pure one
   // read after it is computed from (the recomputation reads it).
   SmallPtrSet<const Value *, 16> keepSet, seen;
+  // cq-82krl (rule 3 view phi, Views.cpp): a view phi's wide value is a zext of its register rail R, recomputed after
+  // the end from R (which stays); kept past the end, its _unc would follow the region's reversed gates on R.
+  SmallPtrSet<const Value *, 4> keepRails;
+  auto wideView = [&](const Instruction *I) -> Value * {
+    auto it = sh.views.find(I);
+    return isa<PHINode>(I) && it != sh.views.end() && !it->second.cell ? it->second.rail : nullptr;
+  };
   std::function<void(const Value *)> operandsOf = [&](const Value *V) {
     auto *I = dyn_cast<Instruction>(V);
     if (!I || I->getFunction() != &F || !seen.insert(I).second)
       return;
+    if (Value *R = wideView(I)) {
+      keepRails.insert(R);
+      return;
+    }
     if (!recomputable(I)) {
       keepSet.insert(I);
       return;
@@ -230,6 +241,8 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
     if (liveAfter(orig))
       operandsOf(orig);
   auto keep = [&](Value *h) {
+    if (keepRails.count(h))
+      return true;
     auto it = origOf.find(h);
     if (it == origOf.end())
       return false;   // a rail of the lowering's own (a flag, a scratch): pred makes flags afresh where read
@@ -248,6 +261,10 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
     auto *I = const_cast<Instruction *>(dyn_cast<Instruction>(V));
     if (!I || !gone.count(I) || redo.count(I))
       return;
+    if (wideView(I)) {
+      redo.insert(I);
+      return;
+    }
     if (!recomputable(I))
       internalError("spine: a region-made rail a later reader needs that is no pure instruction", I);
     for (const Use &u : I->operands())
@@ -257,8 +274,18 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
   for (const Value *V : gone)
     if (liveAfter(V))
       need(V);
-  for (Instruction *I : redo)   // operands first (need inserts them first)
+  for (Instruction *I : redo) {   // operands first (need inserts them first)
+    if (Value *R = wideView(I)) {
+      abi::TemplateSpec spec;
+      spec.op = "zext";
+      spec.w = RailType{Kind::Int, sh.views[I].bits};
+      spec.to = RailType{Kind::Int, I->getType()->getIntegerBitWidth()};
+      sh.binds.erase(I);   // replaces the region's binding, as lowerInstruction does
+      bindOperand(ctx, I, Operand{ctx.emitTemplate(spec, {Operand{R, true}}, nullptr), true});
+      continue;
+    }
     lowerInstruction(ctx, *I);
+  }
 }
 
 void lowerCall(LoweringContext &ctx, CallBase &CB) {
