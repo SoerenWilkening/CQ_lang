@@ -147,6 +147,9 @@ struct SpecState {
   llvm::DenseSet<const llvm::CallBase *> effectEntries;
   llvm::DenseSet<const llvm::CallBase *> aborts;   // a noreturn call under a quantum predicate
   bool keptAK = false;     // transitively: a quantum-exit loop whose a_K is kept, B > K or no bound (rules 14, 19; cq-m8biu)
+  // Rule 23: a <fenv.h> call or a strict constrained op that acts on the HOST environment (its host call writes the host
+  // flags or mode). Unguarded under a caller's quantum predicate it would act on every branch: the _ctl test (rule 19).
+  bool hostFenv = false;
   bool hasNoreturn = false;   // a noreturn call on any path: an abort event once the clone takes a predicate (rule 19)
   bool hasEventT = false;
   bool quantumStore = false;   // rule 27: a store that can make a cell QUANTUM (§1.3): a rail, an address rail, a predicate

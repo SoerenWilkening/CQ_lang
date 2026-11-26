@@ -2229,6 +2229,14 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   bool rail = q || underQ;
   uint8_t before = fenvCur, now = fenvNow();
   bool resQ = false;
+  // eff-fenv makes no host call only for a raise or a fesetround on rails; every other write calls the host (a restore
+  // or clear under a predicate FOLDs the host flags into the rail).
+  bool writes = cname == "feraiseexcept" || cname == "fesetround" || cname == "feclearexcept" ||
+                cname == "fesetexceptflag" || cname == "feholdexcept" || cname == "fesetenv" || cname == "feupdateenv";
+  if (writes && !(rail && (cname == "feraiseexcept" || cname == "fesetround")) && !cur->hostFenv) {
+    cur->hostFenv = true;
+    st.changed = true;
+  }
   // Rule 23: only a confined object's quantum part is SSA (these facts); a constant one has an empty part; any other
   // object holds the environment in its bytes: a save merges the part through the bus, a restore loads two fields
   // from the bus as the new flags rail and mode, and copies the object for its host call (bus stores).
@@ -2502,6 +2510,10 @@ void Analyzer::transferCall(CallBase &CB) {
       if (eb && *eb == fp::ebStrict) {
         bool underQ = blockCT(CB.getParent()) || cur->ctl;
         fenvAssign(1, (q || underQ) ? 1 : fenvstate::nib(fenvCur, 1));
+        if (!q && !underQ && !cur->hostFenv) {   // the host op raises into the host flags
+          cur->hostFenv = true;
+          st.changed = true;
+        }
       }
       fenvRecord(CB, before);
     }
@@ -3515,7 +3527,8 @@ void Analyzer::solve() {
         S->keptAK = ak;
         st.changed = true;
       }
-      bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter || S->measuresRail || S->hasNoreturn;
+      bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter || S->measuresRail || S->hasNoreturn ||
+                S->hostFenv;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
           np = np || C->nonPure;

@@ -54,12 +54,13 @@ CASES = [
     # cq-6zudr (rules 14, 16, 23): a rule-14 loop's noreturn arm, lowered with the loop, changes the flags: the loop carries
     # them (fenv::loopCarried over the arm) and taint's loop header joins the arm's state. e failed on taint (fetestexcept
     # classical); en (TinyCC's parse_operand: no live exit, the arm in each trip) merged the trip's flags after the loop's
-    # reverse had freed them (recordMerge). "lower": the §6 run fails on g's clone raising into the host flags (cq-dmlhn,
-    # ec too on main).
-    ("fenv_loop_noreturn_arm", "e", [], "lower", [r"%cq\.fenv\d* = phi i32"]),
+    # reverse had freed them (recordMerge). cq-dmlhn (rules 19, 23): g raises into the HOST flags, so under the arm's quantum
+    # predicate it is g's _ctl clone (its raise a rail operation), never the plain clone run unguarded. "lower": the §6 run
+    # still reports g's dead result and returned flags rail left live in the arm (no twin call there).
+    ("fenv_loop_noreturn_arm", "e", [], "lower", [r"%cq\.fenv\d* = phi i32", r"call \{ i32, i32 \} @__cq_q_g_1_ctl\("]),
     ("fenv_loop_noreturn_arm", "en", [], "lower", [r"%cq\.fenv\d* = phi i32"]),
     ("fenv_loop_noreturn_arm", "eq", [], "lower", []),
-    ("fenv_loop_noreturn_arm", "ec", [], "lower", []),
+    ("fenv_loop_noreturn_arm", "ec", [], "lower", [r"call \{ i32, i32 \} @__cq_q_g_1_ctl\("]),
     # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
     # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
     # by name, through a defined noreturn callee.
@@ -543,8 +544,9 @@ CASES = [
     ("fenv_clone_empty_flags", "e", [], "pass", [r"call i32 @fetestexcept\(i32 32\)"]),
     ("fenv_sibling_arm_mode", "e", [], "pass", [r"cq_template_fdiv_f64_\w*rmq\w*\("]),
     # cq-c07bk (rules 8, 9, 23): the arm the spine linearizes first calls a dynamic-mode body with classical arguments; the
-    # later arm's fesetround under the predicate does not reach it: the call is the own symbol, as it stands.
-    ("fenv_later_arm_mode", "e", [], "pass", [r"call double @nx\(double"]),
+    # later arm's fesetround under the predicate does not reach it: the call reads the classical mode. Its strict fmul raises
+    # into the host flags, so under the predicate it is nx's _ctl clone (cq-dmlhn, rules 19, 23), not the own symbol.
+    ("fenv_later_arm_mode", "e", [], "pass", [r"call \{ double, i32 \} @__cq_q_nx_0_ctl\(i32 %\d+, double"]),
     # cq-a9ij3 (owner 2026-11-12; CR §1.4, rule 23): the mode words. A round.dynamic body reached with a classical mode
     # other than the literal 0 is _rm (classical data included: never the own symbol), with a mode rail _rmq (every result a
     # rail; the all-zero mask still a clone); a body with 82's ABI keeps its plain name for a classical mode and takes _rmq
