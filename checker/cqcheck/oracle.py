@@ -827,7 +827,8 @@ class SampleRun:
 def _classify(sr: SampleRun) -> None:
     notes = sr.notes
     wait = next((n for n in reversed(notes) if n.startswith("wait ")), "wait missing")
-    bad = [n for n in notes if n.startswith(("ub ", "crash ", "tripcap", "internal "))]
+    # "region-inverse ...": CR rule 17's reference found no F^-1(s) for a cq_invert region (cqo_rt.c __cqo_rend)
+    bad = [n for n in notes if n.startswith(("ub ", "crash ", "tripcap", "internal ", "region-inverse "))]
     noret = [n for n in notes if n.startswith("noreturn ")]
     cap = [n for n in notes if n.startswith("cap ")]
     raised = [n for n in notes if n.startswith("raise ")]

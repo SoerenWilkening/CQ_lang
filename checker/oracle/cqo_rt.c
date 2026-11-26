@@ -12,7 +12,8 @@
  * S`, or `hang wall` when it killed a worker that made no progress. Notes: `noreturn <callee>`, `raise <sig>`, `ub unreachable <fn>`, `ub oob-atomic`,
  * `tripcap`, `crash <signal> addr=<a>`, `oob-load`, `oob-store`, `cap <loop>` (a quantum-exit loop or
  * quantum-depth recursion stopped after K trips: the sample ends there, not a failure; cq-8ay),
- * `internal <why>`, `hang cpu <ms>`.
+ * `internal <why>`, `hang cpu <ms>`, `region-inverse <why>` (CR rule 17: no F^-1(s) found for a cq_invert region, or a
+ * region shape the oracle does not model; "cq_invert regions" below).
  * Determinism (cq-sqn6): no sample outcome depends on time or machine load. Nontermination is the
  * tripcap step budget (loop-header executions). <timeout_ms> is only a hang guard, in the worker's CPU
  * time (ITIMER_PROF, so a loaded machine does not reach it sooner), with a wall-clock backstop in the
@@ -88,17 +89,33 @@ static void ob_flush(obuf *o, int fd) {
     o->n = 0;
 }
 
+/* Whole lines to fd, through the worker's buffer. */
+static void out_raw(int fd, const char *b, size_t n) {
+    obuf *o = fd == trace_fd ? ob_trace : fd == status_fd ? ob_status : 0;
+    if (!o) { write_all(fd, b, n); return; }
+    if (o->n + n > OBUF_CAP) ob_flush(o, fd);
+    if (n > OBUF_CAP) {
+        if (fd == trace_fd) trace_room(n);
+        write_all(fd, b, n);
+        return;
+    }
+    memcpy(o->b + o->n, b, n);
+    o->n += n;
+}
+
+/* Rule 17 registers (below, "cq_invert regions"): while a region is open its trace lines wait in ri_tb, so that a run of
+ * the region the oracle repeats leaves only the last run's lines. */
+static int ri_depth;
+static void ri_tb_put(const char *b, size_t n);
+
 static void out_line(int fd, const char *s) {
     char buf[4096];
     int n = snprintf(buf, sizeof buf, "%ld\t%s\n", cur_sample, s);
     if (n < 0) return;
     if (n >= (int)sizeof buf) n = sizeof buf - 1, buf[n - 1] = '\n';
     if (fd < 0 || (fd == trace_fd && cur_sample < 0)) return;   /* oracle.py drops the setup's events (no sample's) */
-    obuf *o = fd == trace_fd ? ob_trace : fd == status_fd ? ob_status : 0;
-    if (!o) { write_all(fd, buf, (size_t)n); return; }
-    if (o->n + (size_t)n > OBUF_CAP) ob_flush(o, fd);
-    memcpy(o->b + o->n, buf, (size_t)n);
-    o->n += (size_t)n;
+    if (fd == trace_fd && ri_depth > 0) { ri_tb_put(buf, (size_t)n); return; }
+    out_raw(fd, buf, (size_t)n);
 }
 
 static void note(const char *fmt, ...) {
@@ -280,8 +297,11 @@ void __cqo_load(const void *p, uint64_t n, void *dst, const void *base) {
     if (oob_loads++ < 8) note("oob-load");
 }
 
+static void ri_undo(const void *p, uint64_t n); /* rule 17 registers: the bytes a region overwrites (below) */
+
 void __cqo_store(void *p, uint64_t n, const void *src, const void *base) {
     const obj *o = access_obj(base, p, n);
+    if (ri_depth) ri_undo(p, n);
     uintptr_t a = (uintptr_t)p;
     if (inside(o, a, n)) { memcpy(p, src, n); return; }
     for (uint64_t i = 0; i < n; ++i)
@@ -296,6 +316,7 @@ void __cqo_require(const void *p, uint64_t n) {
 void __cqo_imemset(void *p, uint8_t v, uint64_t n, const void *base) {
     sh_clear(p, n); /* the value's node, when quantum, is set after the call (OracleInstr.cpp shadows) */
     const obj *o = access_obj(base, p, n);
+    if (ri_depth) ri_undo(p, n);
     uintptr_t a = (uintptr_t)p;
     if (inside(o, a, n)) { memset(p, v, n); return; }
     for (uint64_t i = 0; i < n; ++i)
@@ -306,7 +327,11 @@ void __cqo_imemset(void *p, uint8_t v, uint64_t n, const void *base) {
 void __cqo_imemmove(void *d, const void *s, uint64_t n, const void *dbase, const void *sbase) {
     const obj *od = access_obj(dbase, d, n), *os = access_obj(sbase, s, n);
     sh_move(d, s, n);
-    if (inside(od, (uintptr_t)d, n) && inside(os, (uintptr_t)s, n)) { memmove(d, s, n); return; }
+    if (inside(od, (uintptr_t)d, n) && inside(os, (uintptr_t)s, n)) {
+        if (ri_depth) ri_undo(d, n);
+        memmove(d, s, n);
+        return;
+    }
     unsigned char *tmp = malloc(n ? n : 1);
     __cqo_load(s, n, tmp, sbase);
     __cqo_store(d, n, tmp, dbase);
@@ -849,7 +874,333 @@ static const char *kinds[] = {"theta", "phi", "measure", "invert_begin", "invert
  * region_emission reads it). A flush point reached with one open (OracleInstr.cpp Shadow::flushes; on: 0 where a
  * branch's skipped arms hold none) logs `flush`: compare emits the open regions' sites so far forward. */
 static long iv_depth;
+
+/* ------------------------------------------------------------------ cq_invert regions: registers (CR rule 17, owner 2026-11-26)
+ * A region reverses the in-place updates of its registers: an SSA register's chain (OracleInstr.cpp invertRegions) and a bus
+ * cell that rule 5's in-place form updates. CR rule 17, "The reference of §6": for the region's part after its last flush
+ * point, with F the map the C region computes on its registers and s their values where that part begins, the registers
+ * after the end hold F^-1(s), and the region's rotation list is that of the C region run from F^-1(s), which
+ * compare.region_emission reverses and negates.
+ * The oracle runs the region again until a run that starts from some g ends with the registers at s. That run is the check
+ * F(g) = s, so g = F^-1(s) (F is a bijection), and its trace lines are the region's. Each run records the in-place updates
+ * it makes (__cqo_rupd, __cqo_rcell: the operation and its operand); the next start is s with those updates undone, last
+ * first: F^-1(s) when no operand depends on the start, else a closer guess (each round fixes one more step of the
+ * dependence; RI_ROUNDS bounds them). A region with no update ends after its one run, as before.
+ * Between two runs the run's effects are put back: the program's stores, memsets and copies (ri_undo; not the frames of the
+ * region's callees, dead at its end), its trace lines (ri_tb), its stdout, its heap blocks (the arena and the heap
+ * table), the theta reaches and the T2 counts. Not put back: host calls (their stand-ins are deterministic).
+ * shortcut: a register updated both before and after the region's last flush point, a flush inside a nested region of a
+ * region that must run again, and a region whose markers are not one block-structured pair (it has no __cqo_rend: it
+ * cannot run again) end the sample with a "region-inverse unimplemented" note, only when the region needs another run;
+ * upgrade when an example needs one. */
+#define RI_MAX 32          /* regions open at once */
+#define RI_REGS 64         /* registers (SSA) per region */
+#define RI_CELLS 64        /* cells per region */
+#define RI_ROUNDS 64       /* runs of one region instance */
+#define RI_TB ((size_t)256 << 20)
+#define RI_UL ((size_t)256 << 20)
+#define RI_EV ((size_t)1 << 20)
+enum { RK_ADD = 0, RK_SUB = 1, RK_XOR = 2, RK_SET = 3, RK_ROT = 4 };
+typedef struct { void *slot; unsigned bits; uint64_t s, g, cur; } ri_reg;
+typedef struct { uintptr_t addr; unsigned n; uint64_t s0, s, g, cur; } ri_cell;
+typedef struct { int who; int kind; uint64_t o; } ri_ev;   /* who: a register's index, or -1 - a cell's */
+typedef struct {
+    int loop;                 /* the region has its __cqo_rend: it can run again */
+    int round;
+    size_t tb0, ul0, ev0;
+    uintptr_t sp;             /* the stack below it holds the frames of the region's callees */
+    off_t out0;               /* the program's stdout file at the begin */
+    char *arena0;             /* the sample arena and the heap table at the begin: a run allocates at the same places */
+    size_t heap0;
+    long nrot, nmeas;
+    int nreg, ncell;
+    long nfl;                 /* flush points this run (and in its nested regions) */
+    long ofl;                 /* the runs after the first start at flush point ofl (0: at the begin) */
+    size_t evfl;              /* the first run's updates before its last flush point */
+    int childfl;              /* a nested region held a flush point */
+    const char *fail;
+    ri_reg reg[RI_REGS];
+    ri_cell cell[RI_CELLS];
+    long reach[MAXSKEY];      /* the theta reaches at the begin */
+} ri_inst;
+static ri_inst *ri;           /* RI_MAX of them, off __DATA (ri_depth, in __DATA, is put back per sample) */
+static char *ri_tbuf;
+static size_t ri_tb_n;
+static unsigned char *ri_ul;
+static size_t ri_ul_n;
+static ri_ev *ri_evs;
+static size_t ri_ev_n;
+__attribute__((constructor(102))) static void ri_init(void) {
+    if (ri) return;
+    ri = mmap(0, RI_MAX * sizeof *ri, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    ri_tbuf = mmap(0, RI_TB, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+    ri_ul = mmap(0, RI_UL, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+    ri_evs = mmap(0, RI_EV * sizeof *ri_evs, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+    if (ri == MAP_FAILED || ri_tbuf == MAP_FAILED || ri_ul == MAP_FAILED || ri_evs == MAP_FAILED) {
+        fprintf(stderr, "cqo: mmap\n");
+        raise(SIGKILL);
+    }
+}
+
+static void ri_tb_put(const char *b, size_t n) {
+    if (ri_tb_n + n > RI_TB) { ri_depth = 0; note("internal a cq_invert region's trace passes %zu bytes", RI_TB); _exit(95); }
+    memcpy(ri_tbuf + ri_tb_n, b, n);
+    ri_tb_n += n;
+}
+
+/* the open regions' lines, when a sample ends inside one (an abort, a cap, a begin with no end) */
+static void ri_spill(void) {
+    if (!ri_depth) return;
+    ri_depth = 0;
+    if (ri_tb_n) out_raw(trace_fd, ri_tbuf, ri_tb_n);
+    ri_tb_n = 0, ri_ul_n = 0, ri_ev_n = 0;
+}
+
+static uint64_t ri_mask(unsigned bits) { return bits >= 64 ? ~(uint64_t)0 : (((uint64_t)1 << bits) - 1); }
+
+static void ri_undo1(const unsigned char *p, uint64_t n) {
+    if (ri_ul_n + n + 16 > RI_UL) { note("internal a cq_invert region writes more than %zu bytes", RI_UL); _exit(95); }
+    memcpy(ri_ul + ri_ul_n, p, n);
+    uint64_t hdr[2] = {(uint64_t)(uintptr_t)p, n};
+    memcpy(ri_ul + ri_ul_n + n, hdr, 16);
+    ri_ul_n += n + 16;
+}
+/* a frame of the region's callees (below sp on the stack): dead at the region's end, never put back */
+static int ri_dead(uintptr_t a, uintptr_t sp) {
+    uintptr_t hi = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
+    uintptr_t lo = hi - pthread_get_stacksize_np(pthread_self());
+    return a >= lo && a < sp;
+}
+static void ri_undo(const void *p, uint64_t n) {
+    if (n == 0 || ri_dead((uintptr_t)p, ri[ri_depth - 1].sp)) return;
+    if (in_bounds(p, n)) { ri_undo1(p, n); return; }
+    for (uint64_t i = 0; i < n; ++i)
+        if (in_bounds((const char *)p + i, 1)) ri_undo1((const unsigned char *)p + i, 1);
+}
+static void ri_rewind(size_t to, uintptr_t sp) {
+    while (ri_ul_n > to) {
+        uint64_t hdr[2];
+        memcpy(hdr, ri_ul + ri_ul_n - 16, 16);
+        ri_ul_n -= 16 + hdr[1];
+        if (!ri_dead((uintptr_t)hdr[0], sp))   /* a nested region's callee frame: dead now too */
+            memcpy((void *)(uintptr_t)hdr[0], ri_ul + ri_ul_n, hdr[1]);
+    }
+}
+
+static uint64_t ri_inv(int kind, uint64_t v, uint64_t o) { return kind == RK_ADD ? v - o : kind == RK_SUB ? v + o : v ^ o; }
+static uint64_t ri_rd(const void *p, unsigned bytes) {
+    uint64_t v = 0;
+    memcpy(&v, p, bytes);
+    return v;
+}
+static void ri_wr_cell(ri_cell *c, uint64_t v) {
+    ri_undo((void *)c->addr, c->n);   /* an enclosing region's next run puts it back */
+    memcpy((void *)c->addr, &v, c->n);
+}
+static void ri_wr_reg(ri_reg *r, uint64_t v) { memcpy(r->slot, &v, (r->bits + 7) / 8); }
+static void ri_fail(ri_inst *I, const char *why) { if (!I->fail) I->fail = why; }
+
+static void ri_push(uintptr_t sp) {
+    if (ri_depth == RI_MAX) { note("internal cq_invert regions nested deeper than %d", RI_MAX); _exit(95); }
+    ri_inst *I = &ri[ri_depth];
+    I->loop = 0, I->round = 0;
+    I->tb0 = ri_tb_n, I->ul0 = ri_ul_n, I->ev0 = ri_ev_n;
+    I->sp = sp;
+    I->out0 = lseek(1, 0, SEEK_CUR);
+    I->arena0 = arena_top, I->heap0 = heap_objs.n;
+    I->nrot = n_rotations, I->nmeas = n_measured;
+    I->nreg = I->ncell = 0, I->nfl = 0, I->ofl = 0, I->evfl = 0, I->childfl = 0, I->fail = 0;
+    for (int i = 0; i < nskeys; ++i) I->reach[i] = skeys[i].reach;
+    ++ri_depth;
+}
+
+static ri_reg *ri_findreg(ri_inst *I, const void *slot) {
+    for (int i = 0; i < I->nreg; ++i)
+        if (I->reg[i].slot == slot) return &I->reg[i];
+    return 0;
+}
+static int ri_cellix(ri_inst *I, uintptr_t a, unsigned n, uint64_t first) {
+    for (int i = 0; i < I->ncell; ++i)
+        if (I->cell[i].addr == a) {
+            if (I->cell[i].n != n) ri_fail(I, "a cell updated in place at two widths");
+            return i;
+        }
+    if (I->ncell == RI_CELLS) { note("internal a cq_invert region updates more than %d cells", RI_CELLS); _exit(95); }
+    ri_cell *c = &I->cell[I->ncell];
+    c->addr = a, c->n = n, c->s0 = c->s = c->g = c->cur = first;
+    return I->ncell++;
+}
+static void ri_event(ri_inst *I, int who, int kind, uint64_t o) {
+    (void)I;
+    if (ri_ev_n == RI_EV) { note("internal a cq_invert region makes more than %zu updates", RI_EV); _exit(95); }
+    ri_evs[ri_ev_n++] = (ri_ev){who, kind, o};
+}
+
+/* OracleInstr.cpp invertRegions: a register of the region, right after its begin's site (its slot holds its value). */
+void __cqo_rroot(void *slot, int32_t bits, int32_t on) {
+    if (!ri_depth) return;
+    ri_inst *I = &ri[ri_depth - 1];
+    I->loop = 1;
+    if (!on || ri_findreg(I, slot)) return;
+    if (I->nreg == RI_REGS) { note("internal a cq_invert region has more than %d registers", RI_REGS); _exit(95); }
+    ri_reg *r = &I->reg[I->nreg++];
+    r->slot = slot, r->bits = (unsigned)bits;
+    r->s = r->g = r->cur = ri_rd(slot, (r->bits + 7) / 8) & ri_mask(r->bits);
+}
+
+/* An in-place update of an SSA register, old -> nw by kind and operand o (RK_ROT: a rotation of the register). */
+void __cqo_rupd(void *slot, int32_t kind, uint64_t old, uint64_t o, uint64_t nw, int32_t on) {
+    if (!on || !ri_depth) return;
+    ri_inst *I = &ri[ri_depth - 1];
+    ri_reg *r = ri_findreg(I, slot);
+    if (!r) { ri_fail(I, "an update of a register the innermost open region does not hold"); return; }
+    uint64_t m = ri_mask(r->bits);
+    if (kind == RK_ROT) old = r->cur;
+    if ((old & m) != r->cur) { ri_fail(I, "an update reads a value of its register other than the register's"); return; }
+    if (kind == RK_ROT || kind == RK_SET) kind = RK_XOR, o = old ^ nw;
+    ri_event(I, (int)(r - I->reg), kind, o & m);
+    r->cur = nw & m;
+}
+
+/* A bus cell's in-place form (rule 5), right before its store: the n bytes at p take the bytes at nwp. */
+void __cqo_rcell(void *p, uint64_t n, const void *nwp, int32_t kind, uint64_t o, int32_t on) {
+    if (!on || !ri_depth || !in_bounds(p, n)) return;
+    ri_inst *I = &ri[ri_depth - 1];
+    if (ri_dead((uintptr_t)p, I->sp)) return;   /* a callee's local: made in the region, dead at its end */
+    if (n > 8) { ri_fail(I, "a cell wider than 8 bytes updated in place"); return; }
+    uint64_t old = ri_rd(p, (unsigned)n), nw = ri_rd(nwp, (unsigned)n), m = ri_mask((unsigned)n * 8);
+    int c = ri_cellix(I, (uintptr_t)p, (unsigned)n, old);
+    if (old != I->cell[c].cur) { ri_fail(I, "a cell's in-place form reads a value other than the cell's"); return; }
+    if (kind == RK_SET) kind = RK_XOR, o = old ^ nw;
+    ri_event(I, -1 - c, kind, o & m);
+    I->cell[c].cur = nw;
+}
+
+static void ri_start(ri_inst *I) {   /* the run's reversed part starts here: the registers take g */
+    for (int i = 0; i < I->nreg; ++i) I->reg[i].cur = I->reg[i].g, ri_wr_reg(&I->reg[i], I->reg[i].g);
+    for (int i = 0; i < I->ncell; ++i) I->cell[i].cur = I->cell[i].g, ri_wr_cell(&I->cell[i], I->cell[i].g);
+}
+
+/* A flush point (a measurement, a kept store, an effect entry) inside the innermost open region. */
+static void ri_flush(void) {
+    if (!ri_depth) return;
+    ri_inst *I = &ri[ri_depth - 1];
+    ++I->nfl;
+    if (I->round == 0) {
+        /* the gates before it run forward: the reversed part starts here, from the registers as they are */
+        for (int i = 0; i < I->nreg; ++i) I->reg[i].s = I->reg[i].g = I->reg[i].cur;
+        for (int i = 0; i < I->ncell; ++i) I->cell[i].s = I->cell[i].g = I->cell[i].cur;
+        I->evfl = ri_ev_n - I->ev0;
+    } else if (I->nfl == I->ofl) {
+        ri_start(I);
+    }
+}
+
+static int ri_verified(ri_inst *I) {
+    for (int i = 0; i < I->nreg; ++i)
+        if (I->reg[i].cur != I->reg[i].s) return 0;
+    for (int i = 0; i < I->ncell; ++i)
+        if (I->cell[i].cur != I->cell[i].s) return 0;
+    return 1;
+}
+
+static void ri_die(ri_inst *I, const char *why) {
+    note("region-inverse %s", why ? why : I->fail);
+    _exit(95);
+}
+
+/* OracleInstr.cpp invertRegions: right before the end's site of a region that can run again. 1: run it again, from right
+ * after its begin's site. */
+int32_t __cqo_rend(void) {
+    if (!ri_depth) return 0;
+    ri_inst *I = &ri[ri_depth - 1];
+    I->loop = 1;
+    if (I->fail) ri_die(I, 0);
+    if (I->round == 0) I->ofl = I->nfl;
+    else if (I->nfl != I->ofl) ri_die(I, "unimplemented: the run from F^-1(s) reaches another number of flush points");
+    if (ri_verified(I)) {   /* g = F^-1(s): the registers hold it after the end */
+        ri_start(I);
+        return 0;
+    }
+    if (I->round == 0 && I->ofl > 0 && I->evfl > 0)
+        ri_die(I, "unimplemented: a register updated in place both before and after a flush point of a cq_invert region");
+    if (I->childfl) ri_die(I, "unimplemented: a flush point inside a nested region of a cq_invert region that runs again");
+    if (I->round + 1 >= RI_ROUNDS)
+        ri_die(I, "F(s*) != s: no run of the region from a start it computed ends with the registers at their values s");
+    /* the next start: s with this run's updates undone, last first */
+    for (int i = 0; i < I->nreg; ++i) I->reg[i].g = I->reg[i].s;
+    for (int i = 0; i < I->ncell; ++i) I->cell[i].g = I->cell[i].s;
+    for (size_t k = ri_ev_n; k-- > I->ev0;) {
+        ri_ev *e = &ri_evs[k];
+        if (e->who >= 0) {
+            ri_reg *r = &I->reg[e->who];
+            r->g = ri_inv(e->kind, r->g, e->o) & ri_mask(r->bits);
+        } else {
+            ri_cell *c = &I->cell[-1 - e->who];
+            c->g = ri_inv(e->kind, c->g, e->o) & ri_mask(c->n * 8);
+        }
+    }
+    /* put the run's effects back and run the region again */
+    ri_rewind(I->ul0, I->sp);
+    /* shortcut: a run that frees a block allocated before the region leaves the heap table reordered; put back as is */
+    if (in_arena(I->arena0) || I->arena0 == arena_base) {
+        if (arena_top > I->arena0) memset(I->arena0, 0, (size_t)(arena_top - I->arena0));
+        arena_top = I->arena0;
+    }
+    if (heap_objs.n > I->heap0) heap_objs.n = I->heap0;
+    ri_tb_n = I->tb0;
+    ri_ev_n = I->ev0;
+    n_rotations = I->nrot, n_measured = I->nmeas;
+    for (int i = 0; i < nskeys; ++i) skeys[i].reach = I->reach[i];
+    if (I->out0 >= 0 && ftruncate(1, I->out0) == 0) lseek(1, I->out0, SEEK_SET);
+    I->round++;
+    I->nfl = 0, I->childfl = 0;
+    if (I->ofl == 0) ri_start(I);
+    return 1;
+}
+
+/* The end's site: the innermost region closes. Its net effect on a register or cell the enclosing region holds is one
+ * update there; its flush points are the enclosing region's. */
+static void ri_pop(void) {
+    if (!ri_depth) return;
+    ri_inst *I = &ri[ri_depth - 1];
+    if (!I->loop) {
+        if (I->fail) ri_die(I, 0);
+        if (!ri_verified(I))
+            ri_die(I, "unimplemented: a cq_invert region that updates a register in place and whose markers are not one "
+                      "block-structured pair in one function (the oracle cannot run it again)");
+    }
+    ri_ev_n = I->ev0;
+    --ri_depth;
+    if (!ri_depth) {
+        size_t n = ri_tb_n;
+        ri_tb_n = 0, ri_ul_n = 0;
+        if (n) out_raw(trace_fd, ri_tbuf, n);
+        return;
+    }
+    ri_inst *P = &ri[ri_depth - 1];
+    for (int i = 0; i < I->nreg; ++i) {
+        ri_reg *r = ri_findreg(P, I->reg[i].slot);
+        if (r && r->cur != I->reg[i].cur) {
+            ri_event(P, (int)(r - P->reg), RK_XOR, r->cur ^ I->reg[i].cur);
+            r->cur = I->reg[i].cur;
+        }
+    }
+    for (int i = 0; i < I->ncell; ++i) {
+        int c = ri_cellix(P, I->cell[i].addr, I->cell[i].n, I->cell[i].s0);
+        if (P->cell[c].cur != I->cell[i].cur) {
+            ri_event(P, -1 - c, RK_XOR, P->cell[c].cur ^ I->cell[i].cur);
+            P->cell[c].cur = I->cell[i].cur;
+        }
+    }
+    if (I->nfl) {
+        P->nfl += I->nfl, P->childfl = 1;
+        if (P->round == 0) P->evfl = ri_ev_n - P->ev0;
+    }
+}
+
 void __cqo_flush(int32_t on) {
+    if (on) ri_flush();
     if (trips_only || !on || iv_depth <= 0) return;
     out_line(trace_fd, "{\"ev\":\"flush\"}");
 }
@@ -858,6 +1209,10 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     if (kind == 2 && sh_pending_read) kind = 5; /* rule 2: a classical read, no measurement (cq-y1ll) */
     if (kind == 3) ++iv_depth;
     else if (kind == 4 && iv_depth > 0) --iv_depth;
+    if (kind == 2) ri_flush();
+    if (kind == 4) ri_pop();
+    /* the begin's line is the enclosing run's; the region's own lines follow it */
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0) + 16;
     sh_pending_read = 0;
     int sk = kind == 0 ? skey_of(fn, site) : -1;
     /* cq-3o3v: a theta site's register before the substitution (compare checks the lowered Ry's
@@ -882,6 +1237,7 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     if (trips_only) {               /* no site event in trip mode: only the counts the cutoff records read */
         if (kind == 2) n_measured++;
         else if (kind != 5) n_rotations++;
+        if (kind == 3) ri_push(sp);
         return;
     }
     char f[300], a[40] = "null", r[64] = "null", line[800];
@@ -901,6 +1257,7 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     out_line(trace_fd, line);
     if (kind == 2) n_measured++;
     else if (kind != 5) n_rotations++;
+    if (kind == 3) ri_push(sp);
 }
 
 /* cq-743m (OracleInstr.cpp standinPhases): a call of a rule 27 callee whose declared clone is the checker's stand-in
@@ -1642,13 +1999,14 @@ static void timer_ms(int which, long ms, int periodic) {
 
 /* the worker leaves (a crash, a timeout, a dirty or isolated sample): its output, then the end */
 static void worker_leave(void) {
+    ri_spill();
     ob_flush(ob_trace, trace_fd);
     ob_flush(ob_status, status_fd);
     real__exit(0);
 }
 
 /* A sample's in-process end: the driver's sigsetjmp returns again (__cqo_resume). */
-__attribute__((noreturn)) static void sample_jump(void) { siglongjmp(R->jb, 1); }
+__attribute__((noreturn)) static void sample_jump(void) { ri_spill(); siglongjmp(R->jb, 1); }
 /* CR rule 24: a longjmp outside the pairing under a quantum predicate is rule 16's noreturn arm (OracleInstr, ArmJumps). */
 void __cqo_longjmp_arm(int32_t on) { if (on) { note("noreturn longjmp"); sample_jump(); } }
 
@@ -1663,6 +2021,7 @@ static void out_final_flags(void) {
     out_line(trace_fd, line);
 }
 static void isolated_table(void) {
+    ri_spill();
     if (!isolate || trips_only || !sample_running()) return;
     out_final_flags();
     __cqo_out_table();
@@ -1969,6 +2328,7 @@ int __cqo_sample_begin(int idx) {
 }
 
 static void sample_finish(void) {
+    ri_spill();
     timer_ms(ITIMER_PROF, 0, 0);
     if (trips_only) {
         char line[80];

@@ -1619,6 +1619,167 @@ int na_exit(int x0, double th) {
         self.assertFalse(r[1].outcome.startswith("cap:"), r[1].outcome)  # exit(3) in trip 1: within K, ends early
 
 
+class InvertRegisters(unittest.TestCase):
+    """CR rule 17 registers (owner 2026-11-26): a cq_invert region reverses the in-place updates of the registers live at its
+    begin. The reference of §6: the registers after the end hold F⁻¹(s), the region's rotation list is that of the C region
+    run from F⁻¹(s) (cqo_rt.c "cq_invert regions", OracleInstr.cpp classifyRegions)."""
+
+    SRC = """
+typedef unsigned char u8;
+unsigned g_count;
+void bump(void) { g_count++; }
+/* cq-nw4yh: a bus cell's classical in-place update inside a region, inline and in a callee */
+unsigned cell_inline(unsigned x0, double th) {
+    unsigned x = x0; cq_theta(&x, th);
+    cq_invert_begin(); g_count++; cq_invert_end();
+    return g_count + 0 * cq_measure(x);
+}
+unsigned cell_call(unsigned x0, double th) {
+    unsigned x = x0; cq_theta(&x, th);
+    cq_invert_begin(); bump(); cq_invert_end();
+    return g_count + 0 * cq_measure(x);
+}
+/* a register's +=, ^= and -= o: undone last first */
+unsigned ops(unsigned a0, double ta, unsigned w, unsigned o) {
+    unsigned a = a0; cq_theta(&a, ta);
+    cq_invert_begin(); a += w; a ^= 5; a -= o; cq_invert_end();
+    return cq_measure(a);
+}
+/* 214's invert_old_value: the old value read after its update in the region, and after the end */
+unsigned old_value(unsigned a0, double ta, unsigned w, unsigned k, double p, double q) {
+    unsigned a = a0; cq_theta(&a, ta);
+    unsigned t = a;
+    cq_invert_begin(); a += w; if (a * t == k) cq_phi(p); cq_invert_end();
+    if (t == k) cq_phi(q);
+    return cq_measure(a);
+}
+/* a value made in the region from the register and read after the end: recomputed from the register */
+unsigned made(unsigned a0, double ta, unsigned w) {
+    unsigned a = a0; cq_theta(&a, ta);
+    cq_invert_begin(); a += w; unsigned z = a * 3; cq_invert_end();
+    return cq_measure(z);
+}
+/* nested regions: the inner one reverses a -= w, the outer one the whole: F(a) = (a ^ 6) + w */
+unsigned nested(unsigned a0, double ta, unsigned w) {
+    unsigned a = a0; cq_theta(&a, ta);
+    cq_invert_begin(); a ^= 6; cq_invert_begin(); a -= w; cq_invert_end(); cq_invert_end();
+    return cq_measure(a);
+}
+/* a measurement (a flush point) before the update: forward, the update after it reversed */
+unsigned flushed(unsigned a0, double ta, unsigned y0, double ty, unsigned w) {
+    unsigned a = a0, y = y0; cq_theta(&a, ta); cq_theta(&y, ty);
+    cq_invert_begin(); unsigned m = cq_measure(y); a += w; cq_invert_end();
+    return cq_measure(a) + (m << 16);
+}
+/* classical code in the region (a host-resident object, rule 20) runs forward, once, however often the oracle runs it */
+unsigned classical(unsigned a0, double ta, unsigned w) {
+    unsigned a = a0; cq_theta(&a, ta);
+    volatile unsigned counter = 0;
+    cq_invert_begin(); a += w; counter = counter + 1; cq_invert_end();
+    return cq_measure(a) + (counter << 24);
+}
+/* a substituted rotation of the register inside the region: F is no bijection, no F^-1(s) */
+unsigned broken(unsigned a0, double ta, unsigned w, double t2) {
+    unsigned a = a0; cq_theta(&a, ta);
+    cq_invert_begin(); a += w; cq_theta(&a, t2); cq_invert_end();
+    return cq_measure(a);
+}
+/* the knapsack items of 214: the region is PREP's adjoint */
+#define PREP if (rem >= 5) cq_theta(&x0, t); rem -= x0 ? 5 : 0; profit += x0 ? 18 : 0; \\
+             if (rem >= 9) cq_theta(&x1, t); rem -= x1 ? 9 : 0; profit += x1 ? 27 : 0;
+int prepare(u8 r0, double tr, u8 p0, double tp, double t, double p) {
+    bool x0 = 0, x1 = 0;
+    u8 rem = r0, profit = p0;
+    cq_theta(&rem, tr); cq_theta(&profit, tp);
+    PREP
+    if (profit > 40) cq_phi(p);
+    cq_invert_begin(); PREP cq_invert_end();
+    return cq_measure(rem) | cq_measure(profit) << 8 | cq_measure(x0) << 16 | cq_measure(x1) << 17;
+}
+"""
+    PROTOS = ("unsigned cell_inline(unsigned,double);unsigned cell_call(unsigned,double);"
+              "unsigned ops(unsigned,double,unsigned,unsigned);"
+              "unsigned old_value(unsigned,double,unsigned,unsigned,double,double);unsigned made(unsigned,double,unsigned);"
+              "unsigned nested(unsigned,double,unsigned);unsigned flushed(unsigned,double,unsigned,double,unsigned);"
+              "unsigned classical(unsigned,double,unsigned);unsigned broken(unsigned,double,unsigned,double);"
+              "int prepare(unsigned char,double,unsigned char,double,double,double)")
+    CALLS = [("cell_inline", ["unsigned", "double"]), ("cell_call", ["unsigned", "double"]),
+             ("ops", ["unsigned", "double", "unsigned", "unsigned"]),
+             ("old_value", ["unsigned", "double", "unsigned", "unsigned", "double", "double"]),
+             ("made", ["unsigned", "double", "unsigned"]), ("nested", ["unsigned", "double", "unsigned"]),
+             ("flushed", ["unsigned", "double", "unsigned", "double", "unsigned"]),
+             ("classical", ["unsigned", "double", "unsigned"]), ("broken", ["unsigned", "double", "unsigned", "double"]),
+             ("prepare", ["unsigned char", "double", "unsigned char", "double", "double", "double"])]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.o1 = compile_c("invreg", cls.SRC)
+        cls.sp = spec("invreg", cls.PROTOS, cls.CALLS)
+
+    def ret(self, call, args, **kw):
+        return int(rets(self.o1, self.sp, [dict({"call": call, "args": args}, **kw)])[0], 16)
+
+    def sites(self, call, args, **kw):
+        ev = oracle.trace_sample(self.o1, self.sp, dict({"call": call, "args": args}, **kw))
+        return [(e["fn"], e["site"], e["kind"]) for e in ev if e["ev"] == "site" and e["kind"] != "measure"]
+
+    def test_cell(self):
+        # cq-nw4yh: g_count++ in a region is g_count - 1 after it, inline or in a callee (rule 17 Memory)
+        self.assertEqual(self.ret(0, [i32(3), HALF]), 0xFFFFFFFF)
+        self.assertEqual(self.ret(1, [i32(3), HALF]), 0xFFFFFFFF)
+
+    def test_ops(self):
+        for a, w, o in [(0, 1, 2), (100, 7, 3), (0xFFFFFFF0, 0x20, 0x11)]:
+            self.assertEqual(self.ret(2, [i32(a), HALF, i32(w), i32(o)]), (((a + o) & 0xFFFFFFFF ^ 5) - w) & 0xFFFFFFFF,
+                             (a, w, o))
+
+    def test_old_value(self):
+        # the image and t are the register after the end (a - w); the region's phase reads a * (a - w) == k: the run
+        # from F⁻¹(s) (214); the phase after the end reads t = a - w
+        a, w = 9, 4
+        for k, inside, after in [(9 * 5, True, False), (5, False, True), (1, False, False)]:
+            args = [i32(a), HALF, i32(w), i32(k), f64(0.3), f64(0.2)]
+            self.assertEqual(self.ret(3, args), a - w)
+            kinds = [s[2] for s in self.sites(3, args)]
+            want = ["theta", "invert_begin"] + (["phi"] if inside else []) + ["invert_end"] + (["phi"] if after else [])
+            self.assertEqual(kinds, want, k)
+
+    def test_made_in_region(self):
+        self.assertEqual(self.ret(4, [i32(10), HALF, i32(3)]), 21)   # z = 3 * (a - w), recomputed after the end
+
+    def test_nested(self):
+        self.assertEqual(self.ret(5, [i32(10), HALF, i32(3)]), (10 - 3) ^ 6)
+
+    def test_flush_before_update(self):
+        self.assertEqual(self.ret(6, [i32(10), HALF, i32(7), HALF, i32(3)]), 7 | 7 << 16)
+
+    def test_classical_forward_once(self):
+        # the region runs twice in the oracle (the second from F⁻¹(s)); the counter is put back between the runs
+        self.assertEqual(self.ret(7, [i32(10), HALF, i32(3)]), 7 | 1 << 24)
+
+    def test_no_inverse(self):
+        # with the rotation inside substituted F is constant in a: no run from any start ends at s
+        r = oracle.run_samples(self.o1, self.sp, [{"call": 8, "args": [i32(10), HALF, i32(3), HALF],
+                                                    "subst": {"broken:1": i32(77)}}])[0]
+        self.assertTrue(r.failed and r.reason.startswith("region-inverse"), (r.reason, r.notes))
+        # without the substitution the rotation is the identity on basis states: a - w
+        self.assertEqual(self.ret(8, [i32(10), HALF, i32(3), HALF]), 7)
+
+    def test_prepare(self):
+        # 214's invert_prepare with x0 = x1 = 1 (substituted): rem and profit back to r0, p0; the region's Ry's are PREP's,
+        # with PREP's predicates (rem >= 5 on r0, rem >= 9 on r0 - 5): reached in the run from F⁻¹(s)
+        one = "0x1"
+        for r0, ry in [(20, ["prepare:2", "prepare:3"]), (12, ["prepare:2"]), (3, [])]:
+            sub = {"prepare:2": one, "prepare:3": one, "prepare:6": one, "prepare:7": one}
+            args = ["0x%x" % r0, HALF, "0x0", HALF, HALF, f64(0.25)]
+            x0 = 1 if r0 >= 5 else 0
+            x1 = 1 if r0 - 5 * x0 >= 9 else 0
+            v = self.ret(9, args, subst=sub)
+            self.assertEqual((v & 0xFF, v >> 8 & 0xFF, v >> 16 & 1, v >> 17 & 1), (r0, 0, x0, x1), r0)
+            region = [f"{s[0]}:{s[1]}" for s in self.sites(9, args, subst=sub) if s[2] == "theta"][len(ry) + 2:]
+            self.assertEqual(region, [s.replace(":2", ":6").replace(":3", ":7") for s in ry], r0)
+
+
 class TraceParse(unittest.TestCase):
     """cq-p9pty: the trace readers' fast path (json.loads's own scanner) gives json.loads's value, and raises or marks a
     bad line as json.loads did, on every kind of line (no build needed)."""

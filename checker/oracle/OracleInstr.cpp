@@ -71,6 +71,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/IR/ValueHandle.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/CommandLine.h"
@@ -843,6 +844,656 @@ public:
             }
     }
   }
+  // ---------------------------------------------------------------- cq_invert regions: registers (CR rule 17, 2026-11-26)
+  // A region reverses the in-place updates of the registers live at its begin; the reference of §6 (rule 17) holds F⁻¹(s) in
+  // them after the end and takes the region's rotation list from the C region run from F⁻¹(s). cqo_rt.c finds F⁻¹(s) by
+  // running the region again ("cq_invert regions" there); this pass gives it what it needs, decided from CR's text on the
+  // pristine module (classifyRegions, after flushSites, with taint) and applied at the very end (applyRegions), when no
+  // later stage sees the loop it makes:
+  //  - every block-structured region (one begin, one matching end, single entry, no return inside: regionBody) becomes a
+  //    loop: __cqo_rend() right before its end's site says whether to run it again from right after its begin's site;
+  //  - a register's chain (comps): its value at the begin (the root: a quantum value of the function, defined outside
+  //    the region, no formal) and, inside the region, each in-place image of it: `add`, `xor` or `sub y, o` (y operand 0
+  //    for sub, either operand for add and xor), rule 6's select of such an update (`select c, f(y), y`, f read by the
+  //    select only), `o` a literal or a value not computed from the chain and c not either; of several updates of one
+  //    value, those no other one follows in the region (the last on each path); merges of chain values (a phi, a select)
+  //    and a rotation of one (cq_theta) are chain values too. A chain with no update is none. An update inside a loop of
+  //    the region is not one (M2: such loops keep the forward model).
+  //  - each register gets a slot that holds the register: the root (and every chain value a nested or later region reads)
+  //    is stored there after its definition; a chain value read in another region than its own, or after its region's
+  //    end, reads the slot (after the end: F⁻¹(s), written by __cqo_rend). A value made in the region from the chain and
+  //    read after its end is its cone recomputed there from the slots (rule 17: each value the cone reads bound as it is
+  //    after the end). __cqo_rroot tells the runtime the region's registers, __cqo_rupd each update (old value, operand,
+  //    new value);
+  //  - a bus cell's rule 5 update (flushSites' non-flush store; any function, the region is dynamic) tells __cqo_rcell.
+  // Registers are per specialization (rule 17: a quantum value): the slot is read where the frame's specialization has the
+  // root quantum (perSpec); a classical root's chain is classical code, forward.
+  // shortcut: a register update in a region whose markers are not block-structured (a marker in an arm, a region across
+  // functions) is not modelled (forward, as before 2026-11-26); upgrade with the first example that needs it.
+  enum RegKind { RK_Add = 0, RK_Sub = 1, RK_Xor = 2, RK_Set = 3, RK_Rot = 4 };
+  struct InvComp {
+    Function *F;
+    WeakTrackingVH root;
+    std::vector<int32_t> active;
+    bool updated = false;
+    AllocaInst *slot = nullptr;
+  };
+  enum MemberKind { MRoot, MUpd, MSel, MMerge, MRot };
+  struct InvMember {
+    WeakTrackingVH v;
+    unsigned comp;
+    MemberKind kind;
+    int op = RK_Set;         // MUpd/MSel: the opcode's RegKind
+    unsigned yIdx = 0;       // MUpd: y's operand; MSel: the operand (1 or 2) that is y, the other one f(y)
+    unsigned fyIdx = 0;      // MSel: y's operand in f(y)
+  };
+  struct InvRegion {
+    Function *F;
+    std::vector<unsigned> comps;   // registers: the chains with an update inside it (nested regions included)
+  };
+  struct InvCell {
+    int op = RK_Set;
+    WeakTrackingVH o, c;     // the operand; for a select of an update its condition
+    bool armTrue = true;     // the select's true arm is the update
+    std::vector<int32_t> active;
+  };
+  std::vector<InvComp> invComps;
+  std::vector<InvMember> invMembers;
+  std::vector<InvRegion> invRegions;
+  std::vector<InvCell> invCells;
+
+  // The instructions strictly between `b` and its matching marker on every path, when the pair is block-structured: one
+  // matching marker, every path from b reaches it (or ends in unreachable), no block of the body is entered from outside,
+  // b's block not entered again. `kind` says what a marker is (+1 begin, -1 end, 0 none). nullopt: not structured.
+  static std::optional<std::pair<Instruction *, DenseSet<Instruction *>>>
+  regionBody(Instruction *b, function_ref<int(const Instruction &)> kind) {
+    DenseSet<Instruction *> body;
+    DenseMap<BasicBlock *, int> depthAt;
+    Instruction *end = nullptr;
+    SmallVector<std::pair<BasicBlock::iterator, int>, 16> work;
+    work.push_back({std::next(b->getIterator()), 1});
+    BasicBlock *bb0 = b->getParent();
+    while (!work.empty()) {
+      auto [it, d] = work.pop_back_val();
+      BasicBlock *BB = it->getParent();
+      bool closed = false;
+      for (; it != BB->end(); ++it) {
+        Instruction &I = *it;
+        d += kind(I) > 0 ? 1 : 0;
+        if (kind(I) < 0 && --d == 0) {
+          if (end && end != &I)
+            return std::nullopt;
+          end = &I;
+          closed = true;
+          break;
+        }
+        body.insert(&I);
+      }
+      if (closed)
+        continue;
+      Instruction *T = BB->getTerminator();
+      if (isa<ReturnInst>(T) || isa<ResumeInst>(T) || isa<CallBrInst>(T) || isa<IndirectBrInst>(T))
+        return std::nullopt;
+      for (BasicBlock *S : successors(BB)) {
+        if (S == bb0)
+          return std::nullopt;
+        auto [pos, fresh] = depthAt.try_emplace(S, d);
+        if (!fresh) {
+          if (pos->second != d)
+            return std::nullopt;
+          continue;
+        }
+        work.push_back({S->begin(), d});
+      }
+    }
+    if (!end)
+      return std::nullopt;
+    for (auto &[S, d] : depthAt)
+      for (BasicBlock *P : predecessors(S))
+        if (P != bb0 && !depthAt.count(P))
+          return std::nullopt;
+    return std::make_pair(end, std::move(body));
+  }
+
+  std::vector<int32_t> quantumPerSpec(const Value *V, const Function &F) {
+    std::vector<int32_t> vals(KI.N + 1, 0);
+    for (const cq::Specialization &S : Taint->specializations())
+      if (S.F == &F)
+        if (unsigned id = KI.idOf.lookup(&S); id && Taint->isQuantum(V, S))
+          vals[id] = 1, vals[0] = 1;
+    return vals;
+  }
+
+  void classifyRegions() {
+    Function *beg = M.getFunction("__cq_invert_begin");
+    if (!Taint || !beg || beg->use_empty() || !KI.on)
+      return;
+    const cq::TaintInfo &T = *Taint;
+    // a bus cell's rule 5 update, wherever it is (flushSites: not a host access, not a flush point)
+    for (const cq::Specialization &S : T.specializations()) {
+      if (!S.F || S.F->isDeclaration() || isDriverFn(*S.F))
+        continue;
+      unsigned id = KI.idOf.lookup(&S);
+      for (Instruction &I : instructions(*S.F)) {
+        auto *St = dyn_cast<StoreInst>(&I);
+        if (!St || !ruleFiveUpdate(*St) || !St->getValueOperand()->getType()->isIntegerTy() ||
+            (T.hostObjectOf(I, S) && !T.controlTainted(I.getParent(), S) && !S.ctl))
+          continue;
+        unsigned k;
+        if (MDNode *md = St->getMetadata("cqo.cell")) {
+          k = cast<ConstantInt>(cast<ConstantAsMetadata>(md->getOperand(0))->getValue())->getZExtValue();
+        } else {
+          k = invCells.size();
+          InvCell cell;
+          cell.active.assign(KI.N + 1, 0);
+          Value *ptr = St->getPointerOperand(), *v = St->getValueOperand();
+          auto isOld = [&](Value *x) {
+            auto *L = dyn_cast<LoadInst>(x);
+            return L && L->getPointerOperand() == ptr;
+          };
+          auto arith = [&](Value *x, Value *&o) -> int {
+            auto *BO = dyn_cast<BinaryOperator>(x);
+            if (!BO)
+              return -1;
+            unsigned opc = BO->getOpcode();
+            if (opc == Instruction::Sub && isOld(BO->getOperand(0)))
+              return o = BO->getOperand(1), RK_Sub;
+            if (opc == Instruction::Add || opc == Instruction::Xor)
+              for (unsigned i = 0; i < 2; ++i)
+                if (isOld(BO->getOperand(i)))
+                  return o = BO->getOperand(1 - i), opc == Instruction::Add ? RK_Add : RK_Xor;
+            return -1;
+          };
+          Value *o = nullptr;
+          if (int op = arith(v, o); op >= 0) {
+            cell.op = op, cell.o = o;
+          } else if (auto *SI = dyn_cast<SelectInst>(v)) {
+            for (unsigned arm = 0; arm < 2 && cell.op == RK_Set; ++arm)
+              if (isOld(SI->getOperand(2 - arm)))
+                if (int op = arith(SI->getOperand(1 + arm), o); op >= 0)
+                  cell.op = op, cell.o = o, cell.c = SI->getCondition(), cell.armTrue = arm == 0;
+          }
+          // shortcut: only add, sub, xor and their select are modelled; another in-place form (a rotation of the cell,
+          // a mul) runs forward as before 2026-11-26; upgrade when an example has one inside a region
+          if (cell.op == RK_Set)
+            continue;
+          invCells.push_back(std::move(cell));
+          St->setMetadata("cqo.cell", MDNode::get(C, {ConstantAsMetadata::get(ConstantInt::get(I32, k))}));
+        }
+        if (id)
+          invCells[k].active[id] = 1, invCells[k].active[0] = 1;
+      }
+    }
+
+    auto marker = [](const Instruction &I) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Function *G = CB ? CB->getCalledFunction() : nullptr;
+      return !G ? 0 : G->getName() == "__cq_invert_begin" ? 1 : G->getName() == "__cq_invert_end" ? -1 : 0;
+    };
+    for (Function &F : M) {
+      if (F.isDeclaration() || isDriverFn(F))
+        continue;
+      struct R { Instruction *b, *e; DenseSet<Instruction *> body; DenseSet<BasicBlock *> blocks; };
+      std::vector<R> regs;
+      for (Instruction &I : instructions(F))
+        if (marker(I) > 0)
+          if (auto r = regionBody(&I, marker)) {
+            R x{&I, r->first, std::move(r->second), {}};
+            for (Instruction *J : x.body)
+              x.blocks.insert(J->getParent());
+            regs.push_back(std::move(x));
+          }
+      if (regs.empty())
+        continue;
+      DominatorTree DT(F);
+      LoopInfo LI(DT);
+      // ids: tag the markers, the runtime's loop is made at the end (applyRegions)
+      std::vector<unsigned> rid;
+      for (R &r : regs) {
+        rid.push_back(invRegions.size());
+        invRegions.push_back({&F, {}});
+        auto *md = MDNode::get(C, {ConstantAsMetadata::get(ConstantInt::get(I32, rid.back()))});
+        r.b->setMetadata("cqo.inv", md);
+        r.e->setMetadata("cqo.inv", md);
+      }
+      DenseMap<Value *, unsigned> mem;   // chain value -> comp
+      auto inLoopOf = [&](const Instruction *I, const R &r) {
+        for (const Loop *L = LI.getLoopFor(I->getParent()); L; L = L->getParentLoop())
+          if (r.blocks.count(L->getHeader()) || L->getHeader() == r.b->getParent())
+            return true;
+        return false;
+      };
+      auto reachesComp = [&](Value *V, unsigned c) {
+        SmallPtrSet<Value *, 32> seen;
+        SmallVector<Value *, 16> work{V};
+        while (!work.empty()) {
+          Value *x = work.pop_back_val();
+          if (!seen.insert(x).second || seen.size() > 4096)
+            continue;
+          if (auto it = mem.find(x); it != mem.end() && it->second == c)
+            return true;
+          if (auto *I = dyn_cast<Instruction>(x))
+            for (Value *op : I->operands())
+              if (isa<Instruction>(op))
+                work.push_back(op);
+        }
+        return false;
+      };
+      auto intReg = [](Value *V) { return V->getType()->isIntegerTy() && V->getType()->getIntegerBitWidth() <= 64; };
+      // a chain value, or a root: a quantum non-formal value of F defined outside r
+      auto chainOf = [&](Value *y, const R &r, bool create) -> int {
+        if (auto it = mem.find(y); it != mem.end())
+          return it->second;
+        auto *I = dyn_cast<Instruction>(y);
+        if (!I || r.body.count(I) || !intReg(y))
+          return -1;
+        std::vector<int32_t> act = quantumPerSpec(y, F);
+        if (!act[0])
+          return -1;
+        if (!create)
+          return -2;   // a root not yet made
+        unsigned c = invComps.size();
+        invComps.push_back({&F, WeakTrackingVH(y), act});
+        mem[y] = c;
+        invMembers.push_back({WeakTrackingVH(y), c, MRoot});
+        return c;
+      };
+      // `I` as an update of a chain value: {y's operand, RegKind}
+      auto asUpdate = [&](Instruction *I, const R &r) -> std::optional<std::pair<unsigned, int>> {
+        auto *BO = dyn_cast<BinaryOperator>(I);
+        if (!BO || !intReg(BO) || inLoopOf(I, r))
+          return std::nullopt;
+        unsigned opc = BO->getOpcode();
+        if (opc != Instruction::Add && opc != Instruction::Xor && opc != Instruction::Sub)
+          return std::nullopt;
+        for (unsigned yi = 0; yi < (opc == Instruction::Sub ? 1u : 2u); ++yi) {
+          int c = chainOf(BO->getOperand(yi), r, false);
+          if (c == -1)
+            continue;
+          Value *o = BO->getOperand(1 - yi);
+          if (c >= 0 && reachesComp(o, c))
+            return std::nullopt;
+          if (c == -2 && (o == BO->getOperand(yi) || [&] {   // o computed from the root itself
+                SmallPtrSet<Value *, 32> seen;
+                SmallVector<Value *, 16> work{o};
+                while (!work.empty()) {
+                  Value *x = work.pop_back_val();
+                  if (x == BO->getOperand(yi))
+                    return true;
+                  if (seen.insert(x).second && seen.size() < 4096)
+                    if (auto *J = dyn_cast<Instruction>(x))
+                      for (Value *op : J->operands())
+                        work.push_back(op);
+                }
+                return false;
+              }()))
+            return std::nullopt;
+          return std::make_pair(yi, opc == Instruction::Add ? (int)RK_Add : opc == Instruction::Sub ? (int)RK_Sub : (int)RK_Xor);
+        }
+        return std::nullopt;
+      };
+      // `S` as rule 6's select of an update: {y's operand (1 or 2), RegKind, y's operand in f(y)}
+      auto asSelUpdate = [&](SelectInst *S, const R &r) -> std::optional<std::tuple<unsigned, int, unsigned>> {
+        if (!intReg(S) || inLoopOf(S, r))
+          return std::nullopt;
+        for (unsigned yo = 1; yo <= 2; ++yo) {
+          auto *f = dyn_cast<Instruction>(S->getOperand(3 - yo));
+          if (!f || !f->hasOneUse() || !r.body.count(f))
+            continue;
+          auto u = asUpdate(f, r);
+          if (!u || f->getOperand(u->first) != S->getOperand(yo))
+            continue;
+          int c = chainOf(S->getOperand(yo), r, false);
+          if (c >= 0 && reachesComp(S->getCondition(), c))
+            return std::nullopt;
+          return std::make_tuple(yo, u->second, u->first);
+        }
+        return std::nullopt;
+      };
+      auto isSelArm = [&](Instruction *f, const R &r) {   // f is the update a select of an update reads
+        if (!f->hasOneUse())
+          return false;
+        auto *S = dyn_cast<SelectInst>(f->user_back());
+        if (!S || !r.body.count(S))
+          return false;
+        auto s = asSelUpdate(S, r);
+        return s && S->getOperand(3 - std::get<0>(*s)) == f;
+      };
+      // reachability inside the region (the last update on each path)
+      auto follows = [&](Instruction *a, Instruction *b2, const R &r) {
+        if (a->getParent() == b2->getParent())
+          return a->comesBefore(b2);
+        SmallPtrSet<BasicBlock *, 16> seen;
+        SmallVector<BasicBlock *, 16> work(succ_begin(a->getParent()), succ_end(a->getParent()));
+        while (!work.empty()) {
+          BasicBlock *X = work.pop_back_val();
+          if (!r.blocks.count(X) || !seen.insert(X).second)
+            continue;
+          if (X == b2->getParent())
+            return true;
+          work.append(succ_begin(X), succ_end(X));
+        }
+        return false;
+      };
+      auto candidate = [&](Instruction *U, Value *y, const R &r) -> bool {
+        if (!r.body.count(U))
+          return false;
+        if (auto *S = dyn_cast<SelectInst>(U)) {
+          auto s = asSelUpdate(S, r);
+          return s && S->getOperand(std::get<0>(*s)) == y;
+        }
+        auto u = asUpdate(U, r);
+        return u && U->getOperand(u->first) == y && !isSelArm(U, r);
+      };
+      // outermost regions first, in the order of their begins; an inner region's instructions are its outer's
+      ReversePostOrderTraversal<Function *> RPOT(&F);
+      std::vector<BasicBlock *> rpo(RPOT.begin(), RPOT.end());
+      for (R &r : regs) {
+        bool outer = true;
+        for (R &o : regs)
+          if (&o != &r && o.body.count(r.b))
+            outer = false;
+        if (!outer)
+          continue;
+        for (BasicBlock *BB : rpo)
+          for (Instruction &I : *BB) {
+            if (!r.body.count(&I))
+              continue;
+            Value *y = nullptr;
+            MemberKind k = MMerge;
+            int op = RK_Set;
+            unsigned yIdx = 0, fyIdx = 0;
+            if (auto *S = dyn_cast<SelectInst>(&I)) {
+              if (auto s = asSelUpdate(S, r))
+                y = S->getOperand(std::get<0>(*s)), k = MSel, op = std::get<1>(*s), yIdx = std::get<0>(*s),
+                fyIdx = std::get<2>(*s);
+              else if (int a = chainOf(S->getTrueValue(), r, false); a >= 0 && a == chainOf(S->getFalseValue(), r, false))
+                y = S->getTrueValue();
+            } else if (auto *P = dyn_cast<PHINode>(&I)) {
+              if (!inLoopOf(P, r) && P->getNumIncomingValues()) {
+                int a = chainOf(P->getIncomingValue(0), r, false);
+                for (Value *in : P->incoming_values())
+                  if (a < 0 || chainOf(in, r, false) != a)
+                    a = -1;
+                if (a >= 0)
+                  y = P->getIncomingValue(0);
+              }
+            } else if (auto *CB = dyn_cast<CallInst>(&I)) {
+              const Function *G = CB->getCalledFunction();
+              if (G && G->getName().starts_with("cq_theta_") && CB->arg_size() == 2 && intReg(CB) &&
+                  chainOf(CB->getArgOperand(0), r, false) != -1)
+                y = CB->getArgOperand(0), k = MRot;
+            } else if (auto u = asUpdate(&I, r)) {
+              y = I.getOperand(u->first), k = MUpd, op = u->second, yIdx = u->first;
+              if (isSelArm(&I, r))
+                y = nullptr;
+            }
+            if (!y)
+              continue;
+            if (k == MUpd || k == MSel)   // of several updates of y, the last on each path
+              for (User *U2 : y->users())
+                if (auto *J = dyn_cast<Instruction>(U2); J && J != &I && candidate(J, y, r) && follows(&I, J, r))
+                  y = nullptr;
+            if (!y)
+              continue;
+            int c = chainOf(y, r, true);
+            if (c < 0)
+              continue;
+            mem[&I] = c;
+            invMembers.push_back({WeakTrackingVH(&I), (unsigned)c, k, op, yIdx, fyIdx});
+            if (k == MUpd || k == MSel)
+              invComps[c].updated = true;
+          }
+      }
+      // each region's registers: the chains with an update inside it
+      for (size_t i = 0; i < regs.size(); ++i)
+        for (const InvMember &m : invMembers)
+          if ((m.kind == MUpd || m.kind == MSel) && invComps[m.comp].F == &F)
+            if (auto *I = dyn_cast_or_null<Instruction>(&*m.v); I && regs[i].body.count(I))
+              if (!llvm::is_contained(invRegions[rid[i]].comps, m.comp))
+                invRegions[rid[i]].comps.push_back(m.comp);
+    }
+  }
+
+  // The end of run(): the loops, slots, reads and hooks classifyRegions decided (see there).
+  void applyRegions() {
+    if (invRegions.empty() && invCells.empty())
+      return;
+    FunctionCallee rroot = hook("__cqo_rroot", Void, {Ptr, I32, I32});
+    FunctionCallee rend = hook("__cqo_rend", I32, {});
+    FunctionCallee rupd = hook("__cqo_rupd", Void, {Ptr, I32, I64, I64, I64, I32});
+    FunctionCallee rcell = hook("__cqo_rcell", Void, {Ptr, I64, Ptr, I32, I64, I32});
+    auto i64 = [&](IRBuilder<> &B, Value *v) { return B.CreateZExtOrTrunc(v, I64); };
+    // cells: before each tagged __cqo_store (memory() moved the tag there)
+    for (Function &F : M)
+      for (Instruction &I : instructions(F))
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (MDNode *md = CI->getMetadata("cqo.cell")) {
+            const InvCell &cell =
+                invCells[cast<ConstantInt>(cast<ConstantAsMetadata>(md->getOperand(0))->getValue())->getZExtValue()];
+            IRBuilder<> B(CI);
+            Value *o = B.getInt64(0);
+            int op = cell.op;
+            if (op != RK_Set && cell.o && cell.o->getType()->isIntegerTy()) {
+              Value *ov = cell.o;
+              if (cell.c) {
+                Value *z = Constant::getNullValue(ov->getType());
+                ov = cell.armTrue ? B.CreateSelect(cell.c, ov, z) : B.CreateSelect(cell.c, z, ov);
+              }
+              o = i64(B, ov);
+            } else {
+              op = RK_Set;
+            }
+            B.CreateCall(rcell, {CI->getArgOperand(0), CI->getArgOperand(1), CI->getArgOperand(2), B.getInt32(op), o,
+                                 perSpec(B, F, cell.active)});
+          }
+
+    // the regions' markers, as sites() left them
+    std::vector<std::pair<CallInst *, CallInst *>> sitesOf(invRegions.size(), {nullptr, nullptr});
+    MapVector<Function *, std::vector<unsigned>> byFn;
+    for (Function &F : M)
+      for (Instruction &I : instructions(F))
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (MDNode *md = CI->getMetadata("cqo.inv")) {
+            unsigned id = cast<ConstantInt>(cast<ConstantAsMetadata>(md->getOperand(0))->getValue())->getZExtValue();
+            auto *k = dyn_cast<ConstantInt>(CI->getArgOperand(2));
+            (k && k->getZExtValue() == KInvBegin ? sitesOf[id].first : sitesOf[id].second) = CI;
+          }
+    for (unsigned id = 0; id < invRegions.size(); ++id)
+      if (sitesOf[id].first && sitesOf[id].second)
+        byFn[invRegions[id].F].push_back(id);
+    auto siteMarker = [](const Instruction &I) {
+      auto *CI = dyn_cast<CallInst>(&I);
+      const Function *G = CI ? CI->getCalledFunction() : nullptr;
+      if (!G || G->getName() != "__cqo_site")
+        return 0;
+      auto *k = dyn_cast<ConstantInt>(CI->getArgOperand(2));
+      return !k ? 0 : k->getZExtValue() == KInvBegin ? 1 : k->getZExtValue() == KInvEnd ? -1 : 0;
+    };
+
+    for (auto &[F, ids] : byFn) {
+      // the bodies on the instrumented code (stages after classifyRegions add instructions and blocks)
+      std::vector<DenseSet<Instruction *>> body(ids.size());
+      for (size_t i = 0; i < ids.size(); ++i) {
+        auto r = regionBody(sitesOf[ids[i]].first, siteMarker);
+        if (!r || r->first != sitesOf[ids[i]].second)
+          unimplemented("a cq_invert region the instrumentation made unstructured", sitesOf[ids[i]].first);
+        body[i] = std::move(r->second);
+      }
+      // innermost region of an instruction (an index into ids, or -1)
+      auto innermost = [&](const Instruction *I) {
+        int best = -1;
+        for (size_t i = 0; i < ids.size(); ++i)
+          if (body[i].count(const_cast<Instruction *>(I)) && (best < 0 || body[best].size() > body[i].size()))
+            best = (int)i;
+        return best;
+      };
+      std::vector<unsigned> comps;
+      for (unsigned c = 0; c < invComps.size(); ++c)
+        if (invComps[c].F == F && invComps[c].updated && invComps[c].root) {
+          comps.push_back(c);
+          invComps[c].slot = entryAlloca(*F, invComps[c].root->getType());
+        }
+      DenseMap<Value *, unsigned> mem;
+      std::vector<const InvMember *> members;
+      for (const InvMember &m : invMembers)
+        if (m.v && invComps[m.comp].slot && invComps[m.comp].F == F)
+          mem[&*m.v] = m.comp, members.push_back(&m);
+      auto at = [](Use &U) -> Instruction * {
+        auto *P = dyn_cast<PHINode>(U.getUser());
+        return P ? P->getIncomingBlock(U)->getTerminator() : cast<Instruction>(U.getUser());
+      };
+      // the register's value after its region: its slot, where the frame's specialization has the register
+      auto regValue = [&](IRBuilder<> &B, unsigned c, Value *orig) -> Value * {
+        Value *L = B.CreateLoad(invComps[c].root->getType(), invComps[c].slot);
+        Value *on = B.CreateICmpNE(perSpec(B, *F, invComps[c].active), B.getInt32(0));
+        return B.CreateSelect(on, L, orig);
+      };
+      auto shadowHook = [](User *U) {
+        auto *CB = dyn_cast<CallBase>(U);
+        const Function *G = CB ? CB->getCalledFunction() : nullptr;
+        return G && G->getName().starts_with("__cqo_sh");
+      };
+
+      // 1. a value made in a region from a register and read after its end: its cone recomputed at the reader
+      DenseMap<Value *, bool> reachMemo;
+      std::function<bool(Value *, int)> reaches = [&](Value *V, int ri) -> bool {
+        if (mem.count(V))
+          return true;
+        auto *I = dyn_cast<Instruction>(V);
+        if (!I || !body[ri].count(I))
+          return false;
+        auto it = reachMemo.find(V);
+        if (it != reachMemo.end())
+          return it->second;
+        reachMemo[V] = false;
+        bool r = false;
+        // a load reads memory as the end leaves it; a call result made in the region crosses the end as the replay left
+        // it (the run from F⁻¹(s) computes it): leaves, not recomputed
+        auto *CB = dyn_cast<CallBase>(I);
+        bool leaf = isa<LoadInst>(I) || isa<AllocaInst>(I) ||
+                    (CB && !(CB->getCalledFunction() && CB->getCalledFunction()->getName().starts_with("__cqo_fpto")));
+        if (!leaf)
+          for (Value *op : I->operands())
+            if (reaches(op, ri)) {
+              r = true;
+              break;
+            }
+        return reachMemo[V] = r;
+      };
+      std::function<Value *(Value *, int, IRBuilder<> &)> recompute = [&](Value *V, int ri, IRBuilder<> &B) -> Value * {
+        if (auto it = mem.find(V); it != mem.end())
+          return regValue(B, it->second, V);
+        auto *I = dyn_cast<Instruction>(V);
+        if (!I || !body[ri].count(I) || !reaches(V, ri))
+          return V;
+        auto *CB = dyn_cast<CallInst>(I);
+        bool pure = isa<BinaryOperator>(I) || isa<CastInst>(I) || isa<CmpInst>(I) || isa<SelectInst>(I) ||
+                    isa<GetElementPtrInst>(I) || isa<FreezeInst>(I) || isa<UnaryOperator>(I) ||
+                    isa<ExtractValueInst>(I) || isa<InsertValueInst>(I) ||
+                    (CB && CB->getCalledFunction() && CB->getCalledFunction()->getName().starts_with("__cqo_fpto"));
+        if (!pure)
+          unimplemented("a value a cq_invert region makes from a register and that is read after the region's end, "
+                        "computed through this instruction (CR rule 17: recomputed after the end)", I);
+        Instruction *K = I->clone();
+        for (unsigned i = 0; i < K->getNumOperands(); ++i)
+          K->setOperand(i, recompute(I->getOperand(i), ri, B));
+        return B.Insert(K);
+      };
+      for (size_t i = 0; i < ids.size(); ++i) {
+        reachMemo.clear();
+        std::vector<Instruction *> made;   // in the function's order: deterministic
+        for (BasicBlock &BB : *F)
+          for (Instruction &I : BB)
+            if (body[i].count(&I))
+              made.push_back(&I);
+        for (Instruction *I : made) {
+          if (mem.count(I) || I->getType()->isVoidTy() || !reaches(I, (int)i))
+            continue;
+          SmallVector<Use *, 8> outside;
+          for (Use &U : I->uses())
+            if (!body[i].count(cast<Instruction>(U.getUser())) && !shadowHook(U.getUser()))
+              outside.push_back(&U);
+          for (Use *U : outside) {
+            IRBuilder<> B(at(*U));
+            U->set(recompute(I, (int)i, B));
+          }
+        }
+      }
+      // 2. chain values read in another region than their own, or after it: the slot. A chain value some region
+      //    reads from outside it is stored in the slot where it is made.
+      std::vector<const InvMember *> rootLike;
+      for (const InvMember *m : members) {
+        auto *V = &*m->v;
+        int own = isa<Instruction>(V) ? innermost(cast<Instruction>(V)) : -1;
+        bool rl = m->kind == MRoot;
+        SmallVector<Use *, 8> uses;
+        for (Use &U : V->uses())
+          if (!shadowHook(U.getUser()))
+            uses.push_back(&U);
+        for (Use *U : uses) {
+          int ui = innermost(at(*U));
+          if (ui >= 0 && ui != own && !body[ui].count(cast<Instruction>(V)))
+            rl = true;
+        }
+        for (Use *U : uses) {
+          int ui = innermost(at(*U));
+          if (rl || ui != own) {
+            IRBuilder<> B(at(*U));
+            U->set(regValue(B, m->comp, V));
+          }
+        }
+        if (rl)
+          rootLike.push_back(m);
+      }
+      for (const InvMember *m : rootLike) {
+        auto *I = cast<Instruction>(&*m->v);
+        IRBuilder<> B(isa<PHINode>(I) ? &*I->getParent()->getFirstInsertionPt() : I->getNextNode());
+        B.CreateStore(I, invComps[m->comp].slot);
+      }
+      // 3. the updates
+      for (const InvMember *m : members) {
+        if (m->kind != MUpd && m->kind != MSel && m->kind != MRot)
+          continue;
+        auto *I = cast<Instruction>(&*m->v);
+        IRBuilder<> B(I->getNextNode());
+        Value *old = B.getInt64(0), *o = B.getInt64(0);
+        if (m->kind == MUpd) {
+          old = I->getOperand(m->yIdx);
+          o = I->getOperand(1 - m->yIdx);
+        } else if (m->kind == MSel) {
+          auto *S = cast<SelectInst>(I);
+          old = S->getOperand(m->yIdx);
+          auto *f = cast<Instruction>(S->getOperand(3 - m->yIdx));
+          Value *fo = f->getOperand(1 - m->fyIdx);
+          Value *z = Constant::getNullValue(fo->getType());
+          o = m->yIdx == 2 ? B.CreateSelect(S->getCondition(), fo, z) : B.CreateSelect(S->getCondition(), z, fo);
+        }
+        B.CreateCall(rupd, {invComps[m->comp].slot, B.getInt32(m->kind == MRot ? RK_Rot : m->op), i64(B, old), i64(B, o),
+                            i64(B, I), perSpec(B, *F, invComps[m->comp].active)});
+      }
+      // 4. the loops: run again from right after the begin's site while __cqo_rend says so
+      for (size_t i = 0; i < ids.size(); ++i) {
+        CallInst *bs = sitesOf[ids[i]].first, *es = sitesOf[ids[i]].second;
+        Instruction *after = bs;
+        for (unsigned c : invRegions[ids[i]].comps)
+          if (invComps[c].slot) {
+            IRBuilder<> B(after->getNextNode());
+            Type *T = invComps[c].root->getType();
+            after = B.CreateCall(rroot, {invComps[c].slot, B.getInt32(T->getIntegerBitWidth()),
+                                         perSpec(B, *F, invComps[c].active)});
+          }
+        BasicBlock *H = SplitBlock(after->getParent(), after->getNextNode());
+        IRBuilder<> B(es);
+        Value *again = B.CreateICmpNE(B.CreateCall(rend, {}), B.getInt32(0));
+        BasicBlock *Pre = es->getParent();
+        BasicBlock *E = SplitBlock(Pre, es);
+        Pre->getTerminator()->eraseFromParent();
+        BranchInst::Create(H, E, again, Pre);
+      }
+    }
+  }
+
   bool calleeFlushes(const CallBase &CB) const {
     if (CB.isInlineAsm())
       return false;
@@ -2834,6 +3485,8 @@ public:
           ts->setMetadata("cqo.sh", sh);
           sc->setMetadata("cqo.sh", sh);
         }
+        if (MDNode *cell = SI->getMetadata("cqo.cell"))   // rule 5's in-place form (classifyRegions)
+          sc->setMetadata("cqo.cell", cell);
         SI->eraseFromParent();
       } else if (auto *RMW = dyn_cast<AtomicRMWInst>(I)) {
         IRBuilder<> AB(RMW);
@@ -3141,7 +3794,9 @@ public:
           unimplemented("site angle not a double", CI);
         angle = B.CreateBitCast(a, I64);
       }
-      B.CreateCall(site, {fn, B.getInt32(k++), B.getInt32(kind), angle, reg, B.getInt32(bits)});
+      CallInst *sc = B.CreateCall(site, {fn, B.getInt32(k++), B.getInt32(kind), angle, reg, B.getInt32(bits)});
+      if (MDNode *md = CI->getMetadata("cqo.inv"))   // a region's marker (classifyRegions)
+        sc->setMetadata("cqo.inv", md);
       if (t) {
         Value *v = B.CreateLoad(CI->getType(), t);
         CI->replaceAllUsesWith(v);
@@ -3803,6 +4458,7 @@ public:
     standinPhases();
     measureSites();
     flushSites();
+    classifyRegions();   // CR rule 17 registers, on the pristine module (applyRegions at the end)
     phaseReach();
     notePristine();
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
@@ -3856,6 +4512,7 @@ public:
       IRBuilder<> B(R.call);
       R.call->setArgOperand(R.arg, perSpec(B, *R.F, R.vals));
     }
+    applyRegions();   // last: no stage after it sees the loops it makes
     registerGlobals();
     // The runtime owns `main`; a program's own main stays callable under another name.
     if (Function *Mn = M.getFunction("main"))
