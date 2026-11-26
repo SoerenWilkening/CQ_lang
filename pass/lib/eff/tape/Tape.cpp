@@ -421,8 +421,10 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
   bool flagModified = false;
   for (auto &t : targets)
     flagModified |= t.first == flag;
+  // A flag minted in another block (cq-58yqb: the arm's quantum predicate, the abort behind a classical branch) is
+  // still uncomputed on the paths that skip the arm: the kept flag is a copy made here (as Cutoff's trip flag).
   RailType i1{Kind::Int, 1};
-  if (!isa<CallInst>(flag) || flagModified) {
+  if (!isa<CallInst>(flag) || flagModified || cast<CallInst>(flag)->getParent() != ctx.B().GetInsertBlock()) {
     CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
     RailId fid = ctx.unc().recordSeed(f);
     abi::CoreSpec cp{abi::Core::Copy, i1};
