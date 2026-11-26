@@ -51,6 +51,7 @@ add_test(NAME loops-cutoff-widened
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/lane_switch.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/guard_cover_ir.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/join_units.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/join_earlier.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-1jev3 (CR rule 14 nested K-loops; TinyEMU main's getopt loop): a sub-loop whose exits meet only through the outer
 # back edge or past the outer loop, and its noreturn arm reading the inner trip's values; each entry §6-checked.
