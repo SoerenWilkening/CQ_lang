@@ -19,8 +19,9 @@
 // Classical guards (rule 8 at CQ_spec a46894a, P1). A block's predicate is classicalFactor &
 // quantumPart. The factor stays a classical branch: the walker tracks, per block, the classical facts
 // every output path into it establishes (the classical factors of the real classical edges taken),
-// and where the factor is not yet established it emits `br <missing literals>, block, skip` at the
-// block's start, skip being the first later block that may run when the guard is false. The literals
+// and where the block's classical projection (cq-dcw0i: the factor, or a disjunction) is not yet established it
+// emits `br <missing literals>, block, skip` at the block's start, skip being the first later block that may run
+// when the guard is false. The literals
 // are branch-condition terms of the function (a classical condition, a classical term of a quantum
 // condition, a classical switch case), chosen by implication on pred's predicates; the factoring
 // itself is pred's.
@@ -722,7 +723,11 @@ void Walker::planGuards() {
     // so the unit's own classical paths go around it.
     const auto walkedPred = [&](const BasicBlock *x) -> Pred { return tailOf.count(x) ? tailPredOf(x) : ctx.preds().block(x); };
     const Pred p = walkedPred(b);
-    Pred cf = p.isBottom() ? Pred::top() : p.classicalFactor(ctx.T, ctx.S);
+    // cq-dcw0i (rules 8, 9): the guard is the classical projection (the classical condition under which the walk runs b,
+    // classicalEdgeMeets), not only the conjunction of literals rule 8 factors out: under the factor alone a path whose
+    // classical facts exclude b (a disjunction such as `!(c1 && c2)`) still ran b's arm code, on operands its classical
+    // side never minted (SoftFloat f16_mulAdd with c classical: c == 0 joining the arms of `c != 0`).
+    Pred cf = p.isBottom() ? Pred::top() : p.classicalProjection(ctx.T, ctx.S);
 
     // A purely classical loop keeps its CFG exactly: its classical facts are the CFG's.
     if (!inPure && !(inB & !cf).isBottom()) {
@@ -2520,11 +2525,11 @@ void Walker::emitGuard(BasicBlock *b) {
   bool split = any_of(skip->phis(), [&](const PHINode &p) { return spine::isQ(ctx, &p); });
   if (split) {
     BasicBlock *e = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
-    B.CreateCondBr(cond, cont, e);
+    sh.guardBranches.insert(B.CreateCondBr(cond, cont, e));
     BranchInst::Create(out(skip), e);
     from = e;
   } else {
-    B.CreateCondBr(cond, cont, out(skip));
+    sh.guardBranches.insert(B.CreateCondBr(cond, cont, out(skip)));
   }
   {
     auto gf = guardFacts.find(b);

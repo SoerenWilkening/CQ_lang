@@ -106,6 +106,8 @@ struct Shared {
   // CR §1.4: a variadic clone's block formal (calls::lowerVarargs stores it at llvm.va_start).
   llvm::SmallVector<Operand, 4> varargs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
+  // cq-dcw0i: the classical guards' branches (rule 8), whose edges pred decodes over every bound classical atom.
+  llvm::DenseSet<const llvm::Instruction *> guardBranches;
   std::unique_ptr<Uncompute> unc;
   std::unique_ptr<PathPredicates> preds;
   std::optional<Pred> curPred;

@@ -255,6 +255,8 @@ std::vector<std::pair<Pred, const Value *>> LoweringContext::takeJoinArms(const 
   return r;
 }
 
+bool LoweringContext::guardBranch(const Instruction *br) const { return impl->sh->guardBranches.count(br); }
+
 bool LoweringContext::bound(const Value *orig) const {
   if (isa<Constant>(orig))
     return true;
