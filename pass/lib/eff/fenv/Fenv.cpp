@@ -454,7 +454,9 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl
   // flags) lifting the strict ilogb). A body without it is a caller without the fenv state: it passes mode
   // 0 and an empty flags rail and drops the returned flags (169's __divdc3), even when a caller of its own
   // holds the state (C17 7.6.1: flags tested across code translated with FENV_ACCESS off are undefined).
-  return liftsCarrying(T, S, seen) && accessesEnv(*S.F);
+  // accessesEnv first: a body that is not expanded marks no callee seen, so the walk is exact reachability over
+  // bodies with the state (a callee reached under a body without it once answered false for a later caller).
+  return accessesEnv(*S.F) && liftsCarrying(T, S, seen);
 }
 
 bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {

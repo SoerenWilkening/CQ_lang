@@ -546,6 +546,8 @@ CASES = [
     # rail (fesetround under the predicate) is a rail in the sibling arm the spine runs after it (rules 9, 23).
     ("fenv_clone_empty_flags", "e", [], "pass", [r"call i32 @fetestexcept\(i32 32\)"]),
     ("fenv_sibling_arm_mode", "e", [], "pass", [r"cq_template_fdiv_f64_\w*rmq\w*\("]),
+    # rule 23: R's clone carries the environment through B although A, a body without the state, reached X first.
+    ("fenv_carries_order", "e", [], "pass", [r"define \{ i32, i32 \} @__cq_q_R_1\(i32 %0, i32 %1, i32 %2\)"]),
     # cq-c07bk (rules 8, 9, 23): the arm the spine linearizes first calls a dynamic-mode body with classical arguments; the
     # later arm's fesetround under the predicate does not reach it: the call reads the classical mode. Its strict fmul raises
     # into the host flags, so under the predicate it is nx's _ctl clone (cq-dmlhn, rules 19, 23), not the own symbol.
