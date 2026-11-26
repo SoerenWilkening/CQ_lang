@@ -1077,6 +1077,10 @@ public:
         if (!orig.count(Tm) || Tm->getNumSuccessors() < 2 || !(isa<BranchInst>(Tm) || isa<SwitchInst>(Tm)))
           continue;
         BasicBlock *J = PDT.getNode(BB) && PDT.getNode(BB)->getIDom() ? PDT.getNode(BB)->getIDom()->getBlock() : nullptr;
+        // cq-q7do6: a noreturn block post-dominates a branch of a loop with no other exit, yet a trip that goes on skips it
+        // (rule 14 "No live exit": the arm runs per trip). It ends the run, so it is no join: it lies in each arm that reaches it.
+        if (J && isa<UnreachableInst>(J->getTerminator()))
+          J = nullptr;
         unsigned K = Tm->getNumSuccessors();
         std::vector<SmallPtrSet<BasicBlock *, 32>> regs;
         std::vector<BitVector> arms;

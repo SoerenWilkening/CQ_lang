@@ -14,3 +14,11 @@ unsigned e0(unsigned x0, double th, unsigned m) {
   for (i = 0; x > 2; i++) { if (x == 8) return 77; x -= 3; s = s * 5 + x; }
   return cq_measure(x) * 4096 + cq_measure(s) * 16;
 }
+/* cq-up2jp: a classical loop (b, n arguments) with a measurement in its early-return arm. The table clone's exits are quantum,
+ * so the arm's measurement moves after the trips in the shared CFG; in ec itself it still runs only on that exit. */
+unsigned ec(unsigned x0, double th, unsigned b, unsigned n) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned r = 1, i;
+  for (i = 0; i < n; i++) { r = r * 5 + x; if (i == b) return cq_measure(r - i) * 7 + b; }
+  return cq_measure(r + 3);
+}

@@ -2496,6 +2496,30 @@ def _canon(line: str, operand: str = "", result: str = "") -> str:
     return re.sub(r"%[-\w.$\"]+", name, re.sub(r", !cq\.measure !\d+", "", line))
 
 
+def _on_cycle(lines: List[str], a: int, b: int, at: int) -> bool:
+    """Whether line `at` of the function body lines[a:b] lies in a block that reaches itself (a loop of the lowered CFG)."""
+    label, succ = None, {}
+    blocks: List[Tuple[int, Optional[str]]] = [(a, None)]
+    for i in range(a + 1, b):
+        m = _BLOCK.match(lines[i])
+        if m:
+            blocks.append((i, m.group(1)))
+    for x, (s, name) in enumerate(blocks):
+        e = blocks[x + 1][0] if x + 1 < len(blocks) else b
+        succ[name] = {lb for ln in lines[s + 1:e] for lb in _BACK_LABEL.findall(ln)}
+        if s <= at < e:
+            label = name
+    seen, work = set(), list(succ.get(label, ()))
+    while work:
+        y = work.pop()
+        if y == label:
+            return True
+        if y not in seen:
+            seen.add(y)
+            work.extend(succ.get(y, ()))
+    return False
+
+
 def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, str, bool]]]] = None,
                          trees: Optional[Dict[int, str]] = None,
                          choices: Optional[Dict[int, Tuple[str, Any]]] = None) -> Dict[int, int]:
@@ -2613,7 +2637,9 @@ def measure_site_classes(text: str, chains: Optional[Dict[int, List[Tuple[int, s
             res = re.match(r"^\s+(%[-\w.$\"]+) =", lines[i]).group(1)
             ch: List[Tuple[int, str, bool]] = []
             d = root(m.group(2), i, ch)
-            if chains is not None and ch:
+            # rulings Q8 is about a trip's copy: a measurement on no cycle of the lowered CFG (cq-oiclq's one measurement after
+            # the trips) reads its selects as the value lowering of its C register, judged by Q3 alone (cq-hk0tm)
+            if chains is not None and ch and _on_cycle(lines, a, b, i):
                 chains[i] = ch
             pre =tuple(_canon(x, m.group(2), res) for x in lines[max(a + 1, i - _MEAS_WINDOW):i])
             suf = tuple(_canon(x, m.group(2), res) for x in lines[i + 1:min(b, i + 1 + _MEAS_WINDOW)])
