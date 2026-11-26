@@ -1714,9 +1714,33 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
     return nullptr;
   };
+  // cq-0u5ti (CR rule 14 case 3 with rules 8, 9): a case-3 unit whose tail is entered from outside only by linearized edges
+  // (a quantum skip of the loop into its exit arm), and whose continuation C no real edge enters from outside it. Its trips
+  // always end at the classical bound, so its classical exit leaves where it was entered: the unit ends in the open flow
+  // (c3Open), which then runs the tail on the outside paths and reaches C by linearized edges.
+  auto c3Open = [&](Loop *k) {
+    exits::Unit SU = exits::unitOf(*k);
+    bool linTail = false;
+    for (BasicBlock *tb : SU.tail) {
+      if (kTail.lookup(tb) != k)
+        continue;
+      for (const BasicBlock *p : fwdPreds(tb))
+        if (kTail.lookup(p) != k) {
+          if (edgeKind(p, tb) == EK::Real)
+            return false;
+          linTail = true;
+        }
+    }
+    if (!linTail || !SU.cont)
+      return false;
+    for (const BasicBlock *p : fwdPreds(SU.cont))
+      if (!kunit(p) && kTail.lookup(p) != k && edgeKind(p, SU.cont) == EK::Real)
+        return false;
+    return true;
+  };
   auto kReal = [&](Loop *k) {
     if (classify(*k, ctx.T, ctx.S) != Case::QuantumExit)
-      return true;   // a classically bounded unit leaves by its classical exit
+      return !c3Open(k);   // a classically bounded unit leaves by its classical exit
     if (kInto(k))
       return false;   // its flow reaches C through the tail
     BasicBlock *C = exits::unitOf(*k).cont;
@@ -3347,8 +3371,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (ctx.bound(&P))
           was.insert(&P);
       auto keepTail = tailBindsOf(sl);
+      // cq-0u5ti: a case-3 unit ending in the open flow leaves for a block of its own, where the flow goes on.
+      BasicBlock *openT = sc == Case::ClassicalBoundQuantumExit && c3Multi(*sl) && !kReal(sl) ? newBlock() : nullptr;
+      const Pred factIn = curFact;
       // A case-1 sub-loop's continuation may lie outside this loop (cq-j5mq): its edges are real branches (target).
-      auto subOut = lowerLoop(*sl, sc, sx && L.contains(sx) ? ob(sx) : nullptr, false);
+      auto subOut = lowerLoop(*sl, sc, openT ? openT : sx && L.contains(sx) ? ob(sx) : nullptr, false);
       outerTrip = savedTrip;
       clearTail(sl, keepTail);
       for (size_t i = 0; i < subOut.size();) {
@@ -3365,6 +3392,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (PHINode &P : sx->phis())
           if (!was.count(&P) && ctx.bound(&P))
             kBound.insert(&P);
+        if (openT) {
+          startSeg(openT);
+          curFact = factIn;
+          for (const BasicBlock *p : predecessors(sx))
+            if (kunit(p) == sl)
+              edgeFrom[{p, sx}] = openT;
+          for (auto &[blk, k] : kOf)
+            if (k == sl && !factOf.count(blk))
+              factOf[blk] = factIn;
+          return;
+        }
         // Its real edge into sx: a classical exit test's branch (a quantum exit's edge is the flags of its test's block),
         // from the unit or, past its exit arm, from its tail (cq-qesnu: the unit's walk of the tail made that edge).
         for (const BasicBlock *p : predecessors(sx))

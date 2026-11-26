@@ -193,6 +193,9 @@ MID_ABORT = ["ma_sum"]
 # cq-6ce8r (CR rules 9, 14 case 3): the latch test behind a switch case that falls through into an exiting case.
 FALL_EXIT_PROBE = PROBES / "fall_exit.O1.ll"
 FALL_EXIT = ["fe_fall"]
+# cq-0u5ti (CR rules 8, 9, 14 case 3): a case-3 sub-loop's exit arm also entered from the outer header by a quantum edge only.
+C3_TAIL_PROBE = PROBES / "c3_tail.O1.ll"
+C3_TAIL = ["ct_skip"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 ENTRY_LIMIT = 180   # cq-1dx6: an entry with no verdict by then is a reported failure, not a silent hang
 JOBS = min(int(os.environ.get("CQCHECK_JOBS", "2")), 4)
@@ -290,13 +293,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus", "sub_leave", "prev_measured", "c3_exits", "ptr_exit", "abort_cover", "mid_abort", "fall_exit"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus", "sub_leave", "prev_measured", "c3_exits", "ptr_exit", "abort_cover", "mid_abort", "fall_exit", "c3_tail"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus", "sub_leave", "prev_measured", "c3_exits", "ptr_exit", "abort_cover", "mid_abort", "fall_exit"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "knest_cbr", "r6join", "r6mid", "c3arm", "mxnest", "c3idx", "seed", "exit_edges", "exit_arm", "rot_read", "arm_once", "rus", "sub_leave", "prev_measured", "c3_exits", "ptr_exit", "abort_cover", "mid_abort", "fall_exit", "c3_tail"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -337,7 +340,8 @@ def main() -> int:
                                  ("ptr_exit", PTR_EXIT_PROBE, PTR_EXIT),
                                  ("abort_cover", ABORT_COVER_PROBE, ABORT_COVER),
                                  ("mid_abort", MID_ABORT_PROBE, MID_ABORT),
-                                 ("fall_exit", FALL_EXIT_PROBE, FALL_EXIT)):
+                                 ("fall_exit", FALL_EXIT_PROBE, FALL_EXIT),
+                                 ("c3_tail", C3_TAIL_PROBE, C3_TAIL)):
         if g in want:
             groups.append((probe, entries))
     for probe, entries in groups:
