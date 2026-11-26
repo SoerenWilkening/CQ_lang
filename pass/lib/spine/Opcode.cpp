@@ -670,6 +670,11 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
       if (RL && RL->getHeader() == hv->getParent() && RL->contains(&call))
         every = false;
     }
+  // cq-forc2 (CR rules 2, 5, 14 case 1): a merge that names a classical loop's exit rail on some classical paths only
+  // (`return cq_measure(r)` beside `return cq_measure(r + 1)`, r a loop's result): that rail is its deferred reverse's,
+  // which undoes it, so it cannot be kept on the measured paths alone. A kept copy is measured.
+  if (every && ctx.unc().recorded(x.v) && ctx.unc().namesDeferredRailSometimes(ctx.unc().idOf(x.v)))
+    every = false;
   if (!every) {
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
     ctx.unc().recordExternal(c, Role::Measured);
