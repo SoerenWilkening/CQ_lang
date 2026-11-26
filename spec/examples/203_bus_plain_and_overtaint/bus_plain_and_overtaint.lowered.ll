@@ -1,14 +1,14 @@
 ; HAND-WRITTEN. Rules: 20, 3, 14, 16, 5, 6, 7, 8, 4, 2.
-; Checked: plain_local: x + c[j & 3] (measured, %12 -> %14). overtaint_kloop: x after the scan, x0 + the sum of the leading
+; Checked: plain_local: x + c[j & 3] (the x rail %6 after the in-place add, measured -> %12). overtaint_kloop: x after the scan, x0 + the sum of the leading
 ; nonzero cells of c (measured: the carried rail x_K, %18 -> %41; rule 6 leaves it the only x rail).
-; Clean: plain_local: the old x rail (%6, rule 6: |0> after the copy) and the inverse t (%13), both freed.
+; Clean: plain_local: nothing (x + c[j & 3] is rule 6's in-place update of the dead x: no old rail, no inverse).
 ; overtaint_kloop: every trip's load copy (%14), exit test (%15) and trip predicate a_0..a_{K-1} (%16, the K-th body's
 ; included), popped and uncomputed by the reverse loop (no memory version change follows ext_fill, so every load is
 ; un-copied, rule 5 sentence 1); the after-trip-K load and test (%26, %27, undone at once); the |1> seed (%7, freed
 ; directly, rule 7); the OLD x of every trip (rule 6 in a rolled loop: x' = a ? x + v : x is a bijection in x and the
 ; trip predicate reads only memory, so the arm's garbage x + v is uncomputed first and t = a ? x' - v : x' is copied
 ; onto the old x; trip 0's old x is the rotated rail %6 itself, |0> after the copy and freed).
-; Kept: plain_local: the sum (%12, measured). overtaint_kloop: x_K (%18 of the last trip, measured: the rotated
+; Kept: plain_local: the sum (%6, the x rail updated in place; measured). overtaint_kloop: x_K (%18 of the last trip, measured: the rotated
 ; register's rule-6 image) and a_K (%28, rule 14: the exit test c[K] != 0 evaluated after the K-th body, ANDed with the
 ; predicate of trip K; no bound of the trip count is known: the loop ends on a 0 read from memory, and the array's
 ; extent [4 x i32], the inbounds gep and the undefined behaviour of a fifth read are never a bound, rule 21). No store,
@@ -20,7 +20,8 @@
 ; in scope, a store through it of an untainted value (n * i + 1) with no quantum predicate in scope, or a lifetime
 ; marker. So the alloca, the store loop, the gep and the load stay the plain LLVM instructions, the lifetime markers
 ; stay with them, the loaded c[j & 3] is CLASSICAL (rule 3) and the function never calls __cq_mem. x + c[j & 3] is
-; then example 01: a mixed add with the run-time classical value as the _hl literal, and rule 6 cleans the old x.
+; then a mixed add with the run-time classical value as the literal, and x is dead after it: rule 6's in-place
+; update, addc_i32 on the x rail.
 ; overtaint_kloop. The same array is passed to a bodiless callee: a call is no user rule 20 (b) allows, so c is
 ; BUS-RESIDENT: __cq_alloc(16, 16) at the alloca's program point (rules 16, 20: zeroed, no alloca remains, the
 ; lifetime markers are dropped). ext_fill has classical arguments, no quantum predicate in scope and no tape or abort
@@ -56,33 +57,28 @@ define i32 @plain_local(i32 noundef %0, double noundef %1, i32 noundef %2, i32 n
   %6 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %6 = cq_theta_si32(%0, %1)  [register x]
   call void @cqrt_ry_i32(i32 %6, double %1)    ; IR: %6 = cq_theta_si32(%0, %1)  [Ry]
   call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5)    ; IR: call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5)  [kept: host-resident]
-  br label %15    ; IR: br label %14
+  br label %13    ; IR: br label %14
 
 7:
   %8 = and i32 %3, 3    ; IR: %8 = and i32 %3, 3
   %9 = zext nneg i32 %8 to i64    ; IR: %9 = zext nneg i32 %8 to i64
   %10 = getelementptr inbounds [4 x i32], ptr %5, i64 0, i64 %9    ; IR: %10 = getelementptr inbounds [4 x i32], ptr %5, i64 0, i64 %9  [untainted index: stays]
   %11 = load i32, ptr %10, align 4    ; IR: %11 = load i32, ptr %10  [plain load of a host-resident object: CLASSICAL (rule 3)]
-  %12 = call i32 @cq_template_add_i32_hl(i32 %6, i32 %11)    ; IR: %12 = add nsw i32 %11, %6  [commutative: handle first, the classical load is the literal]
-  %13 = call i32 @cq_template_sub_i32_hl(i32 %12, i32 %11)    ; IR: rule 6: t = y - c[j & 3] recomputes the old x (the update is a bijection in it)
-  call void @cqrt_copy_i32(i32 %13, i32 %6)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %13, i32 %12, i32 %11)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %13)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %6)    ; IR: release the old x rail (|0> after the copy)
-  %14 = call i32 @cqrt_measure_i32(i32 %12)    ; IR: %13 = cq_measure_si32(%12)
+  call void @cqrt_addc_i32(i32 %6, i32 %11)    ; IR: %12 = add nsw i32 %11, %6  [rule 6, in-place update: x is dead after the add, the classical load is the literal; the sum IS the x rail]
+  %12 = call i32 @cqrt_measure_i32(i32 %6)    ; IR: %13 = cq_measure_si32(%12)
   call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5)    ; IR: call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5)  [kept: host-resident]
-  ret i32 %14    ; IR: ret i32 %13
+  ret i32 %12    ; IR: ret i32 %13
 
-15:
-  %16 = phi i64 [ 0, %4 ], [ %21, %15 ]    ; IR: %15 = phi i64 [ 0, %4 ], [ %20, %14 ]
-  %17 = getelementptr inbounds [4 x i32], ptr %5, i64 0, i64 %16    ; IR: %16 = getelementptr inbounds [4 x i32], ptr %5, i64 0, i64 %15
-  %18 = trunc i64 %16 to i32    ; IR: %17 = trunc i64 %15 to i32
-  %19 = mul i32 %18, %2    ; IR: %18 = mul i32 %17, %2
-  %20 = add i32 %19, 1    ; IR: %19 = add i32 %18, 1
-  store i32 %20, ptr %17, align 4    ; IR: store i32 %19, ptr %16  [plain store of an untainted value: a host store, no bus call]
-  %21 = add nuw nsw i64 %16, 1    ; IR: %20 = add nuw nsw i64 %15, 1
-  %22 = icmp eq i64 %21, 4    ; IR: %21 = icmp eq i64 %20, 4  [the source's own bound, not K]
-  br i1 %22, label %7, label %15    ; IR: br i1 %21, label %7, label %14
+13:
+  %14 = phi i64 [ 0, %4 ], [ %19, %13 ]    ; IR: %15 = phi i64 [ 0, %4 ], [ %20, %14 ]
+  %15 = getelementptr inbounds [4 x i32], ptr %5, i64 0, i64 %14    ; IR: %16 = getelementptr inbounds [4 x i32], ptr %5, i64 0, i64 %15
+  %16 = trunc i64 %14 to i32    ; IR: %17 = trunc i64 %15 to i32
+  %17 = mul i32 %16, %2    ; IR: %18 = mul i32 %17, %2
+  %18 = add i32 %17, 1    ; IR: %19 = add i32 %18, 1
+  store i32 %18, ptr %15, align 4    ; IR: store i32 %19, ptr %16  [plain store of an untainted value: a host store, no bus call]
+  %19 = add nuw nsw i64 %14, 1    ; IR: %20 = add nuw nsw i64 %15, 1
+  %20 = icmp eq i64 %19, 4    ; IR: %21 = icmp eq i64 %20, 4  [the source's own bound, not K]
+  br i1 %20, label %7, label %13    ; IR: br i1 %21, label %7, label %14
 }
 
 define i32 @overtaint_kloop(i32 noundef %0, double noundef %1, i32 noundef %2) {
@@ -181,11 +177,9 @@ declare i32 @cq_template_icmp_eq_i32_hl(i32, i32)
 declare void @cq_template_icmp_eq_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
 declare void @cq_template_add_i32_unc(i32, i32, i32)
-declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare i32 @cq_template_sub_i32(i32, i32)
 declare void @cq_template_sub_i32_unc(i32, i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_select_i32(i32, i32, i32)
 declare void @cq_template_select_i32_unc(i32, i32, i32, i32)
 declare void @cqrt_copy_i32(i32, i32)

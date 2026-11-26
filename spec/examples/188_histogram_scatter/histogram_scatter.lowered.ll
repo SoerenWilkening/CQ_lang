@@ -4,8 +4,8 @@
 ; out[2] << 16 | out[3] << 24 after out[(x >> 2i) & 3] = v0 + i for i = 0..3 in order (measured); the classical result
 ; is their sum. The cells of the two blocks at exit (h[b], out[b] at the block's address + 4b) are not named outputs.
 ; Clean: histogram: per trip the shift rail, the bucket index rail, its zext, the scaled index and the address rail
-; (uncomputed and freed right after the in-place form's second swap), the in-place form's old-count rail (rule 6:
-; t = new - 1 copied onto it, t uncomputed) and its new-count rail (|0> after the swap-in); after the loop the four
+; (uncomputed and freed right after the in-place form's second swap), the in-place form's swap rail (the count, updated
+; in place by rule 6, |0> after the swap-in); after the loop the four
 ; fixed-address load copies, the three shl rails and two inner ors. gather_scatter, per trip: the table chain (shift,
 ; index, zext, scaled index, address rail), the load copy of t[j] (un-copied in the trip, before the scatter store),
 ; the old s (rule 6 in the body; trip 0's old s is the |0> seed) and its rule-6 rail t, the scatter chain (shift, index,
@@ -24,8 +24,8 @@
 ; zext_i32_to_i64, mul_i64_hl by the element size 4, add_i64_hl of the classical base (the block's run-time address,
 ; or ptrtoint (ptr @t to i64)). No index is narrowed, bounded or checked.
 ; histogram: h[idx]++ is load, add 1, store on the same SSA pointer with no memory version change between, so it is
-; rule 5's IN-PLACE FORM at the address rail (rule 6, a memory cell): alloc_i32(0), qram_swap_i32 out, the add into a
-; fresh rail, rule 6's clean of the old rail (t = new - 1), qram_swap_i32 in, free. No copy of the cell, tape slot or
+; rule 5's IN-PLACE FORM at the address rail (rule 6, a memory cell): alloc_i32(0), qram_swap_i32 out, the add as rule
+; 6's in-place update on that rail (addc_i32: the old count is dead after the add), qram_swap_i32 in, free. No copy of the cell, tape slot or
 ; old count remains, so the trip pushes nothing; the address chain is template garbage, uncomputed after the second
 ; swap. The four post-loop reads are bus loads at classical addresses (the block + 0, 4, 8, 12); no memory version
 ; change follows them, so each is un-copied after its last reader's _unc, before the measurement (rule 5 sentence 1).
@@ -71,7 +71,7 @@ define i32 @histogram(i32 noundef %0, double noundef %1) {
   br i1 %12, label %13, label %8    ; IR: br label %20
 
 13:
-  %14 = phi i32 [ 0, %8 ], [ %24, %13 ]    ; IR: %21 = phi i32  (classical trip counter)
+  %14 = phi i32 [ 0, %8 ], [ %22, %13 ]    ; IR: %21 = phi i32  (classical trip counter)
   %15 = shl nuw nsw i32 %14, 1    ; IR: %22 = shl nuw nsw i32 %21, 1  (classical shift amount 2i)
   %16 = call i32 @cq_template_lshr_i32_hl(i32 %6, i32 %15)    ; IR: %23 = lshr i32 %4, %22
   %17 = call i32 @cq_template_and_i32_hl(i32 %16, i32 3)    ; IR: %24 = and i32 %23, 3  [the bucket index rail]
@@ -80,14 +80,9 @@ define i32 @histogram(i32 noundef %0, double noundef %1) {
   %20 = call i32 @cq_template_add_i64_hl(i32 %19, i64 %5)    ; IR: %26 = getelementptr  [+ the classical part, the run-time base: the address rail of &h[idx]]
   %21 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %27 = load i32, ptr %26 ... store i32 %28, ptr %26: the in-place form (rule 5), a fresh |0> rail
   call void @cqrt_qram_swap_i32(i32 %3, i32 %20, i32 %21)    ; IR: %27 = load i32, ptr %26: swap out: the rail holds h[idx], the cell |0>
-  %22 = call i32 @cq_template_add_i32_hl(i32 %21, i32 1)    ; IR: %28 = add nsw i32 %27, 1
-  %23 = call i32 @cq_template_sub_i32_hl(i32 %22, i32 1)    ; IR: rule 6: t = new - 1 recomputes the old count (the update is a bijection in it)
-  call void @cqrt_copy_i32(i32 %23, i32 %21)    ; IR: rule 6: the old rail ^= t: now |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %23, i32 %22, i32 1)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %23)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %21)    ; IR: release the old rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32(i32 %3, i32 %20, i32 %22)    ; IR: store i32 %28, ptr %26: swap in: the cell holds h[idx] + 1, the rail |0>
-  call void @cqrt_free(i32 %22)    ; IR: release the %28 rail (|0>)
+  call void @cqrt_addc_i32(i32 %21, i32 1)    ; IR: %28 = add nsw i32 %27, 1  [rule 6, in-place update: the old count is dead after the add, so the new count IS the swap rail]
+  call void @cqrt_qram_swap_i32(i32 %3, i32 %20, i32 %21)    ; IR: store i32 %28, ptr %26: swap in: the cell holds h[idx] + 1, the rail |0>
+  call void @cqrt_free(i32 %21)    ; IR: release the swap rail (|0>)
   call void @cq_template_add_i64_hl_unc(i32 %20, i32 %19, i64 %5)    ; IR: uncompute %26  [the address rail follows its producer: a template result, uncomputed after the second swap (rule 5)]
   call void @cqrt_free(i32 %20)    ; IR: release the %26 rail (|0>)
   call void @cq_template_mul_i64_hl_unc(i32 %19, i32 %18, i64 4)    ; IR: uncompute %26 (the scaled index)
@@ -98,47 +93,47 @@ define i32 @histogram(i32 noundef %0, double noundef %1) {
   call void @cqrt_free(i32 %17)    ; IR: release the %24 rail (|0>)
   call void @cq_template_lshr_i32_hl_unc(i32 %16, i32 %6, i32 %15)    ; IR: uncompute %23
   call void @cqrt_free(i32 %16)    ; IR: release the %23 rail (|0>)
-  %24 = add nuw nsw i32 %14, 1    ; IR: %29  (classical)
-  %25 = icmp eq i32 %24, 4    ; IR: %30 = icmp eq i32 %29, 4  (classical)
-  br i1 %25, label %26, label %13    ; IR: br i1 %30, label %5, label %20
+  %22 = add nuw nsw i32 %14, 1    ; IR: %29  (classical)
+  %23 = icmp eq i32 %22, 4    ; IR: %30 = icmp eq i32 %29, 4  (classical)
+  br i1 %23, label %24, label %13    ; IR: br i1 %30, label %5, label %20
 
-26:
-  %27 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %5)    ; IR: %6 = load i32, ptr %3  [h[0]: a bus load at a classical address, a rail (rule 3)]
-  %28 = getelementptr inbounds i8, ptr %4, i64 4    ; IR: %7 = getelementptr inbounds i8, ptr %3, i64 4  (nothing tainted: the getelementptr stays, rule 20)
-  %29 = ptrtoint ptr %28 to i64    ; the run-time address of h[1], a classical i64 (rule 21)
-  %30 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %29)    ; IR: %8 = load i32, ptr %7  [h[1]]
-  %31 = call i32 @cq_template_shl_i32_hl(i32 %30, i32 4)    ; IR: %9 = shl i32 %8, 4
-  %32 = call i32 @cq_template_or_i32(i32 %31, i32 %27)    ; IR: %10 = or i32 %9, %6
-  %33 = getelementptr inbounds i8, ptr %4, i64 8    ; IR: %11 = getelementptr inbounds i8, ptr %3, i64 8
-  %34 = ptrtoint ptr %33 to i64    ; the run-time address of h[2]
-  %35 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %34)    ; IR: %12 = load i32, ptr %11  [h[2]]
-  %36 = call i32 @cq_template_shl_i32_hl(i32 %35, i32 8)    ; IR: %13 = shl i32 %12, 8
-  %37 = call i32 @cq_template_or_i32(i32 %32, i32 %36)    ; IR: %14 = or i32 %10, %13
-  %38 = getelementptr inbounds i8, ptr %4, i64 12    ; IR: %15 = getelementptr inbounds i8, ptr %3, i64 12
-  %39 = ptrtoint ptr %38 to i64    ; the run-time address of h[3]
-  %40 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %39)    ; IR: %16 = load i32, ptr %15  [h[3]]
-  %41 = call i32 @cq_template_shl_i32_hl(i32 %40, i32 12)    ; IR: %17 = shl i32 %16, 12
-  %42 = call i32 @cq_template_or_i32(i32 %37, i32 %41)    ; IR: %18 = or i32 %14, %17  [result rail]
-  call void @cq_template_shl_i32_hl_unc(i32 %41, i32 %40, i32 12)    ; IR: uncompute %17
-  call void @cqrt_free(i32 %41)    ; IR: release it (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %40, i32 %3, i64 %39)    ; IR: un-copy %16 (h[3]; rule 5: no memory version change since the load)
-  call void @cqrt_free(i32 %40)    ; IR: release it (|0>)
-  call void @cq_template_or_i32_unc(i32 %37, i32 %32, i32 %36)    ; IR: uncompute %14
-  call void @cqrt_free(i32 %37)    ; IR: release it (|0>)
-  call void @cq_template_shl_i32_hl_unc(i32 %36, i32 %35, i32 8)    ; IR: uncompute %13
-  call void @cqrt_free(i32 %36)    ; IR: release it (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %35, i32 %3, i64 %34)    ; IR: un-copy %12 (h[2])
+24:
+  %25 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %5)    ; IR: %6 = load i32, ptr %3  [h[0]: a bus load at a classical address, a rail (rule 3)]
+  %26 = getelementptr inbounds i8, ptr %4, i64 4    ; IR: %7 = getelementptr inbounds i8, ptr %3, i64 4  (nothing tainted: the getelementptr stays, rule 20)
+  %27 = ptrtoint ptr %26 to i64    ; the run-time address of h[1], a classical i64 (rule 21)
+  %28 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %27)    ; IR: %8 = load i32, ptr %7  [h[1]]
+  %29 = call i32 @cq_template_shl_i32_hl(i32 %28, i32 4)    ; IR: %9 = shl i32 %8, 4
+  %30 = call i32 @cq_template_or_i32(i32 %29, i32 %25)    ; IR: %10 = or i32 %9, %6
+  %31 = getelementptr inbounds i8, ptr %4, i64 8    ; IR: %11 = getelementptr inbounds i8, ptr %3, i64 8
+  %32 = ptrtoint ptr %31 to i64    ; the run-time address of h[2]
+  %33 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %32)    ; IR: %12 = load i32, ptr %11  [h[2]]
+  %34 = call i32 @cq_template_shl_i32_hl(i32 %33, i32 8)    ; IR: %13 = shl i32 %12, 8
+  %35 = call i32 @cq_template_or_i32(i32 %30, i32 %34)    ; IR: %14 = or i32 %10, %13
+  %36 = getelementptr inbounds i8, ptr %4, i64 12    ; IR: %15 = getelementptr inbounds i8, ptr %3, i64 12
+  %37 = ptrtoint ptr %36 to i64    ; the run-time address of h[3]
+  %38 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %37)    ; IR: %16 = load i32, ptr %15  [h[3]]
+  %39 = call i32 @cq_template_shl_i32_hl(i32 %38, i32 12)    ; IR: %17 = shl i32 %16, 12
+  %40 = call i32 @cq_template_or_i32(i32 %35, i32 %39)    ; IR: %18 = or i32 %14, %17  [result rail]
+  call void @cq_template_shl_i32_hl_unc(i32 %39, i32 %38, i32 12)    ; IR: uncompute %17
+  call void @cqrt_free(i32 %39)    ; IR: release it (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %38, i32 %3, i64 %37)    ; IR: un-copy %16 (h[3]; rule 5: no memory version change since the load)
+  call void @cqrt_free(i32 %38)    ; IR: release it (|0>)
+  call void @cq_template_or_i32_unc(i32 %35, i32 %30, i32 %34)    ; IR: uncompute %14
   call void @cqrt_free(i32 %35)    ; IR: release it (|0>)
-  call void @cq_template_or_i32_unc(i32 %32, i32 %31, i32 %27)    ; IR: uncompute %10
-  call void @cqrt_free(i32 %32)    ; IR: release it (|0>)
-  call void @cq_template_shl_i32_hl_unc(i32 %31, i32 %30, i32 4)    ; IR: uncompute %9
-  call void @cqrt_free(i32 %31)    ; IR: release it (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %30, i32 %3, i64 %29)    ; IR: un-copy %8 (h[1])
+  call void @cq_template_shl_i32_hl_unc(i32 %34, i32 %33, i32 8)    ; IR: uncompute %13
+  call void @cqrt_free(i32 %34)    ; IR: release it (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %33, i32 %3, i64 %32)    ; IR: un-copy %12 (h[2])
+  call void @cqrt_free(i32 %33)    ; IR: release it (|0>)
+  call void @cq_template_or_i32_unc(i32 %30, i32 %29, i32 %25)    ; IR: uncompute %10
   call void @cqrt_free(i32 %30)    ; IR: release it (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %27, i32 %3, i64 %5)    ; IR: un-copy %6 (h[0])
-  call void @cqrt_free(i32 %27)    ; IR: release it (|0>)
-  %43 = call i32 @cqrt_measure_i32(i32 %42)    ; IR: %19 = cq_measure_si32(%18)
-  ret i32 %43    ; IR: llvm.lifetime.end(16, %3) dropped (rule 16); ret i32 %19
+  call void @cq_template_shl_i32_hl_unc(i32 %29, i32 %28, i32 4)    ; IR: uncompute %9
+  call void @cqrt_free(i32 %29)    ; IR: release it (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %28, i32 %3, i64 %27)    ; IR: un-copy %8 (h[1])
+  call void @cqrt_free(i32 %28)    ; IR: release it (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %25, i32 %3, i64 %5)    ; IR: un-copy %6 (h[0])
+  call void @cqrt_free(i32 %25)    ; IR: release it (|0>)
+  %41 = call i32 @cqrt_measure_i32(i32 %40)    ; IR: %19 = cq_measure_si32(%18)
+  ret i32 %41    ; IR: llvm.lifetime.end(16, %3) dropped (rule 16); ret i32 %19
 }
 
 define i32 @gather_scatter(i32 noundef %0, double noundef %1, i32 noundef %2) {
@@ -276,9 +271,7 @@ declare i32 @cq_template_mul_i64_hl(i32, i64)
 declare void @cq_template_mul_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_add_i64_hl(i32, i64)
 declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
 declare i32 @cq_template_sub_i32(i32, i32)
 declare void @cq_template_sub_i32_unc(i32, i32, i32)

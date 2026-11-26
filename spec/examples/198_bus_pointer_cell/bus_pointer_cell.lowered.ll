@@ -1,14 +1,14 @@
 ; HAND-WRITTEN. Rules: 2, 4, 5, 6, 7, 16, 20, 21.
-; Checked: a + b (the add rail %37, measured -> %38), and the cells of a, b and slot read from the bus at exit:
+; Checked: a + b (the add rail %35, measured -> %36), and the cells of a, b and slot read from the bus at exit:
 ; with i = k & 1 and j = (k >> 1) & 1: slot[0] = &a, slot[1] = &b; *slot[i] = v; *slot[j] += 3.
 ;   i = 0, j = 0: a = v + 3, b = x          i = 0, j = 1: a = v, b = x + 3
 ;   i = 1, j = 0: a = 4,     b = v          i = 1, j = 1: a = 1, b = v + 3
 ; so a + b = v + 3 + x when bit 0 of k is 0 and v + 4 when it is 1, whatever bit 1 of k is.
 ; Clean: both address chains (k & 1, its zext, the scaling by 8, the add of slot's address: %20..%23; k >> 1, & 1,
-; zext, scaling, add: %26..%30), uncomputed and freed right after the un-copy of the load they address; the three rails of the
-; in-place form (the swap rail %32, the rule-6 inverse %34, the updated rail %33); the load copies of a and b (%35,
-; %36), un-copied after the add: no memory version change follows them.
-; Kept: k (%10) and x (%11), the rotated registers (x is also the value rail of the kept store b = x); the sum (%37,
+; zext, scaling, add: %26..%30), uncomputed and freed right after the un-copy of the load they address; the one rail of the
+; in-place form (the swap rail %32, updated in place by rule 6, |0> after the swap-in); the load copies of a and b (%33,
+; %34), un-copied after the add: no memory version change follows them.
+; Kept: k (%10) and x (%11), the rotated registers (x is also the value rail of the kept store b = x); the sum (%35,
 ; measured); by rule 5, for the shot: the tape slots of the five stores (a = 1, b = x, slot[0] = &a, slot[1] = &b,
 ; *p = v) and their seed value rails %13 (1), %16 (&a), %19 (&b), %25 (v); left allocated after their un-copy (rule 5
 ; sentence 1, overtaken): the load copy p = slot[k & 1] (%24), the address rail of the store *p = v, un-copied after
@@ -29,8 +29,8 @@
 ; object, no tag, no guard. *p = v is the plain qram_store_i32 at that rail: a kept store, and the rail p, a load
 ; copy, is overtaken by it: un-copied after it and not freed (rule 5, sentences 1 and 3). **pp += 3 is load ptr; load i32; add; store i32
 ; through the same SSA pointer %20 with no memory version change between: the in-place form (rules 5, 6) at the
-; address rail *pp, emitted at the store's position: the cell is swapped out into a fresh rail, updated there with
-; rule 6's clean of the previous rail, and swapped back; no copy of the cell, tape slot or old value remains. The
+; address rail *pp, emitted at the store's position: the cell is swapped out into a fresh rail, updated there by
+; rule 6's in-place update (addc_i32: the old value is dead after the add), and swapped back; no copy of the cell, tape slot or old value remains. The
 ; rail *pp is a load copy and the form is a memory version change: un-copied after the second swap, not freed. Nothing in the lowering asks
 ; whether p and *pp are equal, or which of a and b either addresses.
 source_filename = "bus_pointer_cell.c"
@@ -82,14 +82,9 @@ define i32 @bus_pointer_cell(i32 noundef %0, double noundef %1, i32 noundef %2, 
   %31 = call i32 @cqrt_qram_load_i64(i32 %6, i32 %30)    ; IR: %20 = load ptr, ptr %19: *pp, a 64-bit address rail
   %32 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %21 = load i32, ptr %20 ... store i32 %22, ptr %20: the in-place form (rule 5), a fresh |0> rail
   call void @cqrt_qram_swap_i32(i32 %6, i32 %31, i32 %32)    ; IR: %21 = load i32, ptr %20: swap out: the rail holds **pp, the cell |0>
-  %33 = call i32 @cq_template_add_i32_hl(i32 %32, i32 3)    ; IR: %22 = add nsw i32 %21, 3
-  %34 = call i32 @cq_template_sub_i32_hl(i32 %33, i32 3)    ; IR: rule 6: t = y' - 3 recomputes the old value (the update is a bijection in it)
-  call void @cqrt_copy_i32(i32 %34, i32 %32)    ; IR: rule 6: the old rail ^= t: now |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %34, i32 %33, i32 3)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %34)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %32)    ; IR: release the old rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32(i32 %6, i32 %31, i32 %33)    ; IR: store i32 %22, ptr %20: swap in: the cell holds **pp + 3, the rail |0>
-  call void @cqrt_free(i32 %33)    ; IR: release the %22 rail (|0>)
+  call void @cqrt_addc_i32(i32 %32, i32 3)    ; IR: %22 = add nsw i32 %21, 3  [rule 6, in-place update: the old value is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i32(i32 %6, i32 %31, i32 %32)    ; IR: store i32 %22, ptr %20: swap in: the cell holds **pp + 3, the rail |0>
+  call void @cqrt_free(i32 %32)    ; IR: release the swap rail (|0>)
   call void @cqrt_qram_load_i64_unc(i32 %31, i32 %6, i32 %30)    ; IR: un-copy %20 (*pp) after its last reader, the second swap; the form overtook it, so not freed (rule 5 sentence 1)
   call void @cq_template_add_i64_hl_unc(i32 %30, i32 %29, i64 %15)    ; IR: uncompute %19 after the un-copy of *pp, its last reader
   call void @cqrt_free(i32 %30)    ; IR: release the %19 rail (|0>)
@@ -101,15 +96,15 @@ define i32 @bus_pointer_cell(i32 noundef %0, double noundef %1, i32 noundef %2, 
   call void @cqrt_free(i32 %27)    ; IR: release the %17 rail (|0>)
   call void @cq_template_lshr_i32_hl_unc(i32 %26, i32 %10, i32 1)    ; IR: uncompute %16
   call void @cqrt_free(i32 %26)    ; IR: release the %16 rail (|0>)
-  %35 = call i32 @cqrt_qram_load_i32_hl(i32 %6, i64 %12)    ; IR: %23 = load i32, ptr %6: a  (bus load at a classical address: a rail)
-  %36 = call i32 @cqrt_qram_load_i32_hl(i32 %6, i64 %14)    ; IR: %24 = load i32, ptr %7: b
-  %37 = call i32 @cq_template_add_i32(i32 %36, i32 %35)    ; IR: %25 = add nsw i32 %24, %23  [result rail]  ; SPEC GAP: rule 6 'both operands dead' does not say that two bus load copies are 'garbage that rule 5 uncomputes anyway'; taken as such (as 195), so rule 6 has no trigger
-  call void @cqrt_qram_load_i32_hl_unc(i32 %36, i32 %6, i64 %14)    ; IR: un-copy %24 (no memory version change since the load)  ; SPEC GAP: sentence 1 asks for the consumer's uncompute; the consumer %25 is measured and has none (as 195): un-copied before the measurement
-  call void @cqrt_free(i32 %36)    ; IR: release the %24 rail (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %35, i32 %6, i64 %12)    ; IR: un-copy %23  ; SPEC GAP: as at %24
-  call void @cqrt_free(i32 %35)    ; IR: release the %23 rail (|0>)
-  %38 = call i32 @cqrt_measure_i32(i32 %37)    ; IR: %26 = cq_measure_si32(%25)
-  ret i32 %38    ; IR: ret i32 %26
+  %33 = call i32 @cqrt_qram_load_i32_hl(i32 %6, i64 %12)    ; IR: %23 = load i32, ptr %6: a  (bus load at a classical address: a rail)
+  %34 = call i32 @cqrt_qram_load_i32_hl(i32 %6, i64 %14)    ; IR: %24 = load i32, ptr %7: b
+  %35 = call i32 @cq_template_add_i32(i32 %34, i32 %33)    ; IR: %25 = add nsw i32 %24, %23  [result rail]  ; SPEC GAP: rule 6 'both operands dead' does not say that two bus load copies are 'garbage that rule 5 uncomputes anyway'; taken as such (as 195), so rule 6 has no trigger
+  call void @cqrt_qram_load_i32_hl_unc(i32 %34, i32 %6, i64 %14)    ; IR: un-copy %24 (no memory version change since the load)  ; SPEC GAP: sentence 1 asks for the consumer's uncompute; the consumer %25 is measured and has none (as 195): un-copied before the measurement
+  call void @cqrt_free(i32 %34)    ; IR: release the %24 rail (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %33, i32 %6, i64 %12)    ; IR: un-copy %23  ; SPEC GAP: as at %24
+  call void @cqrt_free(i32 %33)    ; IR: release the %23 rail (|0>)
+  %36 = call i32 @cqrt_measure_i32(i32 %35)    ; IR: %26 = cq_measure_si32(%25)
+  ret i32 %36    ; IR: ret i32 %26
 }
 
 declare i32 @__cq_mem()
@@ -118,7 +113,7 @@ declare i32 @cqrt_alloc_i32(i32)
 declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
-declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare void @cqrt_free(i32)
 declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare void @cqrt_qram_store_i64_hl(i32, i64, i32)
@@ -138,7 +133,4 @@ declare i32 @cq_template_mul_i64_hl(i32, i64)
 declare void @cq_template_mul_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_add_i64_hl(i32, i64)
 declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)

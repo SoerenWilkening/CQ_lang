@@ -1,15 +1,15 @@
 ; HAND-WRITTEN. Rules: 2, 4, 5, 6, 8, 9, 14, 18, 19, 20; §1.3 (the bus, __cq_mem), §1.4 (Recursion: one _ctl clone, the activation counter).
 ; Checked: quantum_depth_one_clone: down(n, a) with the recursion cut at K = 4 (the copied-out result %5, measured -> %6).
 ;          bool_cell_rotate: flag (the load copy %4, measured -> %5), the cell `flag` = the rotated bit.
-;          theta_add_cell: acc (the load copy %7, measured -> %8), the cell `acc` = the rotated 5, plus d.
+;          theta_add_cell: acc (the load copy %5, measured -> %6), the cell `acc` = the rotated 5, plus d.
 ; Clean: in __cq_q_down_10, in every activation of __cq_q_down_10_ctl that runs its body and of its twin: the base-case
 ;        flag c, n - 1, the conjunction p & !c (_ctl and twin only), the callee's result (zeroed by the twin, then freed;
 ;        a |0> rail at the cut), the difference and the merge. bool_cell_rotate: the swap rail (%3). theta_add_cell: the
-;        rotated old rail (%4, rule 6), the inverse t = y' - d (%6) and the rail the cell's |0> went to (%5).
+;        swap rail (%4: rotated, then updated in place by rule 6, then the cell's |0> after the swap-in).
 ; Kept: quantum_depth_one_clone: the user register n (%4), the result rail of __cq_q_down_10 (%5, measured), and ONE
 ;       overflow rail per cut activation of __cq_q_down_10_ctl (rule 14): each a copy_i1 of that activation's predicate,
 ;       [n >= 5]; 2^K = 16 of them in one call of the entry (see SPEC GAP 4). bool_cell_rotate: the load copy of flag (%4,
-;       measured). theta_add_cell: the load copy of acc (%7, measured). No tape slot: both cell updates are in-place forms.
+;       measured). theta_add_cell: the load copy of acc (%5, measured). No tape slot: both cell updates are in-place forms.
 ; Rotations: quantum_depth_one_clone: (Ry, n, th, 1). bool_cell_rotate: (Ry at width i1, the cell flag, th, 1).
 ;            theta_add_cell: (Ry, the cell acc, th, 1).
 ; Expected (Ry(th) acts on every qubit of a rail, so each bit flips with probability s(th) = sin^2(th/2), independently):
@@ -52,7 +52,7 @@
 ; cq_measure reads the rotated value %4, a second reader of a value at the cq_theta step: it reads a plain load taken
 ; after the swap-in (rule 5, Readers), and that copy is measured and stays (rule 2).
 ; theta_add_cell. `load @acc; cq_theta_si32; add %1; store @acc` is ONE in-place form with two steps: the Ry on the
-; swap rail, then the rule-6 bijection y' = y + d with the clean of the previous (rotated) rail, then the swap-in of y'.
+; swap rail, then y' = y + d as rule 6's in-place update on that rail (addc_i32), then the swap-in of y'.
 ; Nothing remains: no copy of the cell, no tape slot, no old value. cq_measure reads y' = %5, which the store also
 ; reads: a plain load taken after the swap-in, measured.
 ; SPEC GAPS (each marked at its line; the choice is the one that needs least from an implementer):
@@ -222,17 +222,12 @@ define i32 @theta_add_cell(double noundef %0, i32 noundef %1) {
   %4 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %3 = load i32, ptr @acc: in-place form, the swap rail (|0>)
   call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @acc to i64), i32 %4)    ; IR: %3 = load i32, ptr @acc: swap-out: the rail holds acc, the cell |0>
   call void @cqrt_ry_i32(i32 %4, double %0)    ; IR: %4 = cq_theta_si32(%3, %0)  [step 1: Ry on the cell's content]
-  %5 = call i32 @cq_template_add_i32_hl(i32 %4, i32 %1)    ; IR: %5 = add nsw i32 %4, %1  [step 2: a rule-6 bijection in the previous value]
-  %6 = call i32 @cq_template_sub_i32_hl(i32 %5, i32 %1)    ; IR: rule 6: t = y' - d recomputes the previous (rotated) value
-  call void @cqrt_copy_i32(i32 %6, i32 %4)    ; IR: rule 6: the previous rail ^= t: |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %6, i32 %5, i32 %1)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %6)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %4)    ; IR: release the previous rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @acc to i64), i32 %5)    ; IR: store i32 %5, ptr @acc: swap-in: the cell holds the rotated acc + d, the rail the cell's |0>
-  call void @cqrt_free(i32 %5)    ; IR: release the rail (|0>): nothing remains of the update
-  %7 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 ptrtoint (ptr @acc to i64))    ; IR: the second reader of %5: a plain load of @acc taken after the swap-in (rule 5, Readers)
-  %8 = call i32 @cqrt_measure_i32(i32 %7)    ; IR: %6 = cq_measure_si32(%5)  (the measured load copy stays allocated)
-  ret i32 %8    ; IR: ret i32 %6
+  call void @cqrt_addc_i32(i32 %4, i32 %1)    ; IR: %5 = add nsw i32 %4, %1  [step 2: rule 6's in-place update: the rotated value is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @acc to i64), i32 %4)    ; IR: store i32 %5, ptr @acc: swap-in: the cell holds the rotated acc + d, the rail the cell's |0>
+  call void @cqrt_free(i32 %4)    ; IR: release the swap rail (|0>): nothing remains of the update
+  %5 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 ptrtoint (ptr @acc to i64))    ; IR: the second reader of %5: a plain load of @acc taken after the swap-in (rule 5, Readers)
+  %6 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %6 = cq_measure_si32(%5)  (the measured load copy stays allocated)
+  ret i32 %6    ; IR: ret i32 %6
 }
 
 declare i32 @__cq_mem()
@@ -255,8 +250,7 @@ declare i32 @cq_template_icmp_slt_i32_hl(i32, i32)
 declare void @cq_template_icmp_slt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare i32 @cq_template_sub_i32_lh(i32, i32)
 declare void @cq_template_sub_i32_lh_unc(i32, i32, i32)
 declare i32 @cq_template_select_i32_lh(i32, i32, i32)

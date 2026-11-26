@@ -1,19 +1,18 @@
 ; HAND-WRITTEN. Rules: 20, 22, 21, 16, 14, 5, 6, 7, 4, 2.
-; Checked: memcpy_classical: a[0] + a[3] (the add rail %33, measured -> %34) after memcpy(a, src) and a[x & 3] += 1;
+; Checked: memcpy_classical: a[0] + a[3] (the add rail %31, measured -> %32) after memcpy(a, src) and a[x & 3] += 1;
 ; the cells of a at exit, read from the bus at the block's address: a[i] = src[i] + (i == (x & 3)).
 ; memcpy_quantum: a[1] + b[1] (the add rail %47, measured -> %48) with a[i] = x + i, b a byte copy of a and
 ; b[y & 3] = c; the cells at exit: a[i] = x + i, b[i] = (i == (y & 3)) ? c : x + i.
 ; Clean: memcpy_classical: the address chain of &a[x & 3] (and / zext / mul / add, %22..%25), uncomputed and freed
-; right after the second swap of the in-place form; the three rails of the in-place form (the swap rail %26, the
-; rule-6 inverse %28, the updated rail %27); the load copies a[0] and a[3] (%29, %32), un-copied after the add: no
-; memory version change follows them. memcpy_quantum: the old x rail (%11, rule 6 In a
-; rolled loop: the fill a[i] = x + i is a bijection in x read by every trip, so x is cleaned on the fill loop's exit
+; right after the second swap of the in-place form; the swap rail of the in-place form (%26, |0> after the swap-in);
+; the load copies a[0] and a[3] (%27, %30), un-copied after the add: no memory version change follows them.
+; memcpy_quantum: the old x rail (%11, rule 6 In a rolled loop: the fill a[i] = x + i is a bijection in x read by every trip, so x is cleaned on the fill loop's exit
 ; edge from the last trip's image, t = (x + 3) - 3 (%22), copy into x, t uncomputed, both freed; the loop runs 4 trips,
 ; so no zero-trip path exists); the address chain of &b[y & 3] (%36..%39), uncomputed and freed right after the store;
 ; the load copies a[1] and b[1] (%43, %46), un-copied after the add.
 ; Kept: memcpy_classical: x (%8, the rotated register); the 16 byte load copies of src (%12 per trip), each the value
 ; rail of a kept byte store (rule 5, sentences 1 and 3; classical-valued, so no qubit, §0); the tape slots of the 16
-; byte stores; the sum (%33, measured). The in-place form itself keeps nothing. memcpy_quantum: y (%12, the rotated
+; byte stores; the sum (%31, measured). The in-place form itself keeps nothing. memcpy_quantum: y (%12, the rotated
 ; register); the four fill rails x + i (%16 per trip), each the value rail of a kept store (rule 5 sentence
 ; 3), so the fill loop pushes nothing and has no reverse loop (rule 14); the 16 byte load copies of a (%26 per trip),
 ; each the value rail of a kept byte store into b; the seed c (%40), the value rail of the kept store b[y & 3] = c;
@@ -41,10 +40,10 @@
 ; copy) stay. In memcpy_classical the source src is the host array the caller passed (HOST cells through the overlay,
 ; nothing seeded); in memcpy_quantum the source cells of a are QUANTUM (x + i) and the byte copies carry them into b.
 ; IN-PLACE FORM (rules 5, 6): a[x & 3] += 1 is load; add 1; store through the same SSA pointer with no memory version
-; change between, so it is emitted at the store's position as swap-out into a fresh |0> rail, the add with rule 6's
-; clean of the old rail (t = y' - 1, copy, _unc), swap-in; the address rail is template garbage, uncomputed right after
-; the second swap. No copy of the cell, tape slot or old value remains. b[y & 3] = c is a plain kept store at an
-; address rail: its seed and tape slot stay. The loads a[0], a[3], a[1], b[1] are bus loads at classical addresses,
+; change between, so it is emitted at the store's position as swap-out into a fresh |0> rail, the add as rule 6's
+; in-place update (ONE core gate addc_i32(h, 1) on the swap rail: no template, no fresh rail, no clean-up), swap-in;
+; the address rail is template garbage, uncomputed right after the second swap. No copy of the cell, tape slot or old
+; value remains. b[y & 3] = c is a plain kept store at an address rail: its seed and tape slot stay. The loads a[0], a[3], a[1], b[1] are bus loads at classical addresses,
 ; each un-copied after the add that reads it (its last reader), before the measurement of the sum.
 source_filename = "memcpy_array.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
@@ -84,14 +83,9 @@ define i32 @memcpy_classical(i32 noundef %0, double noundef %1, ptr nocapture no
   %25 = call i32 @cq_template_add_i64_hl(i32 %24, i64 %6)    ; IR: %8 = getelementptr  [+ the run-time base: the address rail of &a[x & 3]]
   %26 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %9 = load i32, ptr %8 ... store i32 %10, ptr %8: the in-place form (rule 5), a fresh |0> rail
   call void @cqrt_qram_swap_i32(i32 %4, i32 %25, i32 %26)    ; IR: %9 = load i32, ptr %8: swap out: the rail holds a[x & 3], the cell |0>
-  %27 = call i32 @cq_template_add_i32_hl(i32 %26, i32 1)    ; IR: %10 = add nsw i32 %9, 1
-  %28 = call i32 @cq_template_sub_i32_hl(i32 %27, i32 1)    ; IR: rule 6: t = y' - 1 recomputes the old value (the update is a bijection in it)
-  call void @cqrt_copy_i32(i32 %28, i32 %26)    ; IR: rule 6: the old rail ^= t: now |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %28, i32 %27, i32 1)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %28)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %26)    ; IR: release the old rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32(i32 %4, i32 %25, i32 %27)    ; IR: store i32 %10, ptr %8: swap in: the cell holds a[x & 3] + 1, the rail |0>
-  call void @cqrt_free(i32 %27)    ; IR: release the %10 rail (|0>)
+  call void @cqrt_addc_i32(i32 %26, i32 1)    ; IR: %10 = add nsw i32 %9, 1  [rule 6, in-place update: the old value is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i32(i32 %4, i32 %25, i32 %26)    ; IR: store i32 %10, ptr %8: swap in: the cell holds a[x & 3] + 1, the rail |0>
+  call void @cqrt_free(i32 %26)    ; IR: release the %10 rail (|0>)
   call void @cq_template_add_i64_hl_unc(i32 %25, i32 %24, i64 %6)    ; IR: uncompute %8  [the second swap was the address rail's last reader (rule 20)]
   call void @cqrt_free(i32 %25)    ; IR: release the %8 rail (|0>)
   call void @cq_template_mul_i64_hl_unc(i32 %24, i32 %23, i64 4)    ; IR: uncompute %8 (the scaled index)
@@ -100,17 +94,17 @@ define i32 @memcpy_classical(i32 noundef %0, double noundef %1, ptr nocapture no
   call void @cqrt_free(i32 %23)    ; IR: release the %7 rail (|0>)
   call void @cq_template_and_i32_hl_unc(i32 %22, i32 %8, i32 3)    ; IR: uncompute %6
   call void @cqrt_free(i32 %22)    ; IR: release the %6 rail (|0>)
-  %29 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %6)    ; IR: %11 = load i32, ptr %4: a[0]  (bus load at a classical address: a rail)
-  %30 = getelementptr inbounds i8, ptr %5, i64 12    ; IR: %12 = getelementptr inbounds i8, ptr %4, i64 12  (classical)
-  %31 = ptrtoint ptr %30 to i64    ; IR: (no instruction) the run-time address of a[3] (classical)
-  %32 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %31)    ; IR: %13 = load i32, ptr %12: a[3]
-  %33 = call i32 @cq_template_add_i32(i32 %32, i32 %29)    ; IR: %14 = add nsw i32 %13, %11  [result rail]
-  call void @cqrt_qram_load_i32_hl_unc(i32 %32, i32 %4, i64 %31)    ; IR: un-copy %13 (no memory version change since the load)
-  call void @cqrt_free(i32 %32)    ; IR: release the %13 rail (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %29, i32 %4, i64 %6)    ; IR: un-copy %11
-  call void @cqrt_free(i32 %29)    ; IR: release the %11 rail (|0>)
-  %34 = call i32 @cqrt_measure_i32(i32 %33)    ; IR: %15 = cq_measure_si32(%14)
-  ret i32 %34    ; IR: llvm.lifetime.end(16, %4) dropped (rule 16); ret i32 %15
+  %27 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %6)    ; IR: %11 = load i32, ptr %4: a[0]  (bus load at a classical address: a rail)
+  %28 = getelementptr inbounds i8, ptr %5, i64 12    ; IR: %12 = getelementptr inbounds i8, ptr %4, i64 12  (classical)
+  %29 = ptrtoint ptr %28 to i64    ; IR: (no instruction) the run-time address of a[3] (classical)
+  %30 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %29)    ; IR: %13 = load i32, ptr %12: a[3]
+  %31 = call i32 @cq_template_add_i32(i32 %30, i32 %27)    ; IR: %14 = add nsw i32 %13, %11  [result rail]
+  call void @cqrt_qram_load_i32_hl_unc(i32 %30, i32 %4, i64 %29)    ; IR: un-copy %13 (no memory version change since the load)
+  call void @cqrt_free(i32 %30)    ; IR: release the %13 rail (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %27, i32 %4, i64 %6)    ; IR: un-copy %11
+  call void @cqrt_free(i32 %27)    ; IR: release the %11 rail (|0>)
+  %32 = call i32 @cqrt_measure_i32(i32 %31)    ; IR: %15 = cq_measure_si32(%14)
+  ret i32 %32    ; IR: llvm.lifetime.end(16, %4) dropped (rule 16); ret i32 %15
 }
 
 define i32 @memcpy_quantum(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3, i32 noundef %4) {
@@ -220,3 +214,4 @@ declare i32 @cq_template_add_i32_hl(i32, i32)
 declare i32 @cq_template_sub_i32_hl(i32, i32)
 declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
+declare void @cqrt_addc_i32(i32, i32)

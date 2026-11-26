@@ -1,12 +1,12 @@
 ; HAND-WRITTEN. Rules: 16 (variadic calls, allocation), 20, 21, 5, 6, 14, 9, 8, 18, 7, 3, 4, 2; §1.3 (the bus, __cq_mem, __cq_alloc), §1.4 (the variadic clone's block formal).
-; Checked: sum3(1, a, x, b) = a + x + b + 1 (the clone's result rail, the rule-6 image s + 1, measured in the caller as
-; %6 -> %7). The cells of the two blocks are not named outputs.
+; Checked: sum3(1, a, x, b) = a + x + b + 1 (the clone's result rail, the last s rail updated in place to s + 1,
+; measured in the caller as %6 -> %7). The cells of the two blocks are not named outputs.
 ; Clean: in __cq_q_sum3_00, per trip: the address chain of the register-slot arm (the zext of gp_offset, the address
 ; rail reg_save_area + gp_offset) and the merged slot address, each uncomputed after the un-copy of the load through
 ; it; the load copy of the argument (va_arg's load, un-copied in the trip: no memory version change lies between the
 ; load and its _unc); the old s and its rule-6 rail t (rule 6 in the body, as 27 and 204; trip 0's old s is the |0>
-; seed). After the loop: the last s, cleaned by rule 6 from the result s + 1, and its rail t; the gp_offset
-; after-values (IR %24) and the overflow_arg_area after-values (IR %23) of trips 0..2, uncomputed by the reverse loop
+; seed). After the loop: nothing for the last s (rule 6's in-place update makes its rail the result s + 1); the
+; gp_offset after-values (IR %24) and the overflow_arg_area after-values (IR %23) of trips 0..2, uncomputed by the reverse loop
 ; (rule 14) from the per-trip handles it pops.
 ; Kept: varargs: x (%5, the rotated register; also the value rail of the block store of slot 1) and the result rail
 ; (%6, measured); by rule 5 the three tape slots of the caller's block stores and the seeds a and b (their value
@@ -41,8 +41,9 @@
 ; after the loop: rule 6 does not clean it per trip (a final carried rail that nothing live reads has no clean-up
 ; point), so its chain is garbage like any other, pushed with the handles its select _unc reads and uncomputed by the
 ; reverse loop, trip 2's rail included, as in 109. The carried gp_offset is a select whose condition reads it (not a
-; rule-6 bijection) and is undone the same way, after the result is formed. The result s + 1 is a bijection in s, so the last s is cleaned from it
-; and the image is returned directly (204).
+; rule-6 bijection) and is undone the same way, after the result is formed. The result s + 1 is a plain add of a
+; literal to the dead last s, so it is rule 6's in-place update: ONE core gate addc_i32(s, 1) on the last s rail, which
+; is the result from there on and is returned directly (204; no template, no fresh rail, no clean-up, no free).
 ; SPEC GAP: rule 14 pushes only trip rails rule 5 does not keep; the reverse loop's select _uncs read the flag, the
 ; store value rails gp_offset + 8 and overflow_arg_area + 8 (all kept with their stores) and, for trip 0, the kept load copies. Their handles are
 ; pushed as per-trip classical values the _unc needs (rule 14's parenthesis); rule 22 names only two such handle
@@ -141,35 +142,30 @@ define internal fastcc i32 @__cq_q_sum3_00(i32 %0, ptr %1) {
 
 39:
   call void @cqrt_qram_load_i64_hl_unc(i32 %18, i32 %3, i64 %15)    ; IR: un-copy %6 (reg_save_area) after its last reader, trip 2's _unc of %18; trip 0's store lies between, so it stays allocated (rule 5 sentence 1)
-  %40 = call i32 @cq_template_add_i32_hl(i32 %35, i32 1)    ; IR: llvm.va_end(%2): nothing; %9 = add nsw i32 %27, 1  [the result: a rule-6 image of s, returned directly]
-  %41 = call i32 @cq_template_sub_i32_hl(i32 %40, i32 1)    ; IR: rule 6: t = (s + 1) - 1 recomputes the last s
-  call void @cqrt_copy_i32(i32 %41, i32 %35)    ; IR: rule 6: s ^= t: |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %41, i32 %40, i32 1)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %41)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %35)    ; IR: rule 6: release the last s rail (|0> after the copy)
-  br label %42    ; IR: the reverse loop (rule 14)
+  call void @cqrt_addc_i32(i32 %35, i32 1)    ; IR: llvm.va_end(%2): nothing; %9 = add nsw i32 %27, 1  [the result; rule 6, in-place update: the last s is dead after the add, so s + 1 IS its rail, returned directly]
+  br label %40    ; IR: the reverse loop (rule 14)
 
-42:
-  %43 = phi i32 [ 0, %39 ], [ %51, %42 ]    ; reverse trip counter (classical)
-  %44 = phi i32 [ %32, %39 ], [ %50, %42 ]    ; IR: %24 of the trip being undone (gp_offset after)
-  %45 = phi i32 [ %31, %39 ], [ %47, %42 ]    ; IR: %23 of the trip being undone (overflow_arg_area after)
-  %46 = call i32 @cqrt_pop()    ; IR: %21 of that trip
-  %47 = call i32 @cqrt_pop()    ; IR: %11 of that trip
-  %48 = call i32 @cqrt_pop()    ; IR: %19 of that trip
-  %49 = call i32 @cqrt_pop()    ; IR: %15 of that trip
-  %50 = call i32 @cqrt_pop()    ; IR: %14 of that trip
-  call void @cq_template_select_i32_unc(i32 %44, i32 %49, i32 %48, i32 %50)    ; IR: uncompute %24
-  call void @cqrt_free(i32 %44)    ; IR: release the %24 rail (|0>)
-  call void @cq_template_select_i64_unc(i32 %45, i32 %49, i32 %47, i32 %46)    ; IR: uncompute %23 (rule 6: a final carried rail nothing reads after the loop is undone here, trip 2's included)
-  call void @cqrt_free(i32 %45)    ; IR: release the %23 rail (|0>)
-  %51 = add nuw nsw i32 %43, 1
-  %52 = icmp eq i32 %51, 3
-  br i1 %52, label %53, label %42
+40:
+  %41 = phi i32 [ 0, %39 ], [ %49, %40 ]    ; reverse trip counter (classical)
+  %42 = phi i32 [ %32, %39 ], [ %48, %40 ]    ; IR: %24 of the trip being undone (gp_offset after)
+  %43 = phi i32 [ %31, %39 ], [ %45, %40 ]    ; IR: %23 of the trip being undone (overflow_arg_area after)
+  %44 = call i32 @cqrt_pop()    ; IR: %21 of that trip
+  %45 = call i32 @cqrt_pop()    ; IR: %11 of that trip
+  %46 = call i32 @cqrt_pop()    ; IR: %19 of that trip
+  %47 = call i32 @cqrt_pop()    ; IR: %15 of that trip
+  %48 = call i32 @cqrt_pop()    ; IR: %14 of that trip
+  call void @cq_template_select_i32_unc(i32 %42, i32 %47, i32 %46, i32 %48)    ; IR: uncompute %24
+  call void @cqrt_free(i32 %42)    ; IR: release the %24 rail (|0>)
+  call void @cq_template_select_i64_unc(i32 %43, i32 %47, i32 %45, i32 %44)    ; IR: uncompute %23 (rule 6: a final carried rail nothing reads after the loop is undone here, trip 2's included)
+  call void @cqrt_free(i32 %43)    ; IR: release the %23 rail (|0>)
+  %49 = add nuw nsw i32 %41, 1
+  %50 = icmp eq i32 %49, 3
+  br i1 %50, label %51, label %40
 
-53:
+51:
   call void @cqrt_qram_load_i32_hl_unc(i32 %17, i32 %3, i64 %5)    ; IR: un-copy %3 (gp_offset) after its last reader, the reverse loop's _unc of trip 0's %24; it stays allocated (rule 5 sentence 1)
   call void @cqrt_qram_load_i64_hl_unc(i32 %19, i32 %3, i64 %11)    ; IR: un-copy %7 (overflow_arg_area) after its last reader, the reverse loop's _unc of trip 0's %23; trip 0's store lies between, so it stays allocated (rule 5 sentence 1)
-  ret i32 %40    ; IR: ret i32 %9  (llvm.lifetime.end dropped; the rails left are the kept ones of the header: the three entry load copies (un-copied, not freed), the four va_start seeds, and per trip the flag and the two store value rails)
+  ret i32 %35    ; IR: ret i32 %9  (llvm.lifetime.end dropped; the rails left are the kept ones of the header: the three entry load copies (un-copied, not freed), the four va_start seeds, and per trip the flag and the two store value rails)
 }
 
 declare i32 @__cq_mem()
@@ -203,12 +199,11 @@ declare i32 @cq_template_add_i32_hl(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
 declare i32 @cq_template_sub_i32(i32, i32)
 declare void @cq_template_sub_i32_unc(i32, i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_select_i32(i32, i32, i32)
 declare void @cq_template_select_i32_unc(i32, i32, i32, i32)
 declare i32 @cq_template_select_i64(i32, i32, i32)
 declare void @cq_template_select_i64_unc(i32, i32, i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}

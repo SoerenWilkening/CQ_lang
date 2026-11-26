@@ -3,8 +3,8 @@
 ; lshr-8 result %12 -> %13, measured); the 4 cells of f at exit (read from the bus): w + (d << 8) mod 2^32.
 ; Clean: quantum_bitfield's field chain (a %7, a + v %8, b %9, the flag %10, the shifted and masked new field %11, %12,
 ; the cleared word %13); bitfield_through_pointer's field-a rail %10, its flag %11 and the load copy of f (%9),
-; un-copied after its last reader (no memory version change follows the load), all freed; in bump_c the three rails of
-; the in-place form (the swap rail %6, the rule-6 inverse %8, the updated rail %7), all freed.
+; un-copied after its last reader (no memory version change follows the load), all freed; in bump_c the one rail of
+; the in-place form (the swap rail %6, updated in place and |0> after the swap back), freed.
 ; Kept: the register w in each function (%6 / %7, rotated; frozen; in bitfield_through_pointer also the value rail of
 ; the kept store f = w) and the measured result rail; by rule 5 the tape slot of the store of w into f. The in-place
 ; form in bump_c keeps nothing.
@@ -26,8 +26,8 @@
 ; all-classical: bump_c's OWN symbol (the all-zero mask, §1.4), lowered; nothing about the pointee crosses the call
 ; (rules 18, 21). In bump_c, `p->c += d` is the RMW of the 24-bit field c at bit 8, which -O1 folded to `load p; add
 ; (d << 8); store p` on the same SSA pointer with no memory version change between: rule 5's in-place form at the
-; classical address p (rule 6, a memory cell): swap the cell out into a fresh rail, add there with rule 6's clean of
-; the previous rail, swap back. bump_c writes memory, so it has no twin (rule 18) and its call is a memory version
+; classical address p (rule 6, a memory cell): swap the cell out into a fresh rail, add there as rule 6's in-place
+; update (addc_i32 on the swap rail: the old word is dead after the add), swap back. bump_c writes memory, so it has no twin (rule 18) and its call is a memory version
 ; change. The caller's load of f after the call is a bus load (a rail, rule 3); the condition on field a and the result
 ; c = `lshr 8` read that copy, and the copy is un-copied after its last reader (the `and`'s _unc and the lshr), before
 ; the measurement of c (rule 5 sentence 1). Nothing asks whether the cells at p are the cells of f.
@@ -94,14 +94,9 @@ define internal fastcc void @bump_c(ptr noundef %0, i32 noundef %1) unnamed_addr
   %5 = shl i32 %1, 8    ; IR: %4 = shl i32 %1, 8  (classical: d at field c's offset)
   %6 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %3 = load i32, ptr %0 ... store i32 %5, ptr %0: the in-place form (rule 5), a fresh |0> rail
   call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %6)    ; IR: %3 = load i32, ptr %0: swap out: the rail holds the storage unit, the cell |0>
-  %7 = call i32 @cq_template_add_i32_hl(i32 %6, i32 %5)    ; IR: %5 = add i32 %3, %4  (the word with c += d)
-  %8 = call i32 @cq_template_sub_i32_hl(i32 %7, i32 %5)    ; IR: rule 6: t = y' - (d << 8) recomputes the old value
-  call void @cqrt_copy_i32(i32 %8, i32 %6)    ; IR: rule 6: the old rail ^= t: now |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %8, i32 %7, i32 %5)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %8)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %6)    ; IR: release the old rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %7)    ; IR: store i32 %5, ptr %0: swap in: the cell holds the new word, the rail |0>
-  call void @cqrt_free(i32 %7)    ; IR: release the %5 rail (|0>): nothing remains of the update
+  call void @cqrt_addc_i32(i32 %6, i32 %5)    ; IR: %5 = add i32 %3, %4  (the word with c += d)  [rule 6, in-place update: the old word is dead after the add, so the new word IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %6)    ; IR: store i32 %5, ptr %0: swap in: the cell holds the new word, the rail |0>
+  call void @cqrt_free(i32 %6)    ; IR: release the swap rail (|0>): nothing remains of the update
   ret void    ; IR: ret void
 }
 
@@ -110,7 +105,7 @@ declare ptr @__cq_alloc(i64, i64)
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)
 declare void @cqrt_rz_i1(i32, double)
-declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare i32 @cqrt_qram_load_i32_hl(i32, i64)
 declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
@@ -119,8 +114,6 @@ declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_shl_i32_hl(i32, i32)
 declare void @cq_template_shl_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_lshr_i32_hl(i32, i32)

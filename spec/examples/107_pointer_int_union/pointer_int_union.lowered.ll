@@ -11,8 +11,8 @@
 ; uncomputed right after the load (the load copy is measured, so the load is the address rail's last reader).
 ; union_slot: x & 1 (%13) and its flag (%14), uncomputed after the store of the pointer; the load copy of u.p (%17, the
 ; address rail of the next load) and the load copy *u.p (%18), un-copied after the add, before the measurement (no
-; memory version change follows either load). bump: the three rails of the in-place form (the swap rail %4, the rule-6
-; inverse %6, the updated rail %5).
+; memory version change follows either load). bump: the swap rail of the in-place form (%4: the cell, then the cell + 4 by
+; rule 6's in-place update, |0> after the swap-in).
 ; Kept: x (%7 in union_ptr_to_int, %6 in union_int_to_ptr, %8 in union_slot: the rotated user registers) and the measured
 ; rails (%17 and %25 above; %19 in union_slot). By rule 5, for the shot: union_ptr_to_int: the tape slots of the stores
 ; a = {1, 2} and b = {3, 4} and their i64 seed value rails %9, %11. union_int_to_ptr: the tape slots of the four
@@ -160,14 +160,9 @@ define internal fastcc void @bump(ptr noundef %0) {
   %3 = ptrtoint ptr %0 to i64    ; IR: %0 as its run-time address (mask digit 0: the formal is the C ptr)
   %4 = call i32 @cqrt_alloc_i64(i64 0)    ; IR: %2 = load i64, ptr %0 ... store i64 %3, ptr %0: the in-place form (rules 5, 6), a fresh |0> rail
   call void @cqrt_qram_swap_i64_hl(i32 %2, i64 %3, i32 %4)    ; IR: %2 = load i64, ptr %0: swap out: the rail holds u->v (the stored pointer read as an integer), the cells |0>
-  %5 = call i32 @cq_template_add_i64_hl(i32 %4, i64 4)    ; IR: %3 = add i64 %2, 4
-  %6 = call i32 @cq_template_sub_i64_hl(i32 %5, i64 4)    ; IR: rule 6: t = y' - 4 recomputes the old value (the update is a bijection in it)
-  call void @cqrt_copy_i64(i32 %6, i32 %4)    ; IR: rule 6: the old rail ^= t: now |0>
-  call void @cq_template_sub_i64_hl_unc(i32 %6, i32 %5, i64 4)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %6)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %4)    ; IR: release the old rail (|0> after the copy)
-  call void @cqrt_qram_swap_i64_hl(i32 %2, i64 %3, i32 %5)    ; IR: store i64 %3, ptr %0: swap in: the cells hold u->v + 4, the rail |0>
-  call void @cqrt_free(i32 %5)    ; IR: release the %3 rail (|0>)
+  call void @cqrt_addc_i64(i32 %4, i64 4)    ; IR: %3 = add i64 %2, 4  [rule 6, in-place update: the old value is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i64_hl(i32 %2, i64 %3, i32 %4)    ; IR: store i64 %3, ptr %0: swap in: the cells hold u->v + 4, the rail |0>
+  call void @cqrt_free(i32 %4)    ; IR: release the %3 rail (|0>)
   ret void    ; IR: ret void
 }
 
@@ -177,7 +172,6 @@ declare i32 @cqrt_alloc_i32(i32)
 declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
-declare void @cqrt_copy_i64(i32, i32)
 declare void @cqrt_free(i32)
 declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare void @cqrt_qram_store_i64_hl(i32, i64, i32)
@@ -196,12 +190,10 @@ declare i32 @cq_template_or_i64_hl(i32, i64)
 declare void @cq_template_or_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_icmp_eq_i32_hl(i32, i32)
 declare void @cq_template_icmp_eq_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_add_i64_hl(i32, i64)
-declare i32 @cq_template_sub_i64_hl(i32, i64)
-declare void @cq_template_sub_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 declare i32 @cq_template_select_i64_ll(i32, i64, i64)
 declare void @cq_template_select_i64_ll_unc(i32, i32, i64, i64)
+declare void @cqrt_addc_i64(i32, i64)
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 

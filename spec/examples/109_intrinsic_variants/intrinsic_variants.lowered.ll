@@ -1,6 +1,6 @@
 ; HAND-WRITTEN. Rules: 4, 18, 20, 16, 22, 14, 3, 7, 8, 9, 5, 6, 2, 21, §1.3, §1.4.
 ; Checked: smin_q: min(x, c) (measured, %5 -> %6); bswap_q: bswap(x) (measured, %4 -> %6); usub_sat_q: x > c ? x - c : 0
-; (measured, %5 -> %6); va_copy_q: sum_twice(2, x, a) = 2 * (x + a) (measured: the clone's returned rule-6 image s + t,
+; (measured, %5 -> %6); va_copy_q: sum_twice(2, x, a) = 2 * (x + a) (measured: the clone's returned t rail, updated in place to s + t,
 ; %10 -> %11 in the caller); vla_loop_q: acc = sum over i < m of x + i (measured: the carried rail, rule 6 left no other
 ; acc rail; the never-written |0> seed when m <= 0). The bus cells (the variadic block, ap, bp, the VLAs) are no named
 ; output.
@@ -10,8 +10,8 @@
 ; %53, un-copied in the trip: no memory version change between the load and its _unc); the old s / t (rule 6 in the
 ; body, trip 0's the |0> seed) and its inverse; every carried gp_offset rail (IR %29 / %51) and every carried
 ; overflow_arg_area rail (IR %28 / %50, the last trip's included): popped and uncomputed by the reverse loop, trip 0's
-; against the load copy; after the walks
-; t (rule 6: operand 0 of s + t, cleaned from the sum) and its inverse; un-copied but left allocated (rule 5 sentence 1:
+; against the load copy; after the walks nothing for t (operand 0 of s + t: rule 6's in-place update makes its rail
+; the sum); un-copied but left allocated (rule 5 sentence 1:
 ; each overtaken by trip 0's stores): the load copies of ap.gp_offset, ap.reg_save_area, ap.overflow_arg_area (IR %4,
 ; %7, %8), un-copied after the first walk's last undo, and of the same three bp fields (IR %10, %13, %14), un-copied
 ; after the second walk's. In vla_loop_q, per trip: x + i (IR %17,
@@ -53,8 +53,9 @@
 ; the walk, so rule 6 does not clean it per trip: its chain is garbage, undone by the reverse loop. gp_offset's update
 ; f ? gp + 8 : gp has a condition that reads gp: no rule-6 bijection. So each trip pushes its kept flag, gp + 8 and
 ; ovf + 8 and (trips i != 0) its old gp and old ovf, and the reverse loop after the walk pops them and uncomputes the
-; two selects (trip 0's against the load copies). After both walks s + t is formed and rule 6 cleans operand 0, t;
-; the sum is returned directly (an image is never copied out, rule 6). The second walk reads the same block through
+; two selects (trip 0's against the load copies). After both walks s + t is rule 6's in-place update of operand 0, t:
+; ONE core gate add_i32(s, t) on the t rail, which holds the sum and is returned directly (an image is never copied
+; out, rule 6). The second walk reads the same block through
 ; bp's copied overflow_arg_area, so x and a are loaded twice: sum = 2x + 2a.
 ; THE VLA (rules 16, 20). v is passed to put, a user no host-resident case allows, so the VLA is bus-resident: every trip
 ; allocates __cq_alloc(4 n, 16) at the alloca's program point; llvm.stacksave/stackrestore are dropped for it. put(v, x +
@@ -326,13 +327,8 @@ define internal i32 @__cq_q_sum_twice_00(i32 %0, ptr %1) unnamed_addr {
   call void @cqrt_qram_load_i64_hl_unc(i32 %72, i32 %3, i64 %69)    ; IR: un-copy %14 (overtaken, stays allocated)
   call void @llvm.va_end.p0(ptr %6)    ; IR: va_end(%3), as it stands (rule 16)
   call void @llvm.va_end.p0(ptr %4)    ; IR: va_end(%2), as it stands
-  %109 = call i32 @cq_template_add_i32(i32 %88, i32 %47)    ; IR: %36 = add nsw i32 %54, %32  [the result: llvm.lifetime.end dropped]
-  %110 = call i32 @cq_template_sub_i32(i32 %109, i32 %47)    ; IR: rule 6: (s + t) - s recomputes t (operand 0; neither operand is garbage, so s is kept)
-  call void @cqrt_copy_i32(i32 %110, i32 %88)    ; IR: rule 6: t ^= that: |0>
-  call void @cq_template_sub_i32_unc(i32 %110, i32 %109, i32 %47)
-  call void @cqrt_free(i32 %110)
-  call void @cqrt_free(i32 %88)    ; IR: rule 6: release the %54 rail (|0>)
-  ret i32 %109    ; IR: ret i32 %36  [the rule-6 image is returned directly, no copy-out]
+  call void @cqrt_add_i32(i32 %47, i32 %88)    ; IR: %36 = add nsw i32 %54, %32  [the result; rule 6, in-place update: t (operand 0) is dead after the add, so s + t IS the t rail; s is kept]
+  ret i32 %88    ; IR: ret i32 %36  [the rule-6 image is returned directly, no copy-out]
 }
 
 define i32 @vla_loop_q(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr {
@@ -427,6 +423,7 @@ declare void @cq_template_select_i32_unc(i32, i32, i32, i32)
 declare i32 @cq_template_select_i64(i32, i32, i32)
 declare void @cq_template_select_i64_unc(i32, i32, i32, i32)
 declare void @llvm.va_end.p0(ptr)
+declare void @cqrt_add_i32(i32, i32)
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}

@@ -7,15 +7,15 @@
 ; the store), the load copies of a[0] and a[1] (un-copied and freed in the trip: no memory version change lies between
 ; a load and its _unc), the old s, the intermediate image s + a[0] and the two rule-6 rails t (rule 6 in the body, as
 ; 27; trip 0's old s is the |0> seed). __cq_q_walk_110, per activation: the address chain and / zext / mul / add, the
-; argument rail k >> 1 (after the call), the inner activation's result below (rule 6, cleaned from a[0] + below; on the
-; d == 0 path the |0> seed that stands for below, freed by the same clean-up), the rule-6 rail t and the load copy of
-; a[0] (un-copied before the return).
+; argument rail k >> 1 (after the call) and the load copy of a[0] (un-copied before the return). The inner
+; activation's result below (on the d == 0 path the |0> seed that stands for it) is not freed: a[0] + below is rule 6's
+; in-place update on its rail, which is returned.
 ; Kept: bus_scope_reuse: k and x (rotated; x is also the value rail of every trip's address-rail store, rule 5); per
 ; trip the seed i (value rail of the classical-address store, rule 5: a basis state, no qubit) and the two tape slots
 ; (backend rails, rule 5); s (measured: the last trip's image, or the seed itself when n <= 0).
 ; bus_recursion: k and x (rotated; x is the value rail of every activation's address-rail store); per activation the
 ; two seeds d and 0 and the three tape slots (rule 5); the outermost result (measured). No result rail of an inner
-; activation stays: each is cleaned by its caller (rule 6).
+; activation stays apart: each is updated in place by its caller into the caller's own result (rule 6).
 ; Rotations: bus_scope_reuse: (Ry, k, tk, 1); (Ry, x, tx, 1). bus_recursion: (Ry, k, tk, 1); (Ry, x, tx, 1).
 ; Expected: each Ry acts on all 32 qubits of its register and everything after the rotations is a basis permutation,
 ; so the measured value is the C program on independent bit flips: a bit of k flips with p = sin^2(.25) = 0.061209,
@@ -51,25 +51,26 @@
 ; zeroed block at an address never reused, so the inner activation's stores cannot reach the cells the outer one
 ; loads after the call. The clone writes memory, so it has NO twin and no caller calls one. Its result a[0] + below is
 ; a rule-6 bijection in below whose other operand is the load copy: below (the inner activation's result, dead after
-; the add) is cleaned from the sum, and the sum, the rule-6 image, is returned directly with no copy-out (a copy could
-; not be followed by the image's uncompute, which would read the cleaned below). The phi of the call's result against
-; the literal 0 is a classical phi over handles (rule 9), the 0 a seed (rule 7) minted on its edge and released by
-; the same clean-up as the call path's below (as trip 0's old rail of a rolled loop). The unlifted walk has no caller
+; the add) is updated in place, add_i32(copy, below), and that rail, the rule-6 image, is returned directly with no
+; copy-out (a copy could not be followed by the image's uncompute, which would read the old below). The phi of the call's result against
+; the literal 0 is a classical phi over handles (rule 9), the 0 a seed (rule 7) minted on its edge and updated in place
+; by the same gate as the call path's below. The unlifted walk has no caller
 ; left and is dropped (§1.4).
 ; SPEC GAP: rule 6 names no exception for a call result, rule 18 says the result of a callee without a twin is KEPT
 ; by the caller and gives the clone the copy-out form. Read here: KEPT only means that no twin is called, so rule 6
-; cleans below like any other rail; a clone whose result is a rule-6 image returns the image rail directly; a seed
-; that is a classical phi incoming of the cleaned value is freed by the same clean-up, not under a second classical
-; branch.
+; updates below in place like any other rail; a clone whose result is a rule-6 image returns the image rail directly;
+; a seed that is a classical phi incoming of the updated value is updated by the same gate, not under a second
+; classical branch.
 ; SPEC GAP: §6 says an indeterminate value the C program reads is 0 for the reference. By rule 20 a block-scoped
 ; bus-resident object is one block whose cells carry over, so from trip 1 on a[1] holds what the trip before left
 ; (x). Read here: the reference takes what the cell holds on the bus, 0 only for a cell never written.
 ; SPEC GAP: rule 5 sentence 1 asks for the uncompute of the load's last consumer. In both functions the consumer (an
 ; add) is a rule-6 image (the carried s, the clone's result), which has none; read as for a template operand (27's
-; g): the copy is un-copied after its last reader (rule 6's t), before the next memory version change.
+; g): the copy is un-copied after its last reader (rule 6's t; in the clone the in-place add), before the next memory
+; version change.
 ; SPEC GAP: rule 6 "both operands dead" does not say that a bus load copy is "garbage that rule 5 uncomputes anyway".
-; It is read so (the copy's un-copy is possible here), so rule 6 cleans the other operand (the old s, below) although
-; the copy is operand 0.
+; It is read so (the copy's un-copy is possible here), so rule 6 applies to the other operand (the old s, below)
+; although the copy is operand 0.
 ; SPEC GAP: rule 9 says a classical phi over handles needs no gate; where its literal incoming is minted is not
 ; stated. The seed is minted in a block on its edge (in the pred it would stay allocated on the call path).
 ; SPEC GAP: rule 19 / §1.3 ask for a __cq_clone_register row (the _t clone, _t_ctl and their twins) per externally
@@ -199,15 +200,10 @@ define internal fastcc i32 @__cq_q_walk_110(i32 %0, i32 %1, i32 %2) {
 22:
   %23 = phi i32 [ %19, %16 ], [ %21, %20 ]    ; IR: %15 = phi i32 [ %13, %10 ], [ 0, %3 ]  (a classical phi over handles, no gate, rule 9)
   %24 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %6)    ; IR: %16 = load i32, ptr %4, align 4  [a bus load at a classical address, after the inner activation returned: this activation's own block]
-  %25 = call i32 @cq_template_add_i32(i32 %24, i32 %23)    ; IR: %17 = add nsw i32 %16, %15  [the result: the only rail of below's lineage that survives]
-  %26 = call i32 @cq_template_sub_i32(i32 %25, i32 %24)    ; IR: rule 6: t = (a[0] + below) - a[0] recomputes below (the add is a bijection in below; the other operand is the load copy, rule-5 garbage)  ; SPEC GAP: rule 6 against rule 18's 'KEPT by the caller' for a result without a twin; rule 6 is taken
-  call void @cqrt_copy_i32(i32 %26, i32 %23)    ; IR: rule 6: below ^= t: |0> (d == 0: the |0> seed, unchanged)
-  call void @cq_template_sub_i32_unc(i32 %26, i32 %25, i32 %24)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %26)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %23)    ; IR: rule 6: release below (the inner result, or the seed 0 of phi %15)
+  call void @cqrt_add_i32(i32 %24, i32 %23)    ; IR: %17 = add nsw i32 %16, %15  [rule 6, in-place update: below is dead after the add (the other operand is the load copy, rule-5 garbage), so the result IS below's rail (d == 0: the seed's)]  ; SPEC GAP: rule 6 against rule 18's 'KEPT by the caller' for a result without a twin; rule 6 is taken
   call void @cqrt_qram_load_i32_hl_unc(i32 %24, i32 %4, i64 %6)    ; IR: un-copy %16 (rule 5: no memory version change since the load)  ; SPEC GAP: sentence 1 asks for the last consumer's uncompute, and the consumer %17 is the returned rule-6 image; read as for a template operand
   call void @cqrt_free(i32 %24)    ; IR: release the %16 rail (|0>); llvm.lifetime.end(8, %4) dropped (rule 16)
-  ret i32 %25    ; IR: ret i32 %17  [the rule-6 image is returned directly, no copy-out]  ; SPEC GAP: rule 18's clone form copies each result out; a result that is a rule-6 image cannot be uncomputed after a copy
+  ret i32 %23    ; IR: ret i32 %17  [the rule-6 image, below's rail updated in place, is returned directly, no copy-out]  ; SPEC GAP: rule 18's clone form copies each result out; a result that is a rule-6 image cannot be uncomputed after a copy
 }
 
 declare i32 @__cq_mem()
@@ -232,5 +228,6 @@ declare i32 @cq_template_add_i32(i32, i32)
 declare i32 @cq_template_sub_i32(i32, i32)
 declare void @cq_template_sub_i32_unc(i32, i32, i32)
 declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_add_i32(i32, i32)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_measure_i32(i32)

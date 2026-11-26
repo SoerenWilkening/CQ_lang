@@ -2,12 +2,12 @@
 ; Two functions, ONE construction: theta_twice_store_between (p = &cell, q = &g: two globals) and
 ; theta_twice_store_between_ptr (p, q = the pointer arguments). Below, "the cell" is the 4 cells at p, "the other cell"
 ; the 4 cells at q; the value names in parentheses are those of the first function / of the _ptr function.
-; Checked: the returned value = the cell after both rotations (measured: the phi %22 -> %23 / %26 -> %27); the cell at
+; Checked: the returned value = the cell after both rotations (measured: the phi %20 -> %21 / %24 -> %25); the cell at
 ; exit (read from the bus) holds that same value; on the DISJOINT path the other cell at exit = its old value + 1.
-; Clean: the swap rail of the first form (%4 / %8, |0> after its swap-in); of the increment: the swapped-out old value
-; (%14 / %18, rule 6), the inverse t = g' - 1 (%16 / %20) and the rail the cell's |0> went to (%15 / %19). On the DISJOINT
-; path also the swap rail of the second form (%18 / %22, |0> after its swap-in).
-; Kept: on the DISJOINT path: the load copy of the cell taken after the second swap-in (%19 / %23, measured, rule 2);
+; Clean: the swap rail of the first form (%4 / %8, |0> after its swap-in); of the increment: its swap rail (%14 / %18,
+; updated in place by rule 6, then the cell's |0> after the swap-in). On the DISJOINT path also the swap rail of the
+; second form (%16 / %20, |0> after its swap-in).
+; Kept: on the DISJOINT path: the load copy of the cell taken after the second swap-in (%17 / %21, measured, rule 2);
 ; nothing else: three in-place forms keep no rail, no tape slot and no old value. On the OVERLAP path: the load copy of
 ; the cell (%11 / %15: rotated by the second cq_theta, so a FROZEN register, rule 2; it is also the value rail of the
 ; kept store and the measured rail) and the tape slot of the kept store (rule 5 sentence 3).
@@ -35,8 +35,8 @@
 ; THE THREE UPDATES (first function; the _ptr function is the same with %0, %1 for @cell, @g and its values two/four
 ; higher). (1) `%3 = load @cell; %4 = cq_theta(%3, t1); store %4, @cell`: the rotation of a cell, rule 5's in-place
 ; form with the Ry as its one step (rule 2); the store closes the form, emitted at the store's position.
-; (2) `%5 = load @g; %6 = add %5, 1; store %6, @g`: the in-place form with a rule-6 bijection as its step (rule 6, "a
-; memory cell"), at the classical address &g. It is a MEMORY VERSION CHANGE. (3) `%7 = cq_theta(%4, t2); store %7, @cell`:
+; (2) `%5 = load @g; %6 = add %5, 1; store %6, @g`: the in-place form with rule 6's in-place update (addc_i32) as its step
+; (rule 6, "a memory cell"), at the classical address &g. It is a MEMORY VERSION CHANGE. (3) `%7 = cq_theta(%4, t2); store %7, @cell`:
 ; the operand %4 is the value -O1 forwarded from store (1) to the same SSA pointer, so the interval of this form runs
 ; from that store (rule 5, Readers), and the change (2) lies inside it. %4 is the result of form (1) and has no rail of
 ; its own: it lives in the cell. The second cq_theta is the first step of the next form on the same SSA pointer, not
@@ -86,34 +86,29 @@ define i32 @theta_twice_store_between(double noundef %0, double noundef %1) {
   %13 = phi i32 [ poison, %2 ], [ %11, %10 ]    ; IR: (no instruction) the copy's handle on the OVERLAP path (classical phi; poison, never read, on the DISJOINT path)
   %14 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %5 = load i32, ptr @g: in-place form (2), the swap rail (|0>)
   call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @g to i64), i32 %14)    ; IR: %5 = load i32, ptr @g: swap-out: the rail holds the cell at q, that cell |0>  (the memory version change inside the interval, emitted once)
-  %15 = call i32 @cq_template_add_i32_hl(i32 %14, i32 1)    ; IR: %6 = add nsw i32 %5, 1
-  %16 = call i32 @cq_template_sub_i32_hl(i32 %15, i32 1)    ; IR: rule 6: t = g' - 1 recomputes the old value
-  call void @cqrt_copy_i32(i32 %16, i32 %14)    ; IR: rule 6: the old rail ^= t: |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %16, i32 %15, i32 1)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %16)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %14)    ; IR: release the old-value rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @g to i64), i32 %15)    ; IR: store i32 %6, ptr @g: swap-in: the cell at q holds the sum, the rail that cell's |0>
-  call void @cqrt_free(i32 %15)    ; IR: release the rail (|0>): nothing remains of the increment
-  br i1 %9, label %17, label %20    ; IR: (no instruction) Readers: the same d, at the second store's position: DISJOINT: form (3) stands; OVERLAP: the steps act on the copy
+  call void @cqrt_addc_i32(i32 %14, i32 1)    ; IR: %6 = add nsw i32 %5, 1  [rule 6, in-place update: the old value is dead after the add, so g' IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @g to i64), i32 %14)    ; IR: store i32 %6, ptr @g: swap-in: the cell at q holds the sum, the rail that cell's |0>
+  call void @cqrt_free(i32 %14)    ; IR: release the swap rail (|0>): nothing remains of the increment
+  br i1 %9, label %15, label %18    ; IR: (no instruction) Readers: the same d, at the second store's position: DISJOINT: form (3) stands; OVERLAP: the steps act on the copy
 
-17:
-  %18 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %7 = cq_theta_si32(%4, %1): in-place form (3) on the forwarded %4, the swap rail (|0>)  [DISJOINT path]
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64), i32 %18)    ; IR: %7 = cq_theta_si32(%4, %1): swap-out: the rail holds %4 (the cell was not touched by the change), the cell |0>
-  call void @cqrt_ry_i32(i32 %18, double %1)    ; IR: %7 = cq_theta_si32(%4, %1)  [Ry on the cell's content]
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64), i32 %18)    ; IR: store i32 %7, ptr @cell: swap-in: the cell holds %7
-  call void @cqrt_free(i32 %18)    ; IR: release the swap rail (|0>)
-  %19 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64))    ; IR: the reader of %7: a plain load of @cell taken after the swap-in (rule 5, Readers)
-  br label %21    ; IR: (no instruction)
+15:
+  %16 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %7 = cq_theta_si32(%4, %1): in-place form (3) on the forwarded %4, the swap rail (|0>)  [DISJOINT path]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64), i32 %16)    ; IR: %7 = cq_theta_si32(%4, %1): swap-out: the rail holds %4 (the cell was not touched by the change), the cell |0>
+  call void @cqrt_ry_i32(i32 %16, double %1)    ; IR: %7 = cq_theta_si32(%4, %1)  [Ry on the cell's content]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64), i32 %16)    ; IR: store i32 %7, ptr @cell: swap-in: the cell holds %7
+  call void @cqrt_free(i32 %16)    ; IR: release the swap rail (|0>)
+  %17 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64))    ; IR: the reader of %7: a plain load of @cell taken after the swap-in (rule 5, Readers)
+  br label %19    ; IR: (no instruction)
 
-20:
+18:
   call void @cqrt_ry_i32(i32 %13, double %1)    ; IR: %7 = cq_theta_si32(%4, %1)  [Ry on the load copy: a frozen register from here on, rule 2]  [OVERLAP path]
   call void @cqrt_qram_store_i32_hl(i32 %3, i64 ptrtoint (ptr @cell to i64), i32 %13)    ; IR: store i32 %7, ptr @cell  (a kept store: no _unc, its tape slot and its value rail stay, rule 5 sentence 3)
-  br label %21    ; IR: (no instruction)
+  br label %19    ; IR: (no instruction)
 
-21:
-  %22 = phi i32 [ %19, %17 ], [ %13, %20 ]    ; IR: (no instruction) the rail of %7 for its reader: the load after the swap-in or the copy itself (classical phi of handles)
-  %23 = call i32 @cqrt_measure_i32(i32 %22)    ; IR: %8 = cq_measure_si32(%7)  (the measured rail stays allocated, rule 2)
-  ret i32 %23    ; IR: ret i32 %8
+19:
+  %20 = phi i32 [ %17, %15 ], [ %13, %18 ]    ; IR: (no instruction) the rail of %7 for its reader: the load after the swap-in or the copy itself (classical phi of handles)
+  %21 = call i32 @cqrt_measure_i32(i32 %20)    ; IR: %8 = cq_measure_si32(%7)  (the measured rail stays allocated, rule 2)
+  ret i32 %21    ; IR: ret i32 %8
 }
 
 define i32 @theta_twice_store_between_ptr(ptr noundef %0, ptr noundef %1, double noundef %2, double noundef %3) {
@@ -140,45 +135,37 @@ define i32 @theta_twice_store_between_ptr(ptr noundef %0, ptr noundef %1, double
   %17 = phi i32 [ poison, %4 ], [ %15, %14 ]    ; IR: (no instruction) the copy's handle on the OVERLAP path (classical phi; poison, never read, on the DISJOINT path)
   %18 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %7 = load i32, ptr %1: in-place form (2), the swap rail (|0>)
   call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %7, i32 %18)    ; IR: %7 = load i32, ptr %1: swap-out: the rail holds the cell at q, that cell |0>  (the memory version change inside the interval, emitted once)
-  %19 = call i32 @cq_template_add_i32_hl(i32 %18, i32 1)    ; IR: %8 = add nsw i32 %7, 1
-  %20 = call i32 @cq_template_sub_i32_hl(i32 %19, i32 1)    ; IR: rule 6: t = g' - 1 recomputes the old value
-  call void @cqrt_copy_i32(i32 %20, i32 %18)    ; IR: rule 6: the old rail ^= t: |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %20, i32 %19, i32 1)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %20)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %18)    ; IR: release the old-value rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %7, i32 %19)    ; IR: store i32 %8, ptr %1: swap-in: the cell at q holds the sum, the rail that cell's |0>
-  call void @cqrt_free(i32 %19)    ; IR: release the rail (|0>): nothing remains of the increment
-  br i1 %13, label %21, label %24    ; IR: (no instruction) Readers: the same d, at the second store's position: DISJOINT: form (3) stands; OVERLAP: the steps act on the copy
+  call void @cqrt_addc_i32(i32 %18, i32 1)    ; IR: %8 = add nsw i32 %7, 1  [rule 6, in-place update: the old value is dead after the add, so g' IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %7, i32 %18)    ; IR: store i32 %8, ptr %1: swap-in: the cell at q holds the sum, the rail that cell's |0>
+  call void @cqrt_free(i32 %18)    ; IR: release the swap rail (|0>): nothing remains of the increment
+  br i1 %13, label %19, label %22    ; IR: (no instruction) Readers: the same d, at the second store's position: DISJOINT: form (3) stands; OVERLAP: the steps act on the copy
 
-21:
-  %22 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %9 = cq_theta_si32(%6, %3): in-place form (3) on the forwarded %6, the swap rail (|0>)  [DISJOINT path]
-  call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %6, i32 %22)    ; IR: %9 = cq_theta_si32(%6, %3): swap-out: the rail holds %6 (the cell was not touched by the change), the cell |0>
-  call void @cqrt_ry_i32(i32 %22, double %3)    ; IR: %9 = cq_theta_si32(%6, %3)  [Ry on the cell's content]
-  call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %6, i32 %22)    ; IR: store i32 %9, ptr %0: swap-in: the cell holds %9
-  call void @cqrt_free(i32 %22)    ; IR: release the swap rail (|0>)
-  %23 = call i32 @cqrt_qram_load_i32_hl(i32 %5, i64 %6)    ; IR: the reader of %9: a plain load of %0 taken after the swap-in (rule 5, Readers)
-  br label %25    ; IR: (no instruction)
+19:
+  %20 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %9 = cq_theta_si32(%6, %3): in-place form (3) on the forwarded %6, the swap rail (|0>)  [DISJOINT path]
+  call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %6, i32 %20)    ; IR: %9 = cq_theta_si32(%6, %3): swap-out: the rail holds %6 (the cell was not touched by the change), the cell |0>
+  call void @cqrt_ry_i32(i32 %20, double %3)    ; IR: %9 = cq_theta_si32(%6, %3)  [Ry on the cell's content]
+  call void @cqrt_qram_swap_i32_hl(i32 %5, i64 %6, i32 %20)    ; IR: store i32 %9, ptr %0: swap-in: the cell holds %9
+  call void @cqrt_free(i32 %20)    ; IR: release the swap rail (|0>)
+  %21 = call i32 @cqrt_qram_load_i32_hl(i32 %5, i64 %6)    ; IR: the reader of %9: a plain load of %0 taken after the swap-in (rule 5, Readers)
+  br label %23    ; IR: (no instruction)
 
-24:
+22:
   call void @cqrt_ry_i32(i32 %17, double %3)    ; IR: %9 = cq_theta_si32(%6, %3)  [Ry on the load copy: a frozen register from here on, rule 2]  [OVERLAP path]
   call void @cqrt_qram_store_i32_hl(i32 %5, i64 %6, i32 %17)    ; IR: store i32 %9, ptr %0  (a kept store: no _unc, its tape slot and its value rail stay, rule 5 sentence 3)
-  br label %25    ; IR: (no instruction)
+  br label %23    ; IR: (no instruction)
 
-25:
-  %26 = phi i32 [ %23, %21 ], [ %17, %24 ]    ; IR: (no instruction) the rail of %9 for its reader: the load after the swap-in or the copy itself (classical phi of handles)
-  %27 = call i32 @cqrt_measure_i32(i32 %26)    ; IR: %10 = cq_measure_si32(%9)  (the measured rail stays allocated, rule 2)
-  ret i32 %27    ; IR: ret i32 %10
+23:
+  %24 = phi i32 [ %21, %19 ], [ %17, %22 ]    ; IR: (no instruction) the rail of %9 for its reader: the load after the swap-in or the copy itself (classical phi of handles)
+  %25 = call i32 @cqrt_measure_i32(i32 %24)    ; IR: %10 = cq_measure_si32(%9)  (the measured rail stays allocated, rule 2)
+  ret i32 %25    ; IR: ret i32 %10
 }
 
 declare i32 @__cq_mem()
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
-declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_qram_load_i32_hl(i32, i64)
 declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare void @cqrt_qram_swap_i32_hl(i32, i64, i32)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)

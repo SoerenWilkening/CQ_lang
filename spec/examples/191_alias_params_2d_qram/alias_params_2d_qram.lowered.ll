@@ -5,8 +5,7 @@
 ; of g at exit: g[r & 3][c & 3] = v, every other cell 0.
 ; Clean: alias_params: the address chain of q = &a[x & 1] (x & 1, its zext, the scaled index, the address rail),
 ; uncomputed by the caller after the call (the clone stored through p; rule 5 sentence 3) and freed; in the clone the
-; three rails of the in-place form (the swap rail holding the old *p, the rule-6 inverse t, the updated rail after the
-; swap-in). qram_2d: the address chain of the store &g[r & 3][c & 3] (both scaled indices, their sum, the address rail),
+; one rail of the in-place form (the swap rail holding *p, updated in place by rule 6, |0> after the swap-in). qram_2d: the address chain of the store &g[r & 3][c & 3] (both scaled indices, their sum, the address rail),
 ; uncomputed right after the store, then c & 3 and its zext; the two load copies g[1][2] and g[r & 3][0], un-copied
 ; after the add, before the measurement; the address chain of the load &g[r & 3] (the scaled row index, the address
 ; rail), uncomputed after that load's un-copy, then r & 3 and its zext.
@@ -27,12 +26,12 @@
 ; and the address rail q (digit 1): the clone __cq_q_addto_01(ptr, i32). Nothing about the pointee, no object, tag or
 ; cell index crosses the call, and nothing asks whether p and q are equal. In the clone `*p += *q` is load q, load p,
 ; add, store p on the same SSA pointer p with no memory version change between the load of p and the store: rule 5's
-; IN-PLACE FORM at the classical address p, with the add (a rule-6 bijection in *p) as its one step. The load of *q a
+; IN-PLACE FORM at the classical address p, with the add (rule 6's in-place update of *p) as its one step. The load of *q a
 ; step reads is a plain bus load at its own program point, before the swap-out, so when q == p it copies the old *p and
-; the update is 2 * a0, exactly C's result; that copy is overtaken by the form: un-copied after its last reader (rule
-; 6's _unc of t), placed after the swap-in (no bus access inside the form), and not freed (rule 5 sentence 1; when
-; q == p the un-copy reads the updated cell and the rail keeps garbage, no rule asks which). The form is emitted at the store's position: swap-out into a fresh |0> rail, y' = y + *q with rule 6's
-; clean of the old rail (t = y' - *q), swap-in of y', free. addto writes memory, so the clone has NO TWIN (rule 18) and
+; the update is 2 * a0, exactly C's result; that copy is overtaken by the form: un-copied after its last reader (the
+; in-place add), placed after the swap-in (no bus access inside the form), and not freed (rule 5 sentence 1; when
+; q == p the un-copy reads the updated cell and the rail keeps garbage, no rule asks which). The form is emitted at the store's position: swap-out into a fresh |0> rail, y' = y + *q as rule 6's
+; in-place update on that rail (add_i32(*q, y): the old *p is dead after the add), swap-in of y', free. addto writes memory, so the clone has NO TWIN (rule 18) and
 ; returns nothing; addto's own symbol has no caller left and is dropped (§1.4). The caller uncomputes the address rail
 ; it passed after the call (rule 5 sentence 3). The load of a[0] after the call (a memory version change) is a fresh
 ; copy, measured: rule 2's measured rail, never un-copied.
@@ -83,15 +82,10 @@ define internal fastcc void @__cq_q_addto_01(ptr noundef %0, i32 noundef %1) unn
   %5 = call i32 @cqrt_qram_load_i32(i32 %3, i32 %1)    ; IR: %3 = load i32, ptr %1: *q at the address rail  (a plain load a step reads, before the swap-out; overtaken by the form: un-copied after the swap-in, not freed)
   %6 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %4 = load i32, ptr %0 ... store i32 %5, ptr %0: the in-place form (rule 5), a fresh |0> rail
   call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %6)    ; IR: %4 = load i32, ptr %0: swap-out: the rail holds *p, the cell |0>
-  %7 = call i32 @cq_template_add_i32(i32 %6, i32 %5)    ; IR: %5 = add nsw i32 %4, %3
-  %8 = call i32 @cq_template_sub_i32(i32 %7, i32 %5)    ; IR: rule 6: t = y' - *q recomputes the old *p (the add is a bijection in it)
-  call void @cqrt_copy_i32(i32 %8, i32 %6)    ; IR: rule 6: the old rail ^= t: |0>
-  call void @cq_template_sub_i32_unc(i32 %8, i32 %7, i32 %5)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %8)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %6)    ; IR: release the old *p rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %7)    ; IR: store i32 %5, ptr %0: swap-in: the cell holds *p + *q, the rail the cell's |0>
-  call void @cqrt_free(i32 %7)    ; IR: release the rail (|0>): nothing remains of the update
-  call void @cqrt_qram_load_i32_unc(i32 %5, i32 %3, i32 %1)    ; IR: un-copy %3 (*q) after its last reader, rule 6's _unc of t; the form lies between, so it is not freed (rule 5 sentence 1); the caller's address rail q outlives it
+  call void @cqrt_add_i32(i32 %5, i32 %6)    ; IR: %5 = add nsw i32 %4, %3  [rule 6, in-place update: the old *p is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %6)    ; IR: store i32 %5, ptr %0: swap-in: the cell holds *p + *q, the rail the cell's |0>
+  call void @cqrt_free(i32 %6)    ; IR: release the swap rail (|0>): nothing remains of the update
+  call void @cqrt_qram_load_i32_unc(i32 %5, i32 %3, i32 %1)    ; IR: un-copy %3 (*q) after its last reader, the in-place add; the form lies between, so it is not freed (rule 5 sentence 1); the caller's address rail q outlives it
   ret void    ; IR: ret void
 }
 
@@ -165,7 +159,7 @@ declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
 declare void @cqrt_free(i32)
-declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_add_i32(i32, i32)
 declare void @cqrt_qram_store_i8_hl(i32, i64, i32)
 declare void @cqrt_qram_store_i32(i32, i32, i32)
 declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
@@ -185,5 +179,3 @@ declare void @cq_template_add_i64_unc(i32, i32, i32)
 declare i32 @cq_template_add_i64_hl(i32, i64)
 declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_add_i32(i32, i32)
-declare i32 @cq_template_sub_i32(i32, i32)
-declare void @cq_template_sub_i32_unc(i32, i32, i32)

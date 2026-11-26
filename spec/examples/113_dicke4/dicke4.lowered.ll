@@ -1,11 +1,12 @@
-; HAND-WRITTEN. Rules: 4 (every `t ^= c` is cq_template_xor_i1 into a fresh rail: no in-place CNOT on a user register),
-; 6 (the dead old rail of each such update is cleaned by the bijection t_old = t_new ^ c: compute it fresh, cqrt_copy_i1
-; it out, uncompute, free), 10 (CRy / CCRy are cqrt_ry_i1_controlled on the register's current rail; the rotated rail is
-; frozen), 5, 2, 3.
-; Checked: q1 (%14 -> %20), q2 (its final rail %18 -> %22), q3 (its final rail %16 -> %25), q4 (%4 -> %28): the four
+; HAND-WRITTEN. Rules: 4 (every `t ^= c` but the last is cq_template_xor_i1 into a fresh rail), 6 (the dead old rail of
+; `%24` is cleaned by the bijection t_old = t_new ^ c: compute it fresh, cqrt_copy_i1 it out, uncompute, free; the plain
+; xor `%34` of a dead rail is rule 6's in-place update, ONE cqrt_copy_i1 onto that rail), 10 (CRy / CCRy are
+; cqrt_ry_i1_controlled on the register's current rail; the rotated rail is frozen), 5, 2, 3.
+; Checked: q1 (%14 -> %18), q2 (its final rail %15 -> %20), q3 (its final rail %16 -> %23), q4 (%4 -> %26): the four
 ; measured rails, q1 in bit 0 of the returned int.
-; Clean: q2's two superseded rails (%3, %15) and q3's superseded rail (%8), the CCRy flag chain (zext %7, select %9, or
-; %10, icmp %11) and the rule-6 temporaries (%17, %19), all uncomputed and freed.
+; Clean: q2's superseded rail %3 and q3's superseded rail (%8), the CCRy flag chain (zext %7, select %9, or %10, icmp
+; %11) and the rule-6 temporary %17, all uncomputed and freed. q2's rail %15 is not superseded: `%34` updates it in
+; place.
 ; Kept: none beyond the four measured registers.
 ; Rotations: (Ry, q2, 2*acos(sqrt(1/2)), 1); (Ry, q2, 2*acos(sqrt(1/3)), NOT q2_old) with q2_old = q2 before this gate
 ; (the rail %4 = q3 = q4 of the source); (Ry, q1, 2*acos(sqrt(2/3)), 2*(q2 ^ NOT q2_old) + q2 == 3); (Ry, q1,
@@ -17,16 +18,18 @@
 ; `%4 = xor i1 %3, true` (CSE); SCS_{3,2}'s CRy `if (q3)` is spelled as the inverted branch on q2 itself; `q3 ^= q1` with
 ; q1 == 0 is folded; and the second `q3 ^= q1` (`%32`) is placed after SCS_{2,1}'s rotation of q1 although it reads q1's
 ; earlier value `%22`.
-; The lowering: `%4` is ONE SSA value, so it is ONE rail (cq_template_xor_i1_hl(q2, true) = NOT q2, fresh): it is q4 (measured
-; at the end) and also the operand of `%12`. The inverted branch on `%3` rotates q2 under the flag NOT %3, which is the value
-; `%4`, already a rail: cqrt_ry_i1_controlled(%4, q2). Every later `t ^= c` (`%12`, `%24`, `%32`, `%34`) is out of place into a
-; fresh rail that becomes the register's current rail; `%32` reads q1's value before `%27` rotates q1, so it is emitted before
-; that rotation. Garbage: `%12` (q3 before `q3 ^= q1`) is uncomputed by its own _unc after its last consumer `%32` (its
-; operands q2 and `%4` are unchanged since); q2's old rail after `%24` and `%24` after `%34` are dead values of a bijective
-; update (rule 6) and are cleaned by the inverse xor, which also holds after the rotations in between (the identity
-; t_old = t_new ^ c is a basis identity that the Ry on q1 does not disturb, since it was computed after it). The CCRy
-; flag chain (zext, select, or, icmp) is strict Bennett: fresh rails, the controlled Ry on q1 (fresh |0>), then uncomputed
-; and freed before the xors that change its operands.
+; The lowering: `%4` is ONE SSA value, so it is ONE rail (cq_template_xor_i1_hl(q2, true) = NOT q2, fresh): it is q4
+; (measured at the end) and also the operand of `%12`. The inverted branch on `%3` rotates q2 under the flag NOT %3,
+; which is the value `%4`, already a rail: cqrt_ry_i1_controlled(%4, q2). Every later `t ^= c` but the last (`%12`,
+; `%24`, `%32`) is out of place into a fresh rail that becomes the register's current rail; `%32` reads q1's value
+; before `%27` rotates q1, so it is emitted before that rotation. Garbage: `%12` (q3 before `q3 ^= q1`) is uncomputed by
+; its own _unc after its last consumer `%32` (its operands q2 and `%4` are unchanged since); q2's old rail after `%24`
+; is the dead value of a bijective update (rule 6) and is cleaned by the inverse xor, which also holds after the
+; rotations in between (the identity t_old = t_new ^ c is a basis identity that the Ry on q1 does not disturb, since it
+; was computed after it). `%34 = xor i1 %24, %33` is a plain xor whose old value `%24` is dead right after it: rule 6's
+; in-place update, ONE core gate cqrt_copy_i1(q1, %24's rail), which is q2's final rail. The CCRy flag chain (zext,
+; select, or, icmp) is strict Bennett: fresh rails, the controlled Ry on q1 (fresh |0>), then uncomputed and freed
+; before the xors that change its operands.
 ; Rotation list (gate, target, angle, control), identical before and after the out-of-place rewrite up to rail renaming:
 ;   Ry   q2  2*acos(sqrt(1/2))  1
 ;   Ry   q2  2*acos(sqrt(1/3))  NOT q2_old            (q2_old = q2 before this gate; the rail %4 = q3 = q4 of the source)
@@ -75,24 +78,19 @@ define i32 @dicke4() {
   call void @cqrt_free(i32 %17)    ; IR: release t (|0>)
   call void @cqrt_free(i32 %3)    ; IR: release q2's old rail (|0>)
   call void @cqrt_ry_i1_controlled(i32 %15, i32 %14, double %2)    ; IR: br i1 %24 -> block %25: %27 = cq_theta_i1(%26, %2): the condition is q2's rail %24; %30 = phi: q1's rail  [CRy(q2 -> q1)]
-  %18 = call i32 @cq_template_xor_i1(i32 %15, i32 %14)    ; IR: %34 = xor i1 %24, %33: q2 ^= q1, out of place  [register q2, final]
-  %19 = call i32 @cq_template_xor_i1(i32 %18, i32 %14)    ; IR: rule 6: %24 is dead after %34 and %34 = %24 ^ %33 is a bijection in %24: t = %34 ^ %33 = its value (a basis identity; the Ry on q1 preceded %34)
-  call void @cqrt_copy_i1(i32 %19, i32 %15)    ; IR: rule 6: the %24 rail ^= t -> |0>
-  call void @cq_template_xor_i1_unc(i32 %19, i32 %18, i32 %14)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %19)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %15)    ; IR: release the %24 rail (|0>)
-  %20 = call i1 @cqrt_measure_i1(i32 %14)    ; IR: %35 = cq_measure_i1(%33)
-  %21 = zext i1 %20 to i32    ; IR: %36  (classical)
-  %22 = call i1 @cqrt_measure_i1(i32 %18)    ; IR: %37 = cq_measure_i1(%34)
-  %23 = select i1 %22, i32 2, i32 0    ; IR: %38  (classical)
-  %24 = or disjoint i32 %23, %21    ; IR: %39  (classical)
-  %25 = call i1 @cqrt_measure_i1(i32 %16)    ; IR: %40 = cq_measure_i1(%32)
-  %26 = select i1 %25, i32 4, i32 0    ; IR: %41  (classical)
-  %27 = or disjoint i32 %24, %26    ; IR: %42  (classical)
-  %28 = call i1 @cqrt_measure_i1(i32 %4)    ; IR: %43 = cq_measure_i1(%4)
-  %29 = select i1 %28, i32 8, i32 0    ; IR: %44  (classical)
-  %30 = or disjoint i32 %27, %29    ; IR: %45  (classical)
-  ret i32 %30    ; IR: ret i32 %45
+  call void @cqrt_copy_i1(i32 %14, i32 %15)    ; IR: %34 = xor i1 %24, %33: q2 ^= q1  [register q2, final; rule 6, in-place update: %24 is dead after the xor, so %34 IS the %24 rail: q2 ^= q1]
+  %18 = call i1 @cqrt_measure_i1(i32 %14)    ; IR: %35 = cq_measure_i1(%33)
+  %19 = zext i1 %18 to i32    ; IR: %36  (classical)
+  %20 = call i1 @cqrt_measure_i1(i32 %15)    ; IR: %37 = cq_measure_i1(%34)
+  %21 = select i1 %20, i32 2, i32 0    ; IR: %38  (classical)
+  %22 = or disjoint i32 %21, %19    ; IR: %39  (classical)
+  %23 = call i1 @cqrt_measure_i1(i32 %16)    ; IR: %40 = cq_measure_i1(%32)
+  %24 = select i1 %23, i32 4, i32 0    ; IR: %41  (classical)
+  %25 = or disjoint i32 %22, %24    ; IR: %42  (classical)
+  %26 = call i1 @cqrt_measure_i1(i32 %4)    ; IR: %43 = cq_measure_i1(%4)
+  %27 = select i1 %26, i32 8, i32 0    ; IR: %44  (classical)
+  %28 = or disjoint i32 %25, %27    ; IR: %45  (classical)
+  ret i32 %28    ; IR: ret i32 %45
 }
 
 declare double @llvm.acos.f64(double)

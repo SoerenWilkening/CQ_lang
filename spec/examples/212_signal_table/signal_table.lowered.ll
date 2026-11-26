@@ -16,8 +16,8 @@
 ; the reverse loop; un-copied under the arm flag but left allocated (rule 5 sentence 1: the table clone call, a
 ; memory version change, overtakes it): the load copy of the cell __cq_sig[30] (%11, the address rail of the
 ; dispatch), un-copied after the reverse loop, its last reader the last flag's _unc. __cq_q_on_usr1_1_t_ctl: the swapped-out old hit (%9), the sum (%10), the inverse of the composite
-; update (%12, %13) and the rail the cell's |0> went to (%11). on_usr1 and __cq_q_on_usr1_1_t: the same without the
-; composite.
+; update (%12, %13) and the rail the cell's |0> went to (%11). on_usr1 and __cq_q_on_usr1_1_t: the swap rail only (the
+; add is rule 6's in-place update on it, addc_i32 / add_i32; |0> after the swap-in).
 ; Kept: signal_table: x (rotated, measured); the load copy of hit (measured); by rule 5 sentence 3 the tape slot and the value seed (%9, the i64 address of on_usr1)
 ; of the store into __cq_sig[30]; the function's tape (%5). The clones keep nothing: hit += s is the in-place form.
 ; At the cutoff (not reached here) __cq_q_on_usr1_1_t_ctl keeps one overflow predicate rail (rule 14).
@@ -35,8 +35,9 @@
 ; "raise" with the signal number as its _lit field, under p_n, where p_0 = f and p_{i+1} = p_i & NOT f_i.
 ; ON_USR1 (rules 5, 6, 19, §1.4). Its address is taken, so it has the four table clones and one row of the clone
 ; table, registered by a module constructor. hit += s is load, add, store on one pointer with no memory version
-; change between: the in-place form on the cell (swap-out, add, rule-6 clean of the old rail, swap-in). In the _ctl
-; clone the swaps are _hl_controlled and the update is the composite c ? hit + s : hit. on_usr1 writes memory, so
+; change between: the in-place form on the cell (swap-out, add as rule 6's in-place update on the swap rail, swap-in). In
+; the _ctl clone the swaps are _hl_controlled and the update is the composite c ? hit + s : hit (rule 6's clean, never
+; the in-place gate). on_usr1 writes memory, so
 ; rule 18 gives it no twin: the table twins do nothing (nothing was pushed). The _ctl clone and its twin count the
 ; live _ctl activations in a module-internal counter and the clone is cut at K (§1.4, rule 14).
 ; SPEC GAP: rule 16's ordinary-host-call test makes every externally visible function "called after an event" when
@@ -160,14 +161,9 @@ define internal void @on_usr1(i32 noundef %0) {
   %2 = call i32 @__cq_mem()    ; IR: the bus M
   %3 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %2 = load i32, ptr @hit: in-place form, the swap rail (|0>)
   call void @cqrt_qram_swap_i32_hl(i32 %2, i64 ptrtoint (ptr @hit to i64), i32 %3)    ; IR: %2 = load i32, ptr @hit: swap-out: the rail holds hit, the cell |0>
-  %4 = call i32 @cq_template_add_i32_hl(i32 %3, i32 %0)    ; IR: %3 = add nsw i32 %2, %0
-  %5 = call i32 @cq_template_sub_i32_hl(i32 %4, i32 %0)    ; IR: rule 6: t = y' - s recomputes the old hit
-  call void @cqrt_copy_i32(i32 %5, i32 %3)    ; IR: rule 6: the old rail ^= t: |0>
-  call void @cq_template_sub_i32_hl_unc(i32 %5, i32 %4, i32 %0)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %5)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %3)    ; IR: release the old hit rail (|0> after the copy)
-  call void @cqrt_qram_swap_i32_hl(i32 %2, i64 ptrtoint (ptr @hit to i64), i32 %4)    ; IR: store i32 %3, ptr @hit: swap-in: the cell holds hit + s, the rail the cell's |0>
-  call void @cqrt_free(i32 %4)    ; IR: release the rail (|0>): nothing remains of the update
+  call void @cqrt_addc_i32(i32 %3, i32 %0)    ; IR: %3 = add nsw i32 %2, %0  [rule 6, in-place update: the old hit is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %2, i64 ptrtoint (ptr @hit to i64), i32 %3)    ; IR: store i32 %3, ptr @hit: swap-in: the cell holds hit + s, the rail the cell's |0>
+  call void @cqrt_free(i32 %3)    ; IR: release the swap rail (|0>): nothing remains of the update
   ret void    ; IR: ret void
 }
 
@@ -176,14 +172,9 @@ define internal void @__cq_q_on_usr1_1_t(i32 %0, i32 %1) {
   %3 = call i32 @__cq_mem()    ; IR: the bus M
   %4 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %2 = load i32, ptr @hit: in-place form, the swap rail (|0>)
   call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @hit to i64), i32 %4)    ; IR: %2 = load i32, ptr @hit: swap-out
-  %5 = call i32 @cq_template_add_i32(i32 %4, i32 %0)    ; IR: %3 = add nsw i32 %2, %0  (s is a rail)
-  %6 = call i32 @cq_template_sub_i32(i32 %5, i32 %0)    ; IR: rule 6: t = y' - s recomputes the old hit
-  call void @cqrt_copy_i32(i32 %6, i32 %4)    ; IR: rule 6: the old rail ^= t: |0>
-  call void @cq_template_sub_i32_unc(i32 %6, i32 %5, i32 %0)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %6)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %4)    ; IR: release the old hit rail (|0>)
-  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @hit to i64), i32 %5)    ; IR: store i32 %3, ptr @hit: swap-in
-  call void @cqrt_free(i32 %5)    ; IR: release the rail (|0>)
+  call void @cqrt_add_i32(i32 %0, i32 %4)    ; IR: %3 = add nsw i32 %2, %0  (s is a rail)  [rule 6, in-place update: the old hit is dead after the add, so y' IS the swap rail]
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 ptrtoint (ptr @hit to i64), i32 %4)    ; IR: store i32 %3, ptr @hit: swap-in
+  call void @cqrt_free(i32 %4)    ; IR: release the swap rail (|0>)
   ret void    ; IR: ret void
 }
 
@@ -274,9 +265,8 @@ declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
 declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_icmp_eq_i64_hl(i32, i64)
 declare void @cq_template_icmp_eq_i64_hl_unc(i32, i32, i64)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare i32 @cq_template_sub_i32_hl(i32, i32)
-declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+declare void @cqrt_addc_i32(i32, i32)
+declare void @cqrt_add_i32(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
 declare void @cq_template_add_i32_unc(i32, i32, i32)
 declare i32 @cq_template_sub_i32(i32, i32)

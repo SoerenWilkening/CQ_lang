@@ -1,10 +1,8 @@
 ; HAND-WRITTEN. Rules: 2, 3, 4, 5, 6, 16, 18, 20, 21, 26; §1.3 (the bus, __cq_mem, __cq_alloc), §1.4.
-; Checked: lo + hi (the add rail %10, measured -> %12) = ((x >> k) + (x & ((1 << k) - 1))) mod 2^32, the shift
+; Checked: lo + hi (the lo rail %8, updated in place, measured -> %10) = ((x >> k) + (x & ((1 << k) - 1))) mod 2^32, the shift
 ; arithmetic and k taken mod 32 (§2); the cell hi on the bus at exit = x >> k.
-; Clean: pointer_out_param: the clone's result rail lo (%8, rule 6: lo + hi is a bijection in lo and lo is dead), the
-; inverse t = sum - hi (%11) and the load copy of hi (%9, un-copied: its last reader precedes every memory version
-; change). __cq_q_split_100: the masked rail (%9), uncomputed after its copy-out and freed.
-; Kept: x (%6, the rotated register), the sum rail %10 (measured); by rule 5 sentence 3 the tape slot of the store
+; Clean: pointer_out_param: the load copy of hi (%9, un-copied: its last reader precedes every memory version change). __cq_q_split_100: the masked rail (%9), uncomputed after its copy-out and freed.
+; Kept: x (%6, the rotated register), the sum rail %8 (the lo rail, measured); by rule 5 sentence 3 the tape slot of the store
 ; cqrt_qram_store_i32_hl(%4, %5, %6) in __cq_q_split_100 (source `*hi = v >> k`) and its value rail, the shifted
 ; rail %6 (x >> k). Nothing else.
 ; Rotations: (Ry, x, th, 1).
@@ -21,11 +19,13 @@
 ; WHAT THE CLONE STORES IS KEPT (rules 5, 18). The store `*hi = v >> k` is a kept store: its tape slot stays for the
 ; shot and so does its value rail, the ashr result, which is therefore not uncomputed in the clone. split writes
 ; memory, so __cq_q_split_100 has NO twin: its result lo is KEPT by rule 18 in the sense that no twin is called, and is
-; cleaned by rule 6 like any other rail (rule 6, Dead: a call result that rule 18 keeps). lo + hi has both operands
+; handled by rule 6 like any other rail (rule 6, Dead: a call result that rule 18 keeps). lo + hi has both operands
 ; dead: the load copy of hi is garbage that rule 5 sentence 1 un-copies (no memory version change follows the load), so
-; rule 6 cleans lo first (t = sum - hi reads the copy), then the copy is un-copied and freed, then the sum is measured.
+; rule 6's in-place update applies to lo: the add is ONE core gate, add_i32(hi, lo), on the lo rail, which is the sum
+; from there on (no template, no fresh rail, no free of lo); then the copy is un-copied and freed, then the sum is
+; measured.
 ; SPEC GAP: rule 5 sentence 1 asks for the last consumer's uncompute; the consumer (the add) is measured and has none.
-; The load copy is un-copied after rule 6's clean, before the measurement, as in 195 and 200.
+; The load copy is un-copied after rule 6's in-place add, before the measurement, as in 195 and 200.
 ; SPEC GAP: CR fixes no calling convention, linkage or attributes for a clone called by name; it keeps the callee's
 ; (internal fastcc, unnamed_addr) as 195 and 200 do, and the memory, capture and purity facts of split (nocapture,
 ; writeonly, memory(argmem: write), nofree, willreturn) are dropped (§1.4).
@@ -41,16 +41,11 @@ define i32 @pointer_out_param(i32 noundef %0, double noundef %1, i32 noundef %2)
   %7 = ptrtoint ptr %5 to i64    ; IR: the run-time address of hi (classical; llvm.lifetime.start dropped)
   %8 = call fastcc i32 @__cq_q_split_100(i32 %6, i32 %2, ptr %5)    ; IR: %6 = call fastcc i32 @split(%5, %2, ptr %4): the clone of mask 100 (rail, classical int, classical ptr); it stores, so it has no twin (rule 18)
   %9 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %7)    ; IR: %7 = load i32, ptr %4  [hi, written by the clone: a bus load, a rail]
-  %10 = call i32 @cq_template_add_i32(i32 %9, i32 %8)    ; IR: %8 = add nsw i32 %7, %6
-  %11 = call i32 @cq_template_sub_i32(i32 %10, i32 %9)    ; IR: rule 6: t = sum - hi recomputes lo (the clone's result has no twin; lo is dead)
-  call void @cqrt_copy_i32(i32 %11, i32 %8)    ; IR: rule 6: lo ^= t: the dead lo rail is now |0>
-  call void @cq_template_sub_i32_unc(i32 %11, i32 %10, i32 %9)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %11)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %8)    ; IR: release the %6 rail (|0> after the copy)
+  call void @cqrt_add_i32(i32 %9, i32 %8)    ; IR: %8 = add nsw i32 %7, %6  [rule 6, in-place update: lo is dead after the add, so the sum IS the lo rail: lo += hi]
   call void @cqrt_qram_load_i32_hl_unc(i32 %9, i32 %4, i64 %7)    ; IR: un-copy %7 (rule 5 sentence 1: no memory version change since the load)
   call void @cqrt_free(i32 %9)    ; IR: release the %7 rail (|0>)
-  %12 = call i32 @cqrt_measure_i32(i32 %10)    ; IR: %9 = cq_measure_si32(%8)  [the sum rail stays allocated]
-  ret i32 %12    ; IR: ret i32 %9  (llvm.lifetime.end dropped)
+  %10 = call i32 @cqrt_measure_i32(i32 %8)    ; IR: %9 = cq_measure_si32(%8)  [the sum rail stays allocated]
+  ret i32 %10    ; IR: ret i32 %9  (llvm.lifetime.end dropped)
 }
 
 define internal fastcc i32 @__cq_q_split_100(i32 %0, i32 %1, ptr %2) unnamed_addr {
@@ -75,12 +70,10 @@ declare void @cqrt_ry_i32(i32, double)
 declare i32 @cq_template_ashr_i32_hl(i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_add_i32(i32, i32)
-declare i32 @cq_template_sub_i32(i32, i32)
-declare void @cq_template_sub_i32_unc(i32, i32, i32)
 declare void @cqrt_copy_i32(i32, i32)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_measure_i32(i32)
 declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare i32 @cqrt_qram_load_i32_hl(i32, i64)
 declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
+declare void @cqrt_add_i32(i32, i32)
