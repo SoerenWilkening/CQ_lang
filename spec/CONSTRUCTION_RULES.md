@@ -625,8 +625,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      A kept old value is a which-path record of the rail that replaced it: a later
      non-diagonal gate on `y'` or on an operand of `f` acts on a dephased register (162).
    - *In-place update (`add`, `xor`; owner 2026-11-25).* When `f` is the plain opcode `add` or
-     `xor` (not `sub`, not a select or a composite update, not the rolled-loop case below), its
-     other operand `o` is a literal or a rail other than `y`'s, and the clean-up point is right
+     `xor` (not `sub`, not a select or a composite update, not the rolled-loop case below; inside a
+     `cq_invert` region rule 17 says which updates are gates, `sub` included, whatever reads the old
+     value later), its other operand `o` is a literal or a rail other than `y`'s, and the clean-up point is right
      after the update (no reader of the old value follows the update instruction: no SSA use and
      no `_unc` that re-reads it), then wherever the sentences above would clean and free
      `y_old` there, the update and the clean-up together are ONE core gate on `y_old`'s rail:
@@ -655,13 +656,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      `addc_<W>(y, -lit)`, and `copy` and `xorc` are their own. The gate is never
      `_controlled`: under a quantum predicate it is emitted exactly where the template it
      replaces was (a pure computation on a rail that is dead on every path), and an update
-     merged with the old value by a `phi` is the composite case, not this one. *A select of an
-     update (owner 2026-11-26):* outside a loop, `s = select c, f(y), y` (either
+     merged with the old value by a `phi` is the composite case, not this one; inside a
+     `cq_invert` region both are the select of an update with the predicate's flag (rule 17).
+     *A select of an update (owner 2026-11-26):* outside a loop, `s = select c, f(y), y` (either
      arm order), `f` the plain `add` or `xor` of `y` and a literal or rail `o` that only `s` reads,
      is `s = y + select(c, o, 0)` (`^` for `xor`; the `0` in `y`'s arm's place): the select
      template on `o` (`_ll` for a literal), this clause's gate where its conditions hold, the
      select's `_unc`. So `if (x) a += 7;` lowers as `a += x ? 7 : 0;` does. A rolled loop's
-     accumulator keeps its merge (rule 14).
+     accumulator keeps its merge (rule 14), except a register's inside a `cq_invert` region
+     (rule 17).
      §6: the old value and its image are ONE rail, so a gate before the update and a gate
      after it act on the same rail (38, 180); a lowering in the older form (two rails, the old
      one freed at `|0⟩`) is not this rule's.
@@ -1072,64 +1075,113 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     — 45, 47, 138, 201, 208, 209, 210, 212, 213; 91, 99, 102, 108, 186.
 
 17. **`cq_invert`.** The markers are the run-time primitives `invert_begin()` / `invert_end()`
-    (§1.3): the code between them is lowered exactly as it would be anywhere else, and the
-    backend emits the gates recorded between the two calls reversed with each gate inverted.
-    Allocations are not gates and stay where they are; a `free` inside the region is performed
-    after the reversed list. The compiler places no uncompute of a rail allocated before the
-    region inside it. A measurement inside the region has no adjoint: it flushes the gates
-    recorded before it forward, and only the gates recorded after the last measurement are
-    reversed at the `end` (the compiler may warn). A bus store and an effect entry the backend
-    performs at its call are flush points in the same way: performed in place and kept (rule
-    5), with only the gates after the last flush point reversed. A tape write is an XOR gate
-    and an abort flag bookkeeping, inverted and kept like any other. Nested pairs nest; a `begin` and an
-    `end` are events, so a path that returns inside a region, or a region a classical branch
-    opens, needs no analysis. The asm fences in `CQ.h`'s macros are consumed.
-    **Memory.** An in-place form inverts exactly (swap, gate, swap reversed is the form of
-    the inverse gate), and a load un-copied inside the region reverses into itself. Example owed (§8).
-    This holds whatever the cell holds (rule 3 asks nothing about it): after a region that holds
-    `g++` on a bus cell and no later flush point, the cell reads `g − 1`, and the reference of
-    §6 applies the inverses of the region's in-place forms in reverse order at the `end`. An
-    overwriting store is a kept store, a flush point, and stays forward; an update of a
-    host-resident object (rule 20) is classical code, no gate, and runs forward.
-    **A value made in the region and read after its `end`.** A rail made inside the region
-    crosses the `end` only where a rule keeps it (a measured rail, a rotated register, a kept
-    store's rail, a kept `a_K`). Every other one is uncomputed inside the region after its last
-    reader there, and a reader after the `end` gets the value recomputed after the `end` from
-    the values live before the `begin`, uncomputed after its last reader as anywhere else. No
-    copy of it is kept across the `end` (§6 item 1: a leak). What is recomputed is the value's
-    pure cone, a loop in it included: the loop runs again after the `end` (forward, its values
-    read in place, then its reverse loop), so its gates appear inside the region, replayed
-    reversed, and once more after it. The repeat keeps no `a_K`: the in-region loop's is the
-    kept rail. A register the region computes and then rotates is a kept rail whose gates are
-    reversed as recorded: the rotation comes first, on the rail as allocated, and the template
-    that computes the value (`o ^= f`, ABI §2) after it. `s = f(x); cq_theta(&s, θ)` in a region
-    leaves `Ry(−θ)|0⟩` with `f(x)` XORed in on the rail of `s`, not `Ry(−θ)|f(x)⟩`: the adjoint
-    of compute-then-rotate. The reference of §6 computes the same (the compiler may warn).
-    A rotation, a measurement, a bus store and an effect entry are never repeated: a
-    loop whose body holds one repeats only the instructions its read values and exit tests
-    depend on, where those read nothing such an instruction produces (the other case and an
-    example are owed, §8). A bus load is repeated like any pure instruction when no memory
-    version change (rule 5) lies between the `begin` and the repeat: the cell then holds what
-    the in-region load read. Where one does, the load reads what a store produced.
-    **A marker under a quantum predicate.** `__cq_invert_begin/end` are `noduplicate`, so the
-    only marker in an arm is one the C program wrote there. It is a host call, executed on
-    every path at its position in the arm's lowered code, whose gates carry the arm flag.
+    (§1.3): the code between them is lowered exactly as it would be anywhere else, except as this
+    rule says, and the backend emits the gates recorded between the two calls reversed with each
+    gate inverted. The code between them is what lies between the two calls in the IR the compiler
+    receives; an instruction `-O1` moved across a marker is on the side where it lies (the compiler
+    may warn). Allocations are not gates and stay where they are; a `free` inside the region is
+    performed after the reversed list. The compiler places no uncompute of a rail allocated before
+    the region inside it; an in-place gate on a register (below) is no uncompute. A measurement
+    inside the region has no adjoint: it flushes the gates recorded before it forward, and only the
+    gates recorded after the last measurement are reversed at the `end` (the compiler may warn). A
+    bus store and an effect entry the backend performs at its call are flush points in the same way:
+    performed in place and kept (rule 5), with only the gates after the last flush point reversed. A
+    rail made in the region before a flush point and read after it is uncomputed before the flush
+    point and made again after it from the rails live there, as across the `end` (below): its
+    compute and its uncompute never straddle a flush point. A tape write is an XOR gate and an abort
+    flag bookkeeping, inverted and kept like any other. Nested pairs nest; a `begin` and an `end`
+    are events, so a path that returns inside a region, or a region a classical branch opens, needs
+    no analysis. The asm fences in `CQ.h`'s macros are consumed.
+    **Registers (owner 2026-11-26).** A *register* of the region is a rail live at its `begin` that
+    holds a quantum value the region reads, whatever its role, and inside the region each in-place
+    image of it; the SSA values bound to it are its chain. Inside the region an update `y' = f(y,
+    o)` of a chain value `y` is ONE core gate on the register's rail when `f` is the plain `add`,
+    `xor`, or `sub` with `y` as operand 0, or rule 6's select of such an update, `o` is a literal or
+    a rail not computed from `y`'s chain, and `y`'s rail is one the function owns and no seed: rule
+    6's in-place gate, `sub y, o` as `sub_<W>(o, y)` (a literal `addc_<W>(y, −lit)`). Rule 6's
+    clean-up point is not asked: the gate is emitted whatever reads the old value later, and the
+    image is the register from there on, never uncomputed inside the region. The backend replays the
+    gate inverted (add by sub, sub by add, `addc` by `addc` of the negated literal, `copy` and
+    `xorc` by themselves, BACKEND_ABI §1.13). Of several such updates of one old value, the last on
+    each path is the gate; the others are values made in the region that read the rail before it. A
+    reader of the old value after the gate (an SSA use, or an `_unc` that re-reads it) reads a copy,
+    `copy_<W>(y, c)` on a fresh rail right before the gate; the copy is a rail made in the region
+    and is cleaned inside it by rule 6 from the register's image after its last reader there (the
+    composite against a later image). Where rule 6 finds no clean-up point for it, the copy is kept:
+    it crosses the `end` and its gates are replayed as recorded, so its replayed readers read `|0⟩`
+    until its own replay (the compiler may warn). Under a quantum predicate (a marker in an arm, or
+    a quantum branch inside the region whose arm updates a register) the update is the select of an
+    update with the predicate's flag, `y += f ? o : 0`, and the merge of `y'` with `y` at the join
+    is the register's rail on both edges. In a rolled loop inside the region, a carried value whose
+    entry incoming is a register, whose trip update is such an update and whose trip predicate and
+    operand do not read it, is updated in place on the register's rail every trip (under a quantum
+    trip predicate `a_j` as `y += a_j ? o : 0`): no carried rail, no per-trip clean-up, nothing
+    pushed for it, and the repeat after the `end` (below) does not recompute it. A clone does not
+    own its argument's rail, so a call never updates a register in place; a register passed by
+    address is a bus cell, below. Classical code runs forward, no gate. An update that is none of
+    these (`sub o, y`, `mul` by an odd literal, a select or loop update whose condition reads `y`)
+    is a value made in the region, below. After the `end` every value of a register's chain (its
+    value at the `begin` and each image) is the register's rail with whatever the replay left;
+    nothing is recomputed for it. A register whose value at the `begin` was rule-5 garbage is not
+    uncomputed after the region (its rail no longer holds that value): it is kept unless a rule that
+    applies to its image after the `end` frees it. `rem -= x ? w : 0` repeated in a region after the
+    same statements before it returns `rem` to its value before them, and the replayed rotations
+    read the predicates of the forward statements: the region is the adjoint of its code as a
+    circuit on the registers live at its `begin`. — 214.
+    **Memory.** An in-place form inverts exactly (swap, gate, swap reversed is the form of the
+    inverse gate), and a load un-copied inside the region reverses into itself. This holds whatever
+    the cell holds (rule 3 asks nothing about it): after a region that holds `g++` on a bus cell and
+    no later flush point, the cell reads `g − 1`. An overwriting store is a kept store, a flush
+    point, and stays forward; an update of a host-resident object (rule 20) is classical code, no
+    gate, and runs forward. A cell beside a register: 214.
+    **A value made in the region and read after its `end`.** A rail made inside the region crosses
+    the `end` only where a rule keeps it (a measured rail, a rotated register, a kept store's rail,
+    a kept `a_K`, a kept copy of an old value). Every other one is uncomputed inside the region
+    after its last reader there, and a reader after the `end` gets the value recomputed after the
+    `end` from its pure cone, each value the cone reads bound as it is after the `end` (a register's
+    chain value is the register, a register the region rotated is its rail as the replay left it),
+    uncomputed after its last reader as anywhere else. No copy of it is kept across the `end` (§6
+    item 1: a leak). What is recomputed is the value's pure cone, a loop in it included: the loop
+    runs again after the `end` (forward, its values read in place, then its reverse loop), so its
+    gates appear inside the region, replayed reversed, and once more after it. The repeat keeps no
+    `a_K`: the in-region loop's is the kept rail. A register the region computes and then rotates is
+    a kept rail whose gates are reversed as recorded: the rotation comes first, on the rail as
+    allocated, and the template that computes the value (`o ^= f`, ABI §2) after it. `s = f(x);
+    cq_theta(&s, θ)` in a region leaves `Ry(−θ)|0⟩` with `f(x)` XORed in on the rail of `s`, not
+    `Ry(−θ)|f(x)⟩`: the adjoint of compute-then-rotate. The reference of §6 computes the same (the
+    compiler may warn). A rotation, a measurement, a bus store and an effect entry are never
+    repeated: a loop whose body holds one repeats only the instructions its read values and exit
+    tests depend on, where those read nothing such an instruction produces (the other case and an
+    example are owed, §8). A bus load is repeated like any pure instruction when no memory version
+    change (rule 5) lies between the `begin` and the repeat: the cell then holds what the in-region
+    load read. Where one does, the load reads what a store produced.
+    **The reference of §6.** For one execution of the region (its part after the last flush point)
+    let `F` be the map the C region computes on its registers and cells (a rotation the identity on
+    basis states, each in-place form `y ← y op o`), and `s` their values where that part begins. The
+    registers and cells after the `end` hold `F⁻¹(s)`, and the region's rotation list is the
+    rotation list of the C region run from `F⁻¹(s)`, in reverse order with each angle negated: the
+    state at the replay of a gate is the state the forward run from `F⁻¹(s)` has at that gate. A
+    value read after the `end` is computed as above from `F⁻¹(s)`.
+    **A marker under a quantum predicate.** `__cq_invert_begin/end` are `noduplicate`, so the only
+    marker in an arm is one the C program wrote there. It is a host call, executed on every path at
+    its position in the arm's lowered code, whose gates carry the arm flag.
     - *Match in the same arm:* nothing more is needed (the inverse of a controlled gate is the
       controlled inverse; the flag's compute and uncompute lie outside the region).
-    - *Match outside the arm* (after the join, or before the branch): the code between the
-      join and the match (the tail T) is lowered twice, under the arm flag `f` inside the
-      bracket and under `not f` outside it, and the other arm's gates are placed outside the
-      bracket. For a `begin` in arm A with its `end` after the join the order is `A1|f, B|not
-      f, begin, A2|f, T|f, end, T|not f` (A1/A2 the arm before/after the marker, B the other
-      arm); for an `end` in an arm whose `begin` is before the branch, `begin, prefix, B|not
-      f, T|not f, A1|f, end, A2|f, T|f`.
-    - *A marker in EVERY arm matching one marker outside* is one event, emitted once at the
-      join (an `end`) or at the branch (a `begin`), with every arm's controlled gates inside
-      the region.
-    - *Markers that do not pair on a path* are the C program's own error and are lowered as
-      they stand.
+    - *Match outside the arm* (after the join, or before the branch): the code between the join and
+      the match (the tail T) is lowered twice, under the arm flag `f` inside the bracket and under
+      `not f` outside it, and the other arm's gates are placed outside the bracket. For a `begin` in
+      arm A with its `end` after the join the order is `A1|f, B|not f, begin, A2|f, T|f, end, T|not
+      f` (A1/A2 the arm before/after the marker, B the other arm); for an `end` in an arm whose
+      `begin` is before the branch, `begin, prefix, B|not f, T|not f, A1|f, end, A2|f, T|f`. A
+      register's update in T is `y += f ? o : 0` inside the bracket and `y += (not f) ? o : 0`
+      outside it.
+    - *A marker in EVERY arm matching one marker outside* is one event, emitted once at the join (an
+      `end`) or at the branch (a `begin`), with every arm's controlled gates inside the region.
+    - *Markers that do not pair on a path* are the C program's own error and are lowered as they
+      stand.
 
-    Examples owed (§8). — 44; 61, 126.
+    Examples owed (§8): a kept store and an in-place form inside a region; a rolled loop updating a
+    register inside a region. — 44, 214; 61, 126.
 
 18. **Function lifting.** Every function with a body is lowered (rule 19), once per taint mask of
     its scalar formals that a call uses (§1.4); the all-zero mask is the function itself. A
@@ -1613,8 +1665,9 @@ that class are equal iff:
    equal the C program evaluated classically on the same inputs under §2, and every rail the
    example declares clean is `0`. A named output that lives in memory is read from the bus at
    exit, at the address the C object has in that run. A rail still allocated at exit is a frozen
-   register (rule 10), a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 18, 19, 23; the
-   overflow predicates `a_K` and `n > K2` among them); any other live rail is a leak and FAILS,
+   register (rule 10), a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 17, 18, 19, 23; the
+   overflow predicates `a_K` and `n > K2`, and a register or an old value's copy a `cq_invert`
+   region keeps, among them); any other live rail is a leak and FAILS,
    with or without a reference: a user program under the checker has no clean-list, so every
    rail it does not name is clean. A live rail in a known classical basis state on every input
    (a seed never rotated, a rail only ever written with classically known values) is no leak,
@@ -1739,7 +1792,7 @@ Owed, no source yet. Each fixes the construction its rule names:
   after the `end` through a computation, and one whose read value depends on a rotation, measurement or store
   of its body (construction owed too); `cq_invert_begin()` inside a quantum arm with its `end`
   after the join, a pair inside one arm, an `end` in each arm closing one `begin`; a kept store and an in-place
-  form inside a region.
+  form inside a region; a rolled loop updating a register inside a region.
 - rule 18: a static callee under `#pragma STDC FENV_ACCESS ON` measured from a plain caller (the mode literal 0,
   the empty flags rail, the copy-out of the measured result before the twin).
 - rule 19: a host call with classical arguments and no gate under a quantum predicate; an in-place callee minting
@@ -1767,5 +1820,9 @@ them as witnesses. Bus accesses at classical addresses and address rails, store 
 A host-resident `alloca` beside an escaped one, a scan K-loop: 203. One clone per quantum-depth recursion:
 205 (rule 14). `cq_theta` on a cell twice and on a load copy: 206, 207 (rules 2, 5). Host and input calls
 behind a deferred output: 209, 210 (BACKEND_ABI §1.11). A function-pointer rail: 211. The signal table: 212.
+
+Written 2026-11-26: 214 invert_inplace_register (rule 17 registers, owner 2026-11-26): a knapsack PREP and
+its adjoint in a region; an old value read after its in-place update in the region (the copy); a bus cell and
+a register updated in place in one region.
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.

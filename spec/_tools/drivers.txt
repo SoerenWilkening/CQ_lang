@@ -211,3 +211,4 @@
 211_fnptr_rail_measuring|int fnptr_rail_measuring(unsigned,double,int,double);|fnptr_rail_measuring(1,.5,4,.25)
 212_signal_table|int signal_table(int,double,int);|signal_table(0,.5,1)
 213_malloc_rail_size|int malloc_rail_size(unsigned long,double,int,double,unsigned);|malloc_rail_size(8,.5,9,.25,1);malloc_rail_size(8,.5,9,.25,0)
+214_invert_inplace_register|int invert_prepare(unsigned char,double,unsigned char,double,double,double);int invert_old_value(unsigned,double,unsigned,unsigned,double,double);unsigned invert_cell(unsigned,double,unsigned,double);|invert_prepare(77,.5,3,.25,2.0943951023931953,.75);invert_old_value(9,.5,4,45,.3,.2);invert_cell(5,.5,6,.25)

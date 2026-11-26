@@ -819,8 +819,9 @@ its fields; a format entry when the fields its format string consumes are writte
 - **Sig.** `void @cqrt_invert_begin()`, `void @cqrt_invert_end()`.
 - **Sem.** CR rule 17 (`cq_invert`). `begin` opens a region; `end` closes the innermost open region
   and the backend then emits the gates recorded between the two calls REVERSED, each replaced by its
-  inverse (an Ry or P by the same gate with the negated angle; a self-inverse gate, i.e. every
-  template, every `_unc`, every core XOR gate, by itself). Allocations are not gates and keep their
+  inverse (an Ry or P by the same gate with the negated angle; `add_<W>(s, d)` by `sub_<W>(s, d)`
+  and the reverse, `addc_<W>(h, lit)` by `addc_<W>(h, −lit)`, §1.15; a self-inverse gate, i.e.
+  every template, every `_unc`, every core XOR gate, by itself). Allocations are not gates and keep their
   place (the rail exists from its `alloc`); a `free` recorded inside the region is performed after
   the reversed list. A measurement, a bus store or an effect entry performed at its call inside the region has
   no inverse: it flushes the gates recorded before it forward (it needs them) and is
@@ -834,7 +835,7 @@ its fields; a format entry when the fields its format string consumes are writte
 - **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/bennett_transform.jl:_bennett_default`
   (its uncompute is the forward gate list appended in reverse order, each NOT/CNOT/Toffoli
   being its own inverse; BJ has no rotations and no separate adjoint function). **Ex.** 44, 61,
-  126.
+  126, 214.
 - **Impl.** Not a gate (c): the backend holds the gates of an open region back and appends them
   at `end` in reverse order, an Ry or P with its angle negated, every X, CX and CCX as it is.
   Nothing is added to the gate list.
@@ -880,8 +881,10 @@ it.
   `add_<W>(s, d)`, and `addc_<W>(h, −lit)` that of `addc_<W>(h, lit)`; there is no `_unc` and
   no `_controlled` form.
 - **Uses.** CR rule 6's in-place update: an `add` of a dead value, where the template into a
-  fresh rail followed by the clean-up of the old rail was emitted before. `sub` is emitted only
-  where an `add` is reversed (a `cq_invert` region, a twin, a reverse loop). The in-place `xor`
+  fresh rail followed by the clean-up of the old rail was emitted before. `sub` is emitted where
+  an `add` is reversed (a twin, a reverse loop) and, inside a `cq_invert` region, as the forward
+  gate of `y − o` (CR rule 17); the backend's replay of a region inverts `add` and `sub` into each
+  other (§1.13). The in-place `xor`
   of the same rule is `copy_<W>(o, y)` and `xorc_<W>(y, lit)` of §1.9, which a backend already has;
   that rule calls them on a target that is not `|0⟩`, which §1.9 allows.
 - **§2.** None: addition mod 2^W is total.
@@ -890,7 +893,7 @@ it.
   gate list reversed, or X on every bit of d, add, X on every bit of d. addc: add with the
   literal loaded into a scratch rail by X gates and unloaded after, or a constant adder.
   W = 1: add and sub are CX(s, d); addc is X(h) when lit is odd.
-- **Ex.** None in the corpus yet: the references still show rule 6's older form.
+- **Ex.** 01, 214 (inside a region, replayed inverted).
 
 ## 2. Templates (`cq_template_*`)
 
