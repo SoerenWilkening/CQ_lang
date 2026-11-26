@@ -18,6 +18,16 @@ Backend contract: spec/BACKEND_ABI.md. Worked programs: examples/grover/grover.c
 
 `CQ.h` is included automatically by `cqcc`. Angles are `double`, in radians, and classical.
 
+`cq_theta`/`cq_measure` do not accept a `_BitInt(N)` (their `_Generic` lists only the standard
+types). For an exact-width register, declare the primitives yourself, in value form, and assign
+the result back:
+
+    typedef unsigned _BitInt(10) reg;
+    __attribute__((nomerge)) reg cq_theta_reg(reg x, double angle);   // any cq_theta_ name: (T, double) -> T
+    reg cq_measure_reg(reg x);               // any name starting cq_measure_: (T) -> T
+    a = cq_theta_reg(a, M_PI / 2);           // = cq_theta(&a, M_PI / 2); a is exactly 10 qubits
+    int r = (int)cq_measure_reg(a);
+
 ## Rules for writing CQ
 
 - There is no qubit type, no register object, no gate list, no circuit builder. Do not invent

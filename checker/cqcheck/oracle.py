@@ -1238,13 +1238,10 @@ def _bytes_text(s: str) -> str:
         return s
 
 
-# cq_theta_<t> / cq_measure_<t> suffix (CQ.h) -> the register's rail type
-_SITE_RAIL = {"i1": "i1", "c": "i8", "si8": "i8", "ui8": "i8", "si16": "i16", "ui16": "i16",
-              "si32": "i32", "ui32": "i32", "sl": "i64", "ul": "i64", "sll": "i64", "ull": "i64",
-              "f16": "f16", "bf16": "bf16", "f32": "f32", "f64": "f64", "f80": "f80"}
 _SITE_CALL = re.compile(r'\bcall\b[^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_begin|__cq_invert_end)\(')
 _DEFINE = re.compile(r'^define\b[^@]*@("(?:[^"\\]|\\.)*"|[-\w$.]+)\(')
 _SITE_CACHE: Dict[Path, Dict[Tuple[str, int], str]] = {}
+_SITE_RAILS: Dict[Path, Dict[Tuple[str, int], Optional[str]]] = {}   # per cq_theta_*/cq_measure_* site: drivers.site_rail
 _SITE_RESOLVED: Dict[str, Path] = {}   # cq-p9pty: the path as given -> resolved, so a sample's lookup does no realpath
 
 
@@ -1258,7 +1255,9 @@ def site_callees(o1: Path) -> Dict[Tuple[str, int], str]:
     o1 = _SITE_RESOLVED[given] = Path(o1).resolve()
     if o1 in _SITE_CACHE:
         return _SITE_CACHE[o1]
+    from . import drivers
     out: Dict[Tuple[str, int], str] = {}
+    rails: Dict[Tuple[str, int], Optional[str]] = {}
     fn, k = None, 0
     for line in o1.read_text().splitlines():
         m = _DEFINE.match(line)
@@ -1275,16 +1274,26 @@ def site_callees(o1: Path) -> Dict[Tuple[str, int], str]:
         c = _SITE_CALL.search(line)
         if c:
             out[(fn, k)] = c.group(1)
+            if c.group(1).startswith(("cq_theta_", "cq_measure_")):
+                rails[(fn, k)] = drivers.site_rail(line)
             k += 1
+    _SITE_RAILS[o1] = rails
     _SITE_CACHE[o1] = out
     return out
+
+
+def site_rails(o1: Path) -> Dict[Tuple[str, int], Optional[str]]:
+    """(fn, site ordinal) -> the register's rail type of each cq_theta_* / cq_measure_* site of
+    site_callees, from the call's IR return type (drivers.site_rail; None for no scalar type)."""
+    site_callees(o1)
+    return _SITE_RAILS[_SITE_RESOLVED[str(o1)]]
 
 
 def _measure_rail(o1: Path, fn: str, site: int) -> str:
     callee = site_callees(o1).get((fn, int(site)))
     if callee is None or not callee.startswith("cq_measure_"):
         raise OracleError(f"oracle: measure site {fn}:{site} is not a cq_measure_* call in {o1}")
-    w = _SITE_RAIL.get(callee[len("cq_measure_"):])
+    w = site_rails(o1)[(fn, int(site))]
     if w is None:
         raise OracleError(f"cq: unimplemented: oracle: rail type of {callee}")
     return w

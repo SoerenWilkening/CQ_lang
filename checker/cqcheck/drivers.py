@@ -730,10 +730,20 @@ def site_kind(callee: str) -> Optional[str]:
     return None
 
 
-# cq_theta_<suffix> (CQ.h) -> the register's width token
-THETA_RAIL = {"i1": "i1", "c": "i8", "si8": "i8", "ui8": "i8", "si16": "i16", "ui16": "i16",
-              "si32": "i32", "ui32": "i32", "sl": "i64", "ul": "i64", "sll": "i64", "ull": "i64",
-              "f16": "f16", "bf16": "bf16", "f32": "f32", "f64": "f64", "f80": "f80"}
+_IR_FP_RAIL = {"half": "f16", "bfloat": "bf16", "float": "f32", "double": "f64", "x86_fp80": "f80"}
+_RE_SITE_RET = re.compile(r'\bcall\b[^@]*?(\S+)\s+@"?cq_(?:theta|measure)_')
+
+
+def site_rail(call_text: str) -> Optional[str]:
+    """The register's width token (i1, i10, i32, ..., f80) of a cq_theta_* / cq_measure_* call: the
+    call's IR return type, which is the register's type (T cq_theta_T(T, double), T cq_measure_T(T),
+    CQ.h). Any iN, so a hand-declared _BitInt(N) primitive (cq_theta_reg, bead cq-ktb8c) resolves
+    like CQ.h's own. None when the return type is no integer or fp scalar."""
+    m = _RE_SITE_RET.search(call_text)
+    if not m:
+        return None
+    t = m.group(1)
+    return t if re.fullmatch(r"i[1-9]\d*", t) else _IR_FP_RAIL.get(t)
 
 
 @dataclass
@@ -749,10 +759,12 @@ class ThetaSite:
     @property
     def ctype(self) -> CType:
         """The C type sampling draws its value in (storage width = the register width)."""
-        return parse_ctype({"i1": "_Bool", "i8": "signed char", "i16": "short",
-                            "i32": "int", "i64": "long long", "f16": "_Float16",
-                            "bf16": "unsigned short", "f32": "float", "f64": "double",
-                            "f80": "long double"}[self.w])
+        sp = {"i1": "_Bool", "i8": "signed char", "i16": "short", "i32": "int", "i64": "long long",
+              "f16": "_Float16", "bf16": "unsigned short", "f32": "float", "f64": "double",
+              "f80": "long double"}.get(self.w)
+        if sp is None:      # any other iN, a _BitInt(N) register: signed, so its edges include MIN and MAX
+            return CType(f"_BitInt({self.w[1:]})", "i", int(self.w[1:]), True)
+        return parse_ctype(sp)
 
 
 def theta_site_widths(o1: Path) -> Dict[str, str]:
@@ -774,14 +786,14 @@ def theta_sites(mod: Module, closure: bool = True) -> List[ThetaSite]:
             ordinal += 1
             if not ins.callee.startswith("@cq_theta_"):
                 continue
-            suffix = ins.callee[len("@cq_theta_"):]
-            if suffix not in THETA_RAIL:
+            w = site_rail(ins.text)
+            if w is None:
                 unimplemented(f"{f.name}: theta call {ins.text!r}: register type of {ins.callee}")
             name = f.name[1:]
             if name.startswith('"'):
                 name = name[1:-1]
             params = set(quantum_params(mod, (f.name, ordinal - 1)).value) if closure else set()
-            out.append(ThetaSite(name, ordinal - 1, THETA_RAIL[suffix], params))
+            out.append(ThetaSite(name, ordinal - 1, w, params))
     return out
 
 
