@@ -1338,6 +1338,21 @@ _MEASURED_RAIL = re.compile(r"@cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
 _NEUTRAL_CALLEE = re.compile(r"^(cq_template_|cqrt_|__cq_mem$|__cq_object$|__cq_unbound$|__cq_pointer$|__cq_data$|__cq_mints_push$|__cq_clone_|__cq_free$|llvm\.)")
 
 
+_FENV_FNS = frozenset(("feclearexcept", "fegetexceptflag", "feraiseexcept", "fesetexceptflag", "fetestexcept", "fegetround",
+                       "fesetround", "fegetenv", "feholdexcept", "fesetenv", "feupdateenv"))
+
+
+def _clone_source(name: str) -> Optional[str]:
+    """The C function of a by-name clone __cq_q_<fn>_<mask>[_b...][suffix words] (CR §1.4, read right to left)."""
+    m = re.match(r"^__cq_q_(.+)$", name)
+    if not m:
+        return None
+    s = re.sub(r"(?:_(?:t|ctl|rm|rmq|pure|unc))+$", "", m.group(1))
+    s = re.sub(r"_b\d+(?:_\d+)*$", "", s)
+    m = re.match(r"^(.+)_(?:v|[01]+)$", s)
+    return m.group(1) if m else None
+
+
 def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
     """Rule 18's list read off the lowered bodies, each a function's own reason or a by-name callee's: it writes
     memory (rule 5: a bus store or swap, a plain store or memory intrinsic to a host-resident object, but the activation
@@ -1358,7 +1373,15 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
         for m in re.finditer(r"(?m)^\s+store [^\n]*?, ptr ([@%][-\w.$\"]+)", body):
             if m.group(1) not in frames and not m.group(1).startswith("@__cq_act_") and not frame_gep(body, frames, m.group(1)):
                 return True
-        return any(not _NEUTRAL_CALLEE.match(c) and c not in bodies for c in _CALLED.findall(body))
+        if any(not _NEUTRAL_CALLEE.match(c) and c not in bodies for c in _CALLED.findall(body)):
+            return True
+        # cq-dmlhn (rules 5, 18, 23): writing memory is a static property of the C body. A clone holding the quantum
+        # environment makes its <fenv.h> calls as rail operations, but the function's own symbol calls the host
+        # function, which no memory attribute marks as writing nothing: the function has no twin.
+        # shortcut: reads the own symbol, so a function whose own symbol the module dropped is not caught; upgrade
+        # to a pass-side marker if one turns up.
+        src = _clone_source(fn)
+        return src is not None and src in bodies and any(c in _FENV_FNS for c in _CALLED.findall(bodies[src]))
 
     def frame_gep(body: str, frames: Set[str], p: str) -> bool:
         m = re.search(rf"(?m)^\s+{re.escape(p)} = getelementptr [^\n]*?, ptr (%[-\w.$\"]+)", body)
