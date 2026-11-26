@@ -2710,7 +2710,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     std::vector<SmallVector<Value *, 2>> res;   // per cphi
   };
   std::vector<ExtraExit> extraExits;
-  auto extraRes = [&](BasicBlock *u) {
+  auto extraRes = [&](BasicBlock *u) -> ExtraExit {
     ArmEval ev;
     // The quantum exits this trip has tested before u: a test that reaches u in the trip (a linearized quantum arm's runs in
     // the open flow; one in a classical arm of its own took its edge in run already, and left exitFlag).
@@ -2747,7 +2747,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         r.push_back(!vl.empty() ? select(aCur, vl[f], Operand{c[f], true}, cp.rails[f]) : c[f]);
       xx.res.push_back(std::move(r));
     }
-    extraExits.push_back(std::move(xx));
+    return xx;
   };
   auto emitTerminator = [&](BasicBlock *u) {
     tgtFrom = u;
@@ -2755,7 +2755,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (isAbortTest(u))
       abortTest(u);
     if (mx && (is_contained(cxExtra, u) || (midCxb && u == cxb)))
-      extraRes(u);
+      extraExits.push_back(extraRes(u));
     const bool qExit = mx && termQ(t) && any_of(successors(u), [&](const BasicBlock *s) { return !L.contains(s); });
     if (u == latch && !qExit)
       latchNexts();
@@ -2766,9 +2766,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (u == cxb)
       aAtCx = aCur;
     if (u == cxb && cxArm && u != header && u != latch) {
-      noteUnbuilt("loops-classical: a case-3 loop whose only classical exit, into its exit or noreturn arm, is mid-trip", t);
-      for (CPhi &cp : cphis)
-        cp.atCx.assign(cp.cap.begin(), cp.cap.end());
+      // cq-uepm8: a mid-trip classical exit into the arm sees the captures with this trip's quantum exits before it taken in
+      // (extraRes; cxb has no edge into C, so its res is those captures).
+      ExtraExit xx = extraRes(u);
+      for (unsigned i = 0; i < cphis.size(); ++i)
+        cphis[i].atCx.assign(xx.res[i].begin(), xx.res[i].end());
     }
     if (qExit) {
       // A quantum exit before the latch: e = a & f, a' = a & NOT f; the trip goes on in the loop. A quantum
