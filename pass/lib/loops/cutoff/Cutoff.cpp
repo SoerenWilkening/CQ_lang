@@ -118,6 +118,12 @@ namespace cq::loops {
 
 namespace {
 
+// cq-jinnf (CR rule 14 "Irreducible control flow"): S branched to fix-irreducible's guard, a latch of the loop the rule's
+// cases apply to, before Plugin.cpp oneBackEdge sent its back edge through the one back-edge block (marked cq.backedge).
+bool oneBackEdgeLatch(const BasicBlock *S) {
+  return any_of(successors(S), [](const BasicBlock *x) { return x->getTerminator()->getMetadata("cq.backedge"); });
+}
+
 // The oracle's header test region (checker/oracle/OracleInstr.cpp, cq-arch T1.2): returns whether a
 // header run can leave through it, and the region's blocks.
 // Only a live exit counts (Exits.h): an edge into an effect-free dead end is never taken (UB to reach,
@@ -137,7 +143,7 @@ bool testRegion(const Loop &L, SmallPtrSetImpl<const BasicBlock *> &region) {
       exits = true;
     for (BasicBlock *S : successors(B)) {
       if (!L.contains(S) || S == H || region.count(S) || S->getSinglePredecessor() != B || L.isLoopLatch(S) ||
-          !exiting(S))
+          oneBackEdgeLatch(S) || !exiting(S))
         continue;
       bool pure = true;
       for (Instruction &I : *S)

@@ -735,7 +735,8 @@ bool oneBackEdge(Function &F) {
         P.removeIncomingValueIf([&](unsigned i) { return L->contains(P.getIncomingBlock(i)); }, false);
         P.addIncoming(N, B);
       }
-      BranchInst::Create(H, B);
+      // cq-jinnf: the latches stay latches for the trip count (loops::testRegion): a trip is a run of the guard, CR rule 14.
+      BranchInst::Create(H, B)->setMetadata("cq.backedge", MDNode::get(F.getContext(), {}));
       for (BasicBlock *p : latches)
         p->getTerminator()->replaceSuccessorWith(H, B);
       any = changed = true;
