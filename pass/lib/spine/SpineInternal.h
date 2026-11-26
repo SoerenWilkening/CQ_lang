@@ -235,6 +235,9 @@ struct Shared {
     llvm::SmallVector<const llvm::Instruction *, 2> loads;
   };
   std::vector<PendingSix> ruleSixPending;
+  // cq-hbydr: every plain rule 6 clean-up requested (cleanOrDefer, ruleSixRetry), in request order: a cq_invert end
+  // requeues those its region-made rails took down (closeRegionRails).
+  std::vector<PendingSix> ruleSixOrigin;
   // cq-su3p (PreRotation.cpp): readers of a register's pre-rotation value that -O1 sank after the
   // cq_theta, lowered just before the rotation. The walker skips them when it reaches them and takes
   // hoistedDefs into the current block's definitions after the dispatch that hoisted them.

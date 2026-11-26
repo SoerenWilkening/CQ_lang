@@ -235,9 +235,49 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
       return false;   // a rail of the lowering's own (a flag, a scratch): pred makes flags afresh where read
     return any_of(it->second, [&](const Value *V) { return keepSet.count(V) != 0; });
   };
+  // cq-hbydr (CR rule 6 with rule 17): resolving the rails the region made drops every clean-up a garbage rail reads
+  // (pruneCleanups), at this point: that of an old value made before the region whose image the region made and
+  // uncomputes (recomputed below), and that of each older link of a chain whose newest image is still pending, garbage
+  // until a later update cleans it, and, through those, the links below. Rule 6 asks deadness at the clean-up point,
+  // which no longer depends on the region: each such old value is requested again, the newest from the recomputed update
+  // (ruleSixAfter below), the others as at their updates once that is done (ruleSixRetry). Each keeps its mark until its
+  // turn, so the recomputed update sees the old value as an image, not as garbage.
+  auto liveRail = [&](Value *h) { return ctx.unc().recorded(h) && ctx.unc().liveRole(ctx.unc().idOf(h)).has_value(); };
+  auto railOf = [&](const Shared::PendingSix &e) -> Value * {
+    auto bi = sh.binds.find(e.Y);
+    return bi != sh.binds.end() && bi->second.size() == 1 && bi->second.front().handle ? bi->second.front().v : nullptr;
+  };
+  auto cleaned = [&](Value *h) { return h && liveRail(h) && ctx.unc().hasCleanup(ctx.unc().idOf(h)); };
+  SmallVector<size_t, 8> had;
+  for (size_t i = 0; i < sh.ruleSixOrigin.size(); ++i)
+    if (sh.ruleSixOrigin[i].ctx == &ctx && cleaned(railOf(sh.ruleSixOrigin[i])))
+      had.push_back(i);
   SmallVector<Value *, 8> resolved = ctx.unc().resolveRegionMade(endCall, keep);
+  SmallVector<Shared::PendingSix, 8> lost;
+  for (size_t i : had) {
+    const Shared::PendingSix &e = sh.ruleSixOrigin[i];
+    Value *h = railOf(e);
+    if (!liveRail(h) || cleaned(h))
+      continue;
+    if (!liveRail(e.yp.v)) {
+      sh.ruleSixCleaned.erase(h);   // the newest link: its image is gone, the recomputed update cleans it
+      sh.ruleSixReads.erase(h);
+    } else {
+      lost.push_back(e);
+    }
+  }
+  auto requeue = [&] {
+    for (Shared::PendingSix &e : lost) {
+      Value *h = railOf(e);
+      sh.ruleSixCleaned.erase(h);
+      sh.ruleSixReads.erase(h);
+      sh.ruleSixPending.push_back(std::move(e));
+    }
+    if (!lost.empty())
+      ruleSixRetry(ctx);
+  };
   if (resolved.empty())
-    return;
+    return requeue();
   SmallSetVector<const Value *, 8> gone;   // found order: it orders the re-lowering below
   for (Value *h : resolved)
     if (auto it = origOf.find(h); it != origOf.end())
@@ -257,8 +297,11 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
   for (const Value *V : gone)
     if (liveAfter(V))
       need(V);
-  for (Instruction *I : redo)   // operands first (need inserts them first)
+  for (Instruction *I : redo) {   // operands first (need inserts them first)
     lowerInstruction(ctx, *I);
+    ruleSixAfter(ctx, *I);   // cq-hbydr: the recomputation is uncomputed as anywhere else (rule 6 included)
+  }
+  requeue();
 }
 
 void lowerCall(LoweringContext &ctx, CallBase &CB) {

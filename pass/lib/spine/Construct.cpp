@@ -2903,6 +2903,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   Walker(ctx, F, DT, LI).run();
   frozen.reset();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
+  llvm::erase_if(sh.ruleSixOrigin, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
   calls::insertActivationCounter(ctx);   // rule 14, §1.4
 
