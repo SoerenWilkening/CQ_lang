@@ -72,6 +72,12 @@ add_test(NAME loops-cutoff-arm-subloop
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/arm_subloop_ir.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-xuaam (CR rules 9, 14, TinyCC decl): a quantum-exit loop's two exits returning the same 0, a classical merged return.
+add_test(NAME loops-cutoff-same-ret
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/kloop_same_ret_ir.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-9kcq S21 (CR rules 14, 26): a vector of a quantum-exit K-loop's header test region read by its body, carried by the
 # rolled trip one field per header phi; with a mutant (field 1 carried as field 0).
 add_test(NAME loops-cutoff-aggregate

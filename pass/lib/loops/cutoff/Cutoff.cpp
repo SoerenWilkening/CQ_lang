@@ -1077,6 +1077,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         fromUnit |= inUnit(u);
       if (!fromUnit)
         continue;
+      // cq-xuaam (rule 9): every exit gives the same value from outside the unit (both returns 0), so taint holds P
+      // classical: P is that value wherever the unit leaves, no rail of the exits.
+      if (Value *same = P.hasConstantValue(); same && !isQ(&P)) {
+        auto *si = dyn_cast<Instruction>(same);
+        if (!si || !inUnit(si->getParent())) {
+          if (!ctx.bound(&P))
+            ctx.bindFields(&P, {ctx.operand(same)});
+          continue;
+        }
+      }
       if (!isQ(&P))
         unimplemented("loops-cutoff: a classical phi joining a multi-exit K-loop's exits (cq-uytx)", &P);
       if (!(P.getType()->isPointerTy() || P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
