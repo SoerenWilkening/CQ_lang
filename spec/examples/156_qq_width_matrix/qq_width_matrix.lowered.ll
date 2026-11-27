@@ -1,11 +1,11 @@
 ; HAND-WRITTEN. Rules: 4, 2, 1, 5, 6, §1.2, §2.
 ; Checked: each function's measured result.
 ; Clean: the shift-amount mask rails of shl_qq_i16 / ashr_qq_i64 (uncomputed and freed before the measurement).
-; sub_qq_i8: the old a rail (%5, rule 6, operand 0 of the IR sub: |0> after the copy) and t = r + b (%8), both freed.
-; Kept: the two rotated registers of every other function (no inverse), sub_qq_i8's b, and the measured result rail.
+; sub_qq_i8: nothing (its result is the a rail, updated in place, operand 0 of the IR sub).
+; Kept: the two rotated registers of every other function (no inverse), sub_qq_i8's b, and the measured result rail (sub_qq_i8's a).
 ; Rotations: Ry(ta) on a and Ry(tb) on b in every function.
 ; Both operands quantum at every width the earlier examples lacked (10/12/13/19 covered i32 qq and the _hl/_lh mixed
-; forms; sub_qq_i8's sub is a bijection in the dead a for fixed b, so rule 6 cleans a): the template is the bare qq shape cq_template_<op>_<W>(a, b) (§1.2: shape omitted = all handles), operands in
+; forms; sub_qq_i8's sub of the dead a is rule 6's in-place update, sub_i8(b, a), owner 2026-11-27): the template is the bare qq shape cq_template_<op>_<W>(a, b) (§1.2: shape omitted = all handles), operands in
 ; the IR's order, into a fresh rail (rule 4). The classical mask of a quantum shift amount (b & 7, b & 63) is a _hl and,
 ; a garbage rail uncomputed right after the shift (rule 5). Totalization (§2): sdiv/srem/udiv by a quantum zero and
 ; sdiv(INT_MIN, -1) take the table's values; a quantum SHIFT AMOUNT is taken mod W (x86 semantics) although both masks
@@ -19,14 +19,9 @@ define signext i8 @sub_qq_i8(i8 noundef signext %0, i8 noundef signext %1, doubl
   call void @cqrt_ry_i8(i32 %5, double %2)    ; IR: %5 = cq_theta_si8(%0, %2)  [Ry]
   %6 = call i32 @cqrt_alloc_i8(i8 %1)    ; IR: %6 = cq_theta_si8(%1, %3)  [register b]
   call void @cqrt_ry_i8(i32 %6, double %3)    ; IR: %6 = cq_theta_si8(%1, %3)  [Ry]
-  %7 = call i32 @cq_template_sub_i8(i32 %5, i32 %6)    ; IR: %7 = sub i8 %5, %6  [qq shape, fresh rail]
-  %8 = call i32 @cq_template_add_i8(i32 %7, i32 %6)    ; IR: rule 6: t = r + b recomputes the old a (the update is a bijection in it)
-  call void @cqrt_copy_i8(i32 %8, i32 %5)    ; IR: rule 6: a ^= t: the dead a rail is now |0>
-  call void @cq_template_add_i8_unc(i32 %8, i32 %7, i32 %6)    ; IR: rule 6: uncompute t
-  call void @cqrt_free(i32 %8)    ; IR: release t (|0>)
-  call void @cqrt_free(i32 %5)    ; IR: release the old a rail (|0> after the copy)
-  %9 = call i8 @cqrt_measure_i8(i32 %7)    ; IR: %8 = cq_measure_si8(%7)
-  ret i8 %9    ; IR: ret i8 %8
+  call void @cqrt_sub_i8(i32 %6, i32 %5)    ; IR: %7 = sub i8 %5, %6  [rule 6, in-place update (sub, owner 2026-11-27): a is dead after the sub, so the result IS the a rail: a -= b]
+  %7 = call i8 @cqrt_measure_i8(i32 %5)    ; IR: %8 = cq_measure_si8(%7)
+  ret i8 %7    ; IR: ret i8 %8
 }
 
 define signext i16 @shl_qq_i16(i16 noundef signext %0, i16 noundef signext %1, double noundef %2, double noundef %3) {
@@ -125,12 +120,6 @@ define double @fdiv_qq_f64(double noundef %0, double noundef %1, double noundef 
   ret double %8    ; IR: ret double %8
 }
 
-declare void @cqrt_copy_i8(i32, i32)
-
-declare void @cq_template_add_i8_unc(i32, i32, i32)
-
-declare i32 @cq_template_add_i8(i32, i32)
-
 declare i32 @cqrt_alloc_i8(i8 signext)
 declare i32 @cqrt_alloc_i16(i16 signext)
 declare i32 @cqrt_alloc_i32(i32)
@@ -143,7 +132,7 @@ declare void @cqrt_ry_i32(i32, double)
 declare void @cqrt_ry_i64(i32, double)
 declare void @cqrt_ry_f32(i32, double)
 declare void @cqrt_ry_f64(i32, double)
-declare i32 @cq_template_sub_i8(i32, i32)
+declare void @cqrt_sub_i8(i32, i32)
 declare i32 @cq_template_and_i16_hl(i32, i16 signext)
 declare void @cq_template_and_i16_hl_unc(i32, i32, i16 signext)
 declare i32 @cq_template_shl_i16(i32, i32)
