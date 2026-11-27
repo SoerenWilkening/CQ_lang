@@ -1657,7 +1657,7 @@ unsigned old_value(unsigned a0, double ta, unsigned w, unsigned k, double p, dou
 unsigned made(unsigned a0, double ta, unsigned w) {
     unsigned a = a0; cq_theta(&a, ta);
     cq_invert_begin(); a += w; unsigned z = a * 3; cq_invert_end();
-    return cq_measure(z);
+    return cq_measure(z) + (cq_measure(a) << 16);
 }
 /* nested regions: the inner one reverses a -= w, the outer one the whole: F(a) = (a ^ 6) + w */
 unsigned nested(unsigned a0, double ta, unsigned w) {
@@ -1684,6 +1684,12 @@ unsigned broken(unsigned a0, double ta, unsigned w, double t2) {
     cq_invert_begin(); a += w; cq_theta(&a, t2); cq_invert_end();
     return cq_measure(a);
 }
+/* a sum the region only compares */
+unsigned temp_sum(unsigned x0, double tx, unsigned z0, double tz, double p) {
+    unsigned x = x0, z = z0; cq_theta(&x, tx); cq_theta(&z, tz);
+    cq_invert_begin(); if (x + z > 3) cq_phi(p); cq_invert_end();
+    return cq_measure(x) + cq_measure(z);
+}
 /* the knapsack items of 214: the region is PREP's adjoint */
 #define PREP if (rem >= 5) cq_theta(&x0, t); rem -= x0 ? 5 : 0; profit += x0 ? 18 : 0; \\
              if (rem >= 9) cq_theta(&x1, t); rem -= x1 ? 9 : 0; profit += x1 ? 27 : 0;
@@ -1702,14 +1708,16 @@ int prepare(u8 r0, double tr, u8 p0, double tp, double t, double p) {
               "unsigned old_value(unsigned,double,unsigned,unsigned,double,double);unsigned made(unsigned,double,unsigned);"
               "unsigned nested(unsigned,double,unsigned);unsigned flushed(unsigned,double,unsigned,double,unsigned);"
               "unsigned classical(unsigned,double,unsigned);unsigned broken(unsigned,double,unsigned,double);"
-              "int prepare(unsigned char,double,unsigned char,double,double,double)")
+              "int prepare(unsigned char,double,unsigned char,double,double,double);"
+              "unsigned temp_sum(unsigned,double,unsigned,double,double)")
     CALLS = [("cell_inline", ["unsigned", "double"]), ("cell_call", ["unsigned", "double"]),
              ("ops", ["unsigned", "double", "unsigned", "unsigned"]),
              ("old_value", ["unsigned", "double", "unsigned", "unsigned", "double", "double"]),
              ("made", ["unsigned", "double", "unsigned"]), ("nested", ["unsigned", "double", "unsigned"]),
              ("flushed", ["unsigned", "double", "unsigned", "double", "unsigned"]),
              ("classical", ["unsigned", "double", "unsigned"]), ("broken", ["unsigned", "double", "unsigned", "double"]),
-             ("prepare", ["unsigned char", "double", "unsigned char", "double", "double", "double"])]
+             ("prepare", ["unsigned char", "double", "unsigned char", "double", "double", "double"]),
+             ("temp_sum", ["unsigned", "double", "unsigned", "double", "double"])]
 
     @classmethod
     def setUpClass(cls):
@@ -1728,6 +1736,10 @@ int prepare(u8 r0, double tr, u8 p0, double tp, double t, double p) {
         self.assertEqual(self.ret(0, [i32(3), HALF]), 0xFFFFFFFF)
         self.assertEqual(self.ret(1, [i32(3), HALF]), 0xFFFFFFFF)
 
+    def test_temporary_sum(self):
+        # x + z read only by a compare in the region is a value made in the region, no update of x (eff-invert p_two)
+        self.assertEqual(self.ret(10, [i32(10), HALF, i32(3), HALF, f64(0.25)]), 13)
+
     def test_ops(self):
         for a, w, o in [(0, 1, 2), (100, 7, 3), (0xFFFFFFF0, 0x20, 0x11)]:
             self.assertEqual(self.ret(2, [i32(a), HALF, i32(w), i32(o)]), (((a + o) & 0xFFFFFFFF ^ 5) - w) & 0xFFFFFFFF,
@@ -1745,7 +1757,7 @@ int prepare(u8 r0, double tr, u8 p0, double tp, double t, double p) {
             self.assertEqual(kinds, want, k)
 
     def test_made_in_region(self):
-        self.assertEqual(self.ret(4, [i32(10), HALF, i32(3)]), 21)   # z = 3 * (a - w), recomputed after the end
+        self.assertEqual(self.ret(4, [i32(10), HALF, i32(3)]), 21 | 7 << 16)   # z = 3 * (a - w), recomputed after the end
 
     def test_nested(self):
         self.assertEqual(self.ret(5, [i32(10), HALF, i32(3)]), (10 - 3) ^ 6)

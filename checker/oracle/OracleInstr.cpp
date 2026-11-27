@@ -1249,9 +1249,35 @@ public:
               continue;
             mem[&I] = c;
             invMembers.push_back({WeakTrackingVH(&I), (unsigned)c, k, op, yIdx, fyIdx});
-            if (k == MUpd || k == MSel)
-              invComps[c].updated = true;
           }
+        // An image is the register from there on: it reaches the region's end (a reader after it, or a later image or
+        // merge of the same register). A sum only the region reads (`if (x + z > 3)`) is a value made in the region.
+        // shortcut: a register image no one reads after the end (rule 17's R2: `rem -= w; if (rem > 3) ...`, rem dead
+        // after the region) is a value made in the region here; SSA does not tell it from that sum (bead).
+        for (bool changed = true; changed;) {
+          changed = false;
+          for (size_t i = 0; i < invMembers.size(); ++i) {
+            InvMember &m = invMembers[i];
+            auto *I = dyn_cast_or_null<Instruction>(&*m.v);
+            if (m.kind == MRoot || !I || !r.body.count(I))
+              continue;
+            bool live = false;
+            for (User *U : I->users()) {
+              auto *J = dyn_cast<Instruction>(U);
+              auto it = J ? mem.find(J) : mem.end();
+              if (!J || !r.body.count(J) || (it != mem.end() && it->second == m.comp))
+                live = true;
+            }
+            if (!live) {
+              mem.erase(I);
+              invMembers.erase(invMembers.begin() + i--);
+              changed = true;
+            }
+          }
+        }
+        for (const InvMember &m : invMembers)
+          if (m.kind == MUpd || m.kind == MSel)
+            invComps[m.comp].updated = true;
       }
       // each region's registers: the chains with an update inside it
       for (size_t i = 0; i < regs.size(); ++i)
