@@ -922,6 +922,8 @@ typedef struct {
     ri_reg reg[RI_REGS];
     ri_cell cell[RI_CELLS];
     long reach[MAXSKEY];      /* the theta reaches at the begin */
+    int nmk;                  /* measure sites reached this run */
+    unsigned char mk[1024];   /* their kinds in the first run (rule 2's collapse is decided there, not put back) */
 } ri_inst;
 static ri_inst *ri;           /* RI_MAX of them, off __DATA (ri_depth, in __DATA, is put back per sample) */
 static char *ri_tbuf;
@@ -1009,7 +1011,7 @@ static void ri_push(uintptr_t sp) {
     I->out0 = lseek(1, 0, SEEK_CUR);
     I->arena0 = arena_top, I->heap0 = heap_objs.n;
     I->nrot = n_rotations, I->nmeas = n_measured;
-    I->nreg = I->ncell = 0, I->nfl = 0, I->ofl = 0, I->evfl = 0, I->childfl = 0, I->fail = 0;
+    I->nreg = I->ncell = 0, I->nmk = 0, I->nfl = 0, I->ofl = 0, I->evfl = 0, I->childfl = 0, I->fail = 0;
     for (int i = 0; i < nskeys; ++i) I->reach[i] = skeys[i].reach;
     ++ri_depth;
 }
@@ -1056,7 +1058,13 @@ void __cqo_rupd(void *slot, int32_t kind, uint64_t old, uint64_t o, uint64_t nw,
     if (!r) { ri_fail(I, "an update of a register the innermost open region does not hold"); return; }
     uint64_t m = ri_mask(r->bits);
     if (kind == RK_ROT) old = r->cur;
-    if ((old & m) != r->cur) { ri_fail(I, "an update reads a value of its register other than the register's"); return; }
+    if ((old & m) != r->cur) {
+        static char why[200];
+        snprintf(why, sizeof why, "an update reads a value of its register other than the register's (%llx, the register "
+                 "%llx; run %d)", (unsigned long long)(old & m), (unsigned long long)r->cur, I->round);
+        ri_fail(I, why);
+        return;
+    }
     if (kind == RK_ROT || kind == RK_SET) kind = RK_XOR, o = old ^ nw;
     ri_event(I, (int)(r - I->reg), kind, o & m);
     r->cur = nw & m;
@@ -1154,7 +1162,7 @@ int32_t __cqo_rend(void) {
     for (int i = 0; i < nskeys; ++i) skeys[i].reach = I->reach[i];
     if (I->out0 >= 0 && ftruncate(1, I->out0) == 0) lseek(1, I->out0, SEEK_SET);
     I->round++;
-    I->nfl = 0, I->childfl = 0;
+    I->nfl = 0, I->childfl = 0, I->nmk = 0;
     if (I->ofl == 0) ri_start(I);
     return 1;
 }
@@ -1209,6 +1217,16 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     if (kind == 2 && sh_pending_read) kind = 5; /* rule 2: a classical read, no measurement (cq-y1ll) */
     if (kind == 3) ++iv_depth;
     else if (kind == 4 && iv_depth > 0) --iv_depth;
+    if ((kind == 2 || kind == 5) && ri_depth) {
+        /* a run after the first reads each measurement as the first run did: the shadows of rule 2 are not put back, and
+         * a value the first run measured would read as collapsed in the next one */
+        ri_inst *I = &ri[ri_depth - 1];
+        if (I->nmk < (int)sizeof I->mk) {
+            if (I->round == 0) I->mk[I->nmk] = (unsigned char)kind;
+            else kind = I->mk[I->nmk];
+        }
+        I->nmk++;
+    }
     if (kind == 2) ri_flush();
     if (kind == 4) ri_pop();
     /* the begin's line is the enclosing run's; the region's own lines follow it */

@@ -1106,6 +1106,14 @@ public:
         unsigned opc = BO->getOpcode();
         if (opc != Instruction::Add && opc != Instruction::Xor && opc != Instruction::Sub)
           return std::nullopt;
+        // the update a bus cell's in-place form stores (`g += x`, through a select too) is the cell's, not x's
+        for (User *U : BO->users()) {
+          User *V = U;
+          if (isa<SelectInst>(U) && U->hasOneUse())
+            V = U->user_back();
+          if (auto *St = dyn_cast<StoreInst>(V); St && St->getMetadata("cqo.cell"))
+            return std::nullopt;
+        }
         for (unsigned yi = 0; yi < (opc == Instruction::Sub ? 1u : 2u); ++yi) {
           int c = chainOf(BO->getOperand(yi), r, false);
           if (c == -1)

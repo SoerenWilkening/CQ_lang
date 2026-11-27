@@ -1760,7 +1760,7 @@ int prepare(u8 r0, double tr, u8 p0, double tp, double t, double p) {
     def test_no_inverse(self):
         # with the rotation inside substituted F is constant in a: no run from any start ends at s
         r = oracle.run_samples(self.o1, self.sp, [{"call": 8, "args": [i32(10), HALF, i32(3), HALF],
-                                                    "subst": {"broken:1": i32(77)}}])[0]
+                                                    "subst": {"broken:2": i32(77)}}])[0]
         self.assertTrue(r.failed and r.reason.startswith("region-inverse"), (r.reason, r.notes))
         # without the substitution the rotation is the identity on basis states: a - w
         self.assertEqual(self.ret(8, [i32(10), HALF, i32(3), HALF]), 7)
