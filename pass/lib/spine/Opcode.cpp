@@ -1283,18 +1283,23 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
 // Not tagged: an other operand that is Y's rail itself (no bijection anyway).
 void tagInPlace(LoweringContext &ctx, Instruction &I, Value *Y, Operand yp) {
   auto *bo = dyn_cast<BinaryOperator>(&I);
-  if (!bo || !bo->getType()->isIntegerTy() || (bo->getOpcode() != Instruction::Add && bo->getOpcode() != Instruction::Xor))
+  unsigned opc = bo ? bo->getOpcode() : 0;
+  if (!bo || !bo->getType()->isIntegerTy() ||
+      (opc != Instruction::Add && opc != Instruction::Xor && opc != Instruction::Sub))
     return;
-  if (bo->getOperand(0) == bo->getOperand(1) || (bo->getOperand(0) != Y && bo->getOperand(1) != Y))
+  // Owner 2026-11-27: `sub y, o` with y as operand 0 is in place too; `sub o, y` stays out of place.
+  if (bo->getOperand(0) == bo->getOperand(1) || (bo->getOperand(0) != Y && bo->getOperand(1) != Y) ||
+      (opc == Instruction::Sub && bo->getOperand(0) != Y))
     return;
   auto *F = yp.handle ? dyn_cast<CallInst>(yp.v) : nullptr;
   Function *G = F ? F->getCalledFunction() : nullptr;
   bool unc = false;
   std::optional<abi::TemplateSpec> t = G ? abi::parseTemplate(G->getName(), &unc) : std::nullopt;
-  if (!t || unc || t->op != (bo->getOpcode() == Instruction::Add ? "add" : "xor") || F->arg_size() != 2)
+  if (!t || unc || t->op != (opc == Instruction::Add ? "add" : opc == Instruction::Sub ? "sub" : "xor") ||
+      F->arg_size() != 2)
     return;
   Value *h = ctx.operand(Y).v;
-  for (unsigned i = 0; i < 2; ++i)
+  for (unsigned i = 0; i < (opc == Instruction::Sub ? 1u : 2u); ++i)
     if (F->getArgOperand(i) == h && F->getArgOperand(1 - i) != h) {
       LLVMContext &C = ctx.M.getContext();
       F->setMetadata("cq.r6", MDNode::get(C, {ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(C), i))}));
@@ -2419,7 +2424,8 @@ bool spine::measuredOnEveryPath(const TaintInfo &T, const Specialization &S, con
 // that clean-up (t = f^-1(F, o); copy(t, y); f^-1_unc(t, F, o); free t; free y) in F's block with no reader of y and no
 // cq_invert marker between F and it (the clean-up point is right after the update), update and clean-up are one core
 // gate on y's rail, and F is y's rail from there on:
-//   add y, o: add_<W>(o, y), a literal o addc_<W>(y, o);   xor y, o: copy_<W>(o, y), a literal o xorc_<W>(y, o).
+//   add y, o: add_<W>(o, y), a literal o addc_<W>(y, o);   xor y, o: copy_<W>(o, y), a literal o xorc_<W>(y, o);
+//   sub y, o (owner 2026-11-27): sub_<W>(o, y), a literal o addc_<W>(y, -o).
 // Everything else keeps the clean-up as placed. Reversal: a cq_invert region's backend inverts the gate (BACKEND_ABI
 // §1.13, §1.15); a twin and a reverse loop undo only records, and a clean-up is none, so neither meets the gate.
 void fuseInPlaceUpdates(Module &M) {
@@ -2441,7 +2447,8 @@ void fuseInPlaceUpdates(Module &M) {
       continue;
     Value *y = F->getArgOperand(yi), *o = F->getArgOperand(1 - yi);
     bool lit = fs->shape == "hl";
-    if (!(fs->shape.empty() || (lit && yi == 0)) || y == o)
+    bool sub = fs->op == "sub";
+    if (!(fs->shape.empty() || (lit && yi == 0)) || y == o || (sub && yi != 0))
       continue;
     // The clean-up, as Uncompute emits it: t, copy, t's _unc, free t, free y, consecutive.
     CallInst *t = nullptr, *cp = nullptr;
@@ -2452,7 +2459,7 @@ void fuseInPlaceUpdates(Module &M) {
         continue;
       auto *tc = dyn_cast<CallInst>(c->getArgOperand(0));
       std::optional<abi::TemplateSpec> ts = tc ? abi::parseTemplate(callee(tc), &unc) : std::nullopt;
-      if (!ts || unc || ts->op != (fs->op == "add" ? "sub" : "xor") || ts->w.kind != fs->w.kind ||
+      if (!ts || unc || ts->op != (fs->op == "add" ? "sub" : sub ? "add" : "xor") || ts->w.kind != fs->w.kind ||
           ts->w.bits != fs->w.bits || ts->shape != fs->shape || tc->arg_size() != 2 || tc->getArgOperand(0) != F ||
           tc->getArgOperand(1) != o || tc->getNextNode() != c)
         continue;
@@ -2476,12 +2483,14 @@ void fuseInPlaceUpdates(Module &M) {
       between = is_contained(X->operands(), y) || callee(X) == "cqrt_invert_begin" || callee(X) == "cqrt_invert_end";
     if (between)
       continue;
-    abi::CoreSpec gs{fs->op == "add" ? (lit ? abi::Core::Addc : abi::Core::Add) : (lit ? abi::Core::Xorc : abi::Core::Copy),
+    abi::CoreSpec gs{fs->op == "add" ? (lit ? abi::Core::Addc : abi::Core::Add)
+                     : sub          ? (lit ? abi::Core::Addc : abi::Core::Sub)
+                                    : (lit ? abi::Core::Xorc : abi::Core::Copy),
                      fs->w};
     IRBuilder<> B(F);
     SmallVector<Value *, 2> args;
     if (lit)
-      args.append({y, o});
+      args.append({y, sub ? B.CreateNeg(o) : o});
     else
       args.append({o, y});
     CallInst *g = B.CreateCall(abi::declare(M, gs), args);

@@ -1282,8 +1282,12 @@ bool selectOfUpdate(Function &F, LoopInfo &LI) {
     for (unsigned arm : {1u, 2u}) {
       auto *u = dyn_cast<BinaryOperator>(s->getOperand(arm));
       Value *y = s->getOperand(3 - arm);
-      if (!u || !u->hasOneUse() || (u->getOpcode() != Instruction::Add && u->getOpcode() != Instruction::Xor) ||
-          u->getOperand(0) == u->getOperand(1) || (u->getOperand(0) != y && u->getOperand(1) != y))
+      // Owner 2026-11-27: `sub y, o` (y operand 0) is an in-place update as add and xor are.
+      bool sub = u && u->getOpcode() == Instruction::Sub;
+      if (!u || !u->hasOneUse() ||
+          (u->getOpcode() != Instruction::Add && u->getOpcode() != Instruction::Xor && !sub) ||
+          u->getOperand(0) == u->getOperand(1) || (u->getOperand(0) != y && u->getOperand(1) != y) ||
+          (sub && u->getOperand(0) != y))
         continue;
       Value *o = u->getOperand(u->getOperand(0) == y ? 1 : 0);
       IRBuilder<> B(s);
