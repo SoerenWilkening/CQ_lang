@@ -2431,6 +2431,13 @@ void Walker::emitBlock(BasicBlock *b) {
       continue;
     }
     if (spine::isQ(ctx, &phi)) {
+      // Rule 17 (owner 2026-11-26): inside a region a register merged with its in-place image is the register's rail.
+      if (Value *r = spine::regionMerge(ctx, phi)) {
+        spine::bindOperand(ctx, &phi, Operand{r, true});
+        sh.regionGated.insert(&phi);
+        blockDefs.push_back(&phi);
+        continue;
+      }
       // Rule 10 through rule 3 (cq-su3p): a merge of zexts of one register's states is a view of the
       // register's narrow rail, never a select over wide copies of it.
       if (spine::viewMerge(ctx, phi)) {

@@ -944,6 +944,27 @@ void verifyLowered(const Module &M, const VerifyOptions &Opts) {
     if (F.isDeclaration())
       continue;
     FunctionVerifier(F, Sigs, Out, Opts.reference).run();
+    // CR rule 17 (owner 2026-11-26): a register of a cq_invert region keeps its rail across the region, so no rail
+    // allocated before a begin is freed before its end (the out-of-place form, whose replay leaves garbage). Checked
+    // where it is certain: the allocation, the begin and the free in one block.
+    for (const BasicBlock &BB : F) {
+      SmallVector<const Instruction *, 2> open;
+      for (const Instruction &I : BB) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        const Function *G = CB ? CB->getCalledFunction() : nullptr;
+        if (!G)
+          continue;
+        if (G->getName() == "cqrt_invert_begin")
+          open.push_back(&I);
+        else if (G->getName() == "cqrt_invert_end" && !open.empty())
+          open.pop_back();
+        else if (G->getName() == "cqrt_free" && !open.empty())
+          if (auto *R = dyn_cast<Instruction>(CB->getArgOperand(0)); R && R->getParent() == &BB &&
+                                                                      R->comesBefore(open.back()))
+            Out.push_back({"invert-register-freed", ("a rail allocated before a cq_invert begin is freed inside the "
+                                                     "region (rule 17)\n    " + where(I))});
+      }
+    }
     // CR §1.4: "A clone called by name and a lowered own symbol keep the original's linkage, calling convention and
     // unnamed_addr (`internal fastcc` stays, and its calls stay `fastcc`)". A direct call whose convention differs from
     // its defined callee's is undefined behaviour in LLVM, and LLVM's own verifier accepts it (cq-5yuk9).

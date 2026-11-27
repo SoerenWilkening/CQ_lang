@@ -405,9 +405,29 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     // the lowered code; in a quantum arm (or a K-loop trip) the region then holds the arm's controlled
     // gates. A match outside the arm was made a per-depth split of the tail before the final taint
     // (eff-invert splitMarkerPaths).
+    bool opened = ctx.unc().invertOpen();
     invert::lowerMarker(ctx, *CI);   // rule 17: the run-time pair (§1.3)
-    if (c == Class::InvertEnd)
-      closeRegionRails(ctx, *CI);
+    Shared &sh = shared(ctx);
+    if (c == Class::InvertBegin) {
+      sh.regions.emplace_back();   // the registers of the region (owner 2026-11-26)
+      return;
+    }
+    if (!opened || sh.regions.empty())
+      return closeRegionRails(ctx, *CI);
+    // Rule 17 (owner 2026-11-26): after the end every value of a register's chain is the register's rail; an old
+    // value's copy is cleaned inside the region, before the end.
+    Shared::RegionFrame fr = std::move(sh.regions.back());
+    sh.regions.pop_back();
+    for (auto &[V, h] : fr.rebound)
+      ctx.rebind(V, {Operand{h, true}});
+    Instruction *endCall = &*std::prev(ctx.B().GetInsertPoint());
+    closeRegionRails(ctx, *CI);
+    SmallVector<RailId, 2> ids;
+    for (Value *cp : fr.copies)
+      if (ctx.unc().liveRole(ctx.unc().idOf(cp)))
+        ids.push_back(ctx.unc().idOf(cp));
+    if (!ids.empty())
+      ctx.unc().flushRailsBefore(ids, endCall);
     return;
   }
   case Class::Lift: {

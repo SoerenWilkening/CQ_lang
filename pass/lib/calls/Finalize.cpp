@@ -591,9 +591,15 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     // or the producer, _unc or copy of another rail of the set) is computed and undone for nothing: dropped.
     SetVector<CallInst *> idle;
     for (Instruction &I : instructions(twin))
-      if (CallInst *c = templ(&I); c && any_of(c->users(), [](User *U) {
+      if (CallInst *c = templ(&I); c && any_of(c->users(), [&](User *U) {
             auto *f = dyn_cast<CallInst>(U);
-            return f && f->getCalledFunction() && f->getCalledFunction()->getName() == "cqrt_free";
+            if (!f || !f->getCalledFunction())
+              return false;
+            // CR rule 17 (owner 2026-11-26): a register's in-place gate in a cq_invert region writes the rail.
+            std::optional<abi::CoreSpec> cs = abi::parseCore(f->getCalledFunction()->getName());
+            return f->getCalledFunction()->getName() == "cqrt_free" ||
+                   (cs && (cs->op == abi::Core::Add || cs->op == abi::Core::Sub) && f->getArgOperand(1) == c) ||
+                   (cs && (cs->op == abi::Core::Addc || cs->op == abi::Core::Xorc) && f->getArgOperand(0) == c);
           }))
         idle.insert(c);
     // Which operand of a call to this callee is the rail it undoes (template _unc, free) or copies onto (copy); -1: none.
@@ -608,8 +614,10 @@ void defineTwin(Module &M, Function &twin, Function &src) {
           it->second = 0;
         else if ((cs = abi::parseCore(n)) && cs->op == abi::Core::Free)
           it->second = 0;
-        else if (cs && cs->op == abi::Core::Copy && !cs->ctl)
-          it->second = 1;
+        else if (cs && ((cs->op == abi::Core::Copy && !cs->ctl) || cs->op == abi::Core::Add || cs->op == abi::Core::Sub))
+          it->second = 1;   // copies onto, or (rule 17's in-place gate) adds onto
+        else if (cs && (cs->op == abi::Core::Addc || cs->op == abi::Core::Xorc))
+          it->second = 0;
       }
       return it->second;
     };

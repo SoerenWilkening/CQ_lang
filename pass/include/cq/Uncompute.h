@@ -160,6 +160,10 @@ public:
                                                      llvm::function_ref<bool(llvm::Value *)> keep);
   // The number of rails recorded so far (a rail made later has an id at least this).
   RailId railCount() const;
+  // CR rule 17 (owner 2026-11-26): is the rail a register of the innermost open region (recorded before its begin)?
+  bool regionRegister(RailId) const;
+  // The handles of the pending rails whose item (an _unc, a clean-up) still reads the rail.
+  llvm::SmallVector<llvm::Value *, 4> pendingReaders(RailId) const;
   // One round of resolveRegionMade over the rails from `start` on (its deferred items aside); appends the handles placed.
   void resolveRegionMadeOnce(llvm::Instruction *end, llvm::function_ref<bool(llvm::Value *)> keep, RailId start,
                              llvm::SmallVectorImpl<llvm::Value *> &out);

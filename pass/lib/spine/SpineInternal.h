@@ -245,6 +245,17 @@ struct Shared {
   // hoistedDefs into the current block's definitions after the dispatch that hoisted them.
   llvm::DenseSet<const llvm::Instruction *> hoisted;
   std::vector<const llvm::Instruction *> hoistedDefs;
+  // CR rule 17 (owner 2026-11-26): the cq_invert regions this run opened and has not closed, innermost last. Per region
+  // the old values an in-place gate's copy took over (the value, the register's handle it is bound to again at the end)
+  // and the copies' rails.
+  struct RegionFrame {
+    llvm::SmallVector<std::pair<const llvm::Value *, llvm::Value *>, 2> rebound;
+    llvm::SmallVector<llvm::Value *, 2> copies;
+  };
+  std::vector<RegionFrame> regions;
+  // The original updates lowered as a region's in-place gate, and the quantum phis merging a register with itself:
+  // bound to the register's handle, no rule 6 after them.
+  llvm::DenseSet<const llvm::Value *> regionGated;
   // §1.4: a table clone's K formal.
   llvm::Value *tableK = nullptr;
   // Rule 19: the controlled copies a _ctl clone measured: each is the value (a rail), never uncomputed.
@@ -276,6 +287,13 @@ void ruleSixAfter(LoweringContext &, llvm::Instruction &);
 // cq-2ql9: rule 6 clean-ups ruleSixAfter deferred until the garbage rails reading the old value settle;
 // called after every ruleSixAfter (Opcode.cpp).
 void ruleSixRetry(LoweringContext &);
+// CR rule 17 (owner 2026-11-26, Opcode.cpp): inside an open cq_invert region (outside loops), an add, xor or sub that
+// updates a register of the region in place is one core gate on the register's rail, bound to it; returns false when I
+// is no such update (it is then lowered as anywhere else).
+bool regionInPlace(LoweringContext &, llvm::BinaryOperator &I);
+// The register's handle when every incoming value of the quantum phi is bound to that one register of an open region
+// (an update in a quantum arm merged with the old value), else nullptr.
+llvm::Value *regionMerge(LoweringContext &, llvm::PHINode &);
 struct InverseStep { abi::TemplateSpec spec; llvm::SmallVector<Operand, 3> ops; };
 std::optional<InverseStep> inverseStep(llvm::Instruction &U, llvm::Value *Y, Operand yp,
                                        llvm::function_ref<Operand(llvm::Value *)> operandOf,

@@ -13,6 +13,7 @@
 
 #include <functional>
 #include <optional>
+#include <set>
 
 #include "cq/Abi.h"
 #include "cq/Order.h"
@@ -414,6 +415,8 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
     internalError("spine: lowerOpcode on a vector (aggr::lowerVectorOp)", &I);
 
   if (auto *bo = dyn_cast<BinaryOperator>(&I)) {
+    if (spine::regionInPlace(ctx, *bo))
+      return;   // rule 17: a register's in-place gate in a cq_invert region
     const char *op = binName(bo->getOpcode());
     if (!op)   // binName names every LLVM 19 binary opcode
       internalError("spine: a binary opcode binName does not name", &I);
@@ -763,6 +766,12 @@ bool effectResult(LoweringContext &ctx, const Value *y) {
 // The old value is a rail the rule may clean: a value this function computed into a rail of its
 // own (not an argument, a load, a phi or a classical select over handles, which alias other rails).
 bool cleanable(LoweringContext &ctx, Value *y) {
+  // CR rule 17 (owner 2026-11-26): inside a region a register is never cleaned: an update of it that is no in-place gate
+  // is a value made in the region.
+  if (auto bi = spine::shared(ctx).binds.find(y); bi != spine::shared(ctx).binds.end() && bi->second.size() == 1 &&
+                                                  bi->second.front().handle && ctx.unc().recorded(bi->second.front().v) &&
+                                                  ctx.unc().regionRegister(ctx.unc().idOf(bi->second.front().v)))
+    return false;
   if (keptMerge(ctx, y))
     return true;
   // Rule 5: a load copy is undone by its un-copy, never by rule 6, whatever re-binds it (an extractvalue, a freeze).
@@ -1801,6 +1810,8 @@ void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
 namespace spine {
 
 void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
+  if (shared(ctx).regionGated.count(&I))
+    return;   // rule 17: a register's in-place gate in a region; the old value is the register itself
   if (auto *rmw = dyn_cast<AtomicRMWInst>(&I)) {
     atomicRuleSix(ctx, *rmw);
     return;
@@ -2156,6 +2167,226 @@ void ruleSixRetry(LoweringContext &ctx) {
     clean(ctx, e.Y, *inv);
     sh.ruleSixOrigin.push_back(Shared::PendingSix{&ctx, e.Y, e.I, e.yp, {}, e.loads});
   }
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// CR rule 17 with rule 6 (owner 2026-11-26): inside a cq_invert region an update `y' = f(y, o)` of a register (a rail
+// live at the begin, or its in-place image made in the region) is ONE core gate on the register's rail when f is the
+// plain add, xor, or sub with y as operand 0, o a literal or a rail not computed from y's chain, and y's rail one the
+// function owns and no seed. Rule 6's clean-up point is not asked: a reader of the old value after the gate reads a
+// copy taken right before it, cleaned inside the region by rule 6 from the register's image; the image is the
+// register, never uncomputed inside the region, and every value of the chain is the register's rail after the end.
+// Under a quantum predicate the update is the select of an update with the predicate's flag, `y += f ? o : 0`.
+// M1: outside loops (a loop's trip keeps today's lowering).
+
+namespace {
+
+bool invertMarker(const Instruction *X, StringRef which) {
+  auto *c = dyn_cast<CallBase>(X);
+  const Function *G = c ? c->getCalledFunction() : nullptr;
+  return G && G->getName() == which;
+}
+
+// The original instructions a path from I reaches before the innermost region open at I ends (nested regions inside it
+// included).
+SmallPtrSet<const Instruction *, 32> regionAfter(const Instruction &I) {
+  SmallPtrSet<const Instruction *, 32> out;
+  SmallVector<std::pair<const Instruction *, int>, 8> work{{I.getNextNode(), 0}};
+  std::set<std::pair<const BasicBlock *, int>> seen;
+  while (!work.empty()) {
+    auto [X, d] = work.pop_back_val();
+    for (; X; X = X->getNextNode()) {
+      if (invertMarker(X, "__cq_invert_end") && --d < 0)
+        break;
+      if (invertMarker(X, "__cq_invert_begin") && ++d > 16)
+        break;
+      out.insert(X);
+      if (X->isTerminator())
+        for (const BasicBlock *b : successors(X->getParent()))
+          if (seen.insert({b, d}).second)
+            work.push_back({&b->front(), d});
+    }
+  }
+  return out;
+}
+
+// Is the original value O computed from the register h's chain (its rail is h, or a rail made from h; an instruction not
+// lowered yet through its operands)?
+bool fromChain(spine::Shared &sh, Uncompute &U, const Value *O, Value *h, unsigned depth = 0) {
+  if (auto bi = sh.binds.find(O); bi != sh.binds.end())
+    return any_of(bi->second, [&](const Operand &o) { return o.handle && (o.v == h || U.railDependsOn(o.v, h)); });
+  auto *X = dyn_cast<Instruction>(O);
+  if (!X || depth > 8)
+    return false;
+  return any_of(X->operands(), [&](const Use &u) { return fromChain(sh, U, u.get(), h, depth + 1); });
+}
+
+// A rail this function owns that may be a register of the open region: minted by a call of its own (no formal, no
+// merge alias, no load copy, no effect result), recorded before the innermost begin, live, no seed, no pending clean-up.
+bool registerRail(LoweringContext &ctx, Value *h) {
+  spine::Shared &sh = spine::shared(ctx);
+  auto *hc = dyn_cast<CallInst>(h);
+  const Function *G = hc ? hc->getCalledFunction() : nullptr;
+  if (!G || !ctx.unc().recorded(h) || G->getName().starts_with("cqrt_qram_load_") ||
+      G->getName().starts_with("cqrt_tape_effect") || sh.ctlMeasured.count(h) || fenv::stateRail(ctx, h))
+    return false;
+  RailId id = ctx.unc().idOf(h);
+  std::optional<Role> r = ctx.unc().liveRole(id);
+  return ctx.unc().regionRegister(id) && r && *r != Role::Seed && !ctx.unc().hasCleanup(id);
+}
+
+// U = add/xor/sub with V as the updated operand (operand 0 of a sub) and another operand not from V's chain.
+bool laterUpdate(spine::Shared &sh, Uncompute &Un, const Instruction *U, const Value *V, Value *h) {
+  auto *bo = dyn_cast<BinaryOperator>(U);
+  if (!bo || !bo->getType()->isIntegerTy() || bo->getOperand(0) == bo->getOperand(1))
+    return false;
+  unsigned op = bo->getOpcode();
+  if (op != Instruction::Add && op != Instruction::Xor && op != Instruction::Sub)
+    return false;
+  for (unsigned i = 0; i < (op == Instruction::Sub ? 1u : 2u); ++i)
+    if (bo->getOperand(i) == V && !fromChain(sh, Un, bo->getOperand(1 - i), h))
+      return true;
+  return false;
+}
+
+} // namespace
+
+
+bool regionInPlace(LoweringContext &ctx, BinaryOperator &I) {
+  Shared &sh = shared(ctx);
+  if (sh.regions.empty() || !ctx.unc().invertOpen() || sh.tripFlag || ctx.loopUnit() || !I.getType()->isIntegerTy())
+    return false;
+  unsigned opc = I.getOpcode();
+  if ((opc != Instruction::Add && opc != Instruction::Xor && opc != Instruction::Sub) ||
+      I.getOperand(0) == I.getOperand(1))
+    return false;
+  for (unsigned i = 0; i < (opc == Instruction::Sub ? 1u : 2u); ++i) {
+    Value *Y = I.getOperand(i), *O = I.getOperand(1 - i);
+    auto yb = sh.binds.find(Y);
+    if (yb == sh.binds.end() || yb->second.size() != 1 || !yb->second.front().handle)
+      continue;
+    Value *h = yb->second.front().v;
+    if (!registerRail(ctx, h) || fromChain(sh, ctx.unc(), O, h))
+      continue;
+    // The values the rail holds now (the old value), and their readers after the gate inside the region.
+    SmallVector<const Value *, 4> aliases;
+    for (auto &[V, ops] : sh.binds)
+      if (V != &I && ops.size() == 1 && ops.front().handle && ops.front().v == h)
+        aliases.push_back(V);
+    auto chainValue = [&](const Value *x) {
+      auto *b = dyn_cast<BinaryOperator>(x);
+      return x == &I || is_contained(aliases, x) ||
+             (b && !sh.binds.count(b) && any_of(b->operands(), [&](const Use &u) {
+                return u.get() == &I || is_contained(aliases, u.get());
+              }));
+    };
+    SmallPtrSet<const Instruction *, 32> after = regionAfter(I);
+    bool copy = false, last = true;
+    for (const Value *V : aliases)
+      for (const User *u : V->users()) {
+        auto *U = dyn_cast<Instruction>(u);
+        if (!U || U == &I || !after.count(U))
+          continue;
+        if (auto *P = dyn_cast<PHINode>(U); P && all_of(P->incoming_values(), chainValue))
+          continue;   // the register merged with itself (an update in a quantum arm)
+        if (laterUpdate(sh, ctx.unc(), U, V, h))
+          last = false;   // of several updates of one old value, the last on each path is the gate
+        else
+          copy = true;
+      }
+    if (!last)
+      return false;
+    // Rule 17's tail split (a begin in a quantum arm, its end after the join): the image merged after the end with the
+    // copy of the tail lowered outside the bracket, which is no gate on the register here.
+    if (any_of(I.users(), [&](const User *u) {
+          auto *P = dyn_cast<PHINode>(u);
+          return P && !after.count(P) && !all_of(P->incoming_values(), chainValue);
+        })) {
+      noteUnbuilt("spine: rule 17: a register's update in a tail lowered under not f outside the region (the select "
+                  "of an update there is owed); lowered out of place",
+                  &I);
+      return false;
+    }
+    RailId hid = ctx.unc().idOf(h);
+    // An _unc still to come that re-reads the old value after the gate needs it from a copy too (rule 17): owed.
+    for (Value *r : ctx.unc().pendingReaders(hid))
+      for (auto &[V, ops] : sh.binds)
+        if (ops.size() == 1 && ops.front().v == r && any_of(V->users(), [&](const User *u) {
+              auto *U = dyn_cast<Instruction>(u);
+              return U && U != &I && U->getFunction() == I.getFunction() &&
+                     (after.count(U) || (!U->getType()->isVoidTy() && !isa<PHINode>(U) && !sh.binds.count(U)));
+            }))
+          noteUnbuilt("spine: rule 17: an _unc read after a register's in-place gate re-reads its old value (its "
+                      "copy is owed)",
+                      &I);
+    RailType w = rt(I.getType(), &I);
+    LLVMContext &C = ctx.M.getContext();
+    Operand o = ctx.operand(O);
+    Value *c = nullptr;
+    RailId cid = 0;
+    if (copy) {
+      // The old value's readers read a copy taken right before the gate (rule 17 with rule 6).
+      c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+      cid = ctx.unc().recordSeed(cast<CallInst>(c));
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cc = ctx.emitCore(cp, {h, c});
+      ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+      for (const Value *V : aliases) {
+        ctx.rebind(V, {Operand{c, true}});
+        sh.regions.back().rebound.push_back({V, h});
+      }
+      sh.regions.back().copies.push_back(c);
+    }
+    // Under a quantum predicate: the select of an update with the predicate's flag.
+    Operand d = o;
+    if (Value *f = ctx.currentFlag()) {
+      abi::TemplateSpec spec;
+      spec.op = "select";
+      spec.w = w;
+      spec.shape = o.handle ? "hl" : "ll";
+      d = Operand{ctx.emitTemplate(spec, {Operand{f, true}, o, Operand{Constant::getNullValue(I.getType()), false}}),
+                  true};
+    }
+    if (opc == Instruction::Add)
+      ctx.emitCore(abi::CoreSpec{d.handle ? abi::Core::Add : abi::Core::Addc, w},
+                   d.handle ? SmallVector<Value *, 2>{d.v, h} : SmallVector<Value *, 2>{h, d.v});
+    else if (opc == Instruction::Sub)
+      ctx.emitCore(abi::CoreSpec{d.handle ? abi::Core::Sub : abi::Core::Addc, w},
+                   d.handle ? SmallVector<Value *, 2>{d.v, h} : SmallVector<Value *, 2>{h, ctx.B().CreateNeg(d.v)});
+    else
+      ctx.emitCore(abi::CoreSpec{d.handle ? abi::Core::Copy : abi::Core::Xorc, w},
+                   d.handle ? SmallVector<Value *, 2>{d.v, h} : SmallVector<Value *, 2>{h, d.v});
+    if (copy) {
+      abi::TemplateSpec inv;
+      inv.w = w;
+      inv.op = opc == Instruction::Add ? "sub" : opc == Instruction::Sub ? "add" : "xor";
+      Inverse x = normalized(inv, {Operand{h, true}, d});
+      ctx.unc().cleanupBijective(cid, x.spec, x.ops);   // t = f^-1(y', o), copy(t, c): the copy back to |0>
+    }
+    // A register whose value at the begin was rule-5 garbage is kept: its rail no longer holds that value.
+    if (ctx.unc().liveRole(hid) == Role::Garbage)
+      ctx.unc().setRole(hid, Role::Kept);
+    bindOperand(ctx, &I, Operand{h, true});
+    sh.regionGated.insert(&I);
+    return true;
+  }
+  return false;
+}
+
+Value *regionMerge(LoweringContext &ctx, PHINode &P) {
+  Shared &sh = shared(ctx);
+  if (sh.regions.empty() || P.getNumIncomingValues() == 0)
+    return nullptr;
+  Value *h = nullptr;
+  for (const Value *x : P.incoming_values()) {
+    auto bi = sh.binds.find(x);
+    if (bi == sh.binds.end() || bi->second.size() != 1 || !bi->second.front().handle ||
+        (h && bi->second.front().v != h))
+      return nullptr;
+    h = bi->second.front().v;
+  }
+  return registerRail(ctx, h) ? h : nullptr;
 }
 
 

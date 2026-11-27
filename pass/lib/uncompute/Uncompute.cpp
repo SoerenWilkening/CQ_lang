@@ -842,6 +842,8 @@ struct Uncompute::Impl {
   // cq-5n3n: the number of rails at each open region's begin (parallel to invertFrozen), and that of the
   // region closeInvert closed last (resolveRegionMade reads it).
   SmallVector<RailId, 2> invertStart;
+  // CR rule 17 (owner 2026-11-26): the number of rails at each open region's begin (invertStart moves on at a flush point).
+  SmallVector<RailId, 2> invertBegin;
   RailId lastRegionStart = kNone;
   // cq-i61ms: the first rail at or after g that is not released (rails.size() for none). A released rail is never pending
   // again, so the scans that look for pending rails (every flush scanned every rail of the function) skip the released
@@ -4679,6 +4681,7 @@ void Uncompute::openInvert(Instruction *begin) {
     }
   I.invertFrozen.push_back(std::move(s));
   I.invertStart.push_back(RailId(I.rails.size()));
+  I.invertBegin.push_back(RailId(I.rails.size()));
 }
 
 void Uncompute::closeInvert(Instruction *end) {
@@ -4689,6 +4692,7 @@ void Uncompute::closeInvert(Instruction *end) {
     return;   // the region was opened by another function's lowering (begin and end are run-time events)
   DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s = I.invertFrozen.pop_back_val();
   I.lastRegionStart = I.invertStart.pop_back_val();
+  I.invertBegin.pop_back();
   for (auto &[g, before] : s)
     if (I.pending(g) && any_of(I.anchors(g), [&](Instruction *x) { return !before.count(x); })) {
       if (!is_contained(I.rails[g].uses, end))
@@ -4758,6 +4762,19 @@ SmallVector<Value *, 8> Uncompute::resolveSegment(Instruction *at, function_ref<
 }
 
 RailId Uncompute::railCount() const { return RailId(impl->rails.size()); }
+
+bool Uncompute::regionRegister(RailId g) const {
+  return !impl->invertBegin.empty() && g < impl->invertBegin.back();
+}
+
+SmallVector<Value *, 4> Uncompute::pendingReaders(RailId x) const {
+  const Impl &I = *impl;
+  SmallVector<Value *, 4> out;
+  for (RailId o : I.readersOf(x))
+    if (I.pending(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && I.rails[o].handle)
+      out.push_back(I.rails[o].handle);
+  return out;
+}
 
 void Uncompute::resolveRegionMadeOnce(Instruction *end, function_ref<bool(Value *)> keep, RailId start,
                                       SmallVectorImpl<Value *> &out) {
