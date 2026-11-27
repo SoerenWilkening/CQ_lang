@@ -624,15 +624,17 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      against the sum, `%t` kept; below, 109), or a reader of it follows a non-diagonal gate on its image.
      A kept old value is a which-path record of the rail that replaced it: a later
      non-diagonal gate on `y'` or on an operand of `f` acts on a dephased register (162).
-   - *In-place update (`add`, `xor`; owner 2026-11-25).* When `f` is the plain opcode `add` or
-     `xor` (not `sub`, not a select or a composite update, not the rolled-loop case below; inside a
-     `cq_invert` region rule 17 says which updates are gates, `sub` included, whatever reads the old
+   - *In-place update (`add`, `xor`; owner 2026-11-25; `sub`, owner 2026-11-27).* When `f` is the plain
+     opcode `add` or `xor`, or `sub` with `y` as operand 0 (not `sub o, y` or `sub 0, y`, which stay out of
+     place; not a select or a composite update, not the rolled-loop case below; inside a
+     `cq_invert` region rule 17 says which updates are gates, whatever reads the old
      value later), its other operand `o` is a literal or a rail other than `y`'s, and the clean-up point is right
      after the update (no reader of the old value follows the update instruction: no SSA use and
      no `_unc` that re-reads it), then wherever the sentences above would clean and free
      `y_old` there, the update and the clean-up together are ONE core gate on `y_old`'s rail:
 
          add y, o    add_<W>(o, y)      a literal o: addc_<W>(y, lit)
+         sub y, o    sub_<W>(o, y)      a literal o: addc_<W>(y, -lit)
          xor y, o    copy_<W>(o, y)     a literal o: xorc_<W>(y, lit)
 
      and `y'` IS that rail from there on: no template, no fresh rail, no `t`, no `copy` onto the
@@ -652,15 +654,16 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      seed, a rail the function does not own) is unchanged: the template into a fresh rail,
      as before. So is every update whose clean-up point is later than the update. Where the
      code is reversed (rule 17's region, a twin of rule 18, a reverse loop of rule 14) the
-     inverse of `add_<W>(o, y)` is `sub_<W>(o, y)`, that of `addc_<W>(y, lit)` is
+     inverse of `add_<W>(o, y)` is `sub_<W>(o, y)` and the reverse, that of `addc_<W>(y, lit)` is
      `addc_<W>(y, -lit)`, and `copy` and `xorc` are their own. The gate is never
      `_controlled`: under a quantum predicate it is emitted exactly where the template it
      replaces was (a pure computation on a rail that is dead on every path), and an update
      merged with the old value by a `phi` is the composite case, not this one; inside a
      `cq_invert` region both are the select of an update with the predicate's flag (rule 17).
      *A select of an update (owner 2026-11-26):* outside a loop, `s = select c, f(y), y` (either
-     arm order), `f` the plain `add` or `xor` of `y` and a literal or rail `o` that only `s` reads,
-     is `s = y + select(c, o, 0)` (`^` for `xor`; the `0` in `y`'s arm's place): the select
+     arm order), `f` the plain `add` or `xor` of `y`, or `sub` with `y` as operand 0 (owner 2026-11-27),
+     and a literal or rail `o` that only `s` reads,
+     is `s = y + select(c, o, 0)` (`^` for `xor`, `-` for `sub`; the `0` in `y`'s arm's place): the select
      template on `o` (`_ll` for a literal), this clause's gate where its conditions hold, the
      select's `_unc`. So `if (x) a += 7;` lowers as `a += x ? 7 : 0;` does. A rolled loop's
      accumulator keeps its merge (rule 14), except a register's inside a `cq_invert` region

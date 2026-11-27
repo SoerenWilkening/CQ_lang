@@ -881,10 +881,11 @@ it.
   `add_<W>(s, d)`, and `addc_<W>(h, −lit)` that of `addc_<W>(h, lit)`; there is no `_unc` and
   no `_controlled` form.
 - **Uses.** CR rule 6's in-place update: an `add` of a dead value, where the template into a
-  fresh rail followed by the clean-up of the old rail was emitted before. `sub` is emitted where
-  an `add` is reversed (a twin, a reverse loop) and, inside a `cq_invert` region, as the forward
-  gate of `y − o` (CR rule 17); the backend's replay of a region inverts `add` and `sub` into each
-  other (§1.13). The in-place `xor`
+  fresh rail followed by the clean-up of the old rail was emitted before; `sub` is the same rule's
+  in-place `y − o` of a dead `y` (owner 2026-11-27; CR rule 6, `sub_<W>(o, y)`), and, inside a
+  `cq_invert` region, the forward gate of `y − o` whatever reads `y` later (CR rule 17); it is
+  also emitted where an `add` is reversed (a twin, a reverse loop). The backend's replay of a region
+  inverts `add` and `sub` into each other (§1.13). The in-place `xor`
   of the same rule is `copy_<W>(o, y)` and `xorc_<W>(y, lit)` of §1.9, which a backend already has;
   that rule calls them on a target that is not `|0⟩`, which §1.9 allows.
 - **§2.** None: addition mod 2^W is total.
