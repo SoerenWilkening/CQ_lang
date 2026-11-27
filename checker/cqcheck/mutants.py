@@ -137,6 +137,13 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
     # object: the cells, and what is read back from them, change
     "clone_store_other_address": ("a bus store inside a replayed clone goes to another address of its object",
                                   rf"{_MEAS}|{_OUT_REF}|{_MEM}", rf"{_MEAS}|{_RET_C}|{_MEM}"),
+    # CR rule 17 registers (owner 2026-11-26): the reference of §6 holds F^-1(s) in a region's registers after its end and
+    # takes the region's rotation list from the C region run from F^-1(s)
+    "unreversed_update": ("an in-place update inside a cq_invert region runs forward: the register keeps its forward value",
+                          rf"{_ROT_REF}|{_MEAS}|{_OUT_REF}|{_MEM}", rf"{_ROT_C}|{_MEAS}|{_RET_C}|{_MEM}"),
+    "region_forward_predicate": ("a rotation inside a cq_invert region reads its predicate on the forward run's register "
+                                 "value, not on the run from F^-1(s)",
+                                 rf"{_ROT_REF}|{_MEAS}|{_OUT_REF}", rf"{_ROT_C}|{_MEAS}|{_RET_C}"),
 }
 
 # Classes whose evaluation may FAIL on an output difference before the rotation list: each must also

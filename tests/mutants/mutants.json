@@ -16,8 +16,14 @@
       "example": "109_intrinsic_variants",
       "note": "rulings 2 A (cq-o9mx): the old s is not cleaned (its copy and free removed): no rule-6 clean is observed, so the carried s rails are no images and every trip leaves one live, a leak",
       "edits": [
-        {"old": "  call void @cqrt_copy_i32(i32 %48, i32 %36)", "new": "  ; removed copy"},
-        {"old": "  call void @cqrt_free(i32 %36)", "new": "  ; removed free"}
+        {
+          "old": "  call void @cqrt_copy_i32(i32 %48, i32 %36)",
+          "new": "  ; removed copy"
+        },
+        {
+          "old": "  call void @cqrt_free(i32 %36)",
+          "new": "  ; removed free"
+        }
       ]
     },
     {
@@ -26,7 +32,10 @@
       "example": "109_intrinsic_variants",
       "note": "rulings 2 A (cq-o9mx): a template result of the slot's load copy (quantum cell content) left live: no rule-6 clean reads it, so the leak rule still FAILS",
       "edits": [
-        {"old": "  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)", "new": "  %cqmutg = call i32 @cq_template_add_i32_hl(i32 %46, i32 1)\n  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)"}
+        {
+          "old": "  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)",
+          "new": "  %cqmutg = call i32 @cq_template_add_i32_hl(i32 %46, i32 1)\n  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)"
+        }
       ]
     },
     {
@@ -35,8 +44,14 @@
       "example": "109_intrinsic_variants",
       "note": "rulings 2 A (cq-o9mx), rule 5: the slot's load copy, read by the rule-6 inverse, is not un-copied: a load copy is never a rule-6 image, so it is a leak",
       "edits": [
-        {"old": "  call void @cqrt_qram_load_i32_unc(i32 %46, i32 %3, i32 %45)", "new": "  ; removed un-copy"},
-        {"old": "  call void @cqrt_free(i32 %46)", "new": "  ; removed free"}
+        {
+          "old": "  call void @cqrt_qram_load_i32_unc(i32 %46, i32 %3, i32 %45)",
+          "new": "  ; removed un-copy"
+        },
+        {
+          "old": "  call void @cqrt_free(i32 %46)",
+          "new": "  ; removed free"
+        }
       ]
     },
     {
@@ -546,6 +561,70 @@
         {
           "old": "declare i32 @cq_template_select_i32_lh(i32, i32, i32)",
           "new": "declare i32 @cq_template_select_i32_lh(i32, i32, i32)\ndeclare i32 @cq_template_select_i32_hl(i32, i32, i32)\ndeclare void @cq_template_select_i32_hl_unc(i32, i32, i32, i32)"
+        }
+      ]
+    },
+    {
+      "id": "214-old-value-forward",
+      "class": "unreversed_update",
+      "example": "214_invert_inplace_register",
+      "note": "CR rule 17 registers (owner 2026-11-26): invert_old_value lowered as before the ruling: a + w made out of place in the region, uncomputed there and made again after the end, so a keeps its forward value a + w (the reference's a - w) and t after the end reads the value before the region",
+      "edits": [
+        {
+          "old": "%8 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: the copy",
+          "new": "%8 = call i32 @cq_template_add_i32_hl(i32 %7, i32 %2)    ; MUTANT: a' out of place; IR: the copy"
+        },
+        {
+          "old": "  call void @cqrt_copy_i32(i32 %7, i32 %8)    ; IR: copy %7 -> %8, right before the gate\n",
+          "new": ""
+        },
+        {
+          "old": "  call void @cqrt_addc_i32(i32 %7, i32 %2)",
+          "new": "  ; MUTANT: no gate on a"
+        },
+        {
+          "old": "%11 = call i32 @cq_template_sub_i32_hl(i32 %7, i32 %2)",
+          "new": "%11 = call i32 @cqrt_alloc_i32(i32 0)"
+        },
+        {
+          "old": "  call void @cqrt_copy_i32(i32 %11, i32 %8)",
+          "new": "  call void @cq_template_add_i32_hl_unc(i32 %8, i32 %7, i32 %2)"
+        },
+        {
+          "old": "  call void @cq_template_sub_i32_hl_unc(i32 %11, i32 %7, i32 %2)",
+          "new": "  ; MUTANT: no t"
+        },
+        {
+          "old": "  %13 = call i32 @cqrt_measure_i32(i32 %7)",
+          "new": "  %a2 = call i32 @cq_template_add_i32_hl(i32 %7, i32 %2)    ; MUTANT: a' made again after the end\n  %13 = call i32 @cqrt_measure_i32(i32 %a2)"
+        },
+        {
+          "old": "declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)",
+          "new": "declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)\ndeclare i32 @cq_template_add_i32_hl(i32, i32)\ndeclare void @cq_template_add_i32_hl_unc(i32, i32, i32)"
+        }
+      ]
+    },
+    {
+      "id": "214-prep-forward-predicate",
+      "class": "region_forward_predicate",
+      "example": "214_invert_inplace_register",
+      "note": "CR rule 17 registers (owner 2026-11-26): invert_prepare's in-region Ry on x0 recorded after the region's updates of rem, so its replay reads rem before they are undone (rem > 4 on the value after the first PREP, the forward run's) instead of r0 > 4, the run from F^-1(s); rem and profit still return to r0 and p0",
+      "edits": [
+        {
+          "old": "%18 = call i32 @cq_template_icmp_ugt_i8_hl(i32 %7, i8 4)",
+          "new": "%18 = call i32 @cqrt_alloc_i1(i1 false)    ; MUTANT: the flag moved to the region's end"
+        },
+        {
+          "old": "  call void @cqrt_ry_i1_controlled(i32 %18, i32 %10, double %4)",
+          "new": "  ; MUTANT: moved"
+        },
+        {
+          "old": "  call void @cq_template_icmp_ugt_i8_hl_unc(i32 %18, i32 %7, i8 4)",
+          "new": "  ; MUTANT: moved"
+        },
+        {
+          "old": "  call void @cqrt_invert_end()    ; IR: call @__cq_invert_end(); fence consumed: the backend now emits the recorded gates reversed and inverted\n  %24 = call i8",
+          "new": "  %f0 = call i32 @cq_template_icmp_ugt_i8_hl(i32 %7, i8 4)    ; MUTANT: x0's Ry after rem's updates\n  call void @cqrt_ry_i1_controlled(i32 %f0, i32 %10, double %4)\n  call void @cq_template_icmp_ugt_i8_hl_unc(i32 %f0, i32 %7, i8 4)\n  call void @cqrt_free(i32 %f0)\n  call void @cqrt_invert_end()    ; IR: call @__cq_invert_end(); fence consumed: the backend now emits the recorded gates reversed and inverted\n  %24 = call i8"
         }
       ]
     }
