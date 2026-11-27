@@ -54,7 +54,7 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "region_output.O1.ll": ["p_out"],
            "region_view.O1.ll": ["p_view"],   # cq-82krl
            "region_inplace.O1.ll": ["rinp_sub", "rinp_old", "rinp_two", "rinp_tmpl", "rinp_meas", "rinp_arm", "rinp_qarm",
-                                    "rinp_nest"],   # rule 17 registers (owner 2026-11-26)
+                                    "rinp_nest", "rinp_unc"],   # rule 17 registers (owner 2026-11-26)
            "dup_begin.O1.ll": ["p_dup"],
            "dup_end.O1.ll": ["p_dupend"],
            "invert_arm.O1.ll": ["p_armpair", "p_armbegin", "p_armend", "p_armnest"]}

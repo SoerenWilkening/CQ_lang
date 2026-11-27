@@ -248,6 +248,36 @@ define range(i32 0, 256) i32 @rinp_nest(i8 noundef zeroext %0, double noundef %1
   ret i32 %16
 }
 
+; Function Attrs: nounwind ssp uwtable
+define range(i32 0, 256) i32 @rinp_unc(i8 noundef zeroext %0, double noundef %1, i8 noundef zeroext %2, double noundef %3, double noundef %4) local_unnamed_addr #0 {
+  %6 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %0, double noundef %1) #3
+  tail call void @__cq_invert_begin() #4
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #5, !srcloc !24
+  %7 = xor i8 %6, 5
+  %8 = add i8 %6, 1
+  %9 = icmp ugt i8 %8, %2
+  br i1 %9, label %10, label %11
+
+10:                                               ; preds = %5
+  tail call void @cq_phi(double noundef %4) #5
+  br label %11
+
+11:                                               ; preds = %10, %5
+  %12 = icmp ugt i8 %7, %2
+  br i1 %12, label %13, label %14
+
+13:                                               ; preds = %11
+  tail call void @cq_phi(double noundef %3) #5
+  br label %14
+
+14:                                               ; preds = %11, %13
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #5, !srcloc !25
+  tail call void @__cq_invert_end() #4
+  %15 = tail call zeroext i8 @cq_measure_ui8(i8 noundef zeroext %8) #5
+  %16 = zext i8 %15 to i32
+  ret i32 %16
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { noduplicate "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -264,21 +294,23 @@ attributes #5 = { nounwind }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
-!6 = !{i64 2147514864}
-!7 = !{i64 2147514920}
-!8 = !{i64 2147517547}
-!9 = !{i64 2147517603}
-!10 = !{i64 2147519472}
-!11 = !{i64 2147519528}
-!12 = !{i64 2147521397}
-!13 = !{i64 2147521453}
-!14 = !{i64 2147525095}
-!15 = !{i64 2147525909}
-!16 = !{i64 2147528793}
-!17 = !{i64 2147528849}
-!18 = !{i64 2147532491}
-!19 = !{i64 2147532547}
-!20 = !{i64 2147535174}
-!21 = !{i64 2147535251}
-!22 = !{i64 2147535307}
-!23 = !{i64 2147535382}
+!6 = !{i64 2147515299}
+!7 = !{i64 2147515355}
+!8 = !{i64 2147517982}
+!9 = !{i64 2147518038}
+!10 = !{i64 2147519907}
+!11 = !{i64 2147519963}
+!12 = !{i64 2147521832}
+!13 = !{i64 2147521888}
+!14 = !{i64 2147525530}
+!15 = !{i64 2147526344}
+!16 = !{i64 2147529228}
+!17 = !{i64 2147529284}
+!18 = !{i64 2147532926}
+!19 = !{i64 2147532982}
+!20 = !{i64 2147535609}
+!21 = !{i64 2147535686}
+!22 = !{i64 2147535742}
+!23 = !{i64 2147535817}
+!24 = !{i64 2147537686}
+!25 = !{i64 2147537742}

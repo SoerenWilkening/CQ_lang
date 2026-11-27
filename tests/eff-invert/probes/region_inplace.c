@@ -95,3 +95,15 @@ int rinp_nest(unsigned char a0, double ta, unsigned char k, double p, double q) 
   cq_invert_end();
   return cq_measure(a);
 }
+/* A value made from the old value before the gate and read after it: its _unc goes before the gate and the value is
+ * made again from the copy after it. */
+int rinp_unc(unsigned char y0, double ty, unsigned char k, double p, double q) {
+  unsigned char y = y0; cq_theta(&y, ty);
+  cq_invert_begin();
+  unsigned char b = y ^ 5;
+  y = y + 1;
+  if (y > k) cq_phi(q);
+  if (b > k) cq_phi(p);
+  cq_invert_end();
+  return cq_measure(y);
+}

@@ -2314,17 +2314,52 @@ bool regionInPlace(LoweringContext &ctx, BinaryOperator &I) {
       return false;
     }
     RailId hid = ctx.unc().idOf(h);
-    // An _unc still to come that re-reads the old value after the gate needs it from a copy too (rule 17): owed.
-    for (Value *r : ctx.unc().pendingReaders(hid))
+    // A value made from the old value whose item (an _unc) is still to come and which is read after the gate: its item
+    // would re-read the old value after the gate. Its item goes before the gate and the value is made again after it
+    // from the copy (rule 17 with rule 6), as is every pending item that reads it.
+    auto laterUse = [&](const Value *V) {
+      return any_of(V->users(), [&](const User *u) {
+        auto *U = dyn_cast<Instruction>(u);
+        return U && U != &I && U->getFunction() == I.getFunction() &&
+               (after.count(U) || (!U->getType()->isVoidTy() && !isa<PHINode>(U) && !sh.binds.count(U)));
+      });
+    };
+    SmallVector<RailId, 4> unplace;
+    SmallVector<Instruction *, 4> remake;
+    auto origLater = [&](Value *r) {
+      bool later = false;
       for (auto &[V, ops] : sh.binds)
-        if (ops.size() == 1 && ops.front().v == r && any_of(V->users(), [&](const User *u) {
-              auto *U = dyn_cast<Instruction>(u);
-              return U && U != &I && U->getFunction() == I.getFunction() &&
-                     (after.count(U) || (!U->getType()->isVoidTy() && !isa<PHINode>(U) && !sh.binds.count(U)));
-            }))
-          noteUnbuilt("spine: rule 17: an _unc read after a register's in-place gate re-reads its old value (its "
-                      "copy is owed)",
-                      &I);
+        if (ops.size() == 1 && ops.front().v == r && laterUse(V)) {
+          later = true;
+          auto *X = dyn_cast<Instruction>(const_cast<Value *>(V));
+          if (X && (isa<BinaryOperator>(X) || isa<CmpInst>(X) || isa<CastInst>(X) || isa<SelectInst>(X) ||
+                    isa<UnaryOperator>(X) || isa<FreezeInst>(X))) {
+            if (!is_contained(remake, X))
+              remake.push_back(X);
+          } else {
+            noteUnbuilt("spine: rule 17: a value read after a register's in-place gate whose _unc re-reads the old "
+                        "value is no pure instruction (made again after the gate it would repeat its effects)",
+                        &I);
+          }
+        }
+      return later;
+    };
+    SmallVector<Value *, 4> work;
+    for (Value *r : ctx.unc().pendingReaders(hid))
+      if (origLater(r))
+        work.push_back(r);
+    for (size_t k = 0; k < work.size(); ++k) {
+      Value *r = work[k];
+      if (!ctx.unc().recorded(r) || is_contained(unplace, ctx.unc().idOf(r)))
+        continue;
+      unplace.push_back(ctx.unc().idOf(r));
+      for (Value *x : ctx.unc().pendingReaders(ctx.unc().idOf(r))) {
+        origLater(x);
+        work.push_back(x);
+      }
+    }
+    if (!remake.empty())
+      copy = true;
     RailType w = rt(I.getType(), &I);
     LLVMContext &C = ctx.M.getContext();
     Operand o = ctx.operand(O);
@@ -2362,6 +2397,14 @@ bool regionInPlace(LoweringContext &ctx, BinaryOperator &I) {
     else
       ctx.emitCore(abi::CoreSpec{d.handle ? abi::Core::Copy : abi::Core::Xorc, w},
                    d.handle ? SmallVector<Value *, 2>{d.v, h} : SmallVector<Value *, 2>{h, d.v});
+    if (!unplace.empty()) {
+      ctx.unc().flushRailsBefore(unplace, &*std::prev(ctx.B().GetInsertPoint()));
+      for (RailId g : unplace)
+        if (ctx.unc().liveRole(g) == Role::Garbage)
+          noteUnbuilt("spine: rule 17: an _unc read after a register's in-place gate re-reads its old value and could "
+                      "not be placed before the gate",
+                      &I);
+    }
     if (copy) {
       abi::TemplateSpec inv;
       inv.w = w;
@@ -2374,6 +2417,8 @@ bool regionInPlace(LoweringContext &ctx, BinaryOperator &I) {
       ctx.unc().setRole(hid, Role::Kept);
     bindOperand(ctx, &I, Operand{h, true});
     sh.regionGated.insert(&I);
+    for (Instruction *X : remake)   // made again from the copy, after the gate
+      lowerInstruction(ctx, *X);
     return true;
   }
   return false;
