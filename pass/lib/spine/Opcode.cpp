@@ -2302,6 +2302,24 @@ bool regionInPlace(LoweringContext &ctx, BinaryOperator &I) {
       }
     if (!last)
       return false;
+    // The image reaches the end (orchestrator proposal 2026-11-27, owner to confirm): it is read after the end, or it is
+    // the old value of a later such update (or a merge of the register) in the region whose image reaches the end.
+    std::function<bool(const Value *, unsigned)> reachesEnd = [&](const Value *V, unsigned depth) {
+      if (depth > 64)
+        return true;
+      return any_of(V->users(), [&](const User *u) {
+        auto *U = dyn_cast<Instruction>(u);
+        if (!U || U->getFunction() != I.getFunction())
+          return false;
+        if (!after.count(U))
+          return true;   // a reader after the end
+        if (auto *P = dyn_cast<PHINode>(U); P && all_of(P->incoming_values(), chainValue))
+          return reachesEnd(P, depth + 1);
+        return laterUpdate(sh, ctx.unc(), U, V, h) && reachesEnd(U, depth + 1);
+      });
+    };
+    if (!reachesEnd(&I, 0))
+      return false;   // an image that dies in the region: a value made in it
     // Rule 17's tail split (a begin in a quantum arm, its end after the join): the image merged after the end with the
     // copy of the tail lowered outside the bracket, which is no gate on the register here.
     if (any_of(I.users(), [&](const User *u) {

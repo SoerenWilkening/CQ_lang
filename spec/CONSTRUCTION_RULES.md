@@ -1103,7 +1103,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     a rail not computed from `y`'s chain, and `y`'s rail is one the function owns and no seed: rule
     6's in-place gate, `sub y, o` as `sub_<W>(o, y)` (a literal `addc_<W>(y, −lit)`). Rule 6's
     clean-up point is not asked: the gate is emitted whatever reads the old value later, and the
-    image is the register from there on, never uncomputed inside the region. The backend replays the
+    image is the register from there on, never uncomputed inside the region. Such an update is the
+    gate only when its image reaches the region's `end`: the image is read after the `end`, or it is
+    the old value of a later such update in the region whose image reaches the `end`; an update whose
+    image dies inside the region (`if (x + z > 3)`) is a value made in the region, below (orchestrator
+    proposal 2026-11-27, owner to confirm). The backend replays the
     gate inverted (add by sub, sub by add, `addc` by `addc` of the negated literal, `copy` and
     `xorc` by themselves, BACKEND_ABI §1.13). Of several such updates of one old value, the last on
     each path is the gate; the others are values made in the region that read the rail before it. A
