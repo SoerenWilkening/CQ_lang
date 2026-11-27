@@ -4733,6 +4733,32 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
   return out;
 }
 
+SmallVector<Value *, 8> Uncompute::resolveSegment(Instruction *at, function_ref<bool(Value *)> keep) {
+  Impl &I = *impl;
+  if (I.invertStart.empty() || !at || !at->getParent())
+    return {};
+  I.lastRegionStart = I.invertStart.back();
+  // shortcut: only a rail made in the flush point's own block is placed before it (a rail of another block may not
+  // reach it on every path); one of another block read after the point stays across it (its item follows the end).
+  auto local = [&](Value *h) {
+    auto it = I.byHandle.find(h);
+    return keep(h) || it == I.byHandle.end() || I.defBlock(it->second) != at->getParent();
+  };
+  SmallVector<Value *, 8> out = resolveRegionMade(at, local);
+  // A rail still pending here was computed forward (before the flush): its item follows the end, forward too.
+  DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s = I.invertFrozen.back();
+  for (RailId g = I.liveFrom(0); g < I.rails.size(); g = I.liveFrom(g + 1))
+    if (I.pending(g) && !s.count(g)) {
+      SmallPtrSet<Instruction *, 8> &a = s[g];
+      for (Instruction *x : I.anchors(g))
+        a.insert(x);
+    }
+  I.invertStart.back() = RailId(I.rails.size());
+  return out;
+}
+
+RailId Uncompute::railCount() const { return RailId(impl->rails.size()); }
+
 void Uncompute::resolveRegionMadeOnce(Instruction *end, function_ref<bool(Value *)> keep, RailId start,
                                       SmallVectorImpl<Value *> &out) {
   Impl &I = *impl;

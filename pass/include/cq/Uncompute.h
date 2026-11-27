@@ -150,6 +150,16 @@ public:
   // (a later reader recomputes them after end).
   llvm::SmallVector<llvm::Value *, 8> resolveRegionMade(llvm::Instruction *end,
                                                         llvm::function_ref<bool(llvm::Value *)> keep);
+  // CR rule 17 (a flush point splits the region): `at` is the first instruction a flush point's lowering emitted
+  // inside the innermost open region (a measurement, a kept bus store, an effect entry). The rails the region made
+  // since its begin or its last flush point that nothing pending reads any more, unless keep(handle), are placed
+  // before `at` as resolveRegionMade places them before the end; returns their handles (a reader after `at`
+  // recomputes them). Every rail still pending is then held until the region's end, as at its begin, and the
+  // segment after `at` starts. Nothing when no region is open.
+  llvm::SmallVector<llvm::Value *, 8> resolveSegment(llvm::Instruction *at,
+                                                     llvm::function_ref<bool(llvm::Value *)> keep);
+  // The number of rails recorded so far (a rail made later has an id at least this).
+  RailId railCount() const;
   // One round of resolveRegionMade over the rails from `start` on (its deferred items aside); appends the handles placed.
   void resolveRegionMadeOnce(llvm::Instruction *end, llvm::function_ref<bool(llvm::Value *)> keep, RailId start,
                              llvm::SmallVectorImpl<llvm::Value *> &out);

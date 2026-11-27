@@ -17,7 +17,8 @@ reads: clone_rot), seeds a region prepares,
 a quantum arm under a classical guard (guard), clone calls and region code sharing memory (mem_clone_*), a bus store
 and an effect entry as flush points, the in-place form and a load un-copied inside a region (invert_mem, rule 17 Memory),
 and a region whose value is read after it (region_output: the rail outlives the region, rule 17), and a
-measurement inside a region (invert_measure: the backend flushes the gates before it forward).
+measurement inside a region (invert_measure: the backend flushes the gates before it forward; invert_flush: a template
+made before it and read after it is uncomputed before it and made again after it).
 Markers in quantum arms (CR rule 17, 2026-11-02, cq-asfn; CQ.h makes them noduplicate): dup_begin and dup_end
 (the shapes -O1 made by duplicating a marker before the attribute, now one marker in the join), invert_arm (a
 pair in one arm; a begin in an arm with its end after the join; an end in an arm with its begin before the
@@ -44,6 +45,7 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "invert_calls.O1.ll": ["p_between", "p_nested"],
            "clone_rot.O1.ll": ["p12"],
            "invert_measure.O1.ll": ["p_meas"],
+           "invert_flush.O1.ll": ["p_flush"],
            "guard.O1.ll": ["p_guard"],
            "mem_clone_global.O1.ll": ["i12"],
            "mem_clone_pair.O1.ll": ["i11"],

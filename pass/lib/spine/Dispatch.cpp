@@ -173,11 +173,17 @@ bool recomputable(const Instruction *I) {
          isa<UnaryOperator>(I);
 }
 
-void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
+// CR rule 17: `origEnd` is the region's end marker (at == nullptr: the cqrt_invert_end right before the builder) or a
+// flush point lowered inside the region (`at` the first instruction its lowering emitted, `limit` the rail count before
+// it: the rails its own lowering made are no candidates). A flush point closes a segment as the end closes the region:
+// a rail made in the segment and read after the point is uncomputed before it and made again after it (its compute and
+// its uncompute never straddle a flush point).
+void closeRegionRails(LoweringContext &ctx, const Instruction &origEnd, Instruction *at = nullptr,
+                      RailId limit = ~0u) {
   IRBuilder<> &B = ctx.B();
-  if (B.GetInsertPoint() == B.GetInsertBlock()->begin())
+  if (!at && B.GetInsertPoint() == B.GetInsertBlock()->begin())
     internalError("spine: no cqrt_invert_end before the builder", &origEnd);
-  Instruction *endCall = &*std::prev(B.GetInsertPoint());
+  Instruction *endCall = at ? at : &*std::prev(B.GetInsertPoint());
   Shared &sh = shared(ctx);
   // handle -> the original values bound to it
   DenseMap<const Value *, SmallVector<const Value *, 2>> origOf;
@@ -241,6 +247,8 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
     if (liveAfter(orig))
       operandsOf(orig);
   auto keep = [&](Value *h) {
+    if (limit != ~0u && ctx.unc().recorded(h) && ctx.unc().idOf(h) >= limit)
+      return true;   // made by the flush point's own lowering
     if (keepRails.count(h))
       return true;
     auto it = origOf.find(h);
@@ -265,7 +273,8 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
   for (size_t i = 0; i < sh.ruleSixOrigin.size(); ++i)
     if (sh.ruleSixOrigin[i].ctx == &ctx && cleaned(railOf(sh.ruleSixOrigin[i])))
       had.push_back(i);
-  SmallVector<Value *, 8> resolved = ctx.unc().resolveRegionMade(endCall, keep);
+  SmallVector<Value *, 8> resolved =
+      at ? ctx.unc().resolveSegment(endCall, keep) : ctx.unc().resolveRegionMade(endCall, keep);
   SmallVector<Shared::PendingSix, 8> lost;
   for (size_t i : had) {
     const Shared::PendingSix &e = sh.ruleSixOrigin[i];
@@ -576,6 +585,30 @@ Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
 
 namespace {
 void dispatchOne(LoweringContext &ctx, Instruction &I);
+
+// CR rule 17, BACKEND_ABI §1.13: the first instruction the lowering emitted from after `prev` in `bb` (its start when
+// nullptr) to the builder's point, when that code holds a flush point (a measurement, a bus store, an effect entry); else
+// nullptr. The lowering may have moved on to another block: then the rest of `bb` and that block up to the point.
+Instruction *flushPointAt(BasicBlock *bb, Instruction *prev, BasicBlock *nowBB, BasicBlock::iterator now) {
+  Instruction *first = prev ? prev->getNextNode() : bb->empty() ? nullptr : &bb->front();
+  auto flush = [](Instruction &X) {
+    auto *c = dyn_cast<CallInst>(&X);
+    std::optional<abi::CoreSpec> cs =
+        c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+    return cs && (cs->op == abi::Core::Measure || cs->op == abi::Core::QramStore || cs->op == abi::Core::TapeEffect ||
+                  cs->op == abi::Core::TapeEffectW);
+  };
+  bool any = false;
+  for (Instruction *X = first; X && !any; X = X->getNextNode()) {
+    if (nowBB == bb && X->getIterator() == now)
+      break;
+    any = flush(*X);
+  }
+  if (!any && nowBB != bb)
+    for (auto it = nowBB->begin(); it != now && !any; ++it)
+      any = flush(*it);
+  return !any ? nullptr : first ? first : &nowBB->front();
+}
 }
 
 // Rule 5 Memory: an original instruction that is a memory version change notes the first instruction its lowering
@@ -587,8 +620,17 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   IRBuilder<> &B = ctx.B();
   BasicBlock *bb = B.GetInsertBlock();
   Instruction *prev = B.GetInsertPoint() == bb->begin() ? nullptr : &*std::prev(B.GetInsertPoint());
+  // CR rule 17: a flush point inside a region outside every loop (M1; a loop's trip keeps its own placement).
+  auto *marker = dyn_cast<CallBase>(&I);
+  bool segment = ctx.unc().invertOpen() && !shared(ctx).tripFlag && !ctx.loopUnit() &&
+                 !(marker && (calls::classify(*marker, ctx.T, ctx.S) == calls::Class::InvertBegin ||
+                              calls::classify(*marker, ctx.T, ctx.S) == calls::Class::InvertEnd));
+  RailId limit = segment ? ctx.unc().railCount() : 0;
   dispatchOne(ctx, I);
   bus::inPlaceAfter(ctx, I);
+  if (segment)
+    if (Instruction *at = flushPointAt(bb, prev, B.GetInsertBlock(), B.GetInsertPoint()))
+      closeRegionRails(ctx, I, at, limit);
   if (!bus::versionChange(ctx, I) || bus::notesOwnChange(ctx, I))
     return;
   // Where its code begins, also when the lowering branched away from bb. Nothing emitted: nothing changed.
